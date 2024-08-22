@@ -27,22 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * *************************************************************
- *
- * Net subsystem is a layer on top the operations sytem network apis. It
- * provides an interface for accepting/creating new connection oriented
- * (TCP) and connection less (UDP) connetions and for reading/writing
- * data through these. The net system can manage 1000s of connections
- * very efficiently. Another advantage of using the net system is that
- * the SMs dont have be concerned about differences in the net apis of
- * various operations systems.
- *
- * SMs use the netProcessor global object of the Net System to create new
- * connections or to accept incoming connections. When a new connection
- * is created the SM gets a NetVConnection which is a handle for the
- * underlying connections. The SM can then use the NetVConnection to get
- * properties of the connection, read and write data. Net system also
- * has socks and ssl support.
  */
 
 #ifndef OBPROXY_NET_DEF_H

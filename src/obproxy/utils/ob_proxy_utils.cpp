@@ -438,5 +438,65 @@ int split_string_by_char(ObString &org_str,
   return ret;
 }
 
+// convert '\\' in string to '\'
+// etc: \" to ", \' to '
+int convert_escape_string(const common::ObString &input_str,
+                          common::ObString &output_str,
+                          common::ObIAllocator& allocater)
+{
+  int ret = OB_SUCCESS;
+  int64_t input_str_len = input_str.length();
+  char * str = NULL;
+  if (OB_ISNULL(str = static_cast<char*>(allocater.alloc(input_str_len + 1)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc mem", K(input_str_len), K(ret));
+  } else {
+    bool before_is_escape = false;
+    int64_t pos = 0;
+    for (int64_t i = 0; i < input_str.length(); ++i) {
+      if (before_is_escape) {
+        before_is_escape = false;
+        switch (input_str[i]) {
+          case 'n':
+            str[pos++] = '\n';
+            break;
+          case 't':
+            str[pos++] = '\t';
+            break;
+          case '\"':
+            str[pos++] = '\"';
+            break;
+          case '\'':
+            str[pos++] = '\'';
+            break;
+          case '\\':
+            str[pos++] = '\\';
+            break;
+          case ':':
+            str[pos++] = ':';
+            break;
+          default:
+            str[pos++] = input_str[i];
+            break;
+        }
+      } else if ('\\' == input_str[i]) {
+        before_is_escape = true;
+      } else {
+        str[pos++] = input_str[i];
+      }
+    }
+
+    if (before_is_escape) {
+      str[pos] = '\\';
+      ++pos;
+    }
+
+    output_str.assign_ptr(str, pos);
+  }
+
+  LOG_DEBUG("succ convert escape string", K(input_str), K(output_str), K(ret));
+  return ret;
+}
+
 } // end of namespace obproxy
 } // end of namespace oceanbase

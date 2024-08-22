@@ -36,6 +36,7 @@
 #include "proxy/route/ob_route_diagnosis.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
 #include "omt/ob_proxy_config_table_processor.h"
+#include "obutils/ob_single_leader.h"
 
 namespace oceanbase
 {
@@ -52,7 +53,7 @@ namespace proxy
 static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 static const int64_t MYSQL_SM_LIST_BUCKETS = 64;
 
-// COM_STMT_CLOSE not return any packet, in case client sending packet continuously, here define WATER_MARK to check whether stack overflow
+// OB_MYSQL_COM_STMT_CLOSE not return any packet, in case client sending packet continuously, here define WATER_MARK to check whether stack overflow
 static const int64_t COM_STMT_CLOSE_REQUEST_BUFFER_WATER_MARK = 1024;
 
 class ObMysqlServerSession;
@@ -91,7 +92,7 @@ extern ObMutex g_debug_sm_list_mutex;
  * 因此往sm 添加中成员变量或者给sm的的成员变量添加子成员时，
  * 如果新增的成员中包含指针变量，一定要显示地在init 函数中进行初始化，
  * 否则新的对象成员指针可能会指向老的sm对象中的内存；
- * bug 记录: https://work.aone.alibaba-inc.com/issue/21801637
+ * bug 记录:
  */
 class ObMysqlSM : public event::ObContinuation
 {
@@ -446,9 +447,16 @@ public:
   bool is_proxy_switch_route() const;
   void build_basic_connection_diagnosis_info();
   void fill_disconnect_message();
-  inline void reset_single_leader() { single_leader_addr_.reset(); }
-  inline const net::ObIpEndpoint &get_single_leader() { return single_leader_addr_; }
-  inline bool is_vaild_single_leader() { return single_leader_addr_.is_valid(); }
+  // single leader related
+  inline void free_single_leader() {
+    if (OB_NOT_NULL(single_leader_)) {
+      op_free(single_leader_);
+      single_leader_ = NULL;
+    }
+  }
+
+  inline const net::ObIpEndpoint *get_single_leader() { return OB_NOT_NULL(single_leader_) ? single_leader_->get_leader() : NULL; }
+  inline const net::ObIpEndpoint *get_single_leaders_follower() { return OB_NOT_NULL(single_leader_) ? single_leader_->get_follower() : NULL; }
   void refresh_single_leader();
 
 private:
@@ -509,10 +517,9 @@ private:
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
   ObProxyProtocol server_protocol_; // server protocol configured by `enable_compression_protocol` or `enable_ob_protocol_v2`
   bool need_update_non_login_config_; // 默认false，登录时设置为true，然后刷新vip级别配置后，重新设置为false
-  net::ObIpEndpoint single_leader_addr_;
-  int64_t single_leader_version_;
   bool need_depend_last_session_;
 public:
+  ObSingleLeader *single_leader_;
   bool enable_full_link_trace_;
   int64_t kill_after_cmd_done_err_code_;
   // 多级别配置项：因为配置项最细粒度可以在VIP级别生效，所以需要每个SM可能都不同

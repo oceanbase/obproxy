@@ -42,6 +42,11 @@ public:
   void set_table_expr(ObProxyExprTable* table_expr) { table_expr_ = table_expr; }
   ObProxyExprTable *get_table_expr() { return table_expr_; }
 
+  bool operator==(ObProxyExprTablePos &expr_table_pos)
+  {
+    return table_pos_ == expr_table_pos.get_table_pos();
+  }
+
   bool operator<(ObProxyExprTablePos &expr_table_pos)
   {
     return table_pos_ < expr_table_pos.get_table_pos();
@@ -97,6 +102,7 @@ public:
   void set_stmt_type(ObProxyBasicStmtType stmt_type) { stmt_type_ = stmt_type; }
   void set_sql_string(const common::ObString& sql_string) { sql_string_ = sql_string; }
   ObProxyBasicStmtType get_stmt_type() { return stmt_type_; }
+  common::ObIAllocator& get_allocator() { return allocator_; }
   virtual int to_sql_string(common::ObSqlString& sql_string) = 0;
 protected:
   ObProxyBasicStmtType stmt_type_;
@@ -122,11 +128,8 @@ public:
   ObProxyDMLStmt(common::ObIAllocator& allocator);
   virtual ~ObProxyDMLStmt();
   int init();
-  virtual int handle_parse_result(const ParseResult &parse_result)
-  {
-    UNUSED(parse_result);
-    return common::OB_SUCCESS;
-  }
+  virtual int handle_parse_result(const ParseResult &parse_result);
+  int handle_all_table_node(ParseNode* node);
   void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   void set_field_results(SqlFieldResult* real_field_results_ptr) { field_results_ = real_field_results_ptr; }
   void set_use_column_value_from_hint(bool use_column_value_from_hint) { use_column_value_from_hint_ = use_column_value_from_hint; }
@@ -195,7 +198,7 @@ public:
   SqlFieldResult dml_field_results_;
 
   common::ObSEArray<common::ObString,4> comments_;
-  // Store dml related information
+  // 存储dml相关信息
   common::ObString table_name_;
 
 protected:
@@ -257,9 +260,9 @@ protected:
 
   int check_node_has_agg(ParseNode* node);
 public:
-  common::ObSEArray<opsql::ObProxyExpr*, 4> select_exprs_;
-  common::ObSEArray<opsql::ObProxyGroupItem*, 4> group_by_exprs_; //select groupby expression
-  common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_by_exprs_;
+  common::ObSEArray<opsql::ObProxyExpr*, 4> select_exprs_; //select查询列表达式
+  common::ObSEArray<opsql::ObProxyGroupItem*, 4> group_by_exprs_; //select groupby表达式
+  common::ObSEArray<opsql::ObProxyOrderItem*, 4> order_by_exprs_; //select orderby表达式
 protected:
   bool has_rollup_;
   bool has_for_update_;

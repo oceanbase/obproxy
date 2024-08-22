@@ -47,8 +47,7 @@ void *thread_func(void *args)
   sleep(3);
 }
 
-// Create a soft chain from the current directory to the cgroup directory in advance.
-// The cgroup directory needs to mount three modules: cpu, cpuset, and cpuacct
+// 提前建立当前目录到cgroup目录的软链，cgroup目录需要挂载cpu、cpuset、cpuacct三个module
 TEST(TestCgroupCtrl, AddDelete)
 {
   ObCgroupCtrl cg_ctrl;

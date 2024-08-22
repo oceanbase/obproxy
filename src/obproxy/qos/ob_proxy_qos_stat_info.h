@@ -25,6 +25,9 @@ namespace obproxy
 namespace qos
 {
 
+// 熔断算法, 计算当前时间前 10s, 有超过 5 次就认为是有问题的. 有一定的放抖能力, 后续可以考虑加权计.
+// 第 11 个是用来存最新的值，比如从 0 秒开始，现在是第 10秒，那使用 0~9，第10秒就存最新的，所以最少是 11 个
+// +1，是为了防止时间的不准，允许多个线程间的时间误差在 1s 以内(+2 就表示允许误差在 2s 内)，比如线程 1 认为现在是第 10秒，线程2 认为现在是第 11 s，线程1推进 index 到第 10 秒，随后线程 2 会推进到 11秒。如果只有 11 个，那就会存储到 11/11 = 0，即第 0个位置上，而线程 1 认为当前是在第10s，继续使用 0 ~9 ，就会使用到已经被清空的 0 号数据
 #define QOS_STAT_VALUE_COUNT (11 + 1)
 #define QOS_STAT_CALC_COUNT 10
 #define QOS_STAT_MATCH_COUNT 5
@@ -86,8 +89,8 @@ private:
 
   int64_t idle_period_count_;
 
-  int64_t index_time_sec_;
-  int64_t values_[QOS_STAT_TYPE_MAX][QOS_STAT_VALUE_COUNT]; // RT unit us
+  int64_t index_time_sec_; // 表示当前要访问的数据下标的时间
+  int64_t values_[QOS_STAT_TYPE_MAX][QOS_STAT_VALUE_COUNT]; // RT 的单位是 us
 
   common::ObString key_;
   char key_str_[OB_PROXY_FULL_USER_NAME_MAX_LEN];

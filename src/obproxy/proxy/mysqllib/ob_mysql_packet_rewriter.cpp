@@ -191,11 +191,15 @@ int ObMysqlPacketRewriter::rewrite_ok_packet(const OMPKOK &src_ok,
   if (!des_cap.cap_flags_.OB_CLIENT_SESSION_TRACK) {
     des_ok.set_state_changed(false);
   } else {
-    if (client_info.is_oracle_mode()) {
+    if (client_info.is_oracle_mode() || is_auth_request) {
       des_ok.set_state_changed(true);
       const common::ObIArray<ObStringKV> &system_vars = src_ok.get_system_vars();
       for (int64_t i = 0; i < system_vars.count() && OB_SUCC(ret); ++i) {
-        if (ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_)) {
+        if ((client_info.is_oracle_mode()
+             && ObSessionFieldMgr::is_nls_date_timestamp_format_variable(system_vars.at(i).key_))
+            // observer返回前缀为__ob_client变量，proxy直接透传给client
+            || (is_auth_request
+                && system_vars.at(i).key_.prefix_match(OB_MYSQL_OB_CLIENT))) {
           if (OB_FAIL(des_ok.add_system_var(system_vars.at(i)))) {
             LOG_WDIAG("fail to add system var", K(ret), "key:", system_vars.at(i).key_);
           }

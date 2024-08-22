@@ -71,14 +71,14 @@ static const std::regex ELASTIC_PATTERN2("^toint\\(substr\\(\\#(\\w+)\\#,\\s*(\\
 
 const char *OBPROXY_CONFIG_LOG_TIMESTAMP_FORMAT = "%Y-%m-%d %H:%i:%s.%f";
 //static const char *CONFIG_
-static const char *CONFIG_TIMESTAMP             = "timestamp";
-static const char *CONFIG_INSTANCE_IP           = "instance_ip";
-static const char *CONFIG_INSTANCE_ZONE         = "instance_zone";
-static const char *CONFIG_TENANT                = "tenant";
-static const char *CONFIG_LOGICAL_DB            = "logical_db";
-static const char *CONFIG_TYPE                  = "type";
-static const char *CONFIG_NAME                  = "name";
-static const char *CONFIG_VALUE                 = "value";
+static const char *CONFIG_TIMESTAMP = "timestamp";
+static const char *CONFIG_INSTANCE_IP = "instance_ip";
+static const char *CONFIG_INSTANCE_ZONE = "instance_zone";
+static const char *CONFIG_TENANT = "tenant";
+static const char *CONFIG_LOGICAL_DB = "logical_db";
+static const char *CONFIG_TYPE = "type";
+static const char *CONFIG_NAME = "name";
+static const char *CONFIG_VALUE = "value";
 
 int ObProxyPbUtils::parse_database_prop_rule(const std::string &prop_rule, ObDataBaseProp &child_info)
 {
@@ -412,7 +412,7 @@ void ObProxyPbUtils::get_str_value_by_name(const std::string &shard_url,
   }
 }
 // shard_url format: jdbc:oceanbase://127.0.0.1:18587/group_00?useUnicode=true&characterEncoding=utf8
-// or ocj shard url format: http://x.x.x.x/services?Action=xxx&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
+// or ocj shard url format: http://x.x.x.x/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
 int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnector &conn_info)
 {
   int ret = OB_SUCCESS;
@@ -437,7 +437,7 @@ int ObProxyPbUtils::parse_shard_url(const std::string &shard_url, ObShardConnect
         ObString ip_src(pos3, sub_str.c_str());
         ObIpEndpoint ip;
         if (OB_FAIL(ops_ip_pton(ip_src, ip))) {
-          // check whethe is a valid host
+          //提前做一次配置校验, 检查是否是一个合法的 host
           char hname[MAX_HOST_NAME_LEN];
           snprintf(hname, MAX_HOST_NAME_LEN, "%.*s", static_cast<int>(pos3), sub_str.c_str());
           ObIpAddr ip_addr;
@@ -849,7 +849,7 @@ int ObProxyPbUtils::get_physic_ip(const common::ObString& addr_str, bool is_phys
       addr = ip.sa_;
     }
   } else {
-    // maybe switch ip, so need acquire everytime
+    // 每次这里都需要重新拿一次, 因为 host 有可能切 IP
     char hname[MAX_HOST_NAME_LEN];
     snprintf(hname, MAX_HOST_NAME_LEN, "%.*s", addr_str.length(), addr_str.ptr());
     ObIpAddr ip_addr;

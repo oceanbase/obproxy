@@ -45,6 +45,13 @@ public:
   static const int BUCKET_SIZE = 8;
   static const int NODE_NUM = 8;
 
+  /* 这里这样声明, 是为了减少内存消耗.
+   * 一个 HashSet 内存包含两部分: Node 和 Bucket
+   *   1. SimpleAllocer 用于分配 Node, 按 Block(默认 8K) 申请内存, 包含 N 个 HashNode
+   *   2. Bucket 的空间, 一个 Bucket 72 字节, 最少 53 个 Bucket, 是 3,848 字节, 大约 4K
+   * 因此, 一个 HashSet 默认至少占用 12K. 而每执行 Prepeare 一次, 就会生成一个 ObPsIdAddrs
+   * 现在这样改, 可以减少 Node 部分的空间，一个 Block 只有 48 * NODE_NUM = 400 个字节, 加上 Bucket 的 3848，大约 4K
+   */
   ObPsIdAddrs() : ps_id_(0), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
   }
   ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
@@ -111,7 +118,7 @@ public:
   common::ObString base_ps_sql_;
   LINK(ObBasePsEntry, base_ps_entry_link_);
 
-  // parser need extra two byte '\0'
+  // parser解析需要额外两个字节存储'\0'，只有sql再走一次parser接口才需要多预留两个字节
   const static int64_t PARSE_EXTRA_CHAR_NUM = 2;
 
 protected:
@@ -404,10 +411,11 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 public:
-  // text_ps_name and text_ps_entry alloced in alloc_text_ps_name_entry
+  // text_ps_name内存是和text_ps_entry一起分配的，都在alloc_text_ps_name_entry函数中
   ObString text_ps_name_;
   ObTextPsEntry *text_ps_entry_;
   uint32_t version_;
+  // 处理重名问题
   LINK(ObTextPsNameEntry, text_ps_name_link_);
 };
 

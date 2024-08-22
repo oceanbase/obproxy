@@ -540,8 +540,8 @@ public:
 
 private:
   // if username contains cluster name :
-  // 1. cluster name == MetaDataBase, we will trim cluster name
-  // 2. cluster name != MetaDataBase, we will print warn log and not use this json config info
+  // 1、cluster name == MetaDataBase, we will trim cluster name
+  // 2、cluster name != MetaDataBase, we will print warn log and not use this json config info
   int check_and_trim_username();
 
 public:

@@ -33,6 +33,7 @@ class ObIOBufferReader;
 }
 namespace obkv
 {
+enum class ObTableEntityType;
 
 using namespace oceanbase::obrpc;
 
@@ -188,7 +189,7 @@ public:
   ObRpcRequest()
       : request_payload_len_(0), payload_len_position_(0), payload_len_len_(0), table_id_position_(0), table_id_len_(0),
         partition_id_position_(0), partition_id_len_(0), ls_id_postition_(0), ls_id_len_(0),
-        request_buf_has_changed_(0), request_info_inited_(false), sub_request_count_(0), sub_request_buf_arr_(NULL),
+        request_buf_has_changed_(0), is_aggregate_query_(false), request_info_inited_(false), sub_request_count_(0), sub_request_buf_arr_(NULL),
         sub_request_rowkey_val_arr_(NULL), sub_request_rowkey_range_arr_(NULL), sub_request_columns_arr_(NULL),
         allocator_(), pcode_(OB_INVALID_RPC_CODE), all_rowkey_names_(NULL), index_name_(), batch_size_(-1),
         rpc_packet_meta_(), cluster_version_(0)
@@ -223,6 +224,8 @@ public:
                                 proxy::ObRpcReq &ob_rpc_req,
                                 proxy::ObProxyPartInfo &part_info,
                                 int64_t &partition_id) = 0;
+  virtual ObTableEntityType get_entity_type() const = 0;
+  virtual void set_entity_type(ObTableEntityType type) = 0;
   virtual int64_t get_payload_len_position() const;
   virtual int64_t get_part_id_position() const;
   virtual int64_t get_table_id_position() const;
@@ -248,6 +251,8 @@ public:
   virtual bool is_read_weak() const { return false; }
   virtual int adjust_req_buf_if_need(char *buf, int64_t buf_len, int64_t table_id, int64_t partition_id);
 
+  void set_aggregate_query(bool flag) { is_aggregate_query_ = flag; }
+  bool is_aggregate_query() const { return is_aggregate_query_; }
   bool is_stream_query() const { return -1 != batch_size_; }
   bool is_query_with_index() const { return !index_name_.empty(); }
   bool is_request_info_inited() const { return request_info_inited_; }
@@ -316,6 +321,7 @@ public:
   int64_t ls_id_postition_;
   int64_t ls_id_len_;
   bool request_buf_has_changed_; /* need re analyze when to retry */
+  bool is_aggregate_query_;
   /* ent that used for rewrite */
 
   // sub req info

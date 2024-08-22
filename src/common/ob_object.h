@@ -26,6 +26,7 @@
 #include "lib/ob_proxy_worker.h"
 #include "lib/rowid/ob_urowid.h"
 #include "lib/wide_integer/ob_wide_integer.h"
+#include "lib/timezone/ob_time_convert.h"
 
 namespace oceanbase
 {
@@ -146,9 +147,11 @@ public:
   OB_INLINE void set_unumber() { type_ = static_cast<uint8_t>(ObUNumberType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_number_float() { type_ = static_cast<uint8_t>(ObNumberFloatType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_datetime() { type_ = static_cast<uint8_t>(ObDateTimeType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
+  OB_INLINE void set_mysql_datetime() { type_ = static_cast<uint8_t>(ObMySQLDateTimeType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_timestamp() { type_ = static_cast<uint8_t>(ObTimestampType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_year() { type_ = static_cast<uint8_t>(ObYearType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_date() { type_ = static_cast<uint8_t>(ObDateType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
+  OB_INLINE void set_mysql_date() { type_ = static_cast<uint8_t>(ObMySQLDateType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_time() { type_ = static_cast<uint8_t>(ObTimeType); set_collation_level(CS_LEVEL_NUMERIC);set_collation_type(CS_TYPE_BINARY); }
   OB_INLINE void set_varchar() { type_ = static_cast<uint8_t>(ObVarcharType); }
   OB_INLINE void set_char() { type_ = static_cast<uint8_t>(ObCharType); }
@@ -207,9 +210,11 @@ public:
   OB_INLINE bool is_unumber() const { return type_ == static_cast<uint8_t>(ObUNumberType); }
   OB_INLINE bool is_number_float() const { return type_ == static_cast<uint8_t>(ObNumberFloatType); }
   OB_INLINE bool is_datetime() const { return type_ == static_cast<uint8_t>(ObDateTimeType); }
+  OB_INLINE bool is_mysql_datetime() const { return type_ == static_cast<uint8_t>(ObMySQLDateTimeType); }
   OB_INLINE bool is_timestamp() const { return type_ == static_cast<uint8_t>(ObTimestampType); }
   OB_INLINE bool is_year() const { return type_ == static_cast<uint8_t>(ObYearType); }
   OB_INLINE bool is_date() const { return type_ == static_cast<uint8_t>(ObDateType); }
+  OB_INLINE bool is_mysql_date() const { return type_ == static_cast<uint8_t>(ObMySQLDateType); }
   OB_INLINE bool is_time() const { return type_ == static_cast<uint8_t>(ObTimeType); }
   OB_INLINE bool is_varchar() const
   {
@@ -427,20 +432,24 @@ public:
 
   void set_datetime(const ObObjType type, const int64_t value);
   void set_datetime(const int64_t value);
+  void set_mysql_datetime(const int64_t value);
+  void set_mysql_datetime(const ObMySQLDateTime value);
   void set_timestamp(const int64_t value);
   void set_date(const int32_t value);
+  void set_mysql_date(const int32_t value);
+  void set_mysql_date(const ObMySQLDate value);
   void set_time(const int64_t value);
   void set_year(const uint8_t value);
 
   void set_datetime_value(const int64_t value);
   void set_timestamp_value(const int64_t value);
+  void set_date_value(const int32_t value);
+  void set_time_value(const int64_t value);
+  void set_year_value(const uint8_t value);
   void set_otimestamp_value(const ObObjType type, const ObOTimestampData &value);
   void set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint32_t time_ctx_desc);
   void set_otimestamp_value(const ObObjType type, const int64_t time_us, const uint16_t time_desc);
   void set_otimestamp_null(const ObObjType type);
-  void set_date_value(const int32_t value);
-  void set_time_value(const int64_t value);
-  void set_year_value(const uint8_t value);
 
   void set_timestamp_tz(const int64_t time_us, const uint32_t time_ctx_desc) { set_otimestamp_value(ObTimestampTZType, time_us, time_ctx_desc); }
   void set_timestamp_ltz(const int64_t time_us, const uint16_t time_desc) { set_otimestamp_value(ObTimestampLTZType, time_us, time_desc); }
@@ -576,8 +585,12 @@ public:
   OB_INLINE int64_t get_number_digit_length() const { return nmb_desc_.len_; }
 
   OB_INLINE int64_t get_datetime() const { return v_.datetime_; }
+  OB_INLINE int64_t get_mysql_datetime() const { return v_.datetime_; }
+  //OB_INLINE ObMySQLDateTime get_mysql_datetime() const { return v_.datetime_; }
   OB_INLINE int64_t get_timestamp() const { return v_.datetime_; }
   OB_INLINE int32_t get_date() const { return v_.date_; }
+  OB_INLINE int32_t get_mysql_date() const { return v_.date_; }
+  //OB_INLINE ObMySQLDate get_mysql_date() const { return v_.date_; }
   OB_INLINE int64_t get_time() const { return v_.time_; }
   OB_INLINE uint8_t get_year() const { return v_.year_; }
 
@@ -646,9 +659,11 @@ public:
   OB_INLINE bool is_unumber() const { return meta_.is_unumber(); }
   OB_INLINE bool is_number_float() const { return meta_.is_number_float(); }
   OB_INLINE bool is_datetime() const { return meta_.is_datetime(); }
+  OB_INLINE bool is_mysql_datetime() const { return meta_.is_mysql_datetime(); }
   OB_INLINE bool is_timestamp() const { return meta_.is_timestamp(); }
   OB_INLINE bool is_year() const { return meta_.is_year(); }
   OB_INLINE bool is_date() const { return meta_.is_date(); }
+  OB_INLINE bool is_mysql_date() const { return meta_.is_mysql_date(); }
   OB_INLINE bool is_time() const { return meta_.is_time(); }
   OB_INLINE bool is_varchar() const { return meta_.is_varchar(); }
   OB_INLINE bool is_char() const { return meta_.is_char(); }
@@ -1083,6 +1098,19 @@ inline void ObObj::set_datetime(const int64_t value)
   meta_.set_datetime();
   v_.datetime_ = value;
 }
+
+inline void ObObj::set_mysql_datetime(const int64_t value)
+{
+  meta_.set_mysql_datetime();
+  v_.datetime_ = value;
+}
+
+inline void ObObj::set_mysql_datetime(const ObMySQLDateTime value)
+{
+  meta_.set_mysql_datetime();
+  v_.datetime_ = value.datetime_;
+}
+
 inline void ObObj::set_datetime_value(const int64_t value)
 {
 
@@ -1134,6 +1162,20 @@ inline void ObObj::set_date(const int32_t value)
 {
   meta_.set_date();
   v_.date_ = value;
+}
+
+inline void ObObj::set_mysql_date(const int32_t value)
+{
+  meta_.set_mysql_date();
+  v_.uint64_ = 0;
+  v_.date_ = value;
+}
+
+inline void ObObj::set_mysql_date(const ObMySQLDate value)
+{
+  meta_.set_mysql_date();
+  v_.uint64_ = 0;
+  v_.date_ = value.date_;
 }
 
 inline void ObObj::set_time(const int64_t value)
@@ -1579,7 +1621,7 @@ inline int32_t ObObj::get_int_bytes() const {
 inline int ObObj::get_datetime(int64_t &v) const
 {
   int ret = OB_OBJ_TYPE_ERROR;
-  if (meta_.is_datetime()) {
+  if (meta_.is_date()) {
     v = v_.datetime_;
     ret = OB_SUCCESS;
   }

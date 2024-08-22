@@ -123,14 +123,14 @@ struct ObProxyExprCalcItem {
   ObProxyExprCalcItemSource source_;
 };
 
-// Attention!! all var in expr NOT modify after init
+// 注意，expr中的所有成员变量在初始化都不能修改，所以执行计算的东西不能放在这里面
 class ObProxyExpr
 {
 public:
   explicit ObProxyExpr() : type_(OB_PROXY_EXPR_TYPE_NONE), index_(-1), accuracy_(), has_agg_(0),
                            is_func_expr_(0), reserved_(0), alias_name_() {}
 
-  ~ObProxyExpr() {}
+  virtual ~ObProxyExpr() {}
   void set_expr_type(const ObProxyExprType type) { type_ = type; }
   ObProxyExprType get_expr_type() const { return type_; }
   virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
@@ -177,7 +177,7 @@ public:
   int64_t index_;
   common::ObAccuracy accuracy_;
   struct {
-    uint16_t has_agg_ : 1;// whethere hava agg func, 1 means true
+    uint16_t has_agg_ : 1;// 是否有agg函数 1表示有，0表示没有
     uint16_t is_func_expr_ : 1;
     uint16_t reserved_ : 14;
   };
@@ -265,12 +265,12 @@ private:
 
 enum ObProxyOrderDirection
 {
-  NULLS_FIRST_ASC = 0,   // Forward, NULLs first
-  NULLS_LAST_ASC, // Forward, NULLs last
-  NULLS_FIRST_DESC, // Backward, NULLs first
-  NULLS_LAST_DESC,   // Backward, NULLs last
-  UNORDERED, // not ordered
-  MAX_DIR, // invalid
+  NULLS_FIRST_ASC = 0,   //顺序，正向扫描,Forward, NULLs first
+  NULLS_LAST_ASC, // 顺序，正向扫描,Forward, NULLs last
+  NULLS_FIRST_DESC, //倒序，反向扫描,Backward, NULLs first
+  NULLS_LAST_DESC,   //倒序，反向扫描,Backward, NULLs last
+  UNORDERED, //不排序，保持现状
+  MAX_DIR, //非法值
 };
 
 class ObProxyGroupItem : public ObProxyExpr
@@ -690,6 +690,16 @@ class ObProxyExprToNumber : public ObProxyFuncExpr
     int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
            common::ObIArray<common::ObObj> &result_obj_array);
 };
+
+class ObProxyExprNotSupport : public ObProxyFuncExpr
+{
+  public:
+    explicit ObProxyExprNotSupport() {}
+    ~ObProxyExprNotSupport() {}
+    int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array);
+};
+
 
 } // end opsql
 } // end obproxy

@@ -271,7 +271,7 @@ void ObPartitionCache::destroy()
 {
   LOG_INFO("ObPartitionCache will desotry");
   if (is_inited_) {
-    // TODO, modify later
+    // TODO oushen, modify later
     ObPartitionCacheParam *param = NULL;
     ObPartitionCacheParam *cur = NULL;
     for (int64_t i = 0; i < MT_HASHTABLE_PARTITIONS; ++i) {

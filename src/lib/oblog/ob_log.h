@@ -422,26 +422,207 @@ public:
   //@brief Rename the log to a filename with version info. And open a new file with the old
   void force_rotate_log(const ObLogFDType &type, const char *version);
 
-  DEFINE_LOG_PRINT_KV(1);
-  DEFINE_LOG_PRINT_KV(2);
-  DEFINE_LOG_PRINT_KV(3);
-  DEFINE_LOG_PRINT_KV(4);
-  DEFINE_LOG_PRINT_KV(5);
-  DEFINE_LOG_PRINT_KV(6);
-  DEFINE_LOG_PRINT_KV(7);
-  DEFINE_LOG_PRINT_KV(8);
-  DEFINE_LOG_PRINT_KV(9);
-  DEFINE_LOG_PRINT_KV(10);
-  DEFINE_LOG_PRINT_KV(11);
-  DEFINE_LOG_PRINT_KV(12);
-  DEFINE_LOG_PRINT_KV(13);
-  DEFINE_LOG_PRINT_KV(14);
-  DEFINE_LOG_PRINT_KV(15);
-  DEFINE_LOG_PRINT_KV(16);
-  DEFINE_LOG_PRINT_KV(17);
-  DEFINE_LOG_PRINT_KV(18);
-  DEFINE_LOG_PRINT_KV(19);
-  DEFINE_LOG_PRINT_KV(20);
+  int fill_kv(char *buf, const int64_t buf_len, int64_t &pos, const bool with_comma)
+  {
+    UNUSED(buf);
+    UNUSED(buf_len);
+    UNUSED(pos);
+    UNUSED(with_comma);
+    return OB_SUCCESS;
+  }
+
+  template <typename ... Args>
+  int fill_kv(char *buf,
+              const int64_t buf_len,
+              int64_t &pos,
+              const bool with_comma,
+              const ObILogKV &kv,
+              Args const & ... args)
+  {
+    int ret = OB_SUCCESS;
+    ret = fill_kv(buf, buf_len, pos, with_comma, kv);
+    if (OB_SUCC(ret)) {
+      ret = fill_kv(buf, buf_len, pos, 1, std::forward<const Args&&>(args)...);
+    }
+    return ret;
+  }
+  inline int fill_kv(char *buf,
+                     const int64_t buf_len,
+                     int64_t &pos,
+                     const bool with_comma,
+                     const ObILogKV &kv)
+  {
+    return kv.print(buf, buf_len, pos, with_comma);
+  }
+
+  template <typename ... Args>
+  int fill_log_buffer(char *data,
+                      const int64_t MAX_LOG_SIZE,
+                      int64_t &pos,
+                      const char *info,
+                      const ObILogKV &kv,
+                      Args const & ... args)
+  {
+    int ret = OB_SUCCESS;
+    LOG_PRINT_INFO_BEGIN(info);
+    if (OB_SUCC(ret)) {
+      ret = fill_kv(data, MAX_LOG_SIZE, pos, 0, kv);
+    }
+    if (OB_SUCC(ret)) {
+      ret = fill_kv(data, MAX_LOG_SIZE, pos, 1, std::forward<const Args&&>(args)...);
+    }
+    LOG_KV_END();
+    return ret;
+  }
+
+
+  template <typename ... Args>
+  inline void log_message_kv(const char *mod_name,
+                             const int32_t level,
+                             const char *file,
+                             const int32_t line,
+                             const char *function,
+                             const char *info,
+                             Args const && ... args)
+  {
+    const ObLogFDType type = (NULL == mod_name ? FD_XFLUSH_FILE : FD_DEFAULT_FILE);
+    log_message_kv(type, mod_name, level, file, line, function, info, std::forward<const Args&&>(args)...);
+  }
+
+  template <typename ... Args>
+  void log_message_kv(const ObLogFDType type,
+                      const char *mod_name,
+                      const int32_t level,
+                      const char *file,
+                      const int32_t line,
+                      const char *function,
+                      const char *info_string,
+                      Args const && ... args)
+  {
+    int ret = OB_SUCCESS;
+    LogBuffer *log_buffer = NULL;
+    if (OB_LIKELY(level <= OB_LOG_LEVEL_DEBUG)
+        && OB_LIKELY(level >= OB_LOG_LEVEL_ERROR)
+        && OB_LIKELY(is_enable_logging())
+        && OB_NOT_NULL(file) && OB_NOT_NULL(function)
+        && OB_NOT_NULL(function) && OB_NOT_NULL(info_string)) {
+      set_disable_logging(true);
+      if (get_trace_mode()) {
+        if (OB_NOT_NULL(log_buffer = get_thread_buffer())
+            && OB_LIKELY(!log_buffer->is_oversize())) {
+          log_head_info(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
+          int64_t &pos = log_buffer->pos_;
+          char *data = log_buffer->buffer_;
+          fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
+          log_tail(level, *log_buffer);
+        }
+      } else if (!is_async_log_used()) {
+        if (OB_NOT_NULL(log_buffer = get_thread_buffer())
+            && OB_LIKELY(!log_buffer->is_oversize())) {
+          int64_t &pos = log_buffer->pos_;
+          char *data = log_buffer->buffer_;
+          fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
+          log_data(type, mod_name, level, LogLocation(file, line, function), *log_buffer);
+        }
+      } else {
+        struct timeval tv;
+        gettimeofday(&tv, NULL);
+        const int64_t logging_time_us_begin = static_cast<int64_t>(tv.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv.tv_usec);
+        ++curr_logging_seq_;
+        ObLogItem *log_item = NULL;
+        if (OB_FAIL(pop_from_free_queue(level, log_item))) {
+          LOG_STDERR("pop_from_free_queue error, ret=%d\n", ret);
+        } else {
+          const uint64_t dropped_log_count = curr_logging_seq_ - last_logging_seq_ - 1;
+          async_set_log_header(type, *log_item, tv, mod_name, level, file, line, function, dropped_log_count);
+          int64_t MAX_LOG_SIZE = log_item->get_buf_size();
+          int64_t pos = log_item->get_data_len();
+          char *data = log_item->get_buf();
+          fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
+          CHECK_LOG_END_AND_ERROR_LOG(log_item)
+        }
+
+        if (OB_SUCC(ret)
+            && OB_NOT_NULL(log_item)
+            && log_item->is_size_overflow()) {
+          bool upgrade_result = false;
+          if (OB_FAIL(try_upgrade_log_item(log_item, upgrade_result))) {
+            LOG_STDERR("try_upgrade_log_item error, ret=%d\n", ret);
+          } else if (upgrade_result) {
+            int64_t MAX_LOG_SIZE = log_item->get_buf_size();
+            int64_t pos = log_item->get_data_len();
+            char *data = log_item->get_buf();
+            LOG_PRINT_INFO_BEGIN(info_string);
+            fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
+            CHECK_LOG_END_AND_ERROR_LOG(log_item);
+          }
+        }
+
+        if (OB_SUCC(ret)
+            && OB_NOT_NULL(log_item)
+            && log_item->is_size_overflow()) {
+          bool upgrade_result = false;
+          if (OB_FAIL(try_upgrade_log_item(log_item, upgrade_result))) {
+            LOG_STDERR("try_upgrade_log_item error, ret=%d\n", ret);
+          } else if (upgrade_result) {
+            int64_t MAX_LOG_SIZE = log_item->get_buf_size();
+            int64_t pos = log_item->get_data_len();
+            char *data = log_item->get_buf();
+            LOG_PRINT_INFO_BEGIN(info_string);
+            fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
+            CHECK_LOG_END_AND_ERROR_LOG(log_item);
+          }
+        }
+
+        if (OB_SUCC(ret) && OB_NOT_NULL(log_item)) {
+          if (OB_FAIL(check_callback(*log_item))) {
+            LOG_STDERR("check_callback error ret = %d\n", ret);
+          } else if (OB_FAIL(push_to_async_queue(*log_item))) {
+            LOG_STDERR("push log item to queue error ret = %d\n", ret);
+          } else {
+            struct timeval tv_end;
+            gettimeofday(&tv_end, NULL);
+            const int64_t logging_time_us_end = static_cast<int64_t>(tv_end.tv_sec) * static_cast<int64_t>(1000000) + static_cast<int64_t>(tv_end.tv_usec);
+            last_logging_cost_time_us_ = logging_time_us_end - logging_time_us_begin;
+            last_logging_seq_ = curr_logging_seq_;
+          }
+        }
+        if (OB_FAIL(ret)) {
+          push_to_free_queue(log_item);
+          log_item = NULL;
+        }
+      }
+      set_disable_logging(false);
+    }
+  }
+
+  template <typename ... Args>
+  static inline void OB_PRINT(const char *mod_name,
+                       const int32_t level,
+                       const char *file,
+                       const int32_t line,
+                       const char *function,
+                       const char *info_string,
+                       const char *, /* placeholder */
+                       Args const && ... args)
+  {
+    OB_LOGGER.log_message_kv(mod_name, level, file, line, function, info_string, std::forward<const Args&&>(args)...);
+  }
+
+  template <typename ... Args>
+  static inline void OB_PRINT_TYPE(const ObLogFDType type,
+                            const char *mod_name,
+                            const int32_t level,
+                            const char *file,
+                            const int32_t line,
+                            const char *function,
+                            const char *info_string,
+                            const char *, /* placeholder */
+                            Args const && ... args)
+  {
+    OB_LOGGER.log_message_kv(type, mod_name, level, file, line, function, info_string, std::forward<const Args&&>(args)...);
+  }
+
 
   //@brief Check whether the level to print.
   OB_INLINE bool need_to_print(const int32_t level)
@@ -845,7 +1026,7 @@ inline void ObLogger::log_user_message_info(
   if (OB_NOT_NULL(info_string)) {
     insert_warning_buffer(user_msg_level, errcode, info_string, static_cast<int64_t>(strlen(info_string)));
     if (need_to_print(level)) {
-      log_message_kv(mod_name, level, file, line, function, info_string, "ret", errcode);
+      OB_PRINT(mod_name, level, file, line, function, info_string, LOG_KVS("ret", errcode));
     }
   }
 }

@@ -38,6 +38,9 @@ ObLayout::ObLayout()
     : is_inited_(false), prefix_(NULL), bin_dir_(NULL), etc_dir_(NULL),
       log_dir_(NULL), conf_dir_(NULL), control_config_dir_(NULL),
       dbconfig_dir_(NULL), unix_domain_path_(NULL)
+#if HAVE_MINIDUMP
+, minidump_dir_(NULL)
+#endif
 {
 }
 
@@ -274,6 +277,15 @@ int ObLayout::construct_dirs()
     MPRINT("fail to construct sharding-config dir, ret=%d", ret);
   }
 
+#if HAVE_MINIDUMP
+  static const char *MINIDUMP_PATH = "minidump";
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(construct_single_dir(MINIDUMP_PATH, minidump_dir_))) {
+      MPRINT("fail to construct minidump dir, ret=%d", ret);
+    }
+  }
+#endif
+
   return ret;
 }
 
@@ -352,7 +364,7 @@ int ObLayout::construct_client_obproxy_dirs()
 {
   int ret = OB_SUCCESS;
   char *actual_path = NULL;
-  // Create the .obproxy directory
+  // 创建.obproxy的目录
   if (OB_FAIL(extract_actual_path(prefix_, actual_path))) {
     MPRINT("fail to extract_actual_path, prefix_path=%s, ret=%d", prefix_, ret);
   } else if (OB_FAIL(FileDirectoryUtils::create_full_path(actual_path))) {

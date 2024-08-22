@@ -191,13 +191,9 @@ LOG_MOD_END(STORAGETEST)
 #define OB_NEED_USE_ASYNC_LOG (OB_LOGGER.is_async_log_used() && !OB_LOGGER.get_trace_mode())
 #define IS_DEBUG_ENABLED() OB_LOGGER.need_to_print(OB_LOG_LEVEL_DEBUG)
 
-#define OB_PRINT(modName, level, infoString, args...)                                            \
-  OB_LOGGER.log_message_kv(modName, OB_LOG_LEVEL(level), infoString, ##args)
 #define _OB_PRINT(modName, level, _fmt_, args...)                                                \
   (OB_NEED_USE_ASYNC_LOG ? OB_LOGGER.async_log_message(modName, OB_LOG_LEVEL(level), _fmt_, ##args) : OB_LOGGER.log_message(modName, OB_LOG_LEVEL(level), _fmt_, ##args))
 
-#define OB_PRINT_TYPE(type, modName, level, infoString, args...)                                            \
-  OB_LOGGER.log_message_kv(type, modName, OB_LOG_LEVEL(level), infoString, ##args)
 #define _OB_PRINT_TYPE(type, modName, level, _fmt_, args...)                                                \
   (OB_NEED_USE_ASYNC_LOG ? OB_LOGGER.async_log_message(type, modName, OB_LOG_LEVEL(level), _fmt_, ##args) : OB_LOGGER.log_message(type, modName, OB_LOG_LEVEL(level), _fmt_, ##args))
 
@@ -205,27 +201,27 @@ LOG_MOD_END(STORAGETEST)
   OB_LOGGER.force_rotate_log(type, version)
 
 #define OB_LOG(level, infoString, args...)                                                       \
-  (OB_LOG_NEED_TO_PRINT(level) ? OB_PRINT("", level, infoString, ##args) : (void) 0)
+  (OB_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT("", OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OB_LOG(level, _fmt_, args...)                                                           \
   (OB_LOG_NEED_TO_PRINT(level) ? _OB_PRINT("", level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_XFLUSH_LOG(level, infoString, args...)                                           \
-  (OB_XFLUSH_LOG_NEED_TO_PRINT(level) ? OB_PRINT(NULL, level, infoString, ##args) : (void) 0)
+  (OB_XFLUSH_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT(NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_XFLUSH_LOG(level, _fmt_, args...)                                               \
   (OB_XFLUSH_LOG_NEED_TO_PRINT(level) ? _OB_PRINT(NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_DIGEST_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_DIGEST_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_DIGEST_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_DIGEST_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_DIGEST_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_ERROR_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_ERROR_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_ERROR_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_ERROR_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_ERROR_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_DIAGNOSIS_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_DIAGNOSIS_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_DIAGNOSIS_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 
 #define _OBPROXY_LOGIN_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_LOGIN_FILE, NULL, level, _fmt_, ##args) : (void) 0)
@@ -235,18 +231,18 @@ LOG_MOD_END(STORAGETEST)
 
 
 #define OBPROXY_SLOW_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_SLOW_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_SLOW_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_SLOW_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_SLOW_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_STAT_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_STAT_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_STAT_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_STAT_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_STAT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 
 #define OBPROXY_CONFIG_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_CONFIG_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_CONFIG_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_CONFIG_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_CONFIG_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
@@ -254,27 +250,27 @@ LOG_MOD_END(STORAGETEST)
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_FORCE_ROTATE_LOG(FD_CONFIG_FILE, infoString) : (void) 0)
 
 #define OBPROXY_LIMIT_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_LIMIT_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_LIMIT_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_LIMIT_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_LIMIT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_POOL_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_POOL_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_POOL_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_POOL_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_POOL_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_POOL_STAT_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_POOL_STAT_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_POOL_STAT_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_POOL_STAT_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_POOL_STAT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_TRACE_LOG(level, infoString, args...)                                           \
-  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_TRACE_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_TRACE_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_TRACE_LOG(level, _fmt_, args...)                                               \
   (OB_MONITOR_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_TRACE_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_DRIVER_CLIENT_LOG(level, infoString, args...)                                           \
-  (OB_LOG_NEED_TO_PRINT(level) ? OB_PRINT_TYPE(FD_DRIVER_CLIENT_FILE, NULL, level, infoString, ##args) : (void) 0)
+  (OB_LOG_NEED_TO_PRINT(level) ? ::oceanbase::common::ObLogger::OB_PRINT_TYPE(FD_DRIVER_CLIENT_FILE, NULL, OB_LOG_LEVEL(level), infoString, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_DRIVER_CLIENT_LOG(level, _fmt_, args...)                                               \
   (OB_LOG_NEED_TO_PRINT(level) ? _OB_PRINT_TYPE(FD_DRIVER_CLIENT_FILE, NULL, level, _fmt_, ##args) : (void) 0)
 
@@ -285,11 +281,6 @@ LOG_MOD_END(STORAGETEST)
 
 #define _OB_NUM_LEVEL_PRINT(level, _fmt_, args...)                                               \
    OB_LOGGER.log_message("", OB_LOG_NUM_LEVEL(level), _fmt_, ##args)
-
-#define _OB_LOG_US(level, _fmt_, args...)                                                        \
-  _OB_LOG(level, "[%ld][%ld] " _fmt_,                                                            \
-          ::oceanbase::common::ObLogger::get_cur_tv().tv_sec,                                    \
-          ::oceanbase::common::ObLogger::get_cur_tv().tv_usec, ##args)
 
 #define SET_OB_LOG_TRACE_MODE()  OB_LOGGER.set_trace_mode(true)
 #define CANCLE_OB_LOG_TRACE_MODE() OB_LOGGER.set_trace_mode(false)
@@ -309,7 +300,7 @@ LOG_MOD_END(STORAGETEST)
 //define this macro without OB_LOG_MOD_NEED_TO_PRINT
 #define OB_MOD_LOG(parMod, level, info_string, args...)                                          \
   ((OB_LOGGER.need_to_print(::oceanbase::common::OB_LOG_ROOT::M_##parMod, OB_LOG_LEVEL_##level)) \
-  ? OB_PRINT("["#parMod"] ", level, info_string, ##args) : (void) 0)
+  ? ::oceanbase::common::ObLogger::OB_PRINT("["#parMod"] ", OB_LOG_LEVEL(level), info_string, LOG_KVS(args)) : (void) 0)
 #define _OB_MOD_LOG(parMod, level, _fmt_, args...)                                               \
   ((OB_LOGGER.need_to_print(oceanbase::common::OB_LOG_ROOT::M_##parMod, OB_LOG_LEVEL_##level))   \
   ? _OB_PRINT("["#parMod"] ", level, _fmt_, ##args) : (void) 0)
@@ -318,7 +309,7 @@ LOG_MOD_END(STORAGETEST)
   ((OB_LOGGER.need_to_print(::oceanbase::common::OB_LOG_ROOT::M_##parMod,                        \
                             ::oceanbase::common::OB_LOG_##parMod::M_##subMod,                    \
                             OB_LOG_LEVEL_##level)) ?                                             \
-   OB_PRINT("["#parMod"."#subMod"] ", level, info_string, ##args) : (void) 0)
+   ::oceanbase::common::ObLogger::OB_PRINT("["#parMod"."#subMod"] ", OB_LOG_LEVEL(level), info_string, LOG_KVS(args)) : (void) 0)
 #define _OB_SUB_MOD_LOG(parMod, subMod, level, _fmt_, args...)                                   \
   ((OB_LOGGER.need_to_print(oceanbase::common::OB_LOG_ROOT::M_##parMod,                          \
                             oceanbase::common::OB_LOG_##parMod::M_##subMod,                      \
@@ -328,14 +319,14 @@ LOG_MOD_END(STORAGETEST)
 // define macro for module obproxy
 #define OBPROXY_MOD_LOG(parMod, level, info_string, args...)                                                      \
   ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
-  ? OB_PRINT("["#parMod"] ", level, info_string, ##args) : (void) 0)
+  ? ::oceanbase::common::ObLogger::OB_PRINT("["#parMod"] ", OB_LOG_LEVEL(level), info_string, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_MOD_LOG(parMod, level, _fmt_, args...)                                                           \
   ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level))   \
   ? _OB_PRINT("["#parMod"] ", level, _fmt_, ##args) : (void) 0)
 
 #define OBPROXY_SUB_MOD_LOG(parMod, subMod, level, info_string, args...)                                          \
   ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
-  ? OB_PRINT("["#parMod"."#subMod"] ", level, info_string, ##args) : (void) 0)
+  ? ::oceanbase::common::ObLogger::OB_PRINT("["#parMod"."#subMod"] ", OB_LOG_LEVEL(level), info_string, LOG_KVS(args)) : (void) 0)
 #define _OBPROXY_SUB_MOD_LOG(parMod, subMod, level, _fmt_, args...)                                               \
   ((OB_LOGGER.need_to_print(OB_LOG_LEVEL_##level)) \
   ? _OB_PRINT("["#parMod"."#subMod"] ", level, _fmt_, ##args) : (void) 0)

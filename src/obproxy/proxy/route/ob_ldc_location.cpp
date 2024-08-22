@@ -21,6 +21,7 @@
 #include "obutils/ob_config_server_processor.h"
 #include "iocore/eventsystem/ob_buf_allocator.h"
 #include "obproxy/obutils/ob_resource_pool_processor.h"
+#include "obproxy/omt/ob_proxy_config_table_processor.h"
 
 
 using namespace oceanbase::common;
@@ -33,6 +34,18 @@ namespace obproxy
 {
 namespace proxy
 {
+bool ObWeightZoneItems::is_valid() const
+{
+  bool bret = false;
+  for (int64_t i = 0; i < weight_zone_item_array_.count(); ++i) {
+    if (!weight_zone_item_array_.at(i).is_used_) {
+      bret = true;
+      break;
+    }
+  }
+  return bret;
+}
+
 void ObLDCLocation::reset_item_array()
 {
   if (NULL != item_array_ && item_count_ > 0) {
@@ -43,10 +56,21 @@ void ObLDCLocation::reset_item_array()
     op_fixed_mem_free(primary_zone_item_array_, static_cast<int64_t>(sizeof(ObLDCItem)) * primary_zone_item_count_);
   }
 
+  if (NULL != all_weight_zone_array_) {
+    for (int64_t i = 0; i < all_weight_zone_array_->count(); ++i) {
+      if (OB_NOT_NULL(all_weight_zone_array_->at(i))) {
+        op_free(all_weight_zone_array_->at(i));
+      }
+    }
+    op_free(all_weight_zone_array_);
+  }
+
   item_array_ = NULL;
   item_count_ = 0;
   primary_zone_item_array_ = NULL;
   primary_zone_item_count_ = 0;
+  all_weight_zone_array_ = NULL;
+  all_weight_zone_item_count_ = 0;
 
   site_start_index_array_[SAME_IDC] = 0;
   site_start_index_array_[SAME_REGION] = 0;
@@ -240,7 +264,8 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
           if (is_base_servers_added && !replica.server_.is_ip_loopback()) {
             LOG_WDIAG("fail to find tenant server from server list, maybe has not updated, don not use it", K(replica));
           } else {
-            // if relica has no IDC info, lower priority. Avoid choosing offline relica
+            // LDC 情况下, 如果 OBServer 机器没有 IDC 信息, 降低优先级.
+            // 避免有 ODP 内存中有下线机器, 却优先选择
             if (is_ldc_used()) {
               const ObLDCItem item(replica, default_merging_status, OTHER_REGION, default_zone_type, default_congested_status);
               if (OB_FAIL(remote_item_array.push_back(item))) {
@@ -306,11 +331,13 @@ bool ObLDCLocation::check_need_update_entry(const ObProxyReplicaLocation &replic
 
   if (dummy_ldc.is_ldc_used()) {
     bool found = false;
+    // 找到对应的副本的 zone 信息
     for (int64_t j = 0; !found && j < ss_info.count(); j++) {
       const ObServerStateSimpleInfo &ss = ss_info.at(j);
       if (ss.addr_ == replica.server_) {
         found = true;
-        // same region or not R relica, need refresh
+        // 如果在集群内, 只需要检查是否同 REGION, 相同 IDC 肯定也是相同 REGION
+        // 如果是相同 REGION, 或者不是 R 副本, 都需要刷新
         if (is_in_logic_region(region_names, ss.region_name_) || REPLICA_TYPE_READONLY != replica.replica_type_) {
           bret = true;
           LOG_WDIAG("check_need_update_entry, same region or not readonly replica, need update entry", K(replica), K(ss), K(region_names));
@@ -321,14 +348,15 @@ bool ObLDCLocation::check_need_update_entry(const ObProxyReplicaLocation &replic
     }
 
     if (!found) {
+      // 如果不在集群内, 需要重新刷新
       bret = true;
       LOG_WDIAG("check_need_update_entry, replica is not the cluster's servers, need update entry", K(replica));
     }
   } else {
-    // if no ldc, have two case:
-    //   1. not set idc name
-    //   2. region name is empty
-    // No way to know if this relica is the same as IDC/REGION, need fresh
+    // 如果不是 ldc used, 有两种情况:
+    //  1. 没有设置 idc name
+    //  2. IDC 对应的 region names 为空
+    // 不管哪种情况, 都无法知道这个副本是不是同 IDC/REGION 的, 直接认为需要更新
     bret = true;
     LOG_WDIAG("check_need_update_entry, not use ldc, need update entry", K(replica));
   }
@@ -372,11 +400,11 @@ bool ObLDCLocation::is_in_primary_zone(const ObProxyReplicaLocation &replica,
                                        const ObString &primary_zone_name)
 {
   bool need_use_it = false;
-
-  // if have primary zone and zone state, route by zone
+  /* 只有设置了 primary zone 信息, 并且获取到了 zone state 信息后, 才根据 zone 路由 */
   if (!primary_zone_name.empty() && ss_info.count() > 0) {
     bool found = false;
     need_use_it = false;
+    // 找到对应的副本的 zone 信息
     for (int64_t j = 0; !found && j < ss_info.count(); j++) {
       const ObServerStateSimpleInfo &ss = ss_info.at(j);
       if (ss.addr_ == replica.server_) {
@@ -390,6 +418,31 @@ bool ObLDCLocation::is_in_primary_zone(const ObProxyReplicaLocation &replica,
     need_use_it = true;
   }
 
+  return need_use_it;
+}
+
+bool ObLDCLocation::is_in_weight_zone(const ObProxyReplicaLocation &replica,
+                      const ObIArray<ObServerStateSimpleInfo> &ss_info,
+                      const omt::ObZoneWeakReadWeight &weight_zone,
+                      int32_t &weight_index)
+{
+  bool need_use_it = false;
+  bool found = false;
+  // ss_info不存在，即zone state获取失败，走权重负载均衡，会断连接
+  for (int64_t i = 0; !found && i < ss_info.count(); ++i) {
+    const ObServerStateSimpleInfo &ss = ss_info.at(i);
+    if (ss.addr_ == replica.server_) {
+      found = true;
+      for (int64_t j = 0; j < weight_zone.zone_array_.count(); ++j) {
+        const ObString &zone = weight_zone.zone_array_.at(j);
+        if (0 == ss.zone_name_.case_compare(zone)) {
+          need_use_it = true;
+          weight_index = j;
+          break;
+        }
+      }
+    }
+  }
   return need_use_it;
 }
 
@@ -452,7 +505,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
       for (int64_t j = 0; OB_SUCC(ret) && j < dummy_ldc.item_count_; ++j) {
         const ObLDCItem &dummy_item = dummy_ldc.item_array_[j];
         int64_t priority = 0;
-        // skip log relica
+        // 请求不能发往日志型副本
         if (dummy_item.is_used_
             || REPLICA_TYPE_LOGONLY == dummy_item.replica_->get_replica_type()
             || REPLICA_TYPE_ENCRYPTION_LOGONLY == dummy_item.replica_->get_replica_type()) {
@@ -477,7 +530,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
 
     //3. fill tenant_ldc without leader
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, tmp_pz_item_array))) {
+      if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, &tmp_pz_item_array, NULL))) {
         LOG_WDIAG("fail to set_ldc_location", K(ret));
       }
     }
@@ -487,12 +540,52 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
   return ret;
 }
 
+bool ObLDCLocation::is_weak_read_avail_replica(const ObProxyReplicaLocation &replica,
+                                       const ObRoutePolicyEnum &route_policy,
+                                       const omt::ObTargetReplicaType *target_replica_type,
+                                       const ObIArray<ObString> &proxy_primary_zone_name,
+                                       const bool is_proxy_mysql_client)
+{
+  bool bret = false;
+
+  if (is_proxy_mysql_client) {
+    // 对内部请求，可以发往F/R副本，不受route_target_replica_type影响
+    bret = replica.is_full_or_readonly_replica();
+  // 权重路由和proxy_primary_zone是以zone为维度，允许发往F/R/C
+  } else if (!proxy_primary_zone_name.empty() || WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy) {
+    bret = replica.is_full_or_readonly_replica() || replica.is_columnstore_replica();
+  } else if (is_target_replica_route(route_policy) && OB_NOT_NULL(target_replica_type)) {
+    if (target_replica_type->is_exist_full_replica()) {
+      bret = replica.is_full_replica();
+    }
+    if (!bret && target_replica_type->is_exist_readonly_replica()) {
+      bret = replica.is_readonly_replica();
+    }
+    if (!bret && target_replica_type->is_exist_column_store_replica()) {
+      bret = replica.is_columnstore_replica();
+    }
+    // 对云上选择主副本的处理，对with_leader和follower_first都允许路由主副本
+    if (!bret && (TARGET_REPLICA_TYPE_WITH_LEADER == route_policy
+                  || TARGET_REPLICA_TYPE_FOLLOWER_FIRST == route_policy)) {
+      bret = replica.is_leader();
+    }
+  } else {
+    // 非指定副本类型/权重/proxy primary路由，兼容老的默认行为
+    bret = replica.is_full_or_readonly_replica();
+  }
+  return bret;
+}
+
 int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
     ObLDCLocation &dummy_ldc, ObLDCLocation &ldc_location, bool &entry_need_update,
     const bool is_only_readonly_zone,
     const ObIArray<ObServerStateSimpleInfo> &ss_info,
     const ObIArray<ObString> &region_names,
-    const ObIArray<ObString> &proxy_primary_zone_name)
+    const ObIArray<ObString> &proxy_primary_zone_name,
+    const ObRoutePolicyEnum &route_policy,
+    const omt::ObZoneWeakReadWeight *weight_zone/*NULL*/,
+    const bool is_proxy_mysql_client/*false*/,
+    const omt::ObTargetReplicaType *target_replica_type/*NULL*/)
 {
   int ret = OB_SUCCESS;
   entry_need_update = false;
@@ -504,7 +597,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
     LOG_WDIAG("fail to get_thread_allocator", K(ret));
   } else {
     ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> tmp_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
-    ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> tmp_pz_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
+    ObSEArray<ObLDCItem, OB_MAX_LDC_ITEM_COUNT> tmp_weight_zone_item_array(OB_MAX_LDC_ITEM_COUNT, *allocator);
     //mainly used for no-ldc, get random start idx
     const bool is_ldc_used = dummy_ldc.is_ldc_used();
     dummy_ldc.reset_item_status();
@@ -530,7 +623,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("dummy_item is invalid", K(dummy_item), K(j), K(dummy_ldc), K(ret));
           } else if (replica.server_ == dummy_item.replica_->server_) {
-            if (!replica.is_weak_read_avail()
+            if (!is_weak_read_avail_replica(replica, route_policy, target_replica_type, proxy_primary_zone_name, is_proxy_mysql_client)
                 || (is_only_readonly_zone && common::ZONE_TYPE_READONLY != dummy_item.zone_type_)) {
               //do not use id
               need_use_it = false;
@@ -543,13 +636,18 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
 
         if (OB_SUCC(ret) && need_use_it) {
           need_use_it = is_in_proxy_primary_zone(replica, ss_info, proxy_primary_zone_name, tmp_item.priority_);
+          if (need_use_it
+              && WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy
+              && OB_NOT_NULL(weight_zone)) {
+            need_use_it = is_in_weight_zone(replica, ss_info, *weight_zone, tmp_item.weight_zone_index_);
+          }
         }
 
         if (OB_SUCC(ret) && need_use_it) {
           //can not found
           if (NULL == tmp_item.replica_) {
-            if (replica.is_weak_read_avail()) {
-              // if relica not in dummy entry, need check whether relica is same IDC or Region
+            if (is_weak_read_avail_replica(replica, route_policy, target_replica_type, proxy_primary_zone_name, is_proxy_mysql_client)) {
+              // 如果 table location 不在 dummy entry 里, 需要判断该副本是不是同 IDC/REGION 的
               entry_need_update = check_need_update_entry(replica, dummy_ldc, ss_info, region_names);
 
               if (is_ldc_used) {
@@ -560,14 +658,23 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
                          "continue use it", K(replica));
                 tmp_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                              true, default_congested_status);//without ldc, location will put into same_idc
-                if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
+                if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy && OB_NOT_NULL(weight_zone)) {
+                  if (OB_FAIL(tmp_weight_zone_item_array.push_back(tmp_item))) {
+                  LOG_WDIAG("fail to push_back weight zone target_item", K(tmp_item), K(tmp_weight_zone_item_array), K(ret));
+                  }
+                } else if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
                   LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
                 }
               }
             }
           } else {
             //found it
-            if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
+            if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy && OB_NOT_NULL(weight_zone)) {
+              if (OB_FAIL(tmp_weight_zone_item_array.push_back(tmp_item))) {
+                LOG_WDIAG("fail to push_back weight zone target_item",
+                          K(tmp_item), K(tmp_weight_zone_item_array), K(ret));
+              }
+            } else if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
               LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
             }
           }
@@ -582,6 +689,9 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
         //shuffle the partition server
         std::random_shuffle(tmp_item_array.begin(), tmp_item_array.end(), dummy_ldc.random_);
       }
+      if (tmp_weight_zone_item_array.count() > 1) {
+        std::random_shuffle(tmp_weight_zone_item_array.begin(), tmp_weight_zone_item_array.end(), dummy_ldc.random_);
+      }
       //mainly used for no-ldc, get random start idx
       const int64_t start_idx = get_first_item_index(dummy_ldc, dummy_ldc.get_tenant_server()->replica_count_);
       int64_t current_idx = 0;
@@ -590,17 +700,28 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
         current_idx = (is_ldc_used ? ((j + start_idx) % dummy_ldc.item_count_) : j);
         const ObLDCItem &dummy_item = dummy_ldc.item_array_[current_idx];
         int64_t priority = 0;
+        int32_t weight_index = 0;
         if (dummy_item.is_used_) {
           //continue
-        } else if (!dummy_item.replica_->is_weak_read_avail()
+        } else if (!is_weak_read_avail_replica(*dummy_item.replica_, route_policy, target_replica_type, proxy_primary_zone_name, is_proxy_mysql_client)
                    || (is_only_readonly_zone && common::ZONE_TYPE_READONLY != dummy_item.zone_type_)) {
           //do not use id
         } else if (!is_in_proxy_primary_zone(*(dummy_item.replica_), ss_info, proxy_primary_zone_name, priority)) {
           //do not use id
+        } else if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy
+                   && OB_NOT_NULL(weight_zone)
+                   && !is_in_weight_zone(*(dummy_item.replica_), ss_info, *weight_zone, weight_index)) {
+          //do not use it
         } else {
           tmp_ldc_item.set_non_partition_item(dummy_item);
+          tmp_ldc_item.weight_zone_index_ = weight_index;
           tmp_ldc_item.priority_ = priority;
-          if (OB_FAIL(tmp_item_array.push_back(tmp_ldc_item))) {
+          if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy && OB_NOT_NULL(weight_zone)) {
+            if (OB_FAIL(tmp_weight_zone_item_array.push_back(tmp_ldc_item))) {
+              LOG_WDIAG("fail to push_back weight zone target_item",
+                        K(dummy_item), K(tmp_ldc_item), K(tmp_weight_zone_item_array), K(ret));
+            }
+          } else if (OB_FAIL(tmp_item_array.push_back(tmp_ldc_item))) {
             LOG_WDIAG("fail to push_back target_item", K(dummy_item), K(tmp_ldc_item), K(tmp_item_array), K(ret));
           }
         }
@@ -613,7 +734,7 @@ int ObLDCLocation::fill_weak_read_location(const ObProxyPartitionLocation *pl,
 
     //3. fill ldc_location from tmp_item_array
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, tmp_pz_item_array))) {
+      if (OB_FAIL(ldc_location.set_ldc_location(pl, dummy_ldc, tmp_item_array, NULL, &tmp_weight_zone_item_array, weight_zone))) {
         LOG_WDIAG("fail to set_ldc_location", K(ret));
       } else {
         // target_ldc we should use priority
@@ -826,10 +947,80 @@ int ObLDCLocation::fill_primary_zone_item_array(common::ModulePageAllocator *all
   return ret;
 }
 
+int ObLDCLocation::set_weight_zone_array(const ObIArray<ObLDCItem> &tmp_weight_zone_item_array,
+                                         const omt::ObZoneWeakReadWeight &weight_zone)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(NULL != all_weight_zone_array_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexcepted all_weight_zone_array_ is not NULl ", K(ret));
+  } else if (OB_ISNULL(all_weight_zone_array_ = op_alloc(ObWeightZoneArray))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc weight zone array", K(ret));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < tmp_weight_zone_item_array.count(); ++i) {
+      // 获取每个item对应的zone name和value
+      const ObLDCItem &weight_item = tmp_weight_zone_item_array.at(i);
+      if (OB_UNLIKELY(weight_item.weight_zone_index_ >= weight_zone.zone_array_.count()
+                      || weight_item.weight_zone_index_ < 0)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to find weight zone value", "weight index", weight_item.weight_zone_index_,
+                  "array size", weight_zone.zone_array_.count(), K(ret));
+      } else {
+        ObString zone = weight_zone.zone_array_.at(weight_item.weight_zone_index_);
+        int64_t value = weight_zone.weight_array_.at(weight_item.weight_zone_index_);
+        bool found_zone = false;
+        // 将权重副本，添加到all_weight_zone_array_
+        for (int64_t j = 0; OB_SUCC(ret) && !found_zone && j < all_weight_zone_array_->count(); ++j) {
+          ObWeightZoneItems& weight_zone_item = *all_weight_zone_array_->at(j);
+          if (0 == static_cast<ObString>(weight_zone_item.zone_name_).case_compare(zone)) {
+            found_zone = true;
+            if (OB_FAIL(weight_zone_item.weight_zone_item_array_.push_back(weight_item))) {
+              LOG_WDIAG("fail to push back tmp weight zone item", K(ret));
+            }
+          }
+        }
+        LOG_DEBUG("add weight zone", "idx", i, "array_count", tmp_weight_zone_item_array.count(),
+                  K(found_zone), K(weight_item), K(zone), K(ret));
+        // all_weight_zone_array_中不存在此zone，需要创建
+        if (OB_SUCC(ret) && !found_zone) {
+          ObWeightZoneItems* weight_zone_item = NULL;
+          if (OB_ISNULL(weight_zone_item = op_alloc(ObWeightZoneItems))) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WDIAG("fail to alloc weight zone item", K(ret));
+          } else {
+            weight_zone_item->zone_name_.rewrite(zone);
+            weight_zone_item->weight_value_ = value;
+            if (OB_FAIL(weight_zone_item->weight_zone_item_array_.push_back(tmp_weight_zone_item_array.at(i)))) {
+              LOG_WDIAG("fail to push back tmp weight zone item for zone", K(ret));
+            } else if (OB_FAIL(all_weight_zone_array_->push_back(weight_zone_item))) {
+              LOG_WDIAG("fail to push back tmp weight zone", K(ret));
+            } else {
+              // 成功后，申请的ObWeightZoneItem置为空，否则中间出现失败，需要释放内存
+              weight_zone_item = NULL;
+            }
+          }
+          if (OB_UNLIKELY(NULL != weight_zone_item)) {
+            op_free(weight_zone_item);
+          }
+        }
+      }
+    }// end of for: add tmp item
+  }
+
+  if (OB_SUCC(ret)) {
+    all_weight_zone_item_count_ = tmp_weight_zone_item_array.count();
+  }
+
+  return ret;
+}
+
 int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
                                     const ObLDCLocation &dummy_ldc,
                                     const ObIArray<ObLDCItem> &tmp_item_array,
-                                    const ObIArray<ObLDCItem> &tmp_pz_item_array)
+                                    const ObIArray<ObLDCItem> *tmp_pz_item_array,
+                                    const ObIArray<ObLDCItem> *tmp_weight_zone_item_array_ptr,
+                                    const omt::ObZoneWeakReadWeight *weight_zone/*NULL*/)
 {
   int ret = OB_SUCCESS;
   reset();
@@ -870,19 +1061,27 @@ int ObLDCLocation::set_ldc_location(const ObProxyPartitionLocation *pl,
     }
   }
 
-  if (!tmp_pz_item_array.empty()) {
-    const int64_t alloc_size = static_cast<int64_t>(sizeof(ObLDCItem)) * tmp_pz_item_array.count();
+  if (NULL != tmp_pz_item_array && !tmp_pz_item_array->empty()) {
+    const int64_t alloc_size = static_cast<int64_t>(sizeof(ObLDCItem)) * tmp_pz_item_array->count();
     char *pz_item_array_buf = NULL;
     if (OB_ISNULL(pz_item_array_buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to alloc mem", K(ret), K(alloc_size));
     } else {
-      primary_zone_item_count_ = tmp_pz_item_array.count();
+      primary_zone_item_count_ = tmp_pz_item_array->count();
       primary_zone_item_array_ = new (pz_item_array_buf) ObLDCItem[primary_zone_item_count_];
       for (int64_t i = 0; i < primary_zone_item_count_; ++i) {
-        primary_zone_item_array_[i] = tmp_pz_item_array.at(i);
+        primary_zone_item_array_[i] = tmp_pz_item_array->at(i);
         LOG_DEBUG("push to pz item", K(i), K(primary_zone_item_array_[i]));
       }
+    }
+  }
+
+  // 添加每个zone的weight item
+  if (OB_SUCC(ret) && NULL != tmp_weight_zone_item_array_ptr
+      && !tmp_weight_zone_item_array_ptr->empty() && OB_NOT_NULL(weight_zone)) {
+    if (OB_FAIL(set_weight_zone_array(*tmp_weight_zone_item_array_ptr, *weight_zone))) {
+      LOG_WDIAG("fail to set weight zone array", K(ret));
     }
   }
 
@@ -986,6 +1185,72 @@ int ObLDCLocation::copy_dummy_ldc(ObLDCLocation &src_dummy_ldc, ObLDCLocation &d
 
   return ret;
 }
+
+int64_t ObLDCLocation::get_rand_zone_index()
+{
+  int64_t ret_rand_index = -1;
+  int64_t weigth_sum = 0;
+  int ret = OB_SUCCESS;
+  if (!is_weight_zone_empty()) {
+    ObSEArray<int64_t, OB_MAX_ZONE_COUNT> non_zero_zone_index;
+    ObSEArray<int64_t, OB_MAX_ZONE_COUNT> zero_zone_index;
+    // find available zone
+    for (int64_t i = 0; OB_SUCC(ret) && i < all_weight_zone_array_->count(); ++i) {
+      bool is_available = false;
+      if (OB_NOT_NULL(all_weight_zone_array_->at(i))) {
+        is_available = all_weight_zone_array_->at(i)->is_valid();
+      }
+      if (is_available) {
+        int64_t value = all_weight_zone_array_->at(i)->weight_value_;
+        if (!value) {
+          if (OB_FAIL(zero_zone_index.push_back(i))) {
+            LOG_WDIAG("fail to push back zero zone index", K(ret));
+          }
+        } else if (OB_FAIL(non_zero_zone_index.push_back(i))) {
+          LOG_WDIAG("fail to push back non-zero zone index", K(ret));
+        } else {
+          weigth_sum += value;
+        }
+      }
+    }// end for
+    // 1. 存在权重非0的zone：根据权重值的前缀和，按照rand的范围找到zone;
+    // 2. 只有权重0的zone：均匀随机一个zone
+    LOG_DEBUG("has select available zones", "all_weight_zone_count", all_weight_zone_array_->count(),
+              K(non_zero_zone_index.count()), K(zero_zone_index.count()));
+    if (OB_FAIL(ret)) {
+      // do nothing
+    } else if (non_zero_zone_index.count()) {
+      if (1 == non_zero_zone_index.count()) {
+        ret_rand_index = non_zero_zone_index.at(0);
+      } else {
+        int64_t rand_index = random_(weigth_sum);
+        int64_t prefix_sum = 0;
+        for (int i = 0; i < non_zero_zone_index.count(); ++i) {
+          int array_index = non_zero_zone_index.at(i);
+          prefix_sum += all_weight_zone_array_->at(array_index)->weight_value_;
+          if (rand_index < prefix_sum) {
+            ret_rand_index = i;
+            break;
+          }
+        }
+      }
+      LOG_DEBUG("found non-zero weight value random zone", K(ret_rand_index));
+      if (OB_UNLIKELY(-1 == ret_rand_index)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("can't match zone index, maybe rand result is wrong", K(ret));
+      }
+    } else if (zero_zone_index.count()) {
+      int64_t rand_index = random_(zero_zone_index.count());
+      ret_rand_index = zero_zone_index.at(rand_index);
+    } else {
+      LOG_DEBUG("not exist available zone when use weight load banlance");
+      // not exist available zone
+    }
+  }
+
+  return ret_rand_index;
+}
+
 
 } // end of namespace proxy
 } // end of namespace obproxy

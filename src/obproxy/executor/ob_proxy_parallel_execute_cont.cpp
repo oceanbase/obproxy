@@ -132,7 +132,7 @@ int ObProxyParallelExecuteCont::init(const ObProxyParallelParam &parallel_param,
     }
   }
 
-  // if failed, no need clear mysql_proxy which will be cleared by caller
+  // 这里如果失败了可以不用清理 mysql_proxy 变量，调用方会调用 destroy 方法
   return ret;
 }
 
@@ -234,7 +234,8 @@ void ObProxyParallelExecuteCont::destroy()
     result_set_ = NULL;
   }
 
-  // copy from destroy func of base class, because this Cont is alloced by op_alloc
+  // 父类里最后是用的 delete, 但是本 Cont 是用的 op_alloc 分配出来的,
+  // 所以只能把父类里的 destroy 方法拷贝到这里
   cb_cont_ = NULL;
   allocator_ = NULL;
   submit_thread_ = NULL;

@@ -32,14 +32,14 @@ namespace obproxy
 {
 namespace obutils
 {
-const ObString JSON_CONFIG_VERSION      = ObString::make_string("json_config_version");
-const ObString JSON_CONFIG_BIN_URL      = ObString::make_string("json_config_bin_url");
-const ObString JSON_CONFIG_DB           = ObString::make_string("json_config_meta_table_db");
-const ObString JSON_CONFIG_USER         = ObString::make_string("json_config_meta_table_user");
-const ObString JSON_CONFIG_PASSWORD     = ObString::make_string("json_config_meta_table_password");
+const ObString JSON_CONFIG_VERSION = ObString::make_string("json_config_version");
+const ObString JSON_CONFIG_BIN_URL = ObString::make_string("json_config_bin_url");
+const ObString JSON_CONFIG_DB = ObString::make_string("json_config_meta_table_db");
+const ObString JSON_CONFIG_USER = ObString::make_string("json_config_meta_table_user");
+const ObString JSON_CONFIG_PASSWORD = ObString::make_string("json_config_meta_table_password");
 const ObString JSON_CONFIG_REAL_CLUSTER = ObString::make_string("json_config_real_meta_cluster");
-const ObString JSON_CONFIG_CLUSTER      = ObString::make_string("json_config_cluster_count");
-const ObString JSON_CONFIG_MODIFIED     = ObString::make_string("json_config_modified_time");
+const ObString JSON_CONFIG_CLUSTER = ObString::make_string("json_config_cluster_count");
+const ObString JSON_CONFIG_MODIFIED = ObString::make_string("json_config_modified_time");
 
 //ConfigColumnID
 enum
@@ -271,7 +271,7 @@ int ObShowConfigHandler::dump_json_config_version(const ObString &version)
   row.cells_ = cells;
   row.count_ = OB_CC_MAX_CONFIG_COLUMN_ID;
   if (OB_FAIL(encode_row_packet(row))) {
-    WARN_ICMD("fail to encode row packet", K(row), K(ret));
+    WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
   }
   return ret;
 }
@@ -352,6 +352,12 @@ int ObShowConfigHandler::dump_json_config_password(const ObString &password)
     cells[OB_CC_INFO].set_varchar("meta table password");
     cells[OB_CC_NEED_REBOOT].set_varchar("true");
     cells[OB_CC_VISIBLE_LEVEL].set_varchar("virtual");
+
+    row.cells_ = cells;
+    row.count_ = OB_CC_MAX_CONFIG_COLUMN_ID;
+    if (OB_FAIL(encode_row_packet(row))) {
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
+    }
   }
   return ret;
 }

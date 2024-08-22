@@ -296,8 +296,8 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
-%token<str> LOAD DATA LOCAL INFILE SLAVE RELAYLOG EVENTS HOSTS BINLOG
-%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS SESSION_ALIAS LOCAL_ALIAS
+%token<str> LOAD DATA LOCAL INFILE SLAVE RELAYLOG EVENTS HOSTS BINLOG PORT
+%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS SESSION_ALIAS LOCAL_ALIAS MASTER LOGS RESET FLUSH SERVER TENANT
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
@@ -330,7 +330,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> ALTER_PROXYRESOURCE
 %token<str> PING_PROXY
 %token<str> KILL_PROXYSESSION KILL_GLOBALSESSION KILL QUERY
-%token<str> SHOW_BINLOG_SERVER_FOR_TENANT BINLOG_VARIABLE BINLOG_USER_VAR BINLOG_SYS_VAR
+%token<str> BINLOG_VARIABLE BINLOG_USER_VAR BINLOG_SYS_VAR
 
 %type<str> table_factor non_reserved_keyword var_name
 %start root
@@ -380,6 +380,7 @@ stmt: select_stmt                    {}
     | other_stmt                     { result->cur_stmt_type_ = OBPROXY_T_OTHERS; }
 
 select_stmt: select_with_binlog { result->is_binlog_related_ = true; }
+           | select_with_port { result->cur_stmt_type_ = OBPROXY_T_SELECT_GLOBAL_PORT; }
            | select_with_opt_hint select_expr_list opt_from
             {
               result->cur_stmt_type_ = OBPROXY_T_SELECT;
@@ -902,6 +903,9 @@ select_with_binlog: SELECT '@' BINLOG_USER_VAR
                   | SELECT opt_sys_var_alias BINLOG_SYS_VAR
                   | SELECT '@' '@' BINLOG_SYS_VAR
 
+select_with_port : SELECT GLOBAL_ALIAS PORT
+                  | SELECT '@' '@' PORT
+
 select_with_opt_hint: SELECT
                     | SELECT_HINT_BEGIN hint_list_with_end
 update_with_opt_hint: UPDATE
@@ -964,6 +968,9 @@ show_stmt: SHOW opt_count WARNINGS { result->cur_stmt_type_ = OBPROXY_T_SHOW_WAR
             result->cur_stmt_type_ = OBPROXY_T_SHOW_SLAVE_STATUS;
           }
          | SHOW RELAYLOG EVENTS { result->cur_stmt_type_ = OBPROXY_T_SHOW_RELAYLOG_EVENTS; }
+         | SHOW MASTER STATUS { result->is_binlog_related_ = true; }
+         | SHOW BINARY LOGS { result->is_binlog_related_ = true; }
+         | SHOW BINLOG EVENTS { result->is_binlog_related_ = true; }
 
 
  /* internal cmd stmt */
@@ -998,8 +1005,15 @@ opt_global_or_session: /* empty */
 
 binlog_stmt:
   BINLOG var_name { result->cur_stmt_type_ = OBPROXY_T_BINLOG_STR; }
-| SHOW_BINLOG_SERVER_FOR_TENANT {}
+| SHOW BINLOG SERVER FOR TENANT
+{
+    result->cur_stmt_type_ = OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT;
+    result->is_binlog_related_ = true;
+}
 | SHOW opt_global_or_session VARIABLES LIKE BINLOG_VARIABLE { result->is_binlog_related_ = true; }
+| RESET MASTER { result->is_binlog_related_ = true; }
+| PURGE BINARY LOGS { result->is_binlog_related_ = true; }
+| FLUSH BINARY LOGS { result->is_binlog_related_ = true; }
 
  /* limit param stmt*/
 opt_limit:
@@ -1295,6 +1309,13 @@ non_reserved_keyword: START
                     | EVENTS
                     | RELAYLOG
                     | BINLOG
+                    | PORT
+                    | MASTER
+                    | LOGS
+                    | RESET
+                    | FLUSH
+                    | SERVER
+                    | TENANT
 
 var_name: NAME_OB
         | non_reserved_keyword

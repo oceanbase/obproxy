@@ -41,6 +41,7 @@ namespace proxy
 const ObString ObMysqlResponseBuilder::OBPROXY_ROUTE_ADDR_NAME = "@obproxy_route_addr";
 const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_VERSION_NAME = "proxy_version()";
 const ObString ObMysqlResponseBuilder::OBPROXY_PROXY_STATUS_NAME = "proxy_status";
+const ObString ObMysqlResponseBuilder::OBPROXY_GLOBAL_PORT = "@@global.port";
 
 int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
                                           ObProxyMysqlRequest &client_request,
@@ -87,7 +88,7 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
 
 /**
  * @brief build OB_MYSQL_COM_STMT_PREPARE_EXECUTE response of XA_START request
- *  OB_MYSQL_COM_STMT_PREPARE_EXECUTE
+ *  OB_MYSQL_COM_STMT_PREPARE_EXECUTE doc:
  *  struct of OB_MYSQL_COM_STMT_PREPARE_EXECUTE RESPONSE:
  *  Prepare
  *  param_num > 0 ? ColDef * param_num
@@ -518,6 +519,48 @@ int ObMysqlResponseBuilder::build_select_proxy_status_resp(ObMIOBuffer &mio_buf,
                                                      field, field_value, status_flag))) {
     LOG_WDIAG("fail to encode kv resultset", K(seq), K(ret));
   }
+  return ret;
+}
+
+int ObMysqlResponseBuilder::build_select_global_port(ObMIOBuffer &mio_buf,
+                                                     ObProxyMysqlRequest &client_request,
+                                                     ObMysqlClientSession &client_session,
+                                                     const ObProxyProtocol protocol,
+                                                     const bool is_in_trans)
+{
+  int ret = OB_SUCCESS;
+
+  // get seq
+  uint8_t seq = static_cast<uint8_t>(client_request.get_packet_meta().pkt_seq_ + 1);
+
+  // get field
+  ObMySQLField field;
+  field.cname_ = OBPROXY_GLOBAL_PORT;
+  field.org_cname_ = OBPROXY_GLOBAL_PORT;
+  field.type_ = OB_MYSQL_TYPE_INT24;
+  field.charsetnr_ = CS_TYPE_BINARY;
+  field.flags_ = OB_MYSQL_BINARY_FLAG;
+
+  // get filed value
+  ObObj field_value;
+  field_value.set_int32(get_global_proxy_config().listen_port.get_value());
+
+  // get status flag
+  uint16_t status_flag = 0;
+  int64_t autocommit = client_session.get_session_info().get_cached_variables().get_autocommit();
+  if (0 != autocommit) {
+    status_flag |= (1 << OB_SERVER_STATUS_AUTOCOMMIT_POS);
+  }
+  if (is_in_trans) {
+    status_flag |= (1 << OB_SERVER_STATUS_IN_TRANS_POS);
+  }
+
+  // encode to mio_buf
+  if (OB_FAIL(ObProxyPacketWriter::write_kv_resultset(mio_buf, client_session, protocol,
+                                                      seq, field, field_value, status_flag))) {
+    LOG_WDIAG("fail to write kv resultset", K(ret));
+  }
+
   return ret;
 }
 

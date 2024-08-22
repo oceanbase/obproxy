@@ -147,8 +147,8 @@ int ObDriverClient::sync_connect_with_timeout()
           ret = ob_get_sys_errno();
           OBPROXY_DRIVER_CLIENT_LOG(WDIAG, "connect failed", K(ret));
         } else if (errno == EWOULDBLOCK || errno == EAGAIN) {
-          // The unix socket encounters the above socket sleep 1ms to prevent it from being called all the time.
-          // Refer to https://stackoverflow.com/questions/48222690/set-connect-timeout-on-unix-domain-socket
+          // unix socket遇到上面套接字sleep 1ms，防止一直调用，
+          // 参考 https://stackoverflow.com/questions/48222690/set-connect-timeout-on-unix-domain-socket
           usleep(1000);
           int64_t new_time = get_current_time();
           timeout -= (new_time - prev_time);

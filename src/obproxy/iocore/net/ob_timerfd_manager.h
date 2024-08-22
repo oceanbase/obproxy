@@ -49,13 +49,13 @@ inline int ObTimerFdManager::timerfd_settime(int timerfd, int flags, int64_t new
   int ret = common::OB_SUCCESS;
 
   struct itimerspec new_value;
-  new_value.it_value.tv_sec = new_value_sec; //Turn off the timer during initialization
+  new_value.it_value.tv_sec = new_value_sec; //初始化时关闭定时器
   new_value.it_value.tv_nsec = new_value_nsec;
 
   new_value.it_interval.tv_sec = 0;
   new_value.it_interval.tv_nsec = 0;
 
-  // Set the timer
+  // 设置定时器时间
   ret = ::timerfd_settime(timerfd, flags, &new_value, NULL);
   if (OB_UNLIKELY(ret < 0)) {
    ret = ob_get_sys_errno();

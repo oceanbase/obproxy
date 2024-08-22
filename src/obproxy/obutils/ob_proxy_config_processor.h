@@ -24,6 +24,8 @@
 #include "qos/ob_proxy_qos_action.h"
 #include "qos/ob_proxy_qos_condition.h"
 #include "proxy/mysql/ob_mysql_transact.h"
+#include "lib/container/ob_se_array.h"
+
 
 namespace oceanbase
 {
@@ -208,7 +210,7 @@ enum ObProxyLimitMode {
 class ObProxyLimitConfig
 {
 public:
-  ObProxyLimitConfig() : action_(NULL),
+  ObProxyLimitConfig() : in_use_(true), action_(NULL),
     cond_array_(ObModIds::OB_PROXY_QOS, OB_MALLOC_NORMAL_BLOCK_SIZE),
     limit_mode_(LIMIT_MODE_INVALID), limit_priority_(-1), limit_qps_(-1),
     limit_status_(LIMIT_STATUS_INVALID), limit_time_window_(-1),
@@ -217,7 +219,9 @@ public:
 
   int init(common::ObArenaAllocator &allocator);
 
-  void set_action(qos::ObProxyQosAction *action) { action_ = action; };
+  void set_in_use(bool in_use) { in_use_ = in_use; }
+  bool get_in_use() { return in_use_; }
+  void set_action(qos::ObProxyQosAction *action) { action_ = action; }
   qos::ObProxyQosAction *get_action() { return action_; }
 
   ObIArray<qos::ObProxyQosCond*> &get_cond_array() { return cond_array_; }
@@ -237,6 +241,7 @@ public:
   int set_limit_name(const ObString &limit_name) { return copy_param(limit_name_, limit_name); }
   const ObString &get_limit_name() const { return limit_name_; }
 
+  const ObIArray<ObString>& get_user_name_array() { return user_name_array_; }
   hash::ObHashMap<ObString, ObString>& get_limit_rule() { return limit_rule_map_; }
 
   void set_limit_mode(const ObProxyLimitMode limit_mode) { limit_mode_ = limit_mode; }
@@ -253,6 +258,7 @@ public:
 
   int assign(ObProxyLimitConfig &other);
   int parse_limit_rule(const ObString &key, const ObString &value);
+  int parse_limit_rule_for_config_string(json::Value &json_value);
   int parse_limit_action(const ObProxyLimitMode limit_mode);
   int handle_action();
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -276,11 +282,13 @@ public:
     return ret;
   }
 
+  int add_user_name(const ObString &user_name);
 private:
   int copy_param(ObString &param, const ObString &value);
   int push_limit_rule(const ObString &key, const ObString &value);
 
 private:
+  bool in_use_;
   qos::ObProxyQosAction *action_;
   common::ObSEArray<qos::ObProxyQosCond*, 4> cond_array_;
 
@@ -290,13 +298,14 @@ private:
   ObString user_name_;
   ObString limit_name_;
   ObProxyLimitMode limit_mode_;
+  common::ObSEArray<ObString, 4> user_name_array_;
   hash::ObHashMap<ObString, ObString> limit_rule_map_;
   int64_t limit_priority_;
-  int64_t limit_qps_;  // unit r/s
+  int64_t limit_qps_;  // 单位是 r/s
 
-  // this is break rule's qps and rt
-  int64_t limit_rule_qps_; // unit r/s
-  int64_t limit_rule_rt_;  // unit ms
+  // 这个是 break rule 里的 qps 和 rt
+  int64_t limit_rule_qps_; // 单位是 r/s
+  int64_t limit_rule_rt_;  // 单位是 ms
   ObProxyLimitStatus limit_status_;
   int64_t limit_time_window_;
   double limit_conn_;
@@ -316,11 +325,16 @@ public:
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
   virtual int parse_config_spec(json::Value &json_value);
+
+  int parse_from_config_string(const ObString& sql_firewall_config_json_str);
+  int parse_limit_conf_for_config_string(json::Value &json_value);
   virtual int spec_to_json(common::ObSqlString &buf) const;
   int assign(const ObProxyLimitControlConfig &other);
   int calc(proxy::ObMysqlTransact::ObTransState &trans_state, const proxy::ObClientSessionInfo &cs_info,
            common::ObIAllocator *calc_allocator, bool &is_pass, common::ObString &limit_name);
 
+  int calc_for_sql_firewall(proxy::ObMysqlTransact::ObTransState &trans_state, const proxy::ObClientSessionInfo &cs_info,
+                               ObIAllocator *calc_allocator, bool &is_pass, ObString &limit_name);
   const ObIArray<ObProxyLimitConfig*> &get_limit_config_array() const { return limit_config_array_; }
   ObIArray<ObProxyLimitConfig*> &get_limit_config_array() { return limit_config_array_; }
 

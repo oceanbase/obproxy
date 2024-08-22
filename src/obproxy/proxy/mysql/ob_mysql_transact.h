@@ -699,6 +699,7 @@ enum ObServerRespErrorType
       update_transaction_stats();
       reset_internal_buffer();
       trans_info_.request_content_length_ = MYSQL_UNDEFINED_CL; // disable tunnel client request
+      trans_info_.client_request_.reset_parse_result(); // clear SQL parse result
       send_reqeust_direct_ = false;
       is_rerouted_ = false;
       reroute_info_.reset();
@@ -732,7 +733,6 @@ enum ObServerRespErrorType
         server_info_.reset();
         pre_server_info_.reset();
         current_.reset();
-        trans_info_.reset();
         pll_info_.reset();
         // needn't reset trans_info, we will reset it when using client request and server response
         // trans_info_.reset();
@@ -790,7 +790,6 @@ enum ObServerRespErrorType
       arena_.reset();
     }
 
-    static bool is_for_update_sql(common::ObString src_sql);
     common::ObConsistencyLevel get_trans_consistency_level(ObClientSessionInfo &cs_info);
     common::ObConsistencyLevel get_read_write_consistency_level(ObClientSessionInfo &session_info);
     bool is_request_readonly_zone_support(ObClientSessionInfo &cs_info);
@@ -883,6 +882,7 @@ enum ObServerRespErrorType
   static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_target_db_not_allow(ObTransState &s);
+  static void handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type);
   static void handle_explain_route(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,

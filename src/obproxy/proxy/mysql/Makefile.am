@@ -13,7 +13,7 @@ AM_CPPFLAGS := $(AM_CPPFLAGS) -I${DEP_DIR}/include/tbsys             \
 
 LIBTOOLFLAGS=--preserve-dup-deps
 
-AM_LDFLAGS = -lpthread -lc -lm -lrt -lmysqlclient_r
+AM_LDFLAGS = -lpthread -lc -lm -lrt  -laio  -lmysqlclient_r
 
 if COVERAGE
 CXXFLAGS+=-fprofile-arcs -ftest-coverage

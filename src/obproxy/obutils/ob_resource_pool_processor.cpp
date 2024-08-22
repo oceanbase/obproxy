@@ -49,7 +49,7 @@ namespace obutils
 ObResourcePoolProcessor g_rp_processor;
 
 const static char *CHECK_VERSION_SQL = "SELECT ob_version() AS cluster_version";
-const static char *CHEK_CLUSTER_INFO_SQL    =
+const static char *CHEK_CLUSTER_INFO_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ cluster_role, cluster_status FROM oceanbase.%s LIMIT 1";
 const static char *OBPROXY_V_DATABASE_TNAME = "v$ob_cluster";
 const static char *INIT_SS_INFO_SQL = /* add rpc_port for rpc service */
@@ -59,7 +59,7 @@ const static char *INIT_SS_INFO_SQL = /* add rpc_port for rpc service */
     "ON zs.zone = ss.zone "
     "left join oceanbase.%s aas "
     "ON ss.svr_ip = aas.svr_ip AND ss.svr_port = aas.inner_port "
-     "WHERE ss.svr_port > 0 ORDER BY ss.zone LIMIT %ld;";
+    "WHERE ss.svr_port > 0 ORDER BY ss.zone LIMIT %ld;";
 const static char *INIT_SS_INFO_SQL_V4 =
     "SELECT /*READ_CONSISTENCY(WEAK)*/ parameters.value as cluster, zs.zone AS zone, zs.status AS zone_status, ss.status AS server_status, "
     "zs.region AS region, zs.idc AS spare4, zs.type AS spare5, ss.svr_ip AS svr_ip, ss.sql_port AS svr_port, ss.svr_port AS rpc_port, "
@@ -68,8 +68,8 @@ const static char *INIT_SS_INFO_SQL_V4 =
     "ON zs.zone = ss.zone join V$OB_PARAMETERS parameters "
     "WHERE ss.svr_port > 0 and parameters.name = 'cluster' ORDER BY ss.zone LIMIT %ld;";
 
-const static char *PRIMARY_ROLE             = "PRIMARY";
-const static char *ROLE_VALID               = "VALID";
+const static char *PRIMARY_ROLE = "PRIMARY";
+const static char *ROLE_VALID = "VALID";
 
 //-------ObClusterInfoKey------
 DEF_TO_STRING(ObClusterInfoKey)
@@ -200,7 +200,7 @@ int ObRslistFetchCont::init_task()
   }
 
   if (!fetch_result_) {
-    // If rstlist is started, do not modify the rslist_hash value
+    // 如果是 rstlist 启动, 不修改 rslist_hash 值
     bool need_save_rslist_hash = get_global_proxy_config().with_config_server_;
     if (OB_FAIL(cs_processor.swap_origin_web_rslist_and_build_sys(cr_->get_cluster_name(), cr_->get_cluster_id(), need_save_rslist_hash))) {
       COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
@@ -619,7 +619,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
     char ip_str[MAX_IP_ADDR_LENGTH];
     int64_t port = 0;
     int64_t rpc_port = 0;
-    int64_t tmp_real_str_len = 0;
+    int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
     int64_t start_service_time = 0;
     int64_t stop_time = 0;
     ObString cluster_name;
@@ -772,6 +772,7 @@ int ObServerStateInfoInitCont::finish_task(void *data)
             LOG_WDIAG("fail to add addr", K(ip_str), K(port), K(ret));
             //if svr_ip or svr_port in __all_virtual_proxy_server_stat is wrong,
             //we can skip over this server_state.
+            //See bug:
             ret = OB_SUCCESS;
             continue;
           } else if (OB_FAIL(server_state.add_rpc_addr(ip_str, rpc_port))) {
@@ -1685,13 +1686,13 @@ int ObClusterResourceCreateCont::build()
       ObConfigServerProcessor &cs_processor = get_global_config_server_processor();
       if (OB_FAIL(cs_processor.get_master_cluster_id(cluster_name_, cluster_id))
           || OB_DEFAULT_CLUSTER_ID == cluster_id) {
-        // mayby no master on config server, here try a cluster rs list by random
+        // config server可能会出现无主的情况，这里随机返回一个cluster rs list去尝试
         const bool is_rslist = false;
         ObSEArray<ObAddr, 5> rs_list;
         ObSEArray<ObAddr, 5> rpc_rs_list;
         if (OB_FAIL(cs_processor.get_next_master_cluster_rslist(cluster_name_, rs_list, rpc_rs_list))) {
           LOG_WDIAG("fail to get next master cluster rslist", K_(cluster_name));
-        } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list, rpc_rs_list, is_rslist))) {
+        } else if (OB_FAIL(ObRouteUtils::build_and_add_sys_dummy_entry(cluster_name_, cluster_id_, rs_list,  rpc_rs_list, is_rslist))) {
           LOG_WDIAG("fail to build and add dummy entry", K_(cluster_name), K_(cluster_id), K(rs_list), K(ret));
         }
       }
@@ -2140,12 +2141,11 @@ int ObClusterResource::remove_single_leader_info(const ObString &tenant_name)
 {
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard lock(single_leader_info_lock_);
-  ObTenantSingleLeaderInfo *v = single_leader_info_map_.remove(tenant_name);
-  if (OB_ISNULL(v)) {
+  ObTenantSingleLeaderInfo *info = single_leader_info_map_.remove(tenant_name);
+  if (OB_ISNULL(info)) {
     LOG_DEBUG("ignore single leader", K(tenant_name));
   } else {
-    op_free(v);
-    v = NULL;
+    DEC_SHARED_REF(info);
     LOG_DEBUG("succ to remove single leader", K(tenant_name));
   }
 
@@ -2160,37 +2160,36 @@ void ObClusterResource::destory_single_leader_info_map()
   for (;it != single_leader_info_map_.end();) {
     tmp_it = it;
     ++it;
-    op_free(&(*tmp_it));
+    ObTenantSingleLeaderInfo *info = &(*tmp_it);
+    DEC_SHARED_REF(info);
   }
   single_leader_info_map_.reset();
 }
 
-int ObClusterResource::update_single_leader_info(const common::ObString &tenant_name,
-                                                 const net::ObIpEndpoint &leader_addr)
+int ObClusterResource::update_single_leader_info(
+  const common::ObString &tenant_name,
+  const net::ObIpEndpoint &leader_addr,
+  const common::ObIArray<ObSingleLeadersFollower> &followers)
 {
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard lock(single_leader_info_lock_);
-  ObTenantSingleLeaderInfo *tmp = NULL;
-  if (OB_FAIL(single_leader_info_map_.get_refactored(tenant_name, tmp))) {
-    if (OB_HASH_NOT_EXIST == ret) {
-      ret = OB_SUCCESS;
-      ObTenantSingleLeaderInfo *tsl = op_alloc(ObTenantSingleLeaderInfo);
-      if (OB_ISNULL(tsl)) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WDIAG("fail to alloc ObTenantSingleLeaderInfo", K(ret));
-      } else {
-        tsl->set_tenant_name(tenant_name);
-        tsl->set_leader_addr(leader_addr);
-        if (OB_FAIL(single_leader_info_map_.unique_set(tsl))) {
-          LOG_WDIAG("fail to unique_set", K(*tsl), K(ret));
-          op_free(tsl);
-        }
-      }
-    } else {
-      LOG_WDIAG("fail to get_refactored", K(tenant_name), K(ret));
-    }
+  ObTenantSingleLeaderInfo *info = single_leader_info_map_.remove(tenant_name);
+  DEC_SHARED_REF(info);
+
+  if (OB_FAIL(ObTenantSingleLeaderInfo::alloc(info))) {
+    LOG_WDIAG("fail to alloc memory", K(ret));
   } else {
-    tmp->set_leader_addr(leader_addr);
+    info->set_tenant_name(tenant_name);
+    info->set_leader_addr(leader_addr);
+    if (OB_FAIL(info->set_followers(followers))) {
+      LOG_WDIAG("fail to assign followers", K(ret), K(followers));
+    } else if (OB_FAIL(single_leader_info_map_.unique_set(info))) {
+      LOG_WDIAG("fail to unique_set", K(ret), K(*info));
+    }
+
+    if (OB_FAIL(ret)) {
+      DEC_SHARED_REF(info);
+    }
   }
 
   if (OB_SUCC(ret)) {
@@ -2214,21 +2213,21 @@ bool ObClusterResource::tenant_has_single_leader(const common::ObString &tenant_
   return bret;
 }
 
-int ObClusterResource::get_single_leader_info(const common::ObString &tenant_name,
-                                              net::ObIpEndpoint &addr)
+int ObClusterResource::get_single_leader_info(
+  const common::ObString &tenant_name,
+  ObTenantSingleLeaderInfo *&info)
 {
   int ret = OB_SUCCESS;
-  ObTenantSingleLeaderInfo *v = NULL;
+  ObTenantSingleLeaderInfo *value = NULL;
   DRWLock::RDLockGuard lock(single_leader_info_lock_);
-  if (OB_FAIL(single_leader_info_map_.get_refactored(tenant_name, v))) {
+  if (OB_FAIL(single_leader_info_map_.get_refactored(tenant_name, value))) {
     if (OB_HASH_NOT_EXIST == ret) {
       LOG_DEBUG("key not exist", K(tenant_name), K(ret));
     } else {
       LOG_WDIAG("fail to get_refactored", K(tenant_name), K(ret));
     }
-
   } else {
-    addr = v->leader_addr_;
+    INC_SHARED_REF(info, value);
   }
   return ret;
 }

@@ -213,6 +213,9 @@ public:
   DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_client_ip_checkout, "true", "if enabled, proxy send client ip when login", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+#ifdef BUILD_OPENSOURCE
+  DEF_BOOL(enable_force_request_follower, "false", "force request follower ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS);
+#endif
 
   //connection related
   DEF_INT(connect_observer_max_retries, "3", "[2,5]", "max retries to do connect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -388,6 +391,8 @@ public:
   DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(route_target_replica_type, "Full;Readonly", "proxy will choose target replica type for route, and case-insensitivity. Format: Full;Readonly;ColumnStore", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(weakread_weight_zone, "", "proxy will choose zones to route for weak read, based on weight value(limit to 0~100 int number) to distribute traffic. Format 'zone_1:10;zone_2:20;zone_3:30'", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
@@ -412,6 +417,9 @@ public:
   DEF_TIME(qos_stat_item_max_idle_period, "30m", "[1m, 1d]", "qos stat item in memory idle period. it will remove if timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(qos_stat_item_limit, "3000", "[0,10000]", "obproxy qos stat item", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
+  // sql firewall
+  DEF_STR(sql_firewall_config, "", "a json string for sql firewall rule, refer to the corresponding feature documentation for usage", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+
   // standby
   DEF_BOOL(enable_standby, "true", "enable standby or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
@@ -434,7 +442,7 @@ public:
   DEF_BOOL(enable_mysql_proxy_pool, "true", "if enabled, will long conn for  sequence ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // sidecar
-  DEF_BOOL(enable_sharding, "false", "if enabled means use beyond trust", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_sharding, "false", "if enabled means use logic db", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(sidecar_node_id, "", "node id for dbmesh", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(dataplane_host, "", "dataplane address or hostname", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(use_local_dbconfig, "false", "if enabled, start dbmesh with local dbconfig", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

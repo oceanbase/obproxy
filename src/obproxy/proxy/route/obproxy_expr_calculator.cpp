@@ -28,8 +28,8 @@
 #include "proxy/route/ob_server_route.h"
 #include "lib/hash/ob_hashset.h"
 #include "obkv/table/ob_table_rpc_request.h"
-#include "proxy/rpc_optimize/ob_rpc_req.h"
-#include "proxy/rpc_optimize/rpclib/ob_table_query_async_entry.h"
+#include "proxy/rpc/ob_rpc_req.h"
+#include "proxy/rpc/rpclib/ob_table_query_async_entry.h"
 #include "proxy/route/ob_route_diagnosis.h"
 
 
@@ -52,6 +52,7 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
                                                   ObProxyPartInfo &part_info,
                                                   int64_t &partition_id)
 {
+  //TODO : part id 计算逻辑优化
   int ret = OB_SUCCESS;
   ObString part_name = parse_result.get_part_name();
   bool old_is_oracle_mode = lib::is_oracle_mode();
@@ -145,7 +146,8 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
                   PARTITION_ID_CALC_DONE,
                   partition_id_calc,
                   ret,
-                  req_sql.case_compare(client_request.get_sql()) == 0 ? ObString() : req_sql,
+                  req_sql.length() != client_request.get_sql().length() ? req_sql
+                    : (req_sql.case_compare(client_request.get_sql()) == 0 ? ObString() : req_sql),
                   parse_result.get_part_name(),
                   part_idx,
                   sub_part_idx,
@@ -665,7 +667,7 @@ int ObExprCalcTool::build_dtc_params_with_tz_info(ObClientSessionInfo *session_i
 {
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(session_info)) {
-    if (OB_FAIL(build_tz_info(session_info, obj_type, tz_info))) {
+    if (OB_FAIL(build_tz_info(session_info, obj_type, tz_info, &dtc_params))) {
       LOG_WDIAG("fail to build tz info", K(ret));
     } else if (OB_FAIL(build_dtc_params(session_info, obj_type, dtc_params))) {
       LOG_WDIAG("fail to build dtc params", K(ret));
@@ -686,11 +688,15 @@ int ObExprCalcTool::build_dtc_params_with_tz_info(ObClientSessionInfo *session_i
  */
 int ObExprCalcTool::build_tz_info(ObClientSessionInfo *session_info,
                                   ObObjType obj_type,
-                                  ObTimeZoneInfo &tz_info)
+                                  ObTimeZoneInfo &tz_info,
+                                  const ObDataTypeCastParams *dtc_params)
 {
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(session_info)) {
-    if (ObTimestampLTZType == obj_type || ObTimestampTZType == obj_type) {
+    if (ObTimestampLTZType == obj_type || ObTimestampTZType == obj_type
+        || (NULL != dtc_params
+            && share::schema::ObPartitionFuncType::PARTITION_FUNC_TYPE_RANGE_COLUMNS == dtc_params->part_func_type_
+            && ObTimestampType == obj_type)) {
       if (OB_FAIL(build_tz_info_for_all_type(session_info, tz_info))) {
         LOG_WDIAG("fail to build time zone info with session", K(ret));
       }
@@ -834,38 +840,78 @@ int ObProxyExprCalculator::calculate_partition_id_for_obkv(common::ObArenaAlloca
   return ret;
 }
 
-int ObRpcExprCalcTool::eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
-                                         const common::ObIArray<common::ObString> &rowkey_columns_name,
-                                         const common::ObIArray<common::ObString> &part_columns_name,
+int ObRpcExprCalcTool::eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                          ObProxyPartKeyLevel level,
-                                         common::ObIArray<int64_t> &rowkey_index)
+                                         const common::ObIArray<common::ObString> &rowkey_columns_name,
+                                         common::ObIArray<int64_t> &rowkey_index,
+                                         common::ObIArray<int64_t> &part_info_index)
 {
   int ret = OB_SUCCESS;
   // The table client sends rowkey columns in the Table Query request
   rowkey_index.reset();
+  part_info_index.reset();
+  ObProxyPartKeyInfo &part_info = proxy_part_info.get_part_key_info();
+  bool has_generated_key = proxy_part_info.has_generated_key();
+  common::ObIArray<common::ObString> *part_columns_name = NULL;
+  if (level == ObProxyPartKeyLevel::PART_KEY_LEVEL_ONE) {
+    part_columns_name = &proxy_part_info.get_part_columns();
+  } else if (level == ObProxyPartKeyLevel::PART_KEY_LEVEL_TWO) {
+    part_columns_name = &proxy_part_info.get_sub_part_columns();
+  }
 
-  if (0 == part_columns_name.count()) {
-    LOG_DEBUG("eval_rowkey_index invalid part_colunms_name", K(part_columns_name), K(ret));
+  if (0 == part_columns_name->count()) {
+    LOG_DEBUG("eval_rowkey_index invalid part_colunms_name", KPC(part_columns_name), K(ret));
   } else {
-    for (int i = 0; i < part_columns_name.count(); ++i) {
-      // remove character '`'
-      const ObString &part_col = part_columns_name.at(i);
-      ObString part_col_replace;
-      int32_t part_col_length = part_col.length();
-      const char *ptr = part_col.ptr();
-      LOG_DEBUG("get part columns", K(part_col_length), K(ptr[0]), K(ptr[part_col_length - 1])); //TODO will be delete in future
-      if (3 <= part_col_length && '`' == ptr[0] && '`' == ptr[part_col_length - 1]) {
-        part_col_length -= 2;
-        ptr += 1;
-        part_col_replace.assign_ptr(ptr, part_col_length);
-      } else {
-        part_col_replace = part_col;
-      }
 
-      if (0 != rowkey_columns_name.count()) {
+    for (int i = 0; i < part_columns_name->count(); ++i) {
+      const ObString &part_col = part_columns_name->at(i); // part key name from `part_expr`
+      ObString part_col_replace;
+      LOG_DEBUG("get part columns", K(part_col)); //TODO will be delete in future
+      // remove character '`'
+      ObRpcExprCalcTool::trim_part_key_name(part_col, part_col_replace);
+
+      int compare_ret = 0;
+      ObString part_key_name;  // part key name from `part_key_name`
+      if (has_generated_key
+          && part_info.key_num_ == 2
+          && part_columns_name->count() == 1) {
+        // ET_HKV support generated key calculation
+        // 1. partition key is the generated key of `K` and only one partition key
+        // 2. only support substring/substr/substring_index now, and column `K` must be the first param of these functions
+        int src_key_idx = -1;
+        for (int j = 0; OB_SUCC(ret) && j < part_info.key_num_; ++j) {
+          // src key of generated key
+          if (part_info.part_keys_[j].generated_col_idx_ >= 0) {
+            src_key_idx = j;
+            part_info_index.push_back(j);
+            break;
+          }
+        }
+        if (OB_UNLIKELY(src_key_idx < 0)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("can not find src key of generated key", K(ret));
+        } else if (0 != rowkey_columns_name.count()) {
+          // client transfer column name info, try to match src key of generated column
+          ObProxyParseString &src_key_parse_name = part_info.part_keys_[src_key_idx].name_;
+          ObString src_key_name = ObString(src_key_parse_name.str_len_, src_key_parse_name.str_);
+
+          // try to find src key from rowkey columns
+          // if not found, will fail to match rowkey index and part columns index below
+          for (int j = 0; j < rowkey_columns_name.count(); ++j) {
+            compare_ret = rowkey_columns_name.at(j).case_compare(src_key_name);
+            if (0 == compare_ret) {
+              rowkey_index.push_back(j);
+              break;
+            }
+          }
+        } else {
+          rowkey_index.push_back(0);
+        }
+        LOG_DEBUG("calc generated key rowkey index", K(rowkey_index), K(part_info_index));
+      } else if (0 != rowkey_columns_name.count()) {
         // 客户端传rowkey列信息
         for (int j = 0; j < rowkey_columns_name.count(); ++j) {
-          int compare_ret = rowkey_columns_name.at(j).case_compare(part_col_replace);
+          compare_ret = rowkey_columns_name.at(j).case_compare(part_col_replace);
           if (0 == compare_ret) {
             rowkey_index.push_back(j);
             break;
@@ -873,8 +919,6 @@ int ObRpcExprCalcTool::eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
         }
       } else {
         // 依赖observer返回的idx_in_rowid
-        ObString part_key_name;
-        int compare_ret;
         for (int j = 0; OB_SUCC(ret) && j < part_info.key_num_; ++j) {
           if (part_info.part_keys_[j].is_generated_) {
             ret = OB_NOT_SUPPORTED;
@@ -893,7 +937,7 @@ int ObRpcExprCalcTool::eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
   }
 
   if (OB_SUCC(ret)) {
-    if (rowkey_index.count() != part_columns_name.count()) {
+    if (rowkey_index.count() != part_columns_name->count()) {
       ret = OB_ERR_KV_ROWKEY_MISMATCH;
       LOG_WDIAG("eval_rowkey_index get err rowkey_index", K(rowkey_index), K(part_columns_name), K(rowkey_columns_name), K(ret));
     } else {
@@ -905,16 +949,21 @@ int ObRpcExprCalcTool::eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
 }
 
 // eval part key from rowkey, stored in eval_rowkey
-int ObRpcExprCalcTool::eval_rowkey_values(common::ObArenaAllocator &allocator,
+int ObRpcExprCalcTool::eval_rowkey_values(ObProxyPartInfo &proxy_part_info,
                                           const ObRowkey &rowkey,
+                                          common::ObArenaAllocator &allocator,
                                           common::ObIArray<int64_t> &rowkey_index,
-                                          ObRowkey &eval_part_rowkey)
+                                          common::ObIArray<int64_t> &part_info_index,
+                                          ObRowkey &eval_part_rowkey,
+                                          const ObTableEntityType entity_type)
 {
   int ret = OB_SUCCESS;
+  ObProxyPartKeyInfo &part_key_info = proxy_part_info.get_part_key_info();
   ObObj *eval_obj = NULL;
   const ObObj *src_obj = NULL;
   void  *obj_buf = NULL;
   int64_t index = 0;
+  int64_t part_info_idx;
 
   if (0 == rowkey_index.count()) {
     ret = OB_INVALID_ARGUMENT;
@@ -924,16 +973,47 @@ int ObRpcExprCalcTool::eval_rowkey_values(common::ObArenaAllocator &allocator,
     LOG_WDIAG("fail to alloc new obj", K(ret));
   } else {
     eval_obj = new (obj_buf) ObObj[rowkey_index.count()]();
+    if (proxy_part_info.has_generated_key()
+        && part_key_info.key_num_ == 2) {
+      ObExprResolver resolver(allocator);
+      for (int i = 0; OB_SUCC(ret) && i < rowkey_index.count(); ++i) {
+        index = rowkey_index.at(i);
+        part_info_idx = part_info_index.at(i);
 
-    for (int i = 0; OB_SUCC(ret) && i < rowkey_index.count(); ++i) {
-      index = rowkey_index.at(i);
-      if (index >= rowkey.get_obj_cnt()) {
-        ret = OB_INVALID_ARGUMENT;
-        LOG_WDIAG("part key idx in rowid greater than input rowkey obj cnt",
-          K(index), "cnt", rowkey.get_obj_cnt(), K(ret));
-      } else  {
-        src_obj = rowkey.get_obj_ptr();
-        eval_obj[i] = src_obj[index];
+        if (OB_UNLIKELY(index >= rowkey.get_obj_cnt()
+            || part_info_idx >= part_key_info.key_num_)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("invalid rowkey index and part_key_info index", K(ret), K(index), K(part_info_idx));
+        } else {
+          src_obj = rowkey.get_obj_ptr();
+          eval_obj[i] = src_obj[index];
+          // index of generated key
+          int64_t generated_col_idx = part_key_info.part_keys_[part_info_idx].generated_col_idx_;
+          if (generated_col_idx >= 0) {
+            if (generated_col_idx >= part_key_info.key_num_) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("unexpected generated col idx", K(ret), K(generated_col_idx));
+            } else if (OB_FAIL(resolver.calc_generated_key_value_for_obkv(
+                           eval_obj[i], part_key_info.part_keys_[part_info_idx], entity_type))) {
+              LOG_WDIAG("fail to calculate generated key for obkv", K(ret));
+            }
+          } else {
+            src_obj = rowkey.get_obj_ptr();
+            eval_obj[i] = src_obj[index];
+          }
+        }
+      }
+    } else {
+      for (int i = 0; OB_SUCC(ret) && i < rowkey_index.count(); ++i) {
+        index = rowkey_index.at(i);
+        if (index >= rowkey.get_obj_cnt()) {
+          ret = OB_INVALID_ARGUMENT;
+          LOG_WDIAG("part key idx in rowid greater than input rowkey obj cnt",
+                    K(index), "cnt", rowkey.get_obj_cnt(), K(ret));
+        } else {
+          src_obj = rowkey.get_obj_ptr();
+          eval_obj[i] = src_obj[index];
+        }
       }
     }
   }
@@ -1069,6 +1149,20 @@ int ObRpcExprCalcTool::do_partition_id_calc_for_obkv(opsql::ObExprResolverResult
   }
 
   return ret;
+}
+
+void ObRpcExprCalcTool::trim_part_key_name(const ObString &part_key_name, ObString &trim_name)
+{
+  trim_name = ObString();
+  int32_t len = part_key_name.length();
+  const char *ptr = part_key_name.ptr();
+  if (3 <= len && '`' == ptr[0] && '`' == ptr[len - 1]) {
+    len -= 2;
+    ptr += 1;
+    trim_name.assign_ptr(ptr, len);
+  } else {
+    trim_name = part_key_name;
+  }
 }
 
 bool ObExprCalcTool::is_contains_null_params(ObSEArray<ObObj, 4> &param_result)

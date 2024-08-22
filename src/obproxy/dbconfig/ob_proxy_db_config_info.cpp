@@ -20,7 +20,7 @@
 #include "dbconfig/ob_proxy_db_config_processor.h"
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_proxy_blowfish.h"
-#if HAVA_BEYONDTRUST
+#if HAVE_BEYONDTRUST
 #include "obutils/ob_beyond_trust_processor.h"
 #endif
 #include "lib/hash/ob_hashset.h"
@@ -2616,6 +2616,7 @@ int ObDbConfigLogicDb::get_shard_connector(const ObString &shard_name, ObShardCo
     if (NULL != shard_conn && shard_conn->is_avail()) {
       shard_conn->inc_ref();
     } else {
+      shard_conn = NULL;
       ret = OB_ENTRY_NOT_EXIST;
       LOG_INFO("shard connector is not avail", KPC(shard_conn));
     }
@@ -4247,7 +4248,7 @@ int ObDbConfigLogicDb::init_connector_password_for_bt()
 {
   int ret = OB_SUCCESS;
   if (need_update_bt_) {
-#if HAVA_BEYONDTRUST
+#if HAVE_BEYONDTRUST
     ObBeyondTrustProcessor &bt_processor = get_global_beyond_trust_processor();
     ObDbConfigChildArrayInfo<ObShardConnector>::CCRHashMap &map = static_cast<ObDbConfigChildArrayInfo<ObShardConnector>::CCRHashMap &>(sc_array_.ccr_map_);
     char pwd_buf[OB_MAX_PASSWORD_LENGTH];

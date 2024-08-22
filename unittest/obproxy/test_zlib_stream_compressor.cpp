@@ -60,7 +60,7 @@ TEST_F(TestZlibStreamCompressor, test_simple)
 
   ret = compressor1.add_compress_data(text, text_len, is_last_data);
   ASSERT_EQ(OB_SUCCESS, ret);
-  char buf[len] = "\0";
+  char *buf = new char[len];
   int64_t filled_len = -1;
   ret = compressor1.compress(buf, len, filled_len);
   ASSERT_EQ(OB_SUCCESS, ret);
@@ -70,12 +70,17 @@ TEST_F(TestZlibStreamCompressor, test_simple)
   ObZlibStreamCompressor compressor2;
   ret = compressor2.add_decompress_data(buf, filled_len);
   ASSERT_EQ(OB_SUCCESS, ret);
-  char buf2[len] = "\0";
+  char *buf2 = new char[len];
   int64_t filled_len2 = -1;
   ret = compressor2.decompress(buf2, len, filled_len2);
   ASSERT_TRUE(len > filled_len2);
   buf2[filled_len2] = '\0';
   ASSERT_STREQ(buf2, text);
+
+  delete []buf;
+  buf = NULL;
+  delete []buf2;
+  buf2 = NULL;
 };
 
 TEST_F(TestZlibStreamCompressor, test_compress_and_decomress_stream)
@@ -86,7 +91,7 @@ TEST_F(TestZlibStreamCompressor, test_compress_and_decomress_stream)
   int64_t len = text_len * 2;
 
   int64_t total_filled_len = 0;
-  char buf[len] = "\0";
+  char *buf = new char[len];
   // 1. stream compress
   ObZlibStreamCompressor compressor1;
   for (int64_t i = 0; i < text_len; ++i) {
@@ -111,7 +116,7 @@ TEST_F(TestZlibStreamCompressor, test_compress_and_decomress_stream)
 
   // 2.stream decompress
   int64_t len2 = len;
-  char buf2[len2] = "\0";
+  char *buf2 = new char[len2];
   total_filled_len = 0;
   ObZlibStreamCompressor compressor2;
   for (int64_t i = 0; i < compressed_len; ++i) {
@@ -134,6 +139,11 @@ TEST_F(TestZlibStreamCompressor, test_compress_and_decomress_stream)
   LOG_INFO("decompress complete", "origin len", total_filled_len);
   buf2[total_filled_len] = '\0';
   ASSERT_STREQ(buf2, text);
+
+  delete []buf;
+  buf = NULL;
+  delete []buf2;
+  buf2 = NULL;
 }
 
 TEST_F(TestZlibStreamCompressor, test_compress_and_decomress_stream2)

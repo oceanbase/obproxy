@@ -50,7 +50,7 @@ bool read_min_max_addr(int64_t &min_addr, int64_t &max_addr)
                    "%lx-%lx %4s %lx %lx:%lx %ld %255s",
                    &start, &end, perms,
                    &offset, &major, &minor, &inode, path);
-    _OB_LOG(DEBUG, "get line, line=%s", line);
+    LOG_DEBUG("get line", K(line));
     if (n < 8) {
       continue;
     }
@@ -71,9 +71,11 @@ bool read_min_max_addr(int64_t &min_addr, int64_t &max_addr)
         }
         if (start < min_addr) {
           min_addr = start;
+          LOG_INFO("get min_addr", K(start), K(end), K(perms), K(offset), K(major), K(minor), K(inode), K(path));
         }
         if (end > max_addr) {
           max_addr = end;
+          LOG_INFO("get max_addr", K(start), K(end), K(perms), K(offset), K(major), K(minor), K(inode), K(path));
         }
       }
       break;

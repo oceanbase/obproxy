@@ -425,7 +425,7 @@ int ObProxyAuthParser::parse_handshake_response(ObMysqlAuthRequest &request,
       if (OB_FAIL(hsr.decode())) {
         LOG_WDIAG("fail to decode hand shake response packet", K(ret));
       } else if (hsr.get_username().empty() && hsr.is_ssl_request()) {
-        // maybe is SSL Request, usename is allowed empty
+        // 可能为ssl request报文，此时username为空
       } else if (hsr.get_username().empty()) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("user name can not be empty in handshake response", K(ret));

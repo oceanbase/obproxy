@@ -102,12 +102,13 @@ public:
   bool is_full_replica() const { return common::REPLICA_TYPE_FULL == replica_type_; }
   void set_dup_replica_type(const int32_t dup_replica_type);
   bool is_dup_replica() const { return is_dup_replica_; }
-  bool is_weak_read_avail() const
+  bool is_full_or_readonly_replica() const
   {
     return common::REPLICA_TYPE_FULL == replica_type_
            || common::REPLICA_TYPE_READONLY == replica_type_;
   }
   bool is_readonly_replica() const { return common::REPLICA_TYPE_READONLY == replica_type_; }
+  bool is_columnstore_replica() const { return common::REPLICA_TYPE_COLUMNSTORE == replica_type_; }
 
   bool is_dup_replica_;
   common::ObAddr server_;

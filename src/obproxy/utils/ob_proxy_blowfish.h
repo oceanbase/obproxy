@@ -13,8 +13,8 @@
 #ifndef OBPROXY_BLOWFISH_H
 #define OBPROXY_BLOWFISH_H
 
-/* use openssl's blowfish algorithm to Encrypt/Decrypt
- * the use of interface of openssl, refer to:
+/* 使用openssl的blowfish算法来实现加解密
+ * openssl的接口使用说明可以参考
  * https://www.openssl.org/docs/man1.0.2/man3/blowfish.html
  */
 
@@ -28,19 +28,21 @@ namespace obproxy
 class ObBlowFish
 {
 public:
-  static int encode(char *in, const int64_t in_len, char *out, const int64_t out_len);
-  static int decode(const char *in, const int64_t in_len, char *out, const int64_t out_len);
+  static int encode(char *in, const int64_t in_len, char *out, const int64_t out_len, const char *secret_key = NULL);
+  static int decode(const char *in, const int64_t in_len, char *out, const int64_t out_len, const char *secret_key = NULL);
 
 private:
   static int covert_hex_to_string(const char *hex_str, const int64_t hex_len,
                                   char *str, const int64_t str_len);
   static int covert_string_to_hex(const char *str, const int64_t str_len,
                                   char *hex_str, const int64_t hex_len);
-  static int convert_large_str_to_hex(const char *str, const int64_t str_len,
-                                      char *hex_str, const int64_t hex_len, int64_t &out_len);
+  static int convert_large_str_to_hex_v1(const char *str, const int64_t str_len,
+                                         char *hex_str, const int64_t hex_len, int64_t &out_len);
+  static int convert_large_str_to_hex_v2(const char *str, const int64_t str_len,
+                                         char *hex_str, const int64_t hex_len, int64_t &hex_str_len);
   static int do_bf_ecb_encrypt(const unsigned char *in, const int64_t in_str_len,
                                unsigned char *out, const int64_t out_len,
-                               const int enc_mode);
+                               const int enc_mode, const char *secret_key = NULL);
   static void destructive_multi_add(int64_t *x, const int64_t int_num, int64_t y, int64_t z);
 
   static int get_leading_zeros(int value);

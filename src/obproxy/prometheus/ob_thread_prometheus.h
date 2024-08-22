@@ -245,11 +245,9 @@ private:
   int set_sql_monitor_info_using_hashmap(const common::ObString &tenant_name, const common::ObString &cluster_name, const SQLMonitorInfo &info, MonitorInfoHashMap &monitor_info_map);
 
 public:
-  // For monitoring information, it is stored in the form of array + hashmap,
-  // mainly because the performance of get and set operations of hashmap has a great impact.
-  // About 3% loss, use hashmap when the data is full
-  // If the CPU tenant isolation is implemented later,
-  // the tenant corresponding to a thread is fixed, and only one position in the array is used.
+  // 对于监控信息，通过数组+hashmap的方式存储，主要是因为hashmap的get和set操作性能影响较大，
+  // 约有3%的损耗，当数据填充满以后再使用hashmap
+  // 后面如果实现了CPU租户隔离，一个线程对应的tenant是固定的，只会使用到数组中一个位置
   SQLMonitorInfo monitor_info_array_[SQL_MONITOR_INFO_ARRAY_SIZE];
   int64_t monitor_info_used_;
   MonitorInfoHashMap monitor_info_hash_map_;

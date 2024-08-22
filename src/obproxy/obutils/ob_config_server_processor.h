@@ -171,9 +171,9 @@ private:
                                 common::ObIArray<common::ObAddr> &rs_list,
                                 common::ObIArray<common::ObAddr> &rpc_rs_list) const;
 
-  //1. fetch config string from config_server_url, if failed try to load config from local
-  //2. convert config string to json format
-  //3. parse config version to see if it is updated, if version is the same,
+  //1、fetch config string from config_server_url, if failed try to load config from local
+  //2、convert config string to json format
+  //3、parse config version to see if it is updated, if version is the same,
   //no need to parse anymore, else parse new config and copy it to memmber json_config_info
   int dump_json_config_to_local(char *json_info_buf, const int64_t buf_len, const int64_t data_len);
   int load_config_from_local();

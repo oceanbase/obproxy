@@ -3,7 +3,7 @@ os=7
 arch=x86_64
 repo=https://mirrors.aliyun.com/oceanbase/development-kit/el/7/x86_64/
 [deps]
-devdeps-openssl-static-1.0.1e-3.el7.x86_64.rpm
+devdeps-openssl-static-1.1.1u-22023100710.el7.x86_64.rpm
 devdeps-libcurl-static-7.29.0-3.el7.x86_64.rpm
 devdeps-mariadb-connector-c-3.1.12-3.el7.x86_64.rpm
 devdeps-prometheus-cpp-0.8.0-6.el7.x86_64.rpm

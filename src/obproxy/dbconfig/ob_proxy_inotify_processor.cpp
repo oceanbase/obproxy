@@ -296,7 +296,7 @@ int ObInotifyProcessor::handle_inotify_event(ObWatchFile &wf, struct inotify_eve
         if (OB_FAIL(add_watch(DIR_TENANT, event.name))) {
           LOG_WDIAG("fail to add watch logic tenant dir", "tenant", event.name, K(ret));
         } else {
-          // if monitor new dir create, need try to load the logic tenant
+          // 监听到新的目录创建时，需要先尝试加载一次该租户到配置
           ObString tenant_name(static_cast<int64_t>(event.len), event.name);
           LOG_INFO("will load tenant config", K(tenant_name), K(ret));
           if (OB_FAIL(get_global_dbconfig_cache().load_logic_tenant_config(tenant_name))) {

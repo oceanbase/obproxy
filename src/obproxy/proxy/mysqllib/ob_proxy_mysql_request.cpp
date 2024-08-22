@@ -72,6 +72,8 @@ ObProxyMysqlRequest::ObProxyMysqlRequest()
     is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false)
 {
   sql_id_buf_[0] = '\0';
+  is_for_update_sql_.valid_ = false;
+  is_for_update_sql_.value_ = false;
 }
 
 int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int64_t buf_len)
@@ -164,6 +166,52 @@ int ObProxyMysqlRequest::fill_query_info(const int64_t cs_id)
   return ret;
 }
 
+bool ObProxyMysqlRequest::is_for_update_sql(common::ObString src_sql)
+{
+  bool bret = false;
+  const char FOR_STRING_BUF[] = "for";
+  const ObString FOR_STRING(FOR_STRING_BUF);
+  const ObString UPDATE_STRING("update");
+  //' for update'
+  if (src_sql.length() > (FOR_STRING.length() + UPDATE_STRING.length() + 2)
+      && '\0' == src_sql[src_sql.length()]) {
+    char *ptr = src_sql.ptr();
+    char *last_pos  = NULL;
+    char *pos = ptr;
+    const char *end = src_sql.ptr() + src_sql.length();
+    while (!bret && NULL != (pos = strcasestr(pos, FOR_STRING_BUF))) {
+      last_pos = pos;
+      pos += 3;
+
+      if (NULL != last_pos
+          && last_pos > ptr
+          && IS_SPACE(*(last_pos-1))
+          && IS_SPACE(*(last_pos+3))) {
+        last_pos = last_pos + 3;
+        while (last_pos < end && IS_SPACE(*last_pos)) {
+          last_pos++;
+        }
+        if (0 == strncasecmp(last_pos, UPDATE_STRING.ptr(), UPDATE_STRING.length())
+            && ('\0' == last_pos[UPDATE_STRING.length()] || ';' == last_pos[UPDATE_STRING.length()])) {
+          bret = true;
+        }
+      }
+    }
+  }
+  return bret;
+}
+
+
+bool ObProxyMysqlRequest::is_for_update_sql()
+{
+  if (!is_for_update_sql_.valid_) {
+    is_for_update_sql_.valid_ = true;
+    is_for_update_sql_.value_ = ObProxyMysqlRequest::is_for_update_sql(get_sql());
+  }
+
+  return is_for_update_sql_.value_;
+}
+
 void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
 {
   if (OB_UNLIKELY(NULL != cmd_info_)) {
@@ -189,6 +237,8 @@ void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
   enable_server_kill_connection_ = false;
   allocator_.reuse();
   sql_id_buf_[0] = '\0';
+  is_for_update_sql_.valid_ = false;
+  is_for_update_sql_.value_ = false;
 }
 
 

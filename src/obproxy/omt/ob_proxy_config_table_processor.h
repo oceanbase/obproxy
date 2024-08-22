@@ -32,13 +32,14 @@
 #define OB_PROXY_CONFIG_TABLE_PROCESSOR_H_
 
 #include <sqlite/sqlite3.h>
+#include <utility>
 
 #include "lib/lock/ob_drw_lock.h"
 #include "obutils/ob_vip_tenant_cache.h"
 #include "lib/string/ob_fixed_length_string.h"
 #include "share/config/ob_config.h"
 #include "obutils/ob_proxy_string_utils.h"
-#include <utility>
+#include "obutils/ob_proxy_config_processor.h"
 
 namespace oceanbase
 {
@@ -99,6 +100,47 @@ public:
   LINK(ObProxyConfigItem, proxy_config_item_link_);
 };
 
+class ObZoneWeakReadWeight
+{
+public:
+  ObZoneWeakReadWeight(): zone_array_(), weight_array_() {}
+  ObZoneWeakReadWeight(const ObZoneWeakReadWeight& other): zone_array_(other.zone_array_), weight_array_(other.weight_array_) {}
+  ObZoneWeakReadWeight& operator=(const ObZoneWeakReadWeight& other);
+  ~ObZoneWeakReadWeight() {}
+  static int parse_weight_zone(const ObConfigItem& item, ObZoneWeakReadWeight &weight_zone);
+  bool is_valid() const { return !zone_array_.empty();}
+public:
+  common::ObSEArray<ObConfigVariableString, 8> zone_array_;
+  common::ObSEArray<int64_t, 8> weight_array_;
+};
+
+class ObTargetReplicaType
+{
+public:
+  ObTargetReplicaType(): replica_type_(0) {}
+  static int find_replica_index(const ObString &replica_str);
+  void parse_target_replica_type(const ObConfigItem& item);
+  /*
+    |---- 1 bits ---|--- 1 bits ---|--- 1 bits ---|
+    |- ColumnStore--|-- ReadOnly --|---- Full ----|
+  */
+  static const int64_t FULL_BITS_SHIFT = 0;
+  static const int64_t READONLY_BITS_SHIFT = 1;
+  static const int64_t COLUMN_STORE_BITS_SHIFT = 2;
+  static const int64_t WITH_FULL = 1ll << FULL_BITS_SHIFT;
+  static const int64_t WITH_READONLY = 1ll << READONLY_BITS_SHIFT;
+  static const int64_t WITH_COLUMN_STORE = 1ll << COLUMN_STORE_BITS_SHIFT;
+
+  bool is_exist_full_replica() const { return replica_type_ & WITH_FULL; };
+  bool is_exist_readonly_replica() const { return replica_type_ & WITH_READONLY; };
+  bool is_exist_column_store_replica() const { return replica_type_ & WITH_COLUMN_STORE; };
+  void set_full_replica() { replica_type_ = replica_type_ | WITH_FULL; };
+  void set_readonly_replica() { replica_type_ = replica_type_ | WITH_READONLY; };
+  void set_column_store_replica() { replica_type_ = replica_type_ | WITH_COLUMN_STORE; };
+public:
+  int64_t replica_type_;
+};
+
 class ObProxyMultiLevelConfig: public ObSharedRefCount
 {
 public:
@@ -106,13 +148,13 @@ public:
                              mysql_version_(), binlog_service_ip_(), init_sql_(),
                              target_db_server_(), compression_algorithm_(),
                              enable_cloud_full_username_(false),
-                             enable_client_ssl_(false),  enable_server_ssl_(false),
+                             enable_client_ssl_(false), enable_server_ssl_(false),
                              enable_read_write_split_(false), enable_transaction_split_(false),
                              enable_weak_reroute_(false), enable_single_leader_node_routing_(false),
                              read_stale_retry_interval_(0),
-                             ssl_attributes_(), observer_query_timeout_delta_(0),
-                             query_digest_time_threshold_(0), route_diagnosis_level_(0),
-                             slow_query_time_threshold_(0),
+                             ssl_attributes_(), weakread_weight_zone_(), limit_config_(), route_target_replica_type_(),
+                             observer_query_timeout_delta_(0), query_digest_time_threshold_(0),
+                             route_diagnosis_level_(0), slow_query_time_threshold_(0),
                              config_version_(0), vip_info_()
   {
     ObSharedRefCount::inc_ref();
@@ -144,6 +186,10 @@ public:
   int64_t ob_max_read_stale_time_;
   int64_t obproxy_force_parallel_query_dop_;
   SSLAttributes ssl_attributes_;
+  ObZoneWeakReadWeight weakread_weight_zone_;
+  obutils::ObProxyLimitControlConfig limit_config_;
+
+  ObTargetReplicaType route_target_replica_type_;
   // 移植ObMysqlConfigParams中的配置项
   int64_t observer_query_timeout_delta_;
   int64_t query_digest_time_threshold_;

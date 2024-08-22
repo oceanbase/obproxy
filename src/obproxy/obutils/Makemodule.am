@@ -1,3 +1,4 @@
+
 obutils_sources:=\
 obproxy/obutils/ob_proxy_config.h\
 obproxy/obutils/ob_proxy_config.cpp\
@@ -79,4 +80,7 @@ obproxy/obutils/ob_read_stale_processor.h\
 obproxy/obutils/ob_read_stale_processor.cpp\
 obproxy/obutils/ob_connection_diagnosis_trace.h\
 obproxy/obutils/ob_connection_diagnosis_trace.cpp\
+obproxy/obutils/ob_single_leader.h\
+obproxy/obutils/ob_single_leader.cpp\
+obproxy/obutils/ob_single_leaders_follower.h\
 ${ob_beyondtrust_sources}

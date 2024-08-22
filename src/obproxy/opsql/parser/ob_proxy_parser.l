@@ -168,6 +168,14 @@ do { \
   }\
 } while (0);
 
+#define SET_LAST_TRACE_ID() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->has_last_trace_id_ = true;\
+  }\
+} while (0);
+
 #define SET_HAS_EXPLAIN() \
 do { \
   ObProxyParseResult *p = yyget_extra(yyscanner);\
@@ -419,14 +427,6 @@ select_proxy_status       (select{space}+proxy_status{space}*({leftbracket}|{mul
 select_obproxy_route_addr (select{space}+@obproxy_route_addr)
 set_obproxy_route_addr    (set{space}+@obproxy_route_addr)
 
-/* binlog relate SQL */
-show_master_status (show{space}+master{space}+status)
-show_binary_logs (show{space}+binary{space}+logs)
-show_binlog_events (show{space}+binlog{space}+events)
-purge_binary_logs (purge{space}+binary{space}+logs)
-reset_master (reset{space}+master)
-show_binlog_server_for_tenant (show{space}+binlog{space}+server{space}+for{space}+tenant)
-flush_binary_logs (flush{space}+binary{space}+logs)
 
 stop_ddl_task             (stop{space}+ddl{space}+task)
 retry_ddl_task            (retry{space}+ddl{space}+task)
@@ -556,6 +556,13 @@ CONSISTENT       { RETURN_NON_RESERVED_KEYWORD(CONSISTENT); }
 SNAPSHOT         { RETURN_NON_RESERVED_KEYWORD(SNAPSHOT); }
 
 HELP             { RETURN_NON_RESERVED_KEYWORD(HELP); }
+  /* binlog relate keyword */
+MASTER           { RETURN_NON_RESERVED_KEYWORD(MASTER); }
+LOGS             { RETURN_NON_RESERVED_KEYWORD(LOGS); }
+RESET            { RETURN_NON_RESERVED_KEYWORD(RESET); }
+FLUSH            { RETURN_NON_RESERVED_KEYWORD(FLUSH); }
+SERVER           { RETURN_NON_RESERVED_KEYWORD(SERVER); }
+TENANT           { RETURN_NON_RESERVED_KEYWORD(TENANT); }
 
  /*set names*/
 {set_names}         { SET_BASIC_STMT(OBPROXY_T_SET_NAMES); return SET_NAMES; }
@@ -697,6 +704,7 @@ ROW_COUNT        { SET_ROW_COUNT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 CONNECTION_ID    { SET_CONNECTION_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 SYS_CONTEXT      { SET_SYS_CONTEXT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
+LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 {comma}|{multi_byte_comma} { return ','; }
 {int_num}        { RETURN_INT_NUM(); }
 {identifer}      { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
@@ -751,14 +759,6 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   SET_BASIC_STMT(OBPROXY_T_LOAD_DATA_INFILE);
   return LOAD_DATA_HINT_BEGIN;
 }
-
-{show_master_status} { SET_BINLOG_RELATED(); }
-{show_binary_logs} { SET_BINLOG_RELATED(); }
-{show_binlog_events} { SET_BINLOG_RELATED(); }
-{purge_binary_logs} { SET_BINLOG_RELATED(); }
-{reset_master} { SET_BINLOG_RELATED(); }
-{flush_binary_logs} { SET_BINLOG_RELATED(); }
-{show_binlog_server_for_tenant} { SET_BASIC_STMT(OBPROXY_T_SHOW_BINLOG_SERVER_FOR_TENANT); SET_BINLOG_RELATED(); return SHOW_BINLOG_SERVER_FOR_TENANT; }
 
 <set_expr>"global"                      { RETURN_NON_RESERVED_KEYWORD(GLOBAL); }
 <set_expr>"session"                     { RETURN_NON_RESERVED_KEYWORD(SESSION); }
@@ -1253,9 +1253,11 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"found_rows"                  { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }
 <in_expr>"row_count"                   { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 <in_expr>"last_insert_id"              { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
+<in_expr>"last_trace_id"               { SET_LAST_TRACE_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"global"                      { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
 <in_expr>"connection_id"               { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"sys_context"                 { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
+<in_expr>"port"                        { return PORT; }
 <in_expr>"@@global\."                  { return GLOBAL_ALIAS; }
 <in_expr>"@@session\."                 { return SESSION_ALIAS; }
 <in_expr>"@@local\."                   { return LOCAL_ALIAS; }
@@ -1290,6 +1292,7 @@ LAST_INSERT_ID   { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_no_select_query>"found_rows"       { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"row_count"        { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"last_insert_id"   { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
+<in_no_select_query>"last_trace_id"    { SET_LAST_TRACE_ID(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"connection_id"    { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>"sys_context"      { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
 <in_no_select_query>{identifer}        { RETURN_IGNORED_WORD(); }

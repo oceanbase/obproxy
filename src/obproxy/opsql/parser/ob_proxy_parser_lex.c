@@ -2505,6 +2505,7 @@ do {\
   }\
   return word_type;\
 } while (0);
+
 #define SET_HAS_ANONYMOUS_BLOCK() \
 do { \
   ObProxyParseResult *p = obproxyget_extra(yyscanner);\
@@ -2575,7 +2576,7 @@ do {\
 
 
 
-#line 2580 "ob_proxy_parser_lex.c"
+#line 2581 "ob_proxy_parser_lex.c"
 
 #define INITIAL 0
 #define hint 1
@@ -2745,7 +2746,7 @@ static int input (yyscan_t yyscanner );
 /* This used to be an fputs(), but since the string might contain NUL's,
  * we now use fwrite().
  */
-#define ECHO fwrite( yytext, yyleng, 1, yyout )
+#define ECHO do { if (fwrite( yytext, yyleng, 1, yyout )) {} } while (0)
 #endif
 
 /* Gets input and stuffs it into "buf".  number of characters read, or YY_NULL,
@@ -2756,7 +2757,7 @@ static int input (yyscan_t yyscanner );
 	if ( YY_CURRENT_BUFFER_LVALUE->yy_is_interactive ) \
 		{ \
 		int c = '*'; \
-		int n; \
+		unsigned n; \
 		for ( n = 0; n < max_size && \
 			     (c = getc( yyin )) != EOF && c != '\n'; ++n ) \
 			buf[n] = (char) c; \
@@ -2841,11 +2842,11 @@ YY_DECL
 	register int yy_act;
     struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
 
-#line 354 "ob_proxy_parser.l"
+#line 355 "ob_proxy_parser.l"
 
 
  /* basic dml stmt: */
-#line 2851 "ob_proxy_parser_lex.c"
+#line 2852 "ob_proxy_parser_lex.c"
 
     yylval = yylval_param;
 
@@ -2934,83 +2935,83 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 357 "ob_proxy_parser.l"
+#line 358 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_SELECT); PUSH_STATE(in_expr); return SELECT; }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 358 "ob_proxy_parser.l"
+#line 359 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_DELETE); PUSH_STATE_IF_NOT_ICMD(in_expr); return DELETE; }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 359 "ob_proxy_parser.l"
+#line 360 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_INSERT); return INSERT; }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 360 "ob_proxy_parser.l"
+#line 361 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_UPDATE); return UPDATE; }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 361 "ob_proxy_parser.l"
+#line 362 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_REPLACE); return REPLACE; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 362 "ob_proxy_parser.l"
+#line 363 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_MERGE); return MERGE; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 363 "ob_proxy_parser.l"
+#line 364 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW; }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 364 "ob_proxy_parser.l"
+#line 365 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(XA); }
 	YY_BREAK
 /* if begin is for starting transaction, will set has_anonymous_block = false in yacc */
 case 9:
 YY_RULE_SETUP
-#line 366 "ob_proxy_parser.l"
+#line 367 "ob_proxy_parser.l"
 { SET_HAS_ANONYMOUS_BLOCK(); RETURN_NON_RESERVED_KEYWORD(BEGI); }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 367 "ob_proxy_parser.l"
+#line 368 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(START); }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 368 "ob_proxy_parser.l"
+#line 369 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_COMMIT); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 369 "ob_proxy_parser.l"
+#line 370 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_ROLLBACK); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 370 "ob_proxy_parser.l"
+#line 371 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET); PUSH_STATE_IF_NOT_ICMD(set_expr); return SET; }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 371 "ob_proxy_parser.l"
+#line 372 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_CALL); return CALL; }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 372 "ob_proxy_parser.l"
+#line 373 "ob_proxy_parser.l"
 { SET_HAS_ANONYMOUS_BLOCK(); PUSH_STATE(in_anonymous_block); }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 373 "ob_proxy_parser.l"
+#line 374 "ob_proxy_parser.l"
 { ObProxyParseResult *p = obproxyget_extra(yyscanner);
                    if (OB_NOTNULL(p)) {
                      if (OBPROXY_T_INSERT == p->cur_stmt_type_) 
@@ -3021,308 +3022,308 @@ YY_RULE_SETUP
 /* basic ddl stmt */
 case 17:
 YY_RULE_SETUP
-#line 381 "ob_proxy_parser.l"
+#line 382 "ob_proxy_parser.l"
 { return CREATE; }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 382 "ob_proxy_parser.l"
+#line 383 "ob_proxy_parser.l"
 { return DROP; }
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 383 "ob_proxy_parser.l"
+#line 384 "ob_proxy_parser.l"
 { return ALTER; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 384 "ob_proxy_parser.l"
+#line 385 "ob_proxy_parser.l"
 { return TRUNCATE; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 385 "ob_proxy_parser.l"
+#line 386 "ob_proxy_parser.l"
 { return RENAME; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 386 "ob_proxy_parser.l"
+#line 387 "ob_proxy_parser.l"
 { return INDEX; }
 	YY_BREAK
 /* ps stmt */
 case 23:
 YY_RULE_SETUP
-#line 389 "ob_proxy_parser.l"
+#line 390 "ob_proxy_parser.l"
 { return USING; }
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 390 "ob_proxy_parser.l"
+#line 391 "ob_proxy_parser.l"
 { PUSH_STATE(prepare); return PREPARE; }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 391 "ob_proxy_parser.l"
+#line 392 "ob_proxy_parser.l"
 { return EXECUTE; }
 	YY_BREAK
 /* oracle ddl stmt */
 case 26:
 YY_RULE_SETUP
-#line 394 "ob_proxy_parser.l"
+#line 395 "ob_proxy_parser.l"
 { return GRANT; }
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 395 "ob_proxy_parser.l"
+#line 396 "ob_proxy_parser.l"
 { return REVOKE; }
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 396 "ob_proxy_parser.l"
+#line 397 "ob_proxy_parser.l"
 { return ANALYZE; }
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 397 "ob_proxy_parser.l"
+#line 398 "ob_proxy_parser.l"
 { return PURGE; }
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 398 "ob_proxy_parser.l"
+#line 399 "ob_proxy_parser.l"
 { return COMMENT; }
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 399 "ob_proxy_parser.l"
+#line 400 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(FLASHBACK); }
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 400 "ob_proxy_parser.l"
+#line 401 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(AUDIT); }
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 401 "ob_proxy_parser.l"
+#line 402 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NOAUDIT); }
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 403 "ob_proxy_parser.l"
+#line 404 "ob_proxy_parser.l"
 { return GROUP;}
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 404 "ob_proxy_parser.l"
+#line 405 "ob_proxy_parser.l"
 { return HAVING;}
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 405 "ob_proxy_parser.l"
+#line 406 "ob_proxy_parser.l"
 { return ORDER;}
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 406 "ob_proxy_parser.l"
+#line 407 "ob_proxy_parser.l"
 { return FOR;}
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 407 "ob_proxy_parser.l"
+#line 408 "ob_proxy_parser.l"
 { return UNION;}
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 408 "ob_proxy_parser.l"
+#line 409 "ob_proxy_parser.l"
 { return AS; }
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 409 "ob_proxy_parser.l"
+#line 410 "ob_proxy_parser.l"
 { return WHERE; }
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 410 "ob_proxy_parser.l"
+#line 411 "ob_proxy_parser.l"
 { return VALUES; }
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 411 "ob_proxy_parser.l"
+#line 412 "ob_proxy_parser.l"
 { SET_HAS_EXPLAIN(); return EXPLAIN; }
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 412 "ob_proxy_parser.l"
+#line 413 "ob_proxy_parser.l"
 { SET_HAS_EXPLAIN(); return DESC; }
 	YY_BREAK
 case 44:
 YY_RULE_SETUP
-#line 413 "ob_proxy_parser.l"
+#line 414 "ob_proxy_parser.l"
 { SET_HAS_EXPLAIN(); return DESCRIBE; }
 	YY_BREAK
 /*change from non_reserved to reserved according https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
 case 45:
 YY_RULE_SETUP
-#line 415 "ob_proxy_parser.l"
+#line 416 "ob_proxy_parser.l"
 { return READ; }
 	YY_BREAK
 case 46:
 YY_RULE_SETUP
-#line 416 "ob_proxy_parser.l"
+#line 417 "ob_proxy_parser.l"
 { return WITH; }
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 417 "ob_proxy_parser.l"
+#line 418 "ob_proxy_parser.l"
 { return USE; }
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 418 "ob_proxy_parser.l"
+#line 419 "ob_proxy_parser.l"
 { return LIMIT; }
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 419 "ob_proxy_parser.l"
+#line 420 "ob_proxy_parser.l"
 { return ALL; }
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 420 "ob_proxy_parser.l"
+#line 421 "ob_proxy_parser.l"
 { return LIKE; }
 	YY_BREAK
 case 51:
 YY_RULE_SETUP
-#line 421 "ob_proxy_parser.l"
+#line 422 "ob_proxy_parser.l"
 { return PARTITION; }
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 422 "ob_proxy_parser.l"
+#line 423 "ob_proxy_parser.l"
 { return BINARY; }
 	YY_BREAK
 case 53:
 YY_RULE_SETUP
-#line 423 "ob_proxy_parser.l"
+#line 424 "ob_proxy_parser.l"
 { return GROUP_NAME; }
 	YY_BREAK
 /* to make bison easy, do not return these reserved keyword in non strict mode */
 case 54:
 YY_RULE_SETUP
-#line 426 "ob_proxy_parser.l"
+#line 427 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 55:
 YY_RULE_SETUP
-#line 427 "ob_proxy_parser.l"
+#line 428 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 56:
 YY_RULE_SETUP
-#line 428 "ob_proxy_parser.l"
+#line 429 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 429 "ob_proxy_parser.l"
+#line 430 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 58:
 YY_RULE_SETUP
-#line 430 "ob_proxy_parser.l"
+#line 431 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 /* no reserved keyword , don't forget to add these keyword in .y */
-/*refer: https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
+/*refer：https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
 case 59:
 YY_RULE_SETUP
-#line 434 "ob_proxy_parser.l"
+#line 435 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(QUICK); }
 	YY_BREAK
 case 60:
 YY_RULE_SETUP
-#line 435 "ob_proxy_parser.l"
+#line 436 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(COUNT); }
 	YY_BREAK
 case 61:
 YY_RULE_SETUP
-#line 436 "ob_proxy_parser.l"
+#line 437 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(WARNINGS); }
 	YY_BREAK
 case 62:
 YY_RULE_SETUP
-#line 437 "ob_proxy_parser.l"
+#line 438 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(ERRORS); }
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 438 "ob_proxy_parser.l"
+#line 439 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(TRACE); }
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 439 "ob_proxy_parser.l"
+#line 440 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(TRANSACTION); }
 	YY_BREAK
 case 65:
 YY_RULE_SETUP
-#line 441 "ob_proxy_parser.l"
+#line 442 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(ONLY); }
 	YY_BREAK
 case 66:
 YY_RULE_SETUP
-#line 443 "ob_proxy_parser.l"
+#line 444 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(CONSISTENT); }
 	YY_BREAK
 case 67:
 YY_RULE_SETUP
-#line 444 "ob_proxy_parser.l"
+#line 445 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(SNAPSHOT); }
 	YY_BREAK
 case 68:
 YY_RULE_SETUP
-#line 446 "ob_proxy_parser.l"
+#line 447 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(HELP); }
 	YY_BREAK
 /*set names*/
 case 69:
 /* rule 69 can match eol */
 YY_RULE_SETUP
-#line 450 "ob_proxy_parser.l"
+#line 451 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_NAMES); return SET_NAMES; }
 	YY_BREAK
 /*set charset*/
 case 70:
 /* rule 70 can match eol */
 YY_RULE_SETUP
-#line 452 "ob_proxy_parser.l"
+#line 453 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_CHARSET); return SET_CHARSET; }
 	YY_BREAK
 /*set passwd*/
 case 71:
 /* rule 71 can match eol */
 YY_RULE_SETUP
-#line 454 "ob_proxy_parser.l"
+#line 455 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_PASSWORD); return SET_PASSWORD; }
 	YY_BREAK
 /*set default*/
 case 72:
 /* rule 72 can match eol */
 YY_RULE_SETUP
-#line 456 "ob_proxy_parser.l"
+#line 457 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_DEFAULT); return SET_DEFAULT; }
 	YY_BREAK
 case 73:
 /* rule 73 can match eol */
 YY_RULE_SETUP
-#line 458 "ob_proxy_parser.l"
+#line 459 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_OB_READ_CONSISTENCY); return SET_OB_READ_CONSISTENCY; }
 	YY_BREAK
 case 74:
 /* rule 74 can match eol */
 YY_RULE_SETUP
-#line 459 "ob_proxy_parser.l"
+#line 460 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SET_TX_READ_ONLY); return SET_TX_READ_ONLY; }
 	YY_BREAK
 /*internal cmd*/
@@ -3330,379 +3331,379 @@ YY_RULE_SETUP
 case 75:
 /* rule 75 can match eol */
 YY_RULE_SETUP
-#line 463 "ob_proxy_parser.l"
+#line 464 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_NET); return SHOW_PROXYNET; }
 	YY_BREAK
 case 76:
 YY_RULE_SETUP
-#line 464 "ob_proxy_parser.l"
+#line 465 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(THREAD); }
 	YY_BREAK
 case 77:
 YY_RULE_SETUP
-#line 465 "ob_proxy_parser.l"
+#line 466 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(CONNECTION); }
 	YY_BREAK
 case 78:
 YY_RULE_SETUP
-#line 467 "ob_proxy_parser.l"
+#line 468 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(OFFSET); }
 	YY_BREAK
 /*show session*/
 case 79:
 /* rule 79 can match eol */
 YY_RULE_SETUP
-#line 470 "ob_proxy_parser.l"
+#line 471 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_GLOBAL_SESSION); return SHOW_GLOBALSESSION; }
 	YY_BREAK
 case 80:
 /* rule 80 can match eol */
 YY_RULE_SETUP
-#line 471 "ob_proxy_parser.l"
+#line 472 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_SESSION); return SHOW_PROXYSESSION; }
 	YY_BREAK
 case 81:
 /* rule 81 can match eol */
 YY_RULE_SETUP
-#line 472 "ob_proxy_parser.l"
+#line 473 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_PROCESSLIST); return SHOW_PROCESSLIST; }
 	YY_BREAK
 case 82:
 YY_RULE_SETUP
-#line 473 "ob_proxy_parser.l"
+#line 474 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(ATTRIBUTE); }
 	YY_BREAK
 case 83:
 YY_RULE_SETUP
-#line 474 "ob_proxy_parser.l"
+#line 475 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(VARIABLES); }
 	YY_BREAK
 case 84:
 YY_RULE_SETUP
-#line 476 "ob_proxy_parser.l"
+#line 477 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(STAT); }
 	YY_BREAK
 /*show config*/
 case 85:
 /* rule 85 can match eol */
 YY_RULE_SETUP
-#line 479 "ob_proxy_parser.l"
+#line 480 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CONFIG); return SHOW_PROXYCONFIG; }
 	YY_BREAK
 case 86:
 YY_RULE_SETUP
-#line 481 "ob_proxy_parser.l"
+#line 482 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(DIFF); }
 	YY_BREAK
 case 87:
 YY_RULE_SETUP
-#line 482 "ob_proxy_parser.l"
+#line 483 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(USER); }
 	YY_BREAK
 /*show sm*/
 case 88:
 /* rule 88 can match eol */
 YY_RULE_SETUP
-#line 485 "ob_proxy_parser.l"
+#line 486 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_SM); return SHOW_PROXYSM; }
 	YY_BREAK
 /*show cluster*/
 case 89:
 /* rule 89 can match eol */
 YY_RULE_SETUP
-#line 488 "ob_proxy_parser.l"
+#line 489 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CLUSTER); return SHOW_PROXYCLUSTER; }
 	YY_BREAK
 /*show resource*/
 case 90:
 /* rule 90 can match eol */
 YY_RULE_SETUP
-#line 491 "ob_proxy_parser.l"
+#line 492 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_RESOURCE); return SHOW_PROXYRESOURCE; }
 	YY_BREAK
 /*show congestion*/
 case 91:
 /* rule 91 can match eol */
 YY_RULE_SETUP
-#line 494 "ob_proxy_parser.l"
+#line 495 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CONGESTION); return SHOW_PROXYCONGESTION; }
 	YY_BREAK
 /*show route*/
 case 92:
 /* rule 92 can match eol */
 YY_RULE_SETUP
-#line 497 "ob_proxy_parser.l"
+#line 498 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_ROUTE); return SHOW_PROXYROUTE; }
 	YY_BREAK
 case 93:
 YY_RULE_SETUP
-#line 499 "ob_proxy_parser.l"
+#line 500 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(ROUTINE); }
 	YY_BREAK
 /*show vip*/
 case 94:
 /* rule 94 can match eol */
 YY_RULE_SETUP
-#line 502 "ob_proxy_parser.l"
+#line 503 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_VIP); return SHOW_PROXYVIP; }
 	YY_BREAK
 /*show memory*/
 case 95:
 /* rule 95 can match eol */
 YY_RULE_SETUP
-#line 505 "ob_proxy_parser.l"
+#line 506 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_MEMORY); return SHOW_PROXYMEMORY; }
 	YY_BREAK
 case 96:
 YY_RULE_SETUP
-#line 506 "ob_proxy_parser.l"
+#line 507 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(OBJPOOL); }
 	YY_BREAK
 /*show sqlaudit*/
 case 97:
 /* rule 97 can match eol */
 YY_RULE_SETUP
-#line 509 "ob_proxy_parser.l"
+#line 510 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_SQLAUDIT); return SHOW_SQLAUDIT; }
 	YY_BREAK
 /*show warnlog*/
 case 98:
 /* rule 98 can match eol */
 YY_RULE_SETUP
-#line 512 "ob_proxy_parser.l"
+#line 513 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_WARNLOG); return SHOW_WARNLOG; }
 	YY_BREAK
 /*show stat*/
 case 99:
 /* rule 99 can match eol */
 YY_RULE_SETUP
-#line 515 "ob_proxy_parser.l"
+#line 516 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_STAT); return SHOW_PROXYSTAT; }
 	YY_BREAK
 case 100:
 YY_RULE_SETUP
-#line 516 "ob_proxy_parser.l"
+#line 517 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(REFRESH); }
 	YY_BREAK
 /*show trace*/
 case 101:
 /* rule 101 can match eol */
 YY_RULE_SETUP
-#line 519 "ob_proxy_parser.l"
+#line 520 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_TRACE); return SHOW_PROXYTRACE; }
 	YY_BREAK
 /*show info*/
 case 102:
 /* rule 102 can match eol */
 YY_RULE_SETUP
-#line 522 "ob_proxy_parser.l"
+#line 523 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_INFO); return SHOW_PROXYINFO; }
 	YY_BREAK
 case 103:
 YY_RULE_SETUP
-#line 523 "ob_proxy_parser.l"
+#line 524 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(UPGRADE); }
 	YY_BREAK
 case 104:
 YY_RULE_SETUP
-#line 524 "ob_proxy_parser.l"
+#line 525 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(IDC); }
 	YY_BREAK
 case 105:
 /* rule 105 can match eol */
 YY_RULE_SETUP
-#line 526 "ob_proxy_parser.l"
+#line 527 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); PUSH_STATE(show_topology); return SHOW_TOPOLOGY; }
 	YY_BREAK
 case 106:
 YY_RULE_SETUP
-#line 527 "ob_proxy_parser.l"
+#line 528 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
 	YY_BREAK
 case 107:
 YY_RULE_SETUP
-#line 528 "ob_proxy_parser.l"
+#line 529 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return WHERE; }
 	YY_BREAK
 case YY_STATE_EOF(show_topology):
-#line 529 "ob_proxy_parser.l"
+#line 530 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 108:
 /* rule 108 can match eol */
 YY_RULE_SETUP
-#line 530 "ob_proxy_parser.l"
+#line 531 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 109:
 YY_RULE_SETUP
-#line 531 "ob_proxy_parser.l"
+#line 532 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
 	YY_BREAK
 case 110:
 YY_RULE_SETUP
-#line 532 "ob_proxy_parser.l"
+#line 533 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 case 111:
 /* rule 111 can match eol */
 YY_RULE_SETUP
-#line 534 "ob_proxy_parser.l"
+#line 535 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DB_VERSION; }
 	YY_BREAK
 case 112:
 /* rule 112 can match eol */
 YY_RULE_SETUP
-#line 535 "ob_proxy_parser.l"
+#line 536 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_DATABASES; }
 	YY_BREAK
 case 113:
 /* rule 113 can match eol */
 YY_RULE_SETUP
-#line 536 "ob_proxy_parser.l"
+#line 537 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_TABLES; }
 	YY_BREAK
 case 114:
 /* rule 114 can match eol */
 YY_RULE_SETUP
-#line 537 "ob_proxy_parser.l"
+#line 538 "ob_proxy_parser.l"
 { SET_BASIC_STMT(OBPROXY_T_SHOW); return SHOW_CREATE_TABLE; }
 	YY_BREAK
 case 115:
 /* rule 115 can match eol */
 YY_RULE_SETUP
-#line 538 "ob_proxy_parser.l"
+#line 539 "ob_proxy_parser.l"
 { SET_DML_STMT(OBPROXY_T_SELECT); return SELECT_DATABASE; }
 	YY_BREAK
 /*alter config*/
 case 116:
 /* rule 116 can match eol */
 YY_RULE_SETUP
-#line 541 "ob_proxy_parser.l"
+#line 542 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_ALTER_CONFIG); return ALTER_PROXYCONFIG; }
 	YY_BREAK
 /*alter resource*/
 case 117:
 /* rule 117 can match eol */
 YY_RULE_SETUP
-#line 544 "ob_proxy_parser.l"
+#line 545 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_ALTER_RESOURCE); return ALTER_PROXYRESOURCE; }
 	YY_BREAK
 /*ping proxy*/
 case 118:
 /* rule 118 can match eol */
 YY_RULE_SETUP
-#line 547 "ob_proxy_parser.l"
+#line 548 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_PING_PROXY); return PING_PROXY; }
 	YY_BREAK
 /*kill*/
 case 119:
 /* rule 119 can match eol */
 YY_RULE_SETUP
-#line 550 "ob_proxy_parser.l"
+#line 551 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_KILL_SESSION); return KILL_PROXYSESSION; }
 	YY_BREAK
 case 120:
 /* rule 120 can match eol */
 YY_RULE_SETUP
-#line 551 "ob_proxy_parser.l"
+#line 552 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_KILL_GLOBAL_SESSION); return KILL_GLOBALSESSION; }
 	YY_BREAK
 case 121:
 YY_RULE_SETUP
-#line 552 "ob_proxy_parser.l"
+#line 553 "ob_proxy_parser.l"
 { SET_ICMD_STMT(OBPROXY_T_ICMD_KILL_MYSQL); return KILL; }
 	YY_BREAK
 case 122:
 YY_RULE_SETUP
-#line 553 "ob_proxy_parser.l"
+#line 554 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(QUERY); }
 	YY_BREAK
 /* obproxy_route_addr */
 case 123:
 /* rule 123 can match eol */
 YY_RULE_SETUP
-#line 556 "ob_proxy_parser.l"
+#line 557 "ob_proxy_parser.l"
 { return SELECT_OBPROXY_ROUTE_ADDR; }
 	YY_BREAK
 case 124:
 /* rule 124 can match eol */
 YY_RULE_SETUP
-#line 557 "ob_proxy_parser.l"
+#line 558 "ob_proxy_parser.l"
 { return SET_OBPROXY_ROUTE_ADDR; }
 	YY_BREAK
 /* identifer */
 case 125:
 YY_RULE_SETUP
-#line 560 "ob_proxy_parser.l"
+#line 561 "ob_proxy_parser.l"
 { SET_FOUND_ROWS(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 126:
 YY_RULE_SETUP
-#line 561 "ob_proxy_parser.l"
+#line 562 "ob_proxy_parser.l"
 { SET_ROW_COUNT(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 127:
 YY_RULE_SETUP
-#line 562 "ob_proxy_parser.l"
+#line 563 "ob_proxy_parser.l"
 { SET_LAST_INSERT_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 128:
 YY_RULE_SETUP
-#line 563 "ob_proxy_parser.l"
+#line 564 "ob_proxy_parser.l"
 { RETURN_INT_NUM(); }
 	YY_BREAK
 case 129:
 YY_RULE_SETUP
-#line 564 "ob_proxy_parser.l"
+#line 565 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 130:
 YY_RULE_SETUP
-#line 565 "ob_proxy_parser.l"
+#line 566 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_SINGLE); }
 	YY_BREAK
 case 131:
 YY_RULE_SETUP
-#line 566 "ob_proxy_parser.l"
+#line 567 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_DOUBLE); }
 	YY_BREAK
 case 132:
 YY_RULE_SETUP
-#line 567 "ob_proxy_parser.l"
+#line 568 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_BACK); }
 	YY_BREAK
 case 133:
 YY_RULE_SETUP
-#line 568 "ob_proxy_parser.l"
+#line 569 "ob_proxy_parser.l"
 { RETURN_NUMBER_VAL(); }
 	YY_BREAK
 case 134:
 YY_RULE_SETUP
-#line 569 "ob_proxy_parser.l"
+#line 570 "ob_proxy_parser.l"
 { return PLACE_HOLDER; }
 	YY_BREAK
 case 135:
 YY_RULE_SETUP
-#line 570 "ob_proxy_parser.l"
+#line 571 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case 136:
 YY_RULE_SETUP
-#line 571 "ob_proxy_parser.l"
+#line 572 "ob_proxy_parser.l"
 { RETURN_WITH_CALL_CHECK(yytext[0]); }
 	YY_BREAK
 case 137:
 /* rule 137 can match eol */
 YY_RULE_SETUP
-#line 572 "ob_proxy_parser.l"
+#line 573 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 /* hint option */
 case 138:
 /* rule 138 can match eol */
 YY_RULE_SETUP
-#line 575 "ob_proxy_parser.l"
+#line 576 "ob_proxy_parser.l"
 {
   PUSH_STATE(in_expr);
   PUSH_STATE(hint);
@@ -3713,7 +3714,7 @@ YY_RULE_SETUP
 case 139:
 /* rule 139 can match eol */
 YY_RULE_SETUP
-#line 581 "ob_proxy_parser.l"
+#line 582 "ob_proxy_parser.l"
 {
   PUSH_STATE(hint);
   SET_BASIC_STMT(OBPROXY_T_UPDATE);
@@ -3723,7 +3724,7 @@ YY_RULE_SETUP
 case 140:
 /* rule 140 can match eol */
 YY_RULE_SETUP
-#line 586 "ob_proxy_parser.l"
+#line 587 "ob_proxy_parser.l"
 {
   PUSH_STATE(in_expr);
   PUSH_STATE(hint);
@@ -3734,7 +3735,7 @@ YY_RULE_SETUP
 case 141:
 /* rule 141 can match eol */
 YY_RULE_SETUP
-#line 592 "ob_proxy_parser.l"
+#line 593 "ob_proxy_parser.l"
 {
   PUSH_STATE(hint);
   SET_BASIC_STMT(OBPROXY_T_INSERT);
@@ -3744,7 +3745,7 @@ YY_RULE_SETUP
 case 142:
 /* rule 142 can match eol */
 YY_RULE_SETUP
-#line 597 "ob_proxy_parser.l"
+#line 598 "ob_proxy_parser.l"
 {
   PUSH_STATE(hint);
   SET_BASIC_STMT(OBPROXY_T_REPLACE);
@@ -3754,7 +3755,7 @@ YY_RULE_SETUP
 case 143:
 /* rule 143 can match eol */
 YY_RULE_SETUP
-#line 602 "ob_proxy_parser.l"
+#line 603 "ob_proxy_parser.l"
 {
   PUSH_STATE(hint);
   SET_BASIC_STMT(OBPROXY_T_MERGE);
@@ -3764,57 +3765,57 @@ YY_RULE_SETUP
 case 144:
 /* rule 144 can match eol */
 YY_RULE_SETUP
-#line 608 "ob_proxy_parser.l"
+#line 609 "ob_proxy_parser.l"
 { return AUTOCOMMIT_0; }
 	YY_BREAK
 case 145:
 YY_RULE_SETUP
-#line 609 "ob_proxy_parser.l"
+#line 610 "ob_proxy_parser.l"
 { return GLOBAL; }
 	YY_BREAK
 case 146:
 YY_RULE_SETUP
-#line 610 "ob_proxy_parser.l"
+#line 611 "ob_proxy_parser.l"
 { return SESSION; }
 	YY_BREAK
 case 147:
 YY_RULE_SETUP
-#line 611 "ob_proxy_parser.l"
+#line 612 "ob_proxy_parser.l"
 { RETURN_INT_NUM(); }
 	YY_BREAK
 case 148:
 YY_RULE_SETUP
-#line 612 "ob_proxy_parser.l"
+#line 613 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 149:
 YY_RULE_SETUP
-#line 613 "ob_proxy_parser.l"
+#line 614 "ob_proxy_parser.l"
 { RETURN_NUMBER_VAL(); }
 	YY_BREAK
 case 150:
 /* rule 150 can match eol */
 YY_RULE_SETUP
-#line 614 "ob_proxy_parser.l"
+#line 615 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 151:
 YY_RULE_SETUP
-#line 615 "ob_proxy_parser.l"
+#line 616 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case YY_STATE_EOF(set_expr):
-#line 616 "ob_proxy_parser.l"
+#line 617 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 152:
 YY_RULE_SETUP
-#line 617 "ob_proxy_parser.l"
+#line 618 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
 	YY_BREAK
 case 153:
 YY_RULE_SETUP
-#line 619 "ob_proxy_parser.l"
+#line 620 "ob_proxy_parser.l"
 {
   PUSH_STATE(sq);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -3827,7 +3828,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 154:
 YY_RULE_SETUP
-#line 629 "ob_proxy_parser.l"
+#line 630 "ob_proxy_parser.l"
 {
   PUSH_STATE(dq);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -3840,7 +3841,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 155:
 YY_RULE_SETUP
-#line 639 "ob_proxy_parser.l"
+#line 640 "ob_proxy_parser.l"
 {
   PUSH_STATE(bt);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -3853,78 +3854,78 @@ YY_RULE_SETUP
 	YY_BREAK
 case 156:
 YY_RULE_SETUP
-#line 648 "ob_proxy_parser.l"
+#line 649 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 case 157:
 YY_RULE_SETUP
-#line 650 "ob_proxy_parser.l"
+#line 651 "ob_proxy_parser.l"
 { POP_STATE(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 158:
 YY_RULE_SETUP
-#line 651 "ob_proxy_parser.l"
+#line 652 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 159:
 YY_RULE_SETUP
-#line 653 "ob_proxy_parser.l"
+#line 654 "ob_proxy_parser.l"
 { return QUERY_TIMEOUT; }
 	YY_BREAK
 case 160:
 YY_RULE_SETUP
-#line 654 "ob_proxy_parser.l"
+#line 655 "ob_proxy_parser.l"
 { RETURN_INT_NUM(); }
 	YY_BREAK
 case 161:
 YY_RULE_SETUP
-#line 655 "ob_proxy_parser.l"
+#line 656 "ob_proxy_parser.l"
 { return READ_CONSISTENCY; }
 	YY_BREAK
 case 162:
 YY_RULE_SETUP
-#line 656 "ob_proxy_parser.l"
+#line 657 "ob_proxy_parser.l"
 { return WEAK; }
 	YY_BREAK
 case 163:
 YY_RULE_SETUP
-#line 657 "ob_proxy_parser.l"
+#line 658 "ob_proxy_parser.l"
 { return STRONG; }
 	YY_BREAK
 case 164:
 YY_RULE_SETUP
-#line 658 "ob_proxy_parser.l"
+#line 659 "ob_proxy_parser.l"
 { return FROZEN; }
 	YY_BREAK
 case 165:
 YY_RULE_SETUP
-#line 659 "ob_proxy_parser.l"
+#line 660 "ob_proxy_parser.l"
 { return INDEX; }
 	YY_BREAK
 case 166:
 YY_RULE_SETUP
-#line 660 "ob_proxy_parser.l"
+#line 661 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case 167:
 YY_RULE_SETUP
-#line 661 "ob_proxy_parser.l"
+#line 662 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 168:
 YY_RULE_SETUP
-#line 662 "ob_proxy_parser.l"
+#line 663 "ob_proxy_parser.l"
 { POP_STATE(); return HINT_END; }
 	YY_BREAK
 case 169:
 YY_RULE_SETUP
-#line 663 "ob_proxy_parser.l"
+#line 664 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 /* comment */
 case 170:
 YY_RULE_SETUP
-#line 666 "ob_proxy_parser.l"
+#line 667 "ob_proxy_parser.l"
 {
   PUSH_STATE(in_c_comment);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -3941,23 +3942,23 @@ YY_RULE_SETUP
 	YY_BREAK
 case 171:
 YY_RULE_SETUP
-#line 680 "ob_proxy_parser.l"
+#line 681 "ob_proxy_parser.l"
 { POP_STATE(); }
 	YY_BREAK
 case 172:
 /* rule 172 can match eol */
 YY_RULE_SETUP
-#line 681 "ob_proxy_parser.l"
+#line 682 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 173:
 YY_RULE_SETUP
-#line 682 "ob_proxy_parser.l"
+#line 683 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 174:
 YY_RULE_SETUP
-#line 684 "ob_proxy_parser.l"
+#line 685 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -3970,13 +3971,13 @@ YY_RULE_SETUP
 	YY_BREAK
 case 175:
 YY_RULE_SETUP
-#line 694 "ob_proxy_parser.l"
+#line 695 "ob_proxy_parser.l"
 { PUSH_STATE(in_old_comment_expr); }
 	YY_BREAK
 case 176:
 /* rule 176 can match eol */
 YY_RULE_SETUP
-#line 695 "ob_proxy_parser.l"
+#line 696 "ob_proxy_parser.l"
 {
   PUSH_STATE(in_old_comment_expr);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -3989,7 +3990,7 @@ YY_RULE_SETUP
 case 177:
 /* rule 177 can match eol */
 YY_RULE_SETUP
-#line 704 "ob_proxy_parser.l"
+#line 705 "ob_proxy_parser.l"
 {
   PUSH_STATE(in_old_comment_expr);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4003,7 +4004,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 178:
 YY_RULE_SETUP
-#line 715 "ob_proxy_parser.l"
+#line 716 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4014,7 +4015,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 179:
 YY_RULE_SETUP
-#line 723 "ob_proxy_parser.l"
+#line 724 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4027,27 +4028,27 @@ YY_RULE_SETUP
 	YY_BREAK
 case 180:
 YY_RULE_SETUP
-#line 733 "ob_proxy_parser.l"
+#line 734 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 181:
 YY_RULE_SETUP
-#line 734 "ob_proxy_parser.l"
+#line 735 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_SINGLE); }
 	YY_BREAK
 case 182:
 YY_RULE_SETUP
-#line 735 "ob_proxy_parser.l"
+#line 736 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_DOUBLE); }
 	YY_BREAK
 case 183:
 YY_RULE_SETUP
-#line 736 "ob_proxy_parser.l"
+#line 737 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(NAME_OB, OBPROXY_QUOTE_T_BACK); }
 	YY_BREAK
 case 184:
 YY_RULE_SETUP
-#line 737 "ob_proxy_parser.l"
+#line 738 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4061,153 +4062,153 @@ YY_RULE_SETUP
 	YY_BREAK
 case 185:
 YY_RULE_SETUP
-#line 747 "ob_proxy_parser.l"
+#line 748 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 186:
 YY_RULE_SETUP
-#line 749 "ob_proxy_parser.l"
+#line 750 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(ODP_COMMENT); }
 	YY_BREAK
 case 187:
 /* rule 187 can match eol */
 YY_RULE_SETUP
-#line 750 "ob_proxy_parser.l"
+#line 751 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(GROUP_ID); }
 	YY_BREAK
 case 188:
 /* rule 188 can match eol */
 YY_RULE_SETUP
-#line 751 "ob_proxy_parser.l"
+#line 752 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_ID); }
 	YY_BREAK
 case 189:
 /* rule 189 can match eol */
 YY_RULE_SETUP
-#line 752 "ob_proxy_parser.l"
+#line 753 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_NAME); }
 	YY_BREAK
 case 190:
 /* rule 190 can match eol */
 YY_RULE_SETUP
-#line 753 "ob_proxy_parser.l"
+#line 754 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(ELASTIC_ID); }
 	YY_BREAK
 case 191:
 /* rule 191 can match eol */
 YY_RULE_SETUP
-#line 754 "ob_proxy_parser.l"
+#line 755 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TESTLOAD); }
 	YY_BREAK
 case 192:
 /* rule 192 can match eol */
 YY_RULE_SETUP
-#line 755 "ob_proxy_parser.l"
+#line 756 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(DISASTER_STATUS); }
 	YY_BREAK
 case 193:
 /* rule 193 can match eol */
 YY_RULE_SETUP
-#line 756 "ob_proxy_parser.l"
+#line 757 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TNT_ID); }
 	YY_BREAK
 case 194:
 /* rule 194 can match eol */
 YY_RULE_SETUP
-#line 757 "ob_proxy_parser.l"
+#line 758 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TRACE_ID); }
 	YY_BREAK
 case 195:
 /* rule 195 can match eol */
 YY_RULE_SETUP
-#line 758 "ob_proxy_parser.l"
+#line 759 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT_NAME_OB_DOT(NAME_OB_DOT); }
 	YY_BREAK
 case 196:
 /* rule 196 can match eol */
 YY_RULE_SETUP
-#line 759 "ob_proxy_parser.l"
+#line 760 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(RPC_ID); }
 	YY_BREAK
 case 197:
 YY_RULE_SETUP
-#line 761 "ob_proxy_parser.l"
+#line 762 "ob_proxy_parser.l"
 { return GROUP_ID; }
 	YY_BREAK
 case 198:
 YY_RULE_SETUP
-#line 762 "ob_proxy_parser.l"
+#line 763 "ob_proxy_parser.l"
 { return TABLE_ID; }
 	YY_BREAK
 case 199:
 YY_RULE_SETUP
-#line 763 "ob_proxy_parser.l"
+#line 764 "ob_proxy_parser.l"
 { return TABLE_NAME; }
 	YY_BREAK
 case 200:
 YY_RULE_SETUP
-#line 764 "ob_proxy_parser.l"
+#line 765 "ob_proxy_parser.l"
 { return ELASTIC_ID; }
 	YY_BREAK
 case 201:
 YY_RULE_SETUP
-#line 765 "ob_proxy_parser.l"
+#line 766 "ob_proxy_parser.l"
 { return TESTLOAD; }
 	YY_BREAK
 case 202:
 YY_RULE_SETUP
-#line 766 "ob_proxy_parser.l"
+#line 767 "ob_proxy_parser.l"
 { return DISASTER_STATUS; }
 	YY_BREAK
 case 203:
 YY_RULE_SETUP
-#line 767 "ob_proxy_parser.l"
+#line 768 "ob_proxy_parser.l"
 { return TNT_ID; }
 	YY_BREAK
 case 204:
 YY_RULE_SETUP
-#line 768 "ob_proxy_parser.l"
+#line 769 "ob_proxy_parser.l"
 { return TRACE_ID; }
 	YY_BREAK
 case 205:
 YY_RULE_SETUP
-#line 769 "ob_proxy_parser.l"
+#line 770 "ob_proxy_parser.l"
 { return RPC_ID; }
 	YY_BREAK
 case 206:
 YY_RULE_SETUP
-#line 770 "ob_proxy_parser.l"
+#line 771 "ob_proxy_parser.l"
 { ENTER_QUOTE_STATE(comment_sq); }
 	YY_BREAK
 case 207:
 YY_RULE_SETUP
-#line 771 "ob_proxy_parser.l"
+#line 772 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 208:
 YY_RULE_SETUP
-#line 772 "ob_proxy_parser.l"
+#line 773 "ob_proxy_parser.l"
 { PUSH_STATE(in_odp_comment_value_expr); return yytext[0]; }
 	YY_BREAK
 case 209:
 YY_RULE_SETUP
-#line 773 "ob_proxy_parser.l"
+#line 774 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case 210:
 /* rule 210 can match eol */
 YY_RULE_SETUP
-#line 774 "ob_proxy_parser.l"
+#line 775 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 211:
 YY_RULE_SETUP
-#line 775 "ob_proxy_parser.l"
+#line 776 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 case 212:
 YY_RULE_SETUP
-#line 776 "ob_proxy_parser.l"
+#line 777 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4221,12 +4222,12 @@ YY_RULE_SETUP
 	YY_BREAK
 case 213:
 YY_RULE_SETUP
-#line 787 "ob_proxy_parser.l"
+#line 788 "ob_proxy_parser.l"
 { ENTER_QUOTE_STATE(comment_sq); }
 	YY_BREAK
 case 214:
 YY_RULE_SETUP
-#line 788 "ob_proxy_parser.l"
+#line 789 "ob_proxy_parser.l"
 {
   POP_STATE();
   return yytext[0];
@@ -4234,7 +4235,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 215:
 YY_RULE_SETUP
-#line 792 "ob_proxy_parser.l"
+#line 793 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4249,78 +4250,78 @@ YY_RULE_SETUP
 	YY_BREAK
 case 216:
 YY_RULE_SETUP
-#line 803 "ob_proxy_parser.l"
+#line 804 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 217:
 YY_RULE_SETUP
-#line 805 "ob_proxy_parser.l"
+#line 806 "ob_proxy_parser.l"
 { PUSH_STATE(in_dbp_comment_expr); RETURN_SHARD_COMMENT(DBP_COMMENT); }
 	YY_BREAK
 case 218:
 YY_RULE_SETUP
-#line 806 "ob_proxy_parser.l"
+#line 807 "ob_proxy_parser.l"
 { return ROUTE_TAG; }
 	YY_BREAK
 case 219:
 YY_RULE_SETUP
-#line 807 "ob_proxy_parser.l"
+#line 808 "ob_proxy_parser.l"
 { return SYS_TAG; }
 	YY_BREAK
 case 220:
 YY_RULE_SETUP
-#line 808 "ob_proxy_parser.l"
+#line 809 "ob_proxy_parser.l"
 { return SCAN_ALL; }
 	YY_BREAK
 case 221:
 YY_RULE_SETUP
-#line 809 "ob_proxy_parser.l"
+#line 810 "ob_proxy_parser.l"
 { return SHARD_KEY; }
 	YY_BREAK
 case 222:
 YY_RULE_SETUP
-#line 810 "ob_proxy_parser.l"
+#line 811 "ob_proxy_parser.l"
 { return TABLE_NAME;}
 	YY_BREAK
 case 223:
 YY_RULE_SETUP
-#line 811 "ob_proxy_parser.l"
+#line 812 "ob_proxy_parser.l"
 { return PARALL; }
 	YY_BREAK
 case 224:
 YY_RULE_SETUP
-#line 812 "ob_proxy_parser.l"
+#line 813 "ob_proxy_parser.l"
 { return GROUP_ID; }
 	YY_BREAK
 case 225:
 YY_RULE_SETUP
-#line 813 "ob_proxy_parser.l"
+#line 814 "ob_proxy_parser.l"
 { PUSH_STATE(in_dbp_comment_trace_value_expr); return TRACE; }
 	YY_BREAK
 case 226:
 YY_RULE_SETUP
-#line 814 "ob_proxy_parser.l"
+#line 815 "ob_proxy_parser.l"
 { ENTER_QUOTE_STATE(comment_sq); }
 	YY_BREAK
 case 227:
 YY_RULE_SETUP
-#line 815 "ob_proxy_parser.l"
+#line 816 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case 228:
 /* rule 228 can match eol */
 YY_RULE_SETUP
-#line 816 "ob_proxy_parser.l"
+#line 817 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 229:
 YY_RULE_SETUP
-#line 817 "ob_proxy_parser.l"
+#line 818 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 230:
 YY_RULE_SETUP
-#line 819 "ob_proxy_parser.l"
+#line 820 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4334,17 +4335,17 @@ YY_RULE_SETUP
 	YY_BREAK
 case 231:
 YY_RULE_SETUP
-#line 829 "ob_proxy_parser.l"
+#line 830 "ob_proxy_parser.l"
 {return yytext[0];}
 	YY_BREAK
 case 232:
 YY_RULE_SETUP
-#line 831 "ob_proxy_parser.l"
+#line 832 "ob_proxy_parser.l"
 { ENTER_QUOTE_STATE(comment_sq); }
 	YY_BREAK
 case 233:
 YY_RULE_SETUP
-#line 832 "ob_proxy_parser.l"
+#line 833 "ob_proxy_parser.l"
 {
   POP_STATE();
   return yytext[0];
@@ -4352,12 +4353,12 @@ YY_RULE_SETUP
 	YY_BREAK
 case 234:
 YY_RULE_SETUP
-#line 836 "ob_proxy_parser.l"
+#line 837 "ob_proxy_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 case 235:
 YY_RULE_SETUP
-#line 837 "ob_proxy_parser.l"
+#line 838 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4372,13 +4373,13 @@ YY_RULE_SETUP
 	YY_BREAK
 case 236:
 YY_RULE_SETUP
-#line 848 "ob_proxy_parser.l"
+#line 849 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 /* quote */
 case 237:
 YY_RULE_SETUP
-#line 851 "ob_proxy_parser.l"
+#line 852 "ob_proxy_parser.l"
 {
   PUSH_STATE(sq);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4392,7 +4393,7 @@ YY_RULE_SETUP
 case 238:
 /* rule 238 can match eol */
 YY_RULE_SETUP
-#line 861 "ob_proxy_parser.l"
+#line 862 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4402,7 +4403,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 239:
 YY_RULE_SETUP
-#line 868 "ob_proxy_parser.l"
+#line 869 "ob_proxy_parser.l"
 {
   POP_STATE();
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4421,30 +4422,30 @@ YY_RULE_SETUP
 	YY_BREAK
 case 240:
 YY_RULE_SETUP
-#line 884 "ob_proxy_parser.l"
+#line 885 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 241:
 /* rule 241 can match eol */
 YY_RULE_SETUP
-#line 885 "ob_proxy_parser.l"
+#line 886 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 242:
 /* rule 242 can match eol */
 YY_RULE_SETUP
-#line 886 "ob_proxy_parser.l"
+#line 887 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(sq):
-#line 887 "ob_proxy_parser.l"
+#line 888 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* comment sq return name_str */
 case 243:
 /* rule 243 can match eol */
 YY_RULE_SETUP
-#line 890 "ob_proxy_parser.l"
+#line 891 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4454,7 +4455,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 244:
 YY_RULE_SETUP
-#line 897 "ob_proxy_parser.l"
+#line 898 "ob_proxy_parser.l"
 {
   POP_STATE();
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4468,29 +4469,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 245:
 YY_RULE_SETUP
-#line 908 "ob_proxy_parser.l"
+#line 909 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 246:
 /* rule 246 can match eol */
 YY_RULE_SETUP
-#line 909 "ob_proxy_parser.l"
+#line 910 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 247:
 /* rule 247 can match eol */
 YY_RULE_SETUP
-#line 910 "ob_proxy_parser.l"
+#line 911 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(comment_sq):
-#line 911 "ob_proxy_parser.l"
+#line 912 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* dquote */
 case 248:
 YY_RULE_SETUP
-#line 914 "ob_proxy_parser.l"
+#line 915 "ob_proxy_parser.l"
 {
   PUSH_STATE(dq);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4504,7 +4505,7 @@ YY_RULE_SETUP
 case 249:
 /* rule 249 can match eol */
 YY_RULE_SETUP
-#line 924 "ob_proxy_parser.l"
+#line 925 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -4514,7 +4515,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 250:
 YY_RULE_SETUP
-#line 931 "ob_proxy_parser.l"
+#line 932 "ob_proxy_parser.l"
 {
   POP_STATE();
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4533,29 +4534,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 251:
 YY_RULE_SETUP
-#line 947 "ob_proxy_parser.l"
+#line 948 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 252:
 /* rule 252 can match eol */
 YY_RULE_SETUP
-#line 948 "ob_proxy_parser.l"
+#line 949 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 253:
 /* rule 253 can match eol */
 YY_RULE_SETUP
-#line 949 "ob_proxy_parser.l"
+#line 950 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(dq):
-#line 950 "ob_proxy_parser.l"
+#line 951 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* backtick */
 case 254:
 YY_RULE_SETUP
-#line 954 "ob_proxy_parser.l"
+#line 955 "ob_proxy_parser.l"
 {
   PUSH_STATE(bt);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4568,7 +4569,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 255:
 YY_RULE_SETUP
-#line 964 "ob_proxy_parser.l"
+#line 965 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + 1 < OBPROXY_MAX_NAME_LENGTH) {
@@ -4579,7 +4580,7 @@ YY_RULE_SETUP
 case 256:
 /* rule 256 can match eol */
 YY_RULE_SETUP
-#line 971 "ob_proxy_parser.l"
+#line 972 "ob_proxy_parser.l"
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + yyleng < OBPROXY_MAX_NAME_LENGTH) {
@@ -4590,7 +4591,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 257:
 YY_RULE_SETUP
-#line 979 "ob_proxy_parser.l"
+#line 980 "ob_proxy_parser.l"
 {
   POP_STATE();
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
@@ -4604,243 +4605,243 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(bt):
-#line 991 "ob_proxy_parser.l"
+#line 992 "ob_proxy_parser.l"
 {
   return ERROR;
 }
 	YY_BREAK
 case 258:
 YY_RULE_SETUP
-#line 995 "ob_proxy_parser.l"
+#line 996 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 259:
 /* rule 259 can match eol */
 YY_RULE_SETUP
-#line 996 "ob_proxy_parser.l"
+#line 997 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case 260:
 YY_RULE_SETUP
-#line 997 "ob_proxy_parser.l"
+#line 998 "ob_proxy_parser.l"
 { POP_STATE(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case YY_STATE_EOF(bt_in_expr):
-#line 998 "ob_proxy_parser.l"
+#line 999 "ob_proxy_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* some useful keyword */
 case 261:
 /* rule 261 can match eol */
 YY_RULE_SETUP
-#line 1001 "ob_proxy_parser.l"
+#line 1002 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD_FOR_DUAL(); }
 	YY_BREAK
 case 262:
 YY_RULE_SETUP
-#line 1002 "ob_proxy_parser.l"
+#line 1003 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return FROM; }
 	YY_BREAK
 case 263:
 YY_RULE_SETUP
-#line 1003 "ob_proxy_parser.l"
+#line 1004 "ob_proxy_parser.l"
 { PUSH_STATE(in_subquery); return yytext[0]; }
 	YY_BREAK
 case 264:
 YY_RULE_SETUP
-#line 1004 "ob_proxy_parser.l"
+#line 1005 "ob_proxy_parser.l"
 { PUSH_STATE(dq); }
 	YY_BREAK
 case 265:
 YY_RULE_SETUP
-#line 1005 "ob_proxy_parser.l"
+#line 1006 "ob_proxy_parser.l"
 { PUSH_STATE(sq); }
 	YY_BREAK
 case 266:
 YY_RULE_SETUP
-#line 1006 "ob_proxy_parser.l"
+#line 1007 "ob_proxy_parser.l"
 { PUSH_STATE(bt_in_expr); }
 	YY_BREAK
 case 267:
 YY_RULE_SETUP
-#line 1007 "ob_proxy_parser.l"
+#line 1008 "ob_proxy_parser.l"
 { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 268:
 YY_RULE_SETUP
-#line 1008 "ob_proxy_parser.l"
+#line 1009 "ob_proxy_parser.l"
 { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 269:
 YY_RULE_SETUP
-#line 1009 "ob_proxy_parser.l"
+#line 1010 "ob_proxy_parser.l"
 { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 270:
 YY_RULE_SETUP
-#line 1010 "ob_proxy_parser.l"
+#line 1011 "ob_proxy_parser.l"
 { SET_GLOBAL_SET_STMT(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 271:
 /* rule 271 can match eol */
 YY_RULE_SETUP
-#line 1011 "ob_proxy_parser.l"
+#line 1012 "ob_proxy_parser.l"
 { RETURN_COL_NAME(TX_READ_ONLY); }
 	YY_BREAK
 case 272:
 /* rule 272 can match eol */
 YY_RULE_SETUP
-#line 1012 "ob_proxy_parser.l"
+#line 1013 "ob_proxy_parser.l"
 { return AUTOCOMMIT_0; }
 	YY_BREAK
 case 273:
 YY_RULE_SETUP
-#line 1013 "ob_proxy_parser.l"
+#line 1014 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case YY_STATE_EOF(in_expr):
-#line 1014 "ob_proxy_parser.l"
+#line 1015 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 274:
 /* rule 274 can match eol */
 YY_RULE_SETUP
-#line 1015 "ob_proxy_parser.l"
+#line 1016 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 275:
 YY_RULE_SETUP
-#line 1016 "ob_proxy_parser.l"
+#line 1017 "ob_proxy_parser.l"
 { POP_STATE(); PUSH_STATE(INITIAL); return yytext[0]; }
 	YY_BREAK
 case 276:
 YY_RULE_SETUP
-#line 1017 "ob_proxy_parser.l"
+#line 1018 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 277:
 YY_RULE_SETUP
-#line 1019 "ob_proxy_parser.l"
+#line 1020 "ob_proxy_parser.l"
 { PUSH_STATE(in_expr); return SELECT; }
 	YY_BREAK
 case 278:
 YY_RULE_SETUP
-#line 1020 "ob_proxy_parser.l"
+#line 1021 "ob_proxy_parser.l"
 { PUSH_STATE(in_subquery); return yytext[0]; }
 	YY_BREAK
 case 279:
 YY_RULE_SETUP
-#line 1021 "ob_proxy_parser.l"
+#line 1022 "ob_proxy_parser.l"
 { POP_STATE(); return yytext[0]; }
 	YY_BREAK
 case 280:
 YY_RULE_SETUP
-#line 1022 "ob_proxy_parser.l"
+#line 1023 "ob_proxy_parser.l"
 { PUSH_STATE(dq); }
 	YY_BREAK
 case 281:
 YY_RULE_SETUP
-#line 1023 "ob_proxy_parser.l"
+#line 1024 "ob_proxy_parser.l"
 { PUSH_STATE(sq); }
 	YY_BREAK
 case YY_STATE_EOF(in_subquery):
-#line 1024 "ob_proxy_parser.l"
+#line 1025 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 282:
 /* rule 282 can match eol */
 YY_RULE_SETUP
-#line 1025 "ob_proxy_parser.l"
+#line 1026 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 283:
 YY_RULE_SETUP
-#line 1026 "ob_proxy_parser.l"
+#line 1027 "ob_proxy_parser.l"
 { PUSH_STATE(in_no_select_query); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 284:
 YY_RULE_SETUP
-#line 1028 "ob_proxy_parser.l"
+#line 1029 "ob_proxy_parser.l"
 { PUSH_STATE(in_subquery); return yytext[0]; }
 	YY_BREAK
 case 285:
 YY_RULE_SETUP
-#line 1029 "ob_proxy_parser.l"
+#line 1030 "ob_proxy_parser.l"
 { POP_STATE(); POP_STATE(); return yytext[0]; }
 	YY_BREAK
 case 286:
 YY_RULE_SETUP
-#line 1030 "ob_proxy_parser.l"
+#line 1031 "ob_proxy_parser.l"
 { PUSH_STATE(dq); }
 	YY_BREAK
 case 287:
 YY_RULE_SETUP
-#line 1031 "ob_proxy_parser.l"
+#line 1032 "ob_proxy_parser.l"
 { PUSH_STATE(sq); }
 	YY_BREAK
 case 288:
 YY_RULE_SETUP
-#line 1032 "ob_proxy_parser.l"
+#line 1033 "ob_proxy_parser.l"
 { SET_FOUND_ROWS(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 289:
 YY_RULE_SETUP
-#line 1033 "ob_proxy_parser.l"
+#line 1034 "ob_proxy_parser.l"
 { SET_ROW_COUNT(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 290:
 YY_RULE_SETUP
-#line 1034 "ob_proxy_parser.l"
+#line 1035 "ob_proxy_parser.l"
 { SET_LAST_INSERT_ID(); RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 291:
 YY_RULE_SETUP
-#line 1035 "ob_proxy_parser.l"
+#line 1036 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case YY_STATE_EOF(in_no_select_query):
-#line 1036 "ob_proxy_parser.l"
+#line 1037 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 292:
 /* rule 292 can match eol */
 YY_RULE_SETUP
-#line 1037 "ob_proxy_parser.l"
+#line 1038 "ob_proxy_parser.l"
 { }
 	YY_BREAK
 case 293:
 YY_RULE_SETUP
-#line 1038 "ob_proxy_parser.l"
+#line 1039 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 294:
 YY_RULE_SETUP
-#line 1040 "ob_proxy_parser.l"
+#line 1041 "ob_proxy_parser.l"
 { return FROM; }
 	YY_BREAK
 case 295:
 YY_RULE_SETUP
-#line 1041 "ob_proxy_parser.l"
+#line 1042 "ob_proxy_parser.l"
 { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 	YY_BREAK
 case 296:
 YY_RULE_SETUP
-#line 1042 "ob_proxy_parser.l"
+#line 1043 "ob_proxy_parser.l"
 { POP_STATE(); }
 	YY_BREAK
 case 297:
 YY_RULE_SETUP
-#line 1043 "ob_proxy_parser.l"
+#line 1044 "ob_proxy_parser.l"
 { POP_STATE(); }
 	YY_BREAK
 case 298:
 YY_RULE_SETUP
-#line 1045 "ob_proxy_parser.l"
+#line 1046 "ob_proxy_parser.l"
 { POP_STATE(); return BEGI;}
 	YY_BREAK
 case 299:
 YY_RULE_SETUP
-#line 1046 "ob_proxy_parser.l"
+#line 1047 "ob_proxy_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
@@ -4856,20 +4857,20 @@ case YY_STATE_EOF(in_dbp_comment_trace_value_expr):
 case YY_STATE_EOF(in_anonymous_block):
 case YY_STATE_EOF(prepare):
 case YY_STATE_EOF(insert_all_expr):
-#line 1048 "ob_proxy_parser.l"
+#line 1049 "ob_proxy_parser.l"
 { return END_P; }
 	YY_BREAK
 case 300:
 YY_RULE_SETUP
-#line 1049 "ob_proxy_parser.l"
+#line 1050 "ob_proxy_parser.l"
 { RETURN_IGNORED_WORD(); }
 	YY_BREAK
 case 301:
 YY_RULE_SETUP
-#line 1050 "ob_proxy_parser.l"
+#line 1051 "ob_proxy_parser.l"
 ECHO;
 	YY_BREAK
-#line 4875 "ob_proxy_parser_lex.c"
+#line 4876 "ob_proxy_parser_lex.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -6019,7 +6020,7 @@ static int yy_flex_strlen (yyconst char * s , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 1050 "ob_proxy_parser.l"
+#line 1051 "ob_proxy_parser.l"
 
 
 inline void *obproxyalloc(size_t bytes,void *yyscanner)

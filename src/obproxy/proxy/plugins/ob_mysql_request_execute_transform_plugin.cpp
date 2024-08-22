@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
  */
+
 #include "ob_mysql_request_execute_transform_plugin.h"
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 #include "rpc/obmysql/ob_mysql_util.h"

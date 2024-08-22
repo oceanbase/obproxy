@@ -63,20 +63,30 @@ int ObExprRegexContext::init(const ObString &pattern,
   } else {
     int64_t wc_pattern_length = 0;
     wchar_t *wc_pattern = NULL;
-    if (OB_FAIL(getwc(pattern, wc_pattern, wc_pattern_length, string_buf))) {
-      LOG_WDIAG("failed to getwc", K(ret));
-    } else if (OB_ISNULL(wc_pattern)) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("getwc function failed.", K(ret));
+    char *debug_ptr = static_cast<char *>(string_buf.alloc(pattern.length() + 1));
+
+    if (OB_ISNULL(debug_ptr)) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to alloc", K(ret));
     } else {
-      reg_.re_endp = wc_pattern + wc_pattern_length;
-      regex_error_num = ob_re_wcomp(&reg_, wc_pattern, wc_pattern_length, (cflags | OB_REG_ADVANCED));
-      if (OB_UNLIKELY(0 != regex_error_num)) {
-        ret = convert_reg_err_code_to_ob_err_code(regex_error_num);
-        LOG_WDIAG("regex compilation failed", K(ret));
-        destroy();
+      MEMCPY(debug_ptr, pattern.ptr(), static_cast<size_t>(pattern.length()));
+      debug_ptr[pattern.length()] = '\0';
+      debug_string_.assign_ptr(debug_ptr, pattern.length());
+      if (OB_FAIL(getwc(pattern, wc_pattern, wc_pattern_length, string_buf))) {
+        LOG_WDIAG("fail to getwc", K(ret));
+      } else if (OB_ISNULL(wc_pattern)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("getwc function failed.", K(ret));
       } else {
-        inited_ = true;
+        reg_.re_endp = wc_pattern + wc_pattern_length;
+        regex_error_num = ob_re_wcomp(&reg_, wc_pattern, wc_pattern_length, (cflags | OB_REG_ADVANCED));
+        if (OB_UNLIKELY(0 != regex_error_num)) {
+          ret = convert_reg_err_code_to_ob_err_code(regex_error_num);
+          LOG_WDIAG("regex compilation failed", K(ret));
+          destroy();
+        } else {
+          inited_ = true;
+        }
       }
     }
   }
@@ -114,7 +124,7 @@ int ObExprRegexContext::match(const ObString &text,
       if (OB_UNLIKELY(0 != regex_error_num)) {
         if (OB_LIKELY(OB_REG_NOMATCH == regex_error_num)) {
           is_match = false;
-          LOG_TRACE("regex not match", K(ret));
+          LOG_TRACE("regex not match", K(text), K(ret));
         } else {
           ret = convert_reg_err_code_to_ob_err_code(regex_error_num);
           LOG_WDIAG("regex match error", K(ret));

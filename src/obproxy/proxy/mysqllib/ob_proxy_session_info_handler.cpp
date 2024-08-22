@@ -42,7 +42,7 @@ namespace obproxy
 namespace proxy
 {
 
-const ObString PROXY_IDC_NAME_USER_SESSION_VAR     = common::ObString::make_string("proxy_idc_name");
+const ObString PROXY_IDC_NAME_USER_SESSION_VAR = common::ObString::make_string("proxy_idc_name");
 const ObString PROXY_ROUTE_POLICY_USER_SESSION_VAR = common::ObString::make_string("proxy_route_policy");
 
 ObWeakReadHitReplica get_weak_read_hit_replica_enum(const ObString &value)
@@ -212,6 +212,7 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
     const ObString &tenant_name, const ObString &cluster_name)
 {
   int ret = OB_SUCCESS;
+
   const int64_t BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_4K);
   ObMIOBuffer *target_hsr_buf = NULL;
   ObIOBufferReader *target_hsr_reader = NULL;
@@ -410,11 +411,11 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
     target_hsr.set_seq(static_cast<int8_t>(auth_req.get_packet_meta().pkt_seq_));
     target_hsr.set_username(username_buf);
     if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
-      PROXY_CS_LOG(WARN, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
     } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
                                       target_ctx, target_hsr_reader,
                                       ldg_tenant_name, ldg_cluster_name))) {
-      PROXY_CS_LOG(WARN, "fail to init request analyze context", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to init request analyze context", K(ret));
     } else {
       ObMysqlAnalyzeStatus status = ANALYZE_CONT;
       obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
@@ -480,11 +481,11 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
     } else if (OB_FAIL(client_info.get_cluster_name(default_cluster_name))) {
       LOG_WDIAG("fail to get cluster name", K(ret));
     } else if (OB_FAIL(ObMysqlPacketWriter::write_packet(*target_hsr_buf, target_hsr))) {
-      PROXY_CS_LOG(WARN, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to write hsr pkt", K(target_hsr), K(target_hsr_buf), K(ret));
     } else if (OB_FAIL(ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(
                                             target_ctx, target_hsr_reader,
                                             default_tenant_name, default_cluster_name))) {
-      PROXY_CS_LOG(WARN, "fail to init request analyze context", K(ret));
+      PROXY_CS_LOG(WDIAG, "fail to init request analyze context", K(ret));
     } else {
       ObMysqlAnalyzeStatus status = ANALYZE_CONT;
       obmysql::ObMySQLCmd tmp_req_cmd = obmysql::OB_MYSQL_COM_MAX_NUM;
@@ -520,7 +521,7 @@ int ObProxySessionInfoHandler::rewrite_ssl_req(ObClientSessionInfo &client_info)
   OMPKHandshakeResponse resp = client_info.get_login_req().get_hsr_result().response_;
   OMPKSSLRequest &ssl_req = client_info.get_ssl_req();
 
-  // SSL Request seq is 1
+  // SSL Request报文的序号为1
   ssl_req.set_seq(1);
 
   ObMySQLCapabilityFlags cap_flag = resp.get_capability_flags();
@@ -996,6 +997,7 @@ inline int ObProxySessionInfoHandler::handle_common_var(
     if (client_info.is_sharding_user() && get_global_proxy_config().is_pool_mode) {
       LOG_WDIAG("sharding_user with pool should not enter here");
     } else if (!client_info.is_sharding_user() && get_global_proxy_config().is_pool_mode) {
+      // V1使用连接池，这里需要强制保存作为一个session 基线
     } else if (OB_FAIL(client_info.is_equal_with_snapshot(str_kv.key_, str_kv.value_, is_equal))) {
       // maybe observer has upgraded
       if (OB_UNLIKELY(OB_ERR_SYS_VARIABLE_UNKNOWN == ret)) {
@@ -1262,7 +1264,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
   if (OB_SUCC(ret) && is_auth_request) {
     if (client_info.is_request_follower_user()) {
       ObString ob_read_consistency("ob_read_consistency");
-      // 2 means WEAK for ob_read_consistency
+      // 对于ob_read_consistency，2对应WEAK
       ObString weak("2");
       if (OB_FAIL(client_info.update_sys_variable(ob_read_consistency, weak))) {
         LOG_WDIAG("replace user variables failed", K(ret));
@@ -1273,7 +1275,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
 
     if (OB_SUCC(ret) && (client_info.is_read_only_user())) {
       ObString tx_read_only("tx_read_only");
-      // 1 means true for tx_read_only
+      // ，对于tx_read_only，1表示为true
       ObString tx_read_only_true("1");
       if (OB_FAIL(client_info.update_sys_variable(tx_read_only, tx_read_only_true))) {
         LOG_WDIAG("replace user variables failed", K(ret));
@@ -1336,6 +1338,8 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
 
   client_info.reset_sync_conf_sys_var();
 
+  //如果clientInfo的版本和clientInfo的hash_version 不一致，则clientInfo的内容变化，需要重新计算hash然后更新version
+  //否则认为一致，不需要更新hash值，但是需要更新对应server的hash值
   bool is_changed = false;
   if (client_info.is_session_pool_client_) {
     ObSessionVarValHash& client_val_hash = client_info.val_hash_;

@@ -24,7 +24,7 @@ class ObLDCRoute
 {
 public:
   ObLDCRoute() : location_(), policy_(MAX_ROUTE_POLICY_COUNT), disable_merge_status_check_(false),
-                 curr_cursor_index_(0), next_index_in_site_(0)
+                 curr_cursor_index_(0), next_index_in_site_(0), weight_zone_index_(-1)
   {}
   ~ObLDCRoute() {}
   void reset_cursor();
@@ -32,13 +32,15 @@ public:
   
   const ObLDCItem *get_next_item();
   const ObLDCItem *get_next_primary_zone_item();
+  const ObLDCItem *get_next_weight_item();
   
   bool is_reach_end() const;
   bool is_follower_first_policy() const { return (policy_ >= FOLLOWER_FIRST && policy_ <= UNMERGE_FOLLOWER_FIRST_OPTIMIZED); }
   ObRouteType get_curr_route_type() const;
   ObRouteType get_route_type(const int64_t cursor_index) const;
   int64_t get_cursor_index(const ObRouteType route_type);
-  bool is_random_policy() const;
+  bool is_not_check_route_type() const;
+  bool is_weight_zone_empty() const { return location_.is_weight_zone_empty(); }
 
   static ObRouteType get_route_type(const ObRoutePolicyEnum policy, const int64_t cursor_index);
   static ObIDCType get_idc_type(const ObRouteType route_type);
@@ -60,6 +62,7 @@ public:
   bool disable_merge_status_check_;//if true, not care merge status
   int64_t curr_cursor_index_;
   int64_t next_index_in_site_;
+  int64_t weight_zone_index_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObLDCRoute);
@@ -79,6 +82,7 @@ inline void ObLDCRoute::reset()
   policy_ = MAX_ROUTE_POLICY_COUNT;
   disable_merge_status_check_= true;
   location_.reset();
+  weight_zone_index_ = -1;
 }
 
 inline bool ObLDCRoute::is_reach_end() const
@@ -207,7 +211,7 @@ inline int64_t ObLDCRoute::get_cursor_index(const ObRouteType route_type)
   return idx;
 }
 
-inline bool ObLDCRoute::is_random_policy() const
+inline bool ObLDCRoute::is_not_check_route_type() const
 {
   bool bret = false;
   if (PROXY_PRIMARY_ZONE_NAME_ONLY == policy_

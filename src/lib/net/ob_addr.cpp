@@ -180,13 +180,18 @@ int ObAddr::parse_hostname_port_from_obtring(const ObString& hostname_port,
                                              int32_t& port)
 {
   int ret = OB_SUCCESS;
-  char buf[MAX_IP_ADDR_LENGTH] = "";
+  char buf[MAX_HOSTNAME_PORT_LENGTH] = "";
   int hostname_len = 0;
 
   if (OB_UNLIKELY(hostname_port.empty())) {
     ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("empty hostname port", K(hostname_port), K(ret));
+  } else if (hostname_port.length() > (MAX_HOSTNAME_PORT_LENGTH - 1)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("too long hostname port", K(hostname_port), K(ret));
   } else {
-    MEMCPY(buf, hostname_port.ptr(), MIN(hostname_port.length(), MAX_IP_ADDR_LENGTH - 1));
+    MEMSET(buf, '\0', MAX_HOSTNAME_PORT_LENGTH);
+    MEMCPY(buf, hostname_port.ptr(), MIN(hostname_port.length(), MAX_HOSTNAME_PORT_LENGTH - 1));
     char *pport = strrchr(buf, ':');
     hostname_len = pport - buf;
     if (NULL != pport) {

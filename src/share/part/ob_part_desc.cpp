@@ -162,6 +162,7 @@ int ObPartDesc::cast_obj(ObObj &src_obj,
 
   ObTimeZoneInfo tz_info;
   ObDataTypeCastParams dtc_params;
+  dtc_params.part_func_type_ = get_part_func_type();
 
   if (OB_FAIL(obproxy::proxy::ObExprCalcTool::build_dtc_params_with_tz_info(ctx.get_session_info(),
                                                                             obj_type, tz_info, dtc_params))) {

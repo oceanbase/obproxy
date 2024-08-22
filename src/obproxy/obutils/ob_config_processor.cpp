@@ -109,8 +109,7 @@ ObConfigProcessor &get_global_config_processor()
 }
 
 ObFnParams::ObFnParams() : stmt_type_(OBPROXY_T_INVALID),
-                           table_name_(), fields_(NULL),
-                           row_index_(0), sync_master_failed_(false)
+                           table_name_(), fields_(NULL), row_index_(0), sync_master_failed_(false)
 {}
 
 ObFnParams::~ObFnParams() {}
@@ -179,7 +178,9 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
             LOG_WDIAG("fail to set column name value", K(ret));
           } else {
             column_value.value_type_ = TOKEN_STR_VAL;
-            if (OB_FAIL(sql_field->column_values_.push_back(column_value))) {
+            if (OB_FAIL(ret)) {
+              // nothing
+            } else if (OB_FAIL(sql_field->column_values_.push_back(column_value))) {
               LOG_WDIAG("fail to push back column value", K(ret));
             } else if (OB_FAIL(field_result.fields_.push_back(sql_field))) {
               sql_field->reset();
@@ -189,6 +190,7 @@ int ObConfigProcessor::init_callback(void *data, int argc, char **argv, char **c
               field_result.field_num_++;
             }
           }
+
         }
       }
     }
@@ -814,22 +816,6 @@ int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const Ob
   } else {
     ret_item.set(item.str());
     LOG_DEBUG("get int item succ", K(ret_item));
-  }
-
-  return ret;
-}
-
-int ObConfigProcessor::get_proxy_config_strlist_item(const ObVipAddr &addr, const ObString &cluster_name,
-                                                  const ObString &tenant_name, const ObString& name,
-                                                  ObConfigStrListItem &ret_item, const bool lock_required)
-{
-  int ret = OB_SUCCESS;
-  ObConfigItem item;
-  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item, lock_required))) {
-    LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
-  } else {
-    ret_item = item.str();
-    LOG_DEBUG("get list item succ", K(ret_item));
   }
 
   return ret;

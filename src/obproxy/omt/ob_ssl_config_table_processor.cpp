@@ -344,7 +344,7 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
   ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
   DRWLock::RDLockGuard guard(ssl_config_lock_);
   SSLConfigHashMap &current_map = ssl_config_map_array_[index_];
-  // Get tenant configuration
+  // 获取租户配置
   if (OB_SUCC(ret)) {
     if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
       LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
@@ -356,7 +356,7 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
       LOG_DEBUG("get ssl config from tenant succ", K(ssl_config_info));
     }
   }
-  // Get the cluster configuration
+  // 获取集群配置
   if (OB_HASH_NOT_EXIST == ret) {
     if (OB_FAIL(paste_tenant_and_cluster_name("*", cluster_name, key_string))) {
       LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
@@ -368,7 +368,7 @@ bool ObSSLConfigTableProcessor::is_ssl_key_info_valid(const common::ObString &cl
       LOG_DEBUG("get ssl config from cluster succ", K(ssl_config_info));
     }
   }
-  // Get global configuration
+  // 获取全局配置
   if (OB_HASH_NOT_EXIST == ret) {
     if (OB_FAIL(paste_tenant_and_cluster_name("*", "*", key_string))) {
       LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));

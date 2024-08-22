@@ -39,6 +39,7 @@ function get_os_release() {
   if [[ "${OS_ARCH}x" == "x86_64x" ]]; then
     case "$ID" in
       alinux)
+        version_ge "3" && compat_centos8 && return
         version_ge "2.1903" && compat_centos7 && return
         ;;
       alios)
@@ -122,12 +123,17 @@ for pkg in $RPMS
 do
   if [[ -f "${PWD}/pkg/${pkg}" ]]; then
     echo "find package <${pkg}> in cache"
+  elif [[ -f "${HOME}/.rpm_cache/pkg/${pkg}" ]]; then
+    echo "find package <${pkg}> in ${HOME}/.rpm_cache cache"
+    cp ${HOME}/.rpm_cache/pkg/${pkg} ${PWD}/pkg
   else
     echo -e "download package <${pkg}>... \c"
     TEMP=$(mktemp -p "/" -u ".${pkg}.XXXX")
     DOWNLOAD_URL="${REPO}/${pkg}"
     if [[ $pkg == "oceanbase-ce"* ]]; then
       DOWNLOAD_URL="https://mirrors.aliyun.com/oceanbase/community/stable/el/$OS_RELEASE/$OS_ARCH/${pkg}"
+    elif [[ $pkg == "devdeps-sqlite"* ]]; then
+      DOWNLOAD_URL="https://mirrors.aliyun.com/oceanbase/development-kit/el/$OS_RELEASE/$OS_ARCH/${pkg}"
     fi
     wget "$DOWNLOAD_URL" -q -O "${PWD}/pkg/${TEMP}"
     if [[ $? -eq 0 ]]; then

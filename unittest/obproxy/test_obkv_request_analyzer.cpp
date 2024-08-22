@@ -7,8 +7,8 @@
 #include "ob_mysql_test_utils.h"
 #include "lib/oblog/ob_log.h"
 #include "common/ob_rowkey.h"
-#include "proxy/rpc_optimize/ob_rpc_req.h"
-#include "proxy/rpc_optimize/rpclib/ob_rpc_req_analyzer.h"
+#include "proxy/rpc/ob_rpc_req.h"
+#include "proxy/rpc/rpclib/ob_rpc_req_analyzer.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy;

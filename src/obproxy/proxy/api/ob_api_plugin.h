@@ -8,12 +8,6 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
- *
- * **************************************************************
- *
- * @brief Contains the base interface used in creating Global and Transaciton plugins.
- * @note This interface can never be implemented directly, it should be implemented
- *   through extending ObGlobalPlugin, ObTransactionPlugin, or ObTransformationPlugin.
  */
 
 #ifndef OBPROXY_API_PLUGIN_H

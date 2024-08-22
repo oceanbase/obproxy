@@ -27,16 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * *************************************************************
- *
- * Description:
- * struct ObConnection
- * struct ObServerConnection
- *
- * The accept call is a blocking call while connect is non-blocking. They
- * returns a new ObConnection instance which is an handle to the newly created
- * connection. The connection `q instance can be used later for read/writes
- * using an instance of IO Processor class.
  */
 
 #ifndef OBPROXY_CONNECTION_H

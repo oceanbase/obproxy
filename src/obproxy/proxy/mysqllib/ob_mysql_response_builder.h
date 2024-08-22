@@ -36,6 +36,7 @@ public:
   static const common::ObString OBPROXY_ROUTE_ADDR_NAME;
   static const common::ObString OBPROXY_PROXY_VERSION_NAME;
   static const common::ObString OBPROXY_PROXY_STATUS_NAME;
+  static const common::ObString OBPROXY_GLOBAL_PORT;
 
   static int build_ok_resp(event::ObMIOBuffer &mio_buf, ObProxyMysqlRequest &client_request,
                            ObMysqlClientSession &client_session, const ObProxyProtocol protocol,
@@ -86,6 +87,12 @@ public:
                                              ObMysqlClientSession &client_session,
                                              const ObProxyProtocol protocol,
                                              const bool is_in_trans);
+
+  static int build_select_global_port(event::ObMIOBuffer &mio_buf,
+                                      ObProxyMysqlRequest &client_request,
+                                      ObMysqlClientSession &client_session,
+                                      const ObProxyProtocol protocol,
+                                      const bool is_in_trans);
                                              
   static int build_select_proxy_status_resp(event::ObMIOBuffer &mio_buf,
                                             ObProxyMysqlRequest &client_request,

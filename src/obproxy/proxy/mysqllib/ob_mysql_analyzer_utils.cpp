@@ -43,9 +43,8 @@ int ObMysqlAnalyzerUtils::analyze_one_compressed_packet(
   if (OB_LIKELY(len >= MYSQL_COMPRESSED_HEALDER_LENGTH)) {
     int64_t block_len = reader.block_read_avail();
     char *buf_start = reader.start();
-
+    char mysql_hdr[MYSQL_COMPRESSED_HEALDER_LENGTH];
     if (OB_UNLIKELY(block_len < MYSQL_COMPRESSED_HEALDER_LENGTH)) {
-      char mysql_hdr[MYSQL_COMPRESSED_HEALDER_LENGTH];
       char *written_pos = reader.copy(mysql_hdr, MYSQL_COMPRESSED_HEALDER_LENGTH, 0);
       if (OB_UNLIKELY(written_pos != mysql_hdr + MYSQL_COMPRESSED_HEALDER_LENGTH)) {
         ret = OB_ERR_UNEXPECTED;
@@ -133,7 +132,7 @@ int ObMysqlAnalyzerUtils::do_zlib_compress(
   } else {
     //checksum off, just copy
     int64_t written_len = 0;
-    /* 由于存在 COM_STMT_CLOSE/COM_STMT_RESET 这类命令, 不能直接移动 block, 需要把数据拷贝出来 */
+    /* 由于存在 OB_MYSQL_COM_STMT_CLOSE/OB_MYSQL_COM_STMT_RESET 这类命令, 不能直接移动 block, 需要把数据拷贝出来 */
     if (OB_FAIL(des_buf->write(src_reader, src_data_len, written_len))) {
       LOG_WDIAG("fail to write uncompress data", K(des_buf), K(src_data_len), K(ret));
     } else if (OB_UNLIKELY(written_len != src_data_len)) {

@@ -5,7 +5,7 @@
 #ifndef OBPROXY_RPC_PROMETHEUS_H
 #define OBPROXY_RPC_PROMETHEUS_H
 
-#include "proxy/rpc_optimize/net/ob_proxy_rpc_session_info.h"
+#include "proxy/rpc/net/ob_proxy_rpc_session_info.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "prometheus/ob_prometheus_processor.h"
 #include "lib/string/ob_string.h"

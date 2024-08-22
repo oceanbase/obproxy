@@ -17,6 +17,8 @@
 #include "lib/container/ob_se_array.h"
 #include "iocore/eventsystem/ob_continuation.h"
 #include "iocore/eventsystem/ob_lock.h"
+#include "obutils/ob_single_leaders_follower.h"
+#include "lib/hash/ob_hashmap.h"
 
 #define REFRESH_ZONE_STATE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 1)
 #define REFRESH_SERVER_STATE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 2)
@@ -28,6 +30,7 @@
 #define REFRESH_TENANT_ROLE_EVENT (SERVER_STATE_EVENT_EVENTS_START + 8)
 #define REFRESH_SERVICE_NAME_INFO_EVENT (SERVER_STATE_EVENT_EVENTS_START + 9)
 #define REFRESH_SINGLE_LEADER_EVENT (SERVER_STATE_EVENT_EVENTS_START + 10)
+#define REFRESH_SINGLE_LEADERS_FOLLOWER_EVENT (SERVER_STATE_EVENT_EVENTS_START + 11)
 
 namespace oceanbase
 {
@@ -72,6 +75,7 @@ private:
   int schedule_imm(const int event);
 
   int refresh_single_leader();
+  int refresh_single_leaders_follower();
   int refresh_cluster_role();
   int refresh_server_state();
   int refresh_zone_state();
@@ -79,6 +83,7 @@ private:
   int refresh_all_tenant();
 
   int handle_single_leader(void *data);
+  int handle_single_leaders_follower(void *data);
   int handle_delete_cluster_resource(int64_t master_cluster_id);
   int handle_cluster_role(void *data);
   int handle_zone_state(void *data);
@@ -138,8 +143,16 @@ private:
   uint64_t last_server_list_hash_;
   common::ObSEArray<ObZoneStateInfo,  DEFAULT_ZONE_COUNT> last_zones_state_;
   common::ObSEArray<ObServerStateInfo, DEFAULT_SERVER_COUNT> last_servers_state_;
-  common::ObSEArray<int64_t, 4> tenant_id_array_;
+  common::ObSEArray<int64_t, 4> tenant_id_array_; // single leader using
 
+  struct LeaderFollowerPair
+  {
+    common::ObSEArray<ObSingleLeadersFollower, 2> followers_;
+    net::ObIpEndpoint leader_addr_;
+    common::ObString tenant_name_;
+  };
+
+  hash::ObHashMap<int64_t, LeaderFollowerPair> leader_followers_map_;
   DISALLOW_COPY_AND_ASSIGN(ObServerStateRefreshCont);
 };
 

@@ -6,7 +6,6 @@ export AUTOCONF="autoconf"
 OS_RELEASE=0
 OS_ARCH="x86_64"
 version=`cat /proc/version`
-ELX_OPTION="--with-beyondtrust=yes"
 
 MINIDUMP_OPTION=
 if [[ "$version" =~ "aarch64" ]]
@@ -28,8 +27,9 @@ export DEP_DIR;
 export TOOLS_DIR;
 export RUNTIME_DIR;
 
+ALL_ARGS=("$@")
 PACKAGE=${2:-obproxy}
-OBPROXY_VERSION=${3:-`cat rpm/${PACKAGE}-ce-VER.txt`}
+OBPROXY_VERSION=${3:-`cat rpm/${PACKAGE}-VER.txt`}
 RELEASE=${4:-1}
 PREFIX=/home/admin/obproxy
 SPEC_FILE=obproxy.spec
@@ -114,6 +114,13 @@ function get_os_release() {
   not_supported && return 1
 }
 
+# parse arguments
+function parse_args()
+{
+  echo "parse args..."
+}
+
+
 function do_init()
 {
   set -x
@@ -121,6 +128,7 @@ function do_init()
   libtoolize --force --copy --automake
   autoconf --force
   automake --foreign --copy --add-missing -Woverride -Werror
+
 }
 
 function do_dep_init()
@@ -197,26 +205,6 @@ function do_make()
   make $MAKE_ARGS
 }
 
-function do_bolt()
-{
-  set -x
-  echo -e "[BUILD] do bolt opt"
-  rm -f ${TOPDIR}/src/obproxy/obproxy.origin
-  cp ${TOPDIR}/src/obproxy/obproxy ${TOPDIR}/src/obproxy/obproxy.origin
-  ${BOLT_PATH}/llvm-bolt ${TOPDIR}/src/obproxy/obproxy.origin \
-    -o ${TOPDIR}/src/obproxy/obproxy \
-    -data=${TOPDIR}/bolt/perf.bolt.fdata.point_select \
-    -data2=${TOPDIR}/bolt/perf.bolt.fdata.read_write \
-    -reorder-blocks=ext-tsp   \
-    -reorder-functions=hfsort+ \
-    -split-functions=3         \
-    -split-all-cold            \
-    -dyno-stats    \
-    --use-gnu-stack \
-    --update-debug-sections \
-    --bolt-info=false \
-    -v=0
-}
 
 function do_rpm()
 {
@@ -233,7 +221,6 @@ function do_rpm()
   mkdir -p ${TMP_DIR}/SRPMS
   cp ${PACKAGE}-${OBPROXY_VERSION}.tar.gz ${TMP_DIR}/SOURCES
   cd ${TMP_DIR}/BUILD
-
   echo "[BUILD] make rpms..._prefix=${PREFIX} spec_file=${SPEC_FILE}"
   rpmbuild --define "_topdir ${TMP_DIR}" --define "NAME ${PACKAGE}" --define "VERSION ${OBPROXY_VERSION}" --define "_prefix ${PREFIX}" --define "RELEASE ${RELEASE}" --define "rpm_path ${TOPDIR}" -ba ${TOPDIR}/deps/3rd/${SPEC_FILE} || exit 2
   echo "[BUILD] make rpms done."
@@ -248,6 +235,7 @@ xinit)
   do_dep_init
 	;;
 xqinit)
+  parse_args
   do_init
 	;;
 xclean)
@@ -260,18 +248,15 @@ xmake)
   do_make
   ;;
 xrpm)
+  parse_args
   do_dep_init
   do_config
   do_rpm
   ;;
-xbolt)
-  # need `do_config release`
-  do_bolt
-  ;;
 *)
+  parse_args
   do_dep_init
   do_config
   do_make
-  do_bolt
   ;;
 esac

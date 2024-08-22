@@ -53,7 +53,7 @@ int ObTenantServer::init(const ObIArray<ObProxyReplicaLocation> &locations)
     } else {
       server_count_ = locations.count();
       server_array_ = new (server_list_buf) ObProxyReplicaLocation[server_count_];
-      // Attention: Assuming that the object memory is stored continuously
+      // 注意，这里memcpy假设对象内存是连续存放的
       memcpy(server_array_, &(locations.at(0)), alloc_size);
       replica_count_ = 0;
       for (int64_t i = 0; i < server_count_ && OB_SUCC(ret); ++i) {

@@ -659,7 +659,7 @@ public:
   int get_changed_sys_var_names(common::ObIArray<common::ObString> &names);
   int get_all_sys_var_names(common::ObIArray<common::ObString> &names);
 
-  // @synopsis get variable type by name
+  // @synopsis 根据变量名，取得这个变量的类型
   int get_sys_variable_type(const common::ObString &var_name, common::ObObjType &type);
 
   //user variables related methords
@@ -749,8 +749,6 @@ public:
   int set_origin_username(const common::ObString &username);
 
   void set_enable_reset_db(bool enable) { enable_reset_db_ = enable; }
-  void set_need_record_shard_txn_server(bool need_record_shard_txn_server) { need_record_shard_txn_server_ = need_record_shard_txn_server; }
-  bool need_record_shard_txn_server()  const { return need_record_shard_txn_server_; }
   void set_need_close_last_server_session(bool need_close_last_server_session) { need_close_last_server_session_ = need_close_last_server_session; }
   bool need_close_last_server_session() const { return need_close_last_server_session_; }
 
@@ -1080,7 +1078,6 @@ private:
 
   bool enable_shard_authority_;
   bool enable_reset_db_;
-  bool need_record_shard_txn_server_;
   bool need_close_last_server_session_;
 
   // original login capability
@@ -1442,7 +1439,7 @@ inline bool ObClientSessionInfo::need_reset_conf_sys_vars() const
 inline bool ObClientSessionInfo::need_reset_sess_info_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  // TODO: Processing for sharding connection pools
+  // TODO：针对 sharding 连接池做处理
   bret = get_sess_info_version() > server_info.get_sess_info_version();
   PROXY_LOG(DEBUG, "need_reset_sess_info_vars", K(bret),
     K(get_sess_info_version()), K(server_info.get_sess_info_version()));

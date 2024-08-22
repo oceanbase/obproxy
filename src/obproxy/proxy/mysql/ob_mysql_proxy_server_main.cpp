@@ -30,13 +30,13 @@
 #include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_factory.h"
 //RPC
 #include "obproxy/stat/ob_rpc_stats.h"
-#include "proxy/rpc_optimize/net/ob_rpc_session_accept.h"
-#include "proxy/rpc_optimize/net/ob_rpc_client_net_handler.h"
-#include "proxy/rpc_optimize/net/ob_rpc_server_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_session_accept.h"
+#include "proxy/rpc/net/ob_rpc_client_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "proxy/route/ob_index_cache.h"
-#include "proxy/rpc_optimize/rpclib/ob_table_query_async_cache.h"
-#include "proxy/rpc_optimize/rpclib/ob_tablegroup_cache.h"
-#include "proxy/rpc_optimize/rpclib/ob_rpc_req_ctx_cache.h"
+#include "proxy/rpc/rpclib/ob_table_query_async_cache.h"
+#include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
+#include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -79,7 +79,7 @@ int ObMysqlProxyServerMain::make_net_accept_options(
     net_opt.stacksize_ = config_params.stack_size_;
     net_opt.tcp_init_cwnd_ = config_params.server_tcp_init_cwnd_;
     net_opt.f_callback_on_open_ = true;
-    // need to set 0, will be used in state_client_request_read
+    /* 这里需要设置为0，这样在 state_client_request_read 中才会判断为不同的值 */
     net_opt.sockopt_flags_ = 0;
     if (port.inbound_ip_.is_valid()) {
       net_opt.local_ip_ = port.inbound_ip_;
@@ -281,7 +281,7 @@ int ObMysqlProxyServerMain::init_inherited_info(ObMysqlProxyPort &proxy_port, co
   if (OB_FAIL(ObSocketManager::getsockname(proxy_port.fd_, (struct sockaddr*)(&sock_addr), &namelen))) {
     LOG_EDIAG("fail to get sock name", K(ret));
   } else {
-    // This step of conversion is mainly to obtain the port number, sockaddr_in and sockaddr_in6 port number positions are compatible
+    // 这一步转换主要是为了获取端口号，sockaddr_in和sockaddr_in6端口号位置是兼容的
     struct sockaddr_in *ain = (sockaddr_in *)&sock_addr;
     proxy_port.inbound_ip_.assign(*(struct sockaddr*)(&sock_addr));
     proxy_port.port_ = static_cast<in_port_t>((ntohs)(ain->sin_port));

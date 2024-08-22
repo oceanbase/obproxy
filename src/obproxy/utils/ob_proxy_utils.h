@@ -94,6 +94,10 @@ int split_string_by_char(common::ObString &org_str,
                          common::ObIArray<common::ObString> &result_strs,
                          const char split_char = ';',
                          const bool contain_split_char = false);
+
+int convert_escape_string(const common::ObString &input_str,
+                          common::ObString &output_str,
+                          common::ObIAllocator& allocater);
 } // end of namespace obproxy
 } // end of namespace oceanbase
 

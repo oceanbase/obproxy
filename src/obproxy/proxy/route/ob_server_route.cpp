@@ -11,7 +11,7 @@
  */
 
 #include "proxy/route/ob_server_route.h"
-#include "obproxy/proxy/rpc_optimize/ob_rpc_req.h"
+#include "obproxy/proxy/rpc/ob_rpc_req.h"
 
 using namespace oceanbase::common;
 namespace oceanbase

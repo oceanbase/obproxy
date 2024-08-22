@@ -23,15 +23,15 @@ namespace obproxy
 namespace proxy
 {
 
-static const uint32_t MYSQL_NET_HEADER_LENGTH             = 4;      // standard header size
-static const uint32_t MYSQL_PAYLOAD_LENGTH_LENGTH         = 3;  // standard payload length size
-static const int64_t MYSQL_COMP_HEADER_LENGTH             = 3;      // compression header extra size
-static const int64_t MYSQL_NET_TYPE_LENGTH                = 1;         // packet type size
-static const int64_t MYSQL_PS_EXECUTE_HEADER_LENGTH       = 9; // ps packet header size: stmt_id + flag + iteration-count
-static const int64_t MYSQL_PS_STMT_ID_LENGTH              = 4;       // mysql prepare-statement protocol: statement-id
+static const uint32_t MYSQL_NET_HEADER_LENGTH = 4;      // standard header size
+static const uint32_t MYSQL_PAYLOAD_LENGTH_LENGTH = 3;  // standard payload length size
+static const int64_t MYSQL_COMP_HEADER_LENGTH = 3;      // compression header extra size
+static const int64_t MYSQL_NET_TYPE_LENGTH = 1;         // packet type size
+static const int64_t MYSQL_PS_EXECUTE_HEADER_LENGTH = 9; // ps packet header size: stmt_id + flag + iteration-count
+static const int64_t MYSQL_PS_STMT_ID_LENGTH = 4;       // mysql prepare-statement protocol: statement-id
 static const int64_t MYSQL_PS_SEND_LONG_DATA_PARAM_ID_LENGTH = 2;  // mysql ps send_long_data: param-id
 // mysql meta info include mysql header and mysql request type
-static const int64_t MYSQL_NET_META_LENGTH                = MYSQL_NET_TYPE_LENGTH + MYSQL_NET_HEADER_LENGTH;
+static const int64_t MYSQL_NET_META_LENGTH = MYSQL_NET_TYPE_LENGTH + MYSQL_NET_HEADER_LENGTH;
 
 static const int64_t RPC_NET_HEADER_LENGTH = 16;        // RPC Serivce header
 
@@ -41,30 +41,30 @@ static const int64_t RPC_NET_HEADER_LENGTH = 16;        // RPC Serivce header
 //  3   length of compressed payload
 //  1   compressed sequence id
 //  3   length of payload before compression
-static const int64_t MYSQL_COMPRESSED_HEALDER_LENGTH      = 7;
+static const int64_t MYSQL_COMPRESSED_HEALDER_LENGTH = 7;
 
-static const int64_t MYSQL_PACKET_MAX_LENGTH              = 0xFFFFFF;
-static const int64_t MYSQL_PAYLOAD_MAX_LENGTH             = (MYSQL_PACKET_MAX_LENGTH - 1);
-static const int64_t MYSQL_SHORT_PACKET_MAX_LENGTH        = 2048; //for ok, eof
+static const int64_t MYSQL_PACKET_MAX_LENGTH = 0xFFFFFF;
+static const int64_t MYSQL_PAYLOAD_MAX_LENGTH = (MYSQL_PACKET_MAX_LENGTH - 1);
+static const int64_t MYSQL_SHORT_PACKET_MAX_LENGTH = 2048; //for ok, eof
 //for hello pkt, the first pkt send by observer or mysql
-static const int64_t MYSQL_HELLO_PKT_MAX_LEN              = 1024;
-static const int64_t MYSQL_OK_PACKET_TYPE                 = 0x00;
-static const int64_t MYSQL_ERR_PACKET_TYPE                = 0xFF;
+static const int64_t MYSQL_HELLO_PKT_MAX_LEN = 1024;
+static const int64_t MYSQL_OK_PACKET_TYPE = 0x00;
+static const int64_t MYSQL_ERR_PACKET_TYPE = 0xFF;
 //the EOF packet may appear in places where a Protocol::LengthEncodedInteger
 //may appear. You must check whether the packet length is less than 9 to
 //make sure that it is a EOF packet.
-static const int64_t MYSQL_EOF_PACKET_TYPE                = 0xFE;
+static const int64_t MYSQL_EOF_PACKET_TYPE = 0xFE;
 static const int64_t MYSQL_MAX_EOF_PACKET_LEN = 9;
-static const int64_t MYSQL_LOCAL_INFILE_TYPE              = 0xFB;
-static const int64_t MYSQL_HANDSHAKE_PACKET_TYPE          = 0x0A;
+static const int64_t MYSQL_LOCAL_INFILE_TYPE = 0xFB;
+static const int64_t MYSQL_HANDSHAKE_PACKET_TYPE = 0x0A;
 
 //-----------------------------------oceanbase 2.0 c/s protocol----------------------//
-static const uint16_t OB20_PROTOCOL_MAGIC_NUM             = 0x20AB;
-static const int64_t OB20_PROTOCOL_HEADER_LENGTH          = 24;
-static const int32_t OB20_PROTOCOL_TAILER_LENGTH          = 4;  // for CRC32
-static const int64_t OB20_PROTOCOL_HEADER_TAILER_LENGTH   = OB20_PROTOCOL_HEADER_LENGTH + OB20_PROTOCOL_TAILER_LENGTH;
-static const int32_t OB20_PROTOCOL_EXTRA_INFO_LENGTH      = 4;  // for the length of extra info
-static const int16_t OB20_PROTOCOL_VERSION_VALUE          = 20;
+static const uint16_t OB20_PROTOCOL_MAGIC_NUM = 0x20AB;
+static const int64_t OB20_PROTOCOL_HEADER_LENGTH = 24;
+static const int32_t OB20_PROTOCOL_TAILER_LENGTH = 4;  // for CRC32
+static const int64_t OB20_PROTOCOL_HEADER_TAILER_LENGTH = OB20_PROTOCOL_HEADER_LENGTH + OB20_PROTOCOL_TAILER_LENGTH;
+static const int32_t OB20_PROTOCOL_EXTRA_INFO_LENGTH = 4;  // for the length of extra info
+static const int16_t OB20_PROTOCOL_VERSION_VALUE = 20;
 static const int64_t MYSQL_COMPRESSED_OB20_HEALDER_LENGTH = MYSQL_COMPRESSED_HEALDER_LENGTH + OB20_PROTOCOL_HEADER_LENGTH;
 
 enum class ObProxyProtocol
@@ -72,7 +72,32 @@ enum class ObProxyProtocol
   PROTOCOL_NORMAL = 0,
   PROTOCOL_CHECKSUM,
   PROTOCOL_OB20,
+  PROTOCOL_MAX,
 };
+
+const char * get_proxy_protocol_string(enum ObProxyProtocol protocol)
+{
+  const char *ret = "";
+  switch (protocol) {
+    case ObProxyProtocol::PROTOCOL_NORMAL:
+      ret = "MySQL";
+      break;
+
+    case ObProxyProtocol::PROTOCOL_CHECKSUM:
+      ret = "Compressed MySQL";
+      break;
+
+    case ObProxyProtocol::PROTOCOL_OB20:
+      ret = "OceanBase 2.0";
+      break;
+
+    default:
+      ret = "Unknown";
+      break;
+  }
+
+  return ret;
+}
 
 // one of those types indicates that one mysql cmd response is finished
 enum ObMysqlRespEndingType

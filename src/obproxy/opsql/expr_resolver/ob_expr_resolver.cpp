@@ -28,6 +28,7 @@
 #include "common/ob_obj_compare.h"
 #include "lib/utility/ob_print_utils.h"
 #include "proxy/route/ob_route_diagnosis.h"
+#include "common/expression/ob_expr_util.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::proxy;
@@ -317,6 +318,7 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
 {
   int ret = OB_SUCCESS;
   ObProxyTokenType token_type = ObProxyTokenType::TOKEN_NONE;
+  bool is_diagnostic = OB_NOT_NULL(route_diagnosis_) && route_diagnosis_->is_diagnostic(RESOLVE_TOKEN);
   ObString token_str;
   char int_token_buf[20] { 0 };
   ObProxyExprType expr_type = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
@@ -336,7 +338,9 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
     int64_t col_idx = relation->column_idx_;
     token_type = token->type_;
     if (TOKEN_STR_VAL == token->type_) {
-      token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      }
       target_obj->set_varchar(token->str_value_.str_, token->str_value_.str_len_);
       target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
       if (token->str_value_.str_len_ > 2 &&
@@ -355,33 +359,48 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
       }
     } else if (TOKEN_INT_VAL == token->type_) {
       target_obj->set_int(token->int_value_);
-      sprintf(int_token_buf, "%ld",token->int_value_);
-      token_str.assign_ptr(int_token_buf, (ObString::obstr_size_t) strlen(int_token_buf));
+      if (OB_UNLIKELY(is_diagnostic)) {
+        sprintf(int_token_buf, "%ld",token->int_value_);
+        token_str.assign_ptr(int_token_buf, (ObString::obstr_size_t) strlen(int_token_buf));
+      }
     } else if (TOKEN_PLACE_HOLDER == token->type_) {
       int64_t param_index = token->placeholder_idx_;
       if (OB_FAIL(get_obj_with_param(*target_obj, client_request, client_info,
                                      part_info, ps_id_entry, param_index))) {
         LOG_DEBUG("fail to get target obj with param", K(ret));
       }
-      token_str.assign_ptr(NULL, 0);
+
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(NULL, 0);
+      }
     } else if (TOKEN_FUNC == token->type_) {
       if (OB_FAIL(calc_token_func_obj(token, client_info, *target_obj, sql_field_result, part_info->is_oracle_mode(), expr_type))) {
         LOG_WDIAG("fail to calc token func obj", K(ret));
       }
-      token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      }
     } else if (TOKEN_HEX_VAL == token->type_) {
       if (OB_FAIL(calc_token_hex_obj(token, *target_obj))) {
         LOG_WDIAG("fail to calc token hex obj", K(ret));
       }
-      token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
+      }
     } else if (TOKEN_COLUMN == token->type_) {
-      token_str.assign_ptr(token->column_name_.str_, token->column_name_.str_len_);
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(token->column_name_.str_, token->column_name_.str_len_);
+      }
       ret = OB_INVALID_ARGUMENT;
     } else if (TOKEN_NULL == token->type_) {
       target_obj->set_null();
-      token_str = "NULL";
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str = "NULL";
+      }
     } else {
-      token_str.assign_ptr(NULL, 0);
+      if (OB_UNLIKELY(is_diagnostic)) {
+        token_str.assign_ptr(NULL, 0);
+      }
       ret = OB_INVALID_ARGUMENT;
     }
 
@@ -804,6 +823,7 @@ int ObExprResolver::calc_token_hex_obj(ObProxyTokenNode *token, ObObj &target_ob
   return ret;
 }
 
+// todo : integrate with new func expr resolver
 int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode)
 {
   int ret = OB_SUCCESS;
@@ -836,6 +856,139 @@ int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &p
             obj.set_varchar(src_val.ptr() + start_pos - 1, static_cast<int32_t>(sub_len));
         }
       }
+    }
+  } else {
+    ret = OB_ERR_FUNCTION_UNKNOWN;
+    LOG_WDIAG("unknown generate function type", K(part_key.func_type_), K(ret));
+  }
+  return ret;
+}
+
+// todo : merge with calc_generated_key_value
+int ObExprResolver::calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type)
+{
+  int ret = OB_SUCCESS;
+  if (OB_PROXY_EXPR_TYPE_FUNC_SUBSTR == part_key.func_type_) {
+    //  we only support substr now
+    ObCollationType collation = obj.get_collation_type();
+    // todo : client and proxy can not get the shcema type of user table now
+    if (entity_type == obkv::ObTableEntityType::ET_HKV) {
+      collation = common::CS_TYPE_BINARY;
+    }
+    ObString output;
+    ObString str = obj.get_string();
+    int64_t start_pos = 0;
+    int64_t length = 0;
+    if (OB_UNLIKELY(OB_ISNULL(part_key.params_[0])
+                    || PARAM_COLUMN != part_key.params_[0]->type_
+                    || ObStringTC != obj.get_type_class())) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[0]), K(obj));
+    } else if (OB_UNLIKELY(OB_ISNULL(part_key.params_[1]))
+              || OB_FAIL(ObFuncExprTool::calc_int_value_from_func_parser(part_key.params_[1], start_pos))) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[1]));
+    } else if (OB_UNLIKELY(OB_NOT_NULL(part_key.params_[2]))
+               && OB_FAIL(ObFuncExprTool::calc_int_value_from_func_parser(part_key.params_[2], length))) {
+      // params 2 counld be NULL
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[2]));
+    } else if (obj.get_string().empty()) {
+      // do nothing
+      LOG_DEBUG("origin str is empty", K(ret));
+    } else {
+      length = OB_ISNULL(part_key.params_[2]) ? str.length() : length;
+      LOG_DEBUG("calc substr generated key for obkv params:", K(str), K(length), K(start_pos));
+      int64_t mb_len = ObCharset::strlen_char(collation, str.ptr(), str.length());
+      start_pos = (start_pos >= 0) ? (start_pos - 1) : start_pos + mb_len;
+      if (OB_UNLIKELY(start_pos < 0 || start_pos > mb_len || length <= 0)) {
+        output.assign(NULL, 0);
+      } else {
+        length = min(length, mb_len - start_pos);
+        int64_t offset = ObCharset::charpos(collation, str.ptr(), str.length(), start_pos);
+        length = ObCharset::charpos(collation,
+                                    str.ptr() + offset,
+                                    (offset == 0) ? str.length() : str.length() - offset,
+                                    length);
+        // length could be equal to str.length()
+        if (offset >= str.length() || length > str.length()) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("unexpected offset and length of str", K(str), K(offset), K(length), K(ret));
+        } else {
+          output.assign_ptr(str.ptr() + offset, length);
+        }
+      }
+      if (OB_SUCC(ret)) {
+        obj.set_string(obj.get_type(), output);
+      }
+      LOG_DEBUG("calc substr generated key for obkv", K(obj), K(output), K(output.length()));
+    }
+
+  } else if (OB_PROXY_EXPR_TYPE_FUNC_SUBSTR_INDEX == part_key.func_type_) {
+    ObString output;
+    ObString str = obj.get_string();
+    ObString delim;
+    int64_t count = 0;
+
+    if (OB_UNLIKELY(OB_ISNULL(part_key.params_[0])
+                    || PARAM_COLUMN != part_key.params_[0]->type_
+                    || ObStringTC != obj.get_type_class())) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[0]), K(obj));
+    } else if (OB_UNLIKELY(OB_ISNULL(part_key.params_[1])
+               || OB_FAIL(ObFuncExprTool::calc_str_value_from_func_parser(part_key.params_[1], delim)))) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[1]));
+    } else if (OB_UNLIKELY(OB_ISNULL(part_key.params_[2])
+               || OB_FAIL(ObFuncExprTool::calc_int_value_from_func_parser(part_key.params_[2], count)))) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[2]));
+    } else if (obj.get_string().empty()
+               || delim.empty()
+               || count == 0) {
+      // these case return empty string
+      // 1. src str is empty
+      // 2. delim str is empty
+      // 3. count is 0
+      obj.set_string(obj.get_type(), "");
+    } else {
+      bool is_reverse = count < 0;
+      int32_t *next_arr = NULL;
+      int64_t pos = -1;
+
+      LOG_DEBUG("calc substring_index generated key for obkv", K(str), K(delim), K(count));
+      if (OB_ISNULL(next_arr = static_cast<int32_t *>(op_fixed_mem_alloc(delim.length() * sizeof(int32_t))))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("fail to allocate mem for kmp next arr", K(ret));
+      } else if (!is_reverse && OB_FAIL(ObExprUtil::kmp_next(delim.ptr(), delim.length(), next_arr))) {
+        LOG_WDIAG("fail to init kmp next arr", K(ret));
+      } else if (is_reverse && OB_FAIL(ObExprUtil::kmp_next_reverse(delim.ptr(), delim.length(), next_arr))) {
+        LOG_WDIAG("fail to init kmp next arr", K(ret));
+      } else {
+        if (!is_reverse) {
+          if (OB_FAIL(ObExprUtil::kmp(delim.ptr(), delim.length(), str.ptr(), str.length(), count, next_arr, pos))) {
+            LOG_WDIAG("fail to calculate substr pos", K(ret));
+          } else if (-1 < pos) {
+            output.assign(str.ptr(), pos);
+          }
+        } else if (is_reverse) {
+          if (OB_FAIL(ObExprUtil::kmp_reverse(delim.ptr(), delim.length(), str.ptr(), str.length(), count, next_arr, pos))) {
+            LOG_WDIAG("fail to calculate substr pos", K(ret));
+          } else if (-1 < pos) {
+            output.assign(str.ptr() + pos + delim.length(), str.length() - delim.length() - pos);
+          }
+        }
+      }
+      if (-1 == pos) {
+        output.assign(str.ptr(), str.length());
+      }
+      if (OB_NOT_NULL(next_arr)) {
+        op_fixed_mem_free(next_arr, delim.length() * sizeof(int32_t));
+      }
+      if (OB_SUCC(ret)) {
+        obj.set_string(obj.get_type(), output);
+      }
+      LOG_DEBUG("calc substring_index generated key for obkv", K(obj));
     }
   } else {
     ret = OB_ERR_FUNCTION_UNKNOWN;
@@ -972,7 +1125,65 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
   return ret;
 }
 
+/*
+ * func parse num type in these cases
+ * 1. return int type for a positive number
+ * 2. return func type for a negative number : - 100 -> - ( 100 )
+ * 3. return str type for big number: length of number > 17 (don't consider for generated col temporary)
+ * 4. we don't consider complex expr calculation for generated col temporary, like substr('aaa', 1, 1 + 2)
+ */
+int ObFuncExprTool::calc_int_value_from_func_parser(ObProxyParamNode *param_node, int64_t &int_value)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(param_node)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected func param node", K(ret));
+  } else if (param_node->type_ == PARAM_INT_VAL) {
+    int_value = param_node->int_value_;
+  } else if (param_node->type_ == PARAM_FUNC && param_node->func_expr_node_->func_name_.str_len_ > 0
+             && OB_NOT_NULL(param_node->func_expr_node_->func_name_.str_)
+             && param_node->func_expr_node_->func_name_.str_[0] == '-') {
+    if (OB_UNLIKELY(param_node->func_expr_node_->child_->child_num_ != 2)) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("invalid int value param node", K(ret));
+    } else {
+      int_value = -param_node->func_expr_node_->child_->head_->next_->int_value_;
+    }
+  } else {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid int value param node", K(ret));
+  }
+  LOG_DEBUG("calc int value from func parser", K(int_value));
+  return ret;
+}
 
-} // end of opsql
-} // end of obproxy
+
+/*
+ * func parse str
+ * 1. ObServer return generated_col func in these cases,  func parser treat all str to PARAM_COLUMN
+ *    a. SUBSTRING_INDEX(K, 'AAAA',2)
+ *    b. SUBSTRING_INDEX('K', 'AAAA',2)
+ *    c. SUBSTRING_INDEX(`K`, 'AAAA',2)
+ *    d. SUBSTRING_INDEX("K", 'AAAA',2)
+ */
+int ObFuncExprTool::calc_str_value_from_func_parser(ObProxyParamNode *param_node, ObString &str_value)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(param_node)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected func param node", K(ret));
+  } else if (param_node->type_ == PARAM_STR_VAL) {
+    str_value = ObString(param_node->str_value_.str_len_, param_node->str_value_.str_);
+  } else if (param_node->type_ == PARAM_COLUMN) {
+    str_value = ObString(param_node->col_name_.str_len_, param_node->col_name_.str_);
+  } else {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid str value for param node", K(ret));
+  }
+  LOG_DEBUG("calc str value from func parser", K(str_value));
+  return ret;
+}
+
+} // namespace opsql
+} // namespace obproxy
 } // end of oceanbase

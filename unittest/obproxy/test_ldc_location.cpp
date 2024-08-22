@@ -250,7 +250,7 @@ TEST_F(TesLDCLocation, basic)
   EXPECT_TRUE(ObRouteTypeCheck::is_route_type_valid(0));
   EXPECT_TRUE(ObRouteTypeCheck::is_route_type_valid(118));
   EXPECT_TRUE(ObRouteTypeCheck::is_route_type_valid(254));
-  EXPECT_TRUE(!ObRouteTypeCheck::is_route_type_valid(1024));
+  EXPECT_TRUE(!ObRouteTypeCheck::is_route_type_valid(16383));
   EXPECT_TRUE(!ObRouteTypeCheck::is_route_type_valid(-1));
 
   EXPECT_EQ(13, ObLDCRoute::route_order_size_[0]);
@@ -852,7 +852,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   bool need_use_dup_replica = false;
   ObSEArray<ObString, 5> region_names;
   ObSEArray<ObServerStateSimpleInfo, 5> servers_info;
-  ObString proxy_primary_zone_name;
+  ObSEArray<ObString, 5> proxy_primary_zone_name;
   bool need_skip_leader = false;
   bool is_random_route_mode = false;
   ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item, target_ldc,
@@ -957,7 +957,7 @@ TEST_F(TesLDCLocation, set_ldc_location)
   ObProxyPartitionLocation pl;
   ObSEArray<ObLDCItem, 10> tmp_item_array;
   ObSEArray<ObLDCItem, 10> tmp_pz_item_array;
-  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, tmp_pz_item_array));
+  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, NULL, NULL));
   ASSERT_TRUE(!target_ldc.is_ldc_used());
   ASSERT_TRUE(target_ldc.is_empty());
 
@@ -979,7 +979,7 @@ TEST_F(TesLDCLocation, set_ldc_location)
   tmp_item_array.push_back(same_idc_item);
   tmp_item_array.push_back(same_region_item);
 
-  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, tmp_pz_item_array));
+  ASSERT_EQ(OB_SUCCESS, target_ldc.set_ldc_location(&pl, dummy_ldc, tmp_item_array, NULL, NULL));
   ASSERT_TRUE(!target_ldc.is_ldc_used());
   ASSERT_TRUE(!target_ldc.is_empty());
   ASSERT_EQ(12, target_ldc.count());
@@ -1027,10 +1027,10 @@ TEST_F(TesLDCLocation, fill_weak_read_location)
   bool is_only_readonly_zone = false;
   ObSEArray<ObString, 5> region_names;
   ObSEArray<ObServerStateSimpleInfo, 5> servers_info;
-  ObString proxy_primary_zone_name;
+  ObSEArray<ObString, 5> proxy_primary_zone_name;
 
   ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_weak_read_location(&pl, dummy_ldc,
-      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name, ObRoutePolicyEnum::MERGE_IDC_ORDER));
 
   ASSERT_EQ(OB_SUCCESS, dummy_ldc.assign(&ts, ss_info_, idc_name, true, cluster_name, OB_DEFAULT_CLUSTER_ID));
   ASSERT_TRUE(dummy_ldc.is_ldc_used());
@@ -1073,7 +1073,7 @@ TEST_F(TesLDCLocation, fill_weak_read_location)
   ASSERT_TRUE(!dummy_ldc.is_empty());
 
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_weak_read_location(&pl, dummy_ldc,
-      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name, ObRoutePolicyEnum::MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(!entry_need_update);
   ASSERT_EQ(dummy_ldc.get_idc_name(), target_ldc.get_idc_name());
@@ -1095,7 +1095,7 @@ TEST_F(TesLDCLocation, fill_weak_read_location)
 
   is_only_readonly_zone = true;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_weak_read_location(&pl, dummy_ldc,
-      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name, ObRoutePolicyEnum::MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_EQ(dummy_ldc.get_idc_name(), target_ldc.get_idc_name());
@@ -1109,7 +1109,7 @@ TEST_F(TesLDCLocation, fill_weak_read_location)
 
   is_only_readonly_zone = false;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_weak_read_location(&pl, dummy_ldc,
-      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name));
+      target_ldc, entry_need_update, is_only_readonly_zone, servers_info, region_names, proxy_primary_zone_name, ObRoutePolicyEnum::MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_EQ(dummy_ldc.get_idc_name(), target_ldc.get_idc_name());

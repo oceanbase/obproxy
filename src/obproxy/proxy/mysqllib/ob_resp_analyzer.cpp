@@ -861,11 +861,29 @@ int ObRespAnalyzer::analyze_one_packet_header(
       if (is_last_pkt(result)) {    // only has one compressed packet
         resp_result.is_resultset_resp_ = false;
         analyze_mode_ = DECOMPRESS_MODE;
-        if (OB_FAIL(alloc_mysql_pkt_buf())) {
-          LOG_WDIAG("fail to alloc_mysql_pkt_buf", K(ret));
-        }
       } else {
         resp_result.is_resultset_resp_ = true;
+        // only works for oceanbase 2.0
+        if (ObProxyProtocol::PROTOCOL_OB20 == protocol_ && !params_.is_compressed_) {
+          int64_t read_avail = reader.read_avail();
+          int64_t first_pkt_len = result.compressed_mysql_header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
+
+          if (read_avail < ANALYZE_FIRST_OB20_RESP_MAX_LEN) {
+            result.status_ = ANALYZE_CONT; // continue to read from net
+            resp_result.is_resultset_resp_ = false;
+            LOG_DEBUG("continue to read from net", K(read_avail), K(ANALYZE_FIRST_OB20_RESP_MAX_LEN));
+          }
+
+          if (read_avail > first_pkt_len) {
+            analyze_mode_ = DECOMPRESS_MODE; // received more than one ob20 pkt
+            resp_result.is_resultset_resp_ = false;
+            LOG_DEBUG("received more than the first ob20 pkt, can decompress now", K(read_avail), K(first_pkt_len));
+          }
+        }
+      }
+
+      if (is_decompress_mode() && OB_FAIL(alloc_mysql_pkt_buf())) {
+        LOG_WDIAG("fail to alloc_mysql_pkt_buf", K(ret));
       }
     } else {
       ObServerStatusFlags server_status(0);

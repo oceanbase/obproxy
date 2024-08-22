@@ -102,131 +102,127 @@ int kmp_next(const char *x, int64_t m, ObArray<int64_t> &next)
   return ret;
 }
 
-int ObExprUtil::kmp(const char *x, 
-                    int64_t m, 
-                    const char *y, 
-                    int64_t n, 
-                    int64_t count, 
+int ObExprUtil::kmp(const char *pattern,
+                    const int64_t pattern_len,
+                    const char *text,
+                    const int64_t text_len,
+                    const int64_t nth_appearance,
+                    const int32_t *next, /* calculated, size same with pattern */
                     int64_t &result)
 {
   int ret = OB_SUCCESS;
-  int64_t i = 0;
-  int64_t j = 0;
-  int64_t t = 0;
-  ObArray<int64_t> next;
   result = -1;
-
-  if (OB_ISNULL(x) || OB_ISNULL(y) || OB_UNLIKELY(m <= 0) || OB_UNLIKELY(n <= 0)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("null ptr", K(ret));
-  } else if (OB_FAIL(next.prepare_allocate(m + 1))) {
-    LOG_WDIAG("allocate fail", K(m), K(ret));
-  } else if (m <= n) {
-    // preprocessing
-    if (OB_SUCC(kmp_next(x, m, next))) {
-      // searching
-      i = j = t = 0;
-      while (j < n && -1 == result) {
-        while (-1 < i && x[i] != y[j]) {
-          i = next[i];
-        }
-        i++;
-        j++;
-        if (i >= m) {
-          t++;
-          // find nth apperance
-          if (t == count) {
+  if (OB_ISNULL(pattern) || OB_ISNULL(text) ||
+       OB_UNLIKELY(pattern_len <= 0) || OB_UNLIKELY(text_len <= 0) || OB_ISNULL(next)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid arg", K(ret), K(pattern_len), K(text_len));
+  } else if (OB_LIKELY(pattern_len <= text_len)) {
+    int64_t i = 0; // for pattern
+    int64_t j = 0; // for text
+    int64_t t = 0; // times matched
+    while (j < text_len) {
+      if (i == -1 || pattern[i] == text[j]) {
+        ++j;
+        if (++i == pattern_len) { // matched
+          if (++t == nth_appearance) { // find nth apperance
             result = j - i;
+            break;
           }
+          // reset start pos to first character
           i = 0;
         }
+      } else {
+        i = next[i];
       }
     }
   }
   return ret;
 }
 
-/**
- * next array is reversed, for example
- * [2, 2, 2, 3] to [3, 2, 2, 2]
- * kmp_reverse is changed according to next array
- * because next array needs one more space than delim.length
- */
-int kmp_next_reverse(const char *x, int64_t m, ObArray<int64_t> &next)
+int ObExprUtil::kmp_next(const char *pattern, const int64_t pattern_len, int32_t *next)
 {
   int ret = OB_SUCCESS;
-  int64_t i = m - 1;
-  int64_t j = m;
-
-  if (OB_ISNULL(x) || OB_UNLIKELY(m <= 0)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("null ptr", K(ret));
+  if (OB_ISNULL(pattern) || OB_UNLIKELY(pattern_len <= 0) || OB_ISNULL(next)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid arg", K(ret), K(pattern_len));
   } else {
-    next[0] = m;
-    while (0 <= i) {
-      while (j < m && x[i] != x[j]) {
-        j = next[m - 1 - j];
-      }
-      i--;
-      j--;
-      if (x[i] == x[j]) {
-        next[m - 1 - i] = next[m - 1 - j];
+    // calc the kmp next array of pattern, next[i] represents the common maximum length of
+    // the prefix and suffix of the substring before the (i-1)th position of the pattern.
+    // for example, the next array of "ABCABB" is [-1, 0, 0, 0, 1, 2].
+    // next[5] = 2, the substring is ABCAB, perfix set is {A,AB,ABC,ABCA},
+    // suffix set is {B,AB,CAB,BCAB}, the maximun length of common substring is "AB",
+    // which length is 2.
+    next[0] = -1;
+    int i = 0;
+    int k = -1;
+    while (i < pattern_len - 1) {
+      if (k == -1 || pattern[i] == pattern[k]) {
+        next[++i] = ++k;
       } else {
-        next[m - 1 - i] = j;
+        k = next[k];
       }
     }
   }
-
   return ret;
 }
 
-/**
- * read reversed next array
- * next[i] to next[m-1-i]
- */
-int ObExprUtil::kmp_reverse(const char *x, 
-                            int64_t m, 
-                            const char *y, 
-                            int64_t n, 
-                            int64_t count, 
+int ObExprUtil::kmp_reverse(const char *pattern,
+                            const int64_t pattern_len,
+                            const char *text,
+                            const int64_t text_len,
+                            const int64_t nth_appearance,
+                            const int32_t *next, /* calculated, size same with pattern */
                             int64_t &result)
 {
   int ret = OB_SUCCESS;
-  int64_t i = 0;
-  int64_t j = 0;
-  int64_t t = 0;
-  ObArray<int64_t> next;
   result = -1;
-
-  if (OB_ISNULL(x) || OB_ISNULL(y) || OB_UNLIKELY(m <= 0) || OB_UNLIKELY(n <= 0)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("null ptr", K(m), K(n), K(ret));
-  } else if (OB_FAIL(next.prepare_allocate(m + 1))) {
-    LOG_WDIAG("allocate fail", K(m), K(ret));
-  } else if (m <= n) {
-    // preprocessing
-    ret = kmp_next_reverse(x, m, next);
-
-    // searching from back to front
-    i = m - 1;
-    j = n - 1;
-    t = 0;
-    while (0 <= j && -1 == result) {
-      while (i < m && x[i] != y[j]) {
-        i = next[m - 1 - i];
-      }
-      i--;
-      j--;
-      if (0 > i) {
-        t--;
-        // find nth apperance
-        if (t == count) {
-          result = j + 1;
+  if (OB_ISNULL(pattern) || OB_ISNULL(text) ||
+       OB_UNLIKELY(pattern_len <= 0) || OB_UNLIKELY(text_len <= 0) || OB_ISNULL(next)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid arg", K(ret), K(pattern_len), K(text_len));
+  } else if (OB_LIKELY(pattern_len <= text_len)) {
+    int64_t i = pattern_len - 1; // for pattern
+    int64_t j = text_len - 1; // for text
+    int64_t t = 0; // times matched
+    while (j >= 0) {
+      if (i == pattern_len || pattern[i] == text[j]) {
+        --j;
+        if (--i == -1) { // matched
+          if (--t == nth_appearance) { // find nth apperance
+            result = j + 1;
+            break;
+          }
+          // reset start pos to last character
+          i = pattern_len - 1;
         }
-        i = m - 1;
+      } else {
+        i = next[i];
       }
     }
   }
   return ret;
 }
 
+int ObExprUtil::kmp_next_reverse(const char *pattern,
+                                 const int64_t pattern_len,
+                                 int32_t *next)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(pattern) || OB_UNLIKELY(pattern_len <= 0) || OB_ISNULL(next)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WARN("invalid arg", K(ret), K(pattern_len));
+  } else {
+    // reverse next array for kmp, ABCABB's reverse next array is [4, 5, 5, 4, 5, 6].
+    next[pattern_len - 1] = pattern_len;
+    int i = pattern_len - 1;
+    int k = pattern_len;
+    while (i >= 1) {
+      if (k == pattern_len || pattern[i] == pattern[k]) {
+        next[--i] = --k;
+      } else {
+        k = next[k];
+      }
+    }
+  }
+  return ret;
+}

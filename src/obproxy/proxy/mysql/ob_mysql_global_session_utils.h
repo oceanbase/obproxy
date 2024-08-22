@@ -333,6 +333,7 @@ public:
   static int get_sockaddr_by_ip_port(const common::ObString& ip_str, int32_t port, bool is_physical, sockaddr& addr);
 
 };
+// V1的没有配置，这里增加一个全局map保存Connector
 class GlobalSingleConnectorMap {
 public:
   GlobalSingleConnectorMap() { }

@@ -1,15 +1,14 @@
 #!/bin/bash
 #
+# AUTHOR: Luyun
 # DATE: 2018-12-29
 # DESCRIPTION:
 #
 set +x
-CURDIR="$(dirname $(readlink -f "$0"))"
-export PATH=${CURDIR}/../../../..//deps/3rd/usr/local/oceanbase/devtools/bin/:/usr/local/bin:$PATH
-export BISON_PKGDATADIR=${CURDIR}/../../../../deps/3rd/usr/local/oceanbase/devtools/share/bison/
+export PATH=/usr/local/bin:$PATH
 # run bison
 #bison -p obfuncexpr -v -Werror -d ob_func_expr_parser.y -o ob_func_expr_parser_tab.c
-bison -p obfuncexpr -v -Werror -d ob_func_expr_parser.y -o ob_func_expr_parser_tab.c
+/usr/bin/bison -p obfuncexpr -v -Werror -d ob_func_expr_parser.y -o ob_func_expr_parser_tab.c
 if [ $? -ne 0 ]
 then
     echo Compile error[$?], abort.

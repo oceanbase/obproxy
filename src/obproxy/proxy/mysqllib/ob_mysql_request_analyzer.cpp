@@ -306,7 +306,6 @@ int ObMysqlRequestAnalyzer::is_request_finished(
       } else {
         PROTOCOL_DIAGNOSIS(SINGLE_MYSQL, send, protocol_diagnosis, static_cast<int32_t>(payload_len_), packet_seq_, cmd_);
         MEMSET(header_length_buffer_, 0, sizeof(header_length_buffer_));
-        payload_len_ = -1;
         cmd_ = 0;
         header_content_offset_ = 0;
       }
@@ -694,6 +693,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       }
       break;
     }
+
     case OB_MYSQL_COM_PROCESS_INFO: {
       if (!client_request.is_proxysys_tenant()) {
         if (!client_request.is_enable_server_kill_connection()) {
@@ -716,7 +716,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_PROCESS_KILL: {
       if (!client_request.is_proxysys_tenant()) {
         if (!client_request.is_enable_server_kill_connection()) {
-          // COM_PROCESS_KILL total 9 bytes
+          // OB_MYSQL_COM_PROCESS_KILL total 9 bytes
           // len (3)| seq (1)| type(1)| thread_id(4)
           const uint64_t com_process_kill_pkt_len = 9;
           if (ctx.reader_->read_avail() == com_process_kill_pkt_len) {
@@ -730,7 +730,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
             }
           } else {
            ret = OB_ERR_UNEXPECTED;
-           LOG_WDIAG("unexpected COM_PROCESS_KILL packet length", K(ctx.reader_->read_avail()), K(ret));
+           LOG_WDIAG("unexpected OB_MYSQL_COM_PROCESS_KILL packet length", K(ctx.reader_->read_avail()), K(ret));
           }
         }
       } else {
@@ -743,7 +743,6 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
       }
       break;
     }
-
     case OB_MYSQL_COM_SHUTDOWN:
     case OB_MYSQL_COM_SLEEP:
     case OB_MYSQL_COM_FIELD_LIST:

@@ -26,7 +26,8 @@ namespace obutils
 ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(allocator), limit_offset_(0), limit_size_(-1),
                 limit_token_off_(-1), dml_field_results_(), comments_(), table_name_(), is_inited_(false),
                 has_unsupport_expr_type_(false), has_unsupport_expr_type_for_config_(false), has_sub_select_(false), use_column_value_from_hint_(false),
-                table_pos_array_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
+                table_exprs_map_(), alias_table_map_(), table_pos_array_(), db_table_pos_array_(), select_exprs_(),
+                group_by_exprs_(), order_by_exprs_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
 {
   field_results_ = &dml_field_results_;
 }
@@ -72,6 +73,61 @@ int ObProxyDMLStmt::init()
   } else {
     is_inited_ = true;
   }
+  return ret;
+}
+
+int ObProxyDMLStmt::handle_parse_result(const ParseResult &parse_result)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("parse result info is null unexpected", K(ret));
+  } else if (OB_FAIL(handle_all_table_node(parse_result.result_tree_->children_[0]))) {
+    LOG_WDIAG("fail to handle_all_table_node", K(ret));
+  } else if (OB_FAIL(handle_comment_list(parse_result))) {
+    LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+  }
+
+  return ret;
+}
+
+int ObProxyDMLStmt::handle_all_table_node(ParseNode* node)
+{
+  int ret = OB_SUCCESS;
+  ParseNode* tmp_node = NULL;
+
+  if (OB_ISNULL(node)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected NULL node", K(ret));
+  } else {
+    for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+      tmp_node = node->children_[i];
+      if (NULL == tmp_node) {
+        // do nothing
+      } else {
+        switch(tmp_node->type_) {
+          case T_FROM_LIST:
+            if (OB_FAIL(handle_from_list(tmp_node))) {
+              LOG_WDIAG("fail to handle from list", K(ret));
+            }
+            break;
+          case T_TABLE_REFERENCES:
+          case T_INSERT_INTO_CLAUSE:
+            if (OB_FAIL(handle_table_references(tmp_node))) {
+              LOG_WDIAG("handle table references failed", K(ret));
+            }
+            break;
+          default:
+            if (OB_FAIL(handle_all_table_node(tmp_node))) {
+              LOG_WDIAG("fail to handle from list", K(sql_string_), K(ret));
+            }
+            break;
+        }
+      }
+    }
+  }
+
   return ret;
 }
 
@@ -258,7 +314,12 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
           } else {
             ObString alias_table(static_cast<int32_t>(tmp_node->str_len_), tmp_node->str_value_);
             if (OB_FAIL(alias_table_map_.set_refactored(alias_table, expr_table))) {
-              LOG_WDIAG("fail to add alias table set", K(alias_table), K(ret));
+              if (OB_HASH_EXIST == ret) {
+                // dumplicate alias, ignore
+                ret = OB_SUCCESS;
+              } else {
+                LOG_WDIAG("fail to add alias table set", K(alias_table), K(ret));
+              }
             }
           }
           break;
@@ -391,7 +452,7 @@ int ObProxyDMLStmt::handle_table_and_db_node(ParseNode* node, ObProxyExprTable* 
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("dynamic_cast failed", K(ret));
         } else {
-          // Only the real table name needs to be rewritten, not the alias
+          // 只有真实表名才需要改写, 别名不需要
           ObProxyExprTablePos expr_table_pos;
           if (NULL != db_node) {
             expr_table_pos.set_database_pos(db_node->token_off_);
@@ -429,7 +490,7 @@ int ObProxyDMLStmt::handle_table_references(ParseNode *node)
         case T_RELATION_FACTOR:
           break;
         default:
-          has_unsupport_expr_type_ = true;
+          // nothing
           LOG_DEBUG("unknown node type", K_(tmp_node->type), K(ret));
       }
     }
@@ -453,6 +514,7 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
         switch(tmp_node->type_) {
           case T_OP_EQ:
           case T_OP_IN:
+          case T_OP_EXISTS:
             if (OB_FAIL(handle_column_and_value(tmp_node))) {
               LOG_WDIAG("fail to handle where node", K(sql_string_), K(ret));
             }
@@ -1339,11 +1401,11 @@ int ObProxyDMLStmt::func_node_to_expr(ParseNode* node, ObProxyExpr* &expr)
     if (NULL == tmp_node) {
       // do nothing
     } else if (tmp_node->type_ == T_ALL) {
-      // There are T_ALL nodes under the COUNT function, do not need to be processed, do nothing
+      // COUNT函数下有T_ALL节点，不需要处理，do nothing
     } else if (OB_FAIL(string_node_to_expr(tmp_node, tmp_expr))){
       LOG_WDIAG("string_node_to_expr failed", K(ret));
     } else if (NULL == tmp_expr) {
-      // Argument in func is of unsupported type
+      // func 中的参数是不支持的类型
       LOG_WDIAG("tmp_expr is empty", "type", tmp_node->type_, K(ret));
     } else if (OB_FAIL(func_expr->add_param_expr(tmp_expr))) {
       LOG_WDIAG("add_param_expr failed", K(ret), K(sql_string_));
@@ -1392,7 +1454,7 @@ int ObProxyDMLStmt::check_node_has_agg(ParseNode* node)
   }
   return ret;
 }
-//we do not cover all sys func. if sys func do not have agg func, pass it to server as string
+//系统函数,我们没有完全覆盖，如果函数内没有包含agg函数，就当做字符串透传
 int ObProxyDMLStmt::func_sys_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  ParseNode* string_node)
 {
   int ret = OB_SUCCESS;
@@ -1432,7 +1494,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
         LOG_WDIAG("fail to alias node to expr", K(ret));
       }
       break;
-    case T_FUN_SYS: // not support fun sys, as string_node
+    case T_FUN_SYS: //fun sys 暂时不支持，使用string_node构建
       if (OB_FAIL(func_sys_node_to_expr(node, expr, string_node))) {
         LOG_WDIAG("fail to func sys node to expr", K(ret));
       }
@@ -1476,8 +1538,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
       }
       break;
     default:
-      //Does not support type detection whether there is agg,
-      //if not, use the string of string_node to construct transparent transmission
+      //不支持类型检测是否有agg，如果没有就用string_node的串构建透传
       if (OB_FAIL(check_node_has_agg(node))) {
         LOG_WDIAG("unsupport type", "node_type", get_type_name(node->type_), K(node->str_value_));
       } else if (string_node == NULL) {
@@ -1701,6 +1762,8 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
   ParseNode* node = NULL;
   if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
+  } else if (OB_FAIL(handle_all_table_node(node))) {
+    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else if (OB_FAIL(do_handle_parse_result(node))) {
     LOG_WDIAG("fail to do handle parse result", K(sql_string_), "node_type", get_type_name(node->type_), K(ret));
   } else if (OB_FAIL(handle_comment_list(parse_result))) {
@@ -1717,6 +1780,8 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
   ParseNode* node = NULL;
   if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
+  } else if (OB_FAIL(handle_all_table_node(node))) {
+    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
@@ -1752,6 +1817,7 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
       LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
     }
   }
+
   return ret;
 }
 
@@ -1954,6 +2020,8 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
   ParseNode* node = NULL;
   if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
+  } else if (OB_FAIL(handle_all_table_node(node))) {
+    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     if (node->type_ == T_DELETE) {
       stmt_type_ = OBPROXY_T_DELETE;
@@ -1990,6 +2058,12 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
     }
   }
 
+  if(OB_SUCC(ret)) {
+    if (OB_FAIL(handle_comment_list(parse_result))) {
+      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+    }
+  }
+
   return ret;
 }
 
@@ -2023,6 +2097,8 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
   ParseNode* node = NULL;
   if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
+  } else if (OB_FAIL(handle_all_table_node(node))) {
+    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
@@ -2056,6 +2132,13 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
       }
     }
   }
+
+  if(OB_SUCC(ret)) {
+    if (OB_FAIL(handle_comment_list(parse_result))) {
+      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+    }
+  }
+
   return ret;
 }
 

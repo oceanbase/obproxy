@@ -50,31 +50,30 @@ public:
   {}
   virtual ~ObCgroupCtrl() {}
   int init();
-  // void destroy() { /* tid is automatically removed from cgroup tasks after the process exits */ }
+  // void destroy() { /* 进程退出后tid会自动从cgroup tasks中删除 */ }
   bool is_valid() { return valid_; }
 
-  // Create tenant cgroup group and initialize
+  // 创建租户cgroup组并初始化
   int create_tenant_cgroup(const common::ObString& tenant_id);
 
-  // delete tenant cgroup rules
+  // 删除租户cgroup规则
   int remove_tenant_cgroup(const common::ObString& tenant_id);
 
-  // Add tid to the specified tenant cgroup. will deprecate
+  // 添加tid到指定租户cgroup组. will deprecate
   int add_thread_to_cgroup(const common::ObString tenant_id, const int64_t tid);
 
-  // Set the cpu.shares of the specified tenant cgroup group
+  // 设定指定租户cgroup组的cpu.shares
   // int set_cpu_shares(const ObString tenant_id, const int32_t cpu_shares);
   // int get_cpu_shares(const ObString tenant_id, int32_t &cpu_shares);
 
-  // Set the cpu.cfs_quota_us of the specified tenant cgroup group
+  // 设定指定租户cgroup组的cpu.cfs_quota_us
   int set_cpu_cfs_quota(const common::ObString tenant_id, const int32_t cfs_quota_us);
-  // Get the period value of a tenant's group for calculating cfs_quota_us
+  // 获取某个租户的group 的 period 值，用于计算 cfs_quota_us
   int get_cpu_cfs_period(const common::ObString tenant_id, int32_t &cfs_period_us);
-  // Get the cpuacct.usage of a cgroup group
+  // 获取某个cgroup组的cpuacct.usage
   // int get_cpu_usage(const uint64_t tenant_id, int32_t &cpu_usage);
 private:
-  // The initialization script of obproxy will resume the cgroup soft link,
-  // and the directory layout is as follows:
+  // obproxy 的初始化脚本会简历 cgroup 软连接，目录布局如下：
   //  ---bin/
   //   |-etc/
   //   |-...
@@ -90,8 +89,8 @@ private:
   const char *user_cgroup_  = "cgroup/user";
   static const int32_t PATH_BUFSIZE = 512;
   static const int32_t VALUE_BUFSIZE = 32;
-  // Before using ObCgroupCtrl, you need to judge whether the group_ctrl object is valid. If it is false, the cgroup mechanism will be skipped.
-  //  The possible reasons for false are that the cgroup directory does not have permission to operate, the operating system does not support cgroups, etc.
+  // 使用 ObCgroupCtrl 之前需要判断 group_ctrl 对象是否 valid，若为 false 则跳过 cgroup 机制
+  //  为 false 可能的原因是 cgroup 目录没有操作权限、操作系统不支持 cgroup 等。
   bool valid_;
 
 private:

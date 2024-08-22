@@ -84,9 +84,9 @@ private:
   common::ObString tenant_name_;
   common::ObString database_name_;
   common::ObString user_name_;
-  int64_t qps_; // unit r/s
-  int64_t rt_; // unit us
-  int64_t time_window_; // unit second 
+  int64_t qps_; // 单位是 r/s
+  int64_t rt_; // 单位是 us
+  int64_t time_window_; // 单位是秒
   double limit_conn_;
   int64_t limit_fuse_time_;
   ObHRTime end_fuse_time_;
@@ -109,7 +109,7 @@ private:
 
 private:
   common::DRWLock lock_;
-  int64_t limit_qps_; // limit threshold * 1000. so qps lower limit is 0.001/s
+  int64_t limit_qps_; // 限流阈值, 每秒多少个请求, 乘以 1000, 变成整数, 也就是说, 支持最慢 qps 是 0.001/s
   int64_t token_;
   int64_t next_free_token_micros_;
 };

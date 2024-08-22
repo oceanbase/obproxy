@@ -8,11 +8,6 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
- *
- * *************************************************************
- *
- * Developers, when adding a new element to an enum, append it. DO NOT
- * insert it. Otherwise, binary compatibility of plugins will be broken!
  */
 
 #ifndef OBPROXY_API_DEFS_H

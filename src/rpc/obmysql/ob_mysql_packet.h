@@ -80,26 +80,26 @@ enum ObMySQLCmd
   /*
     MySQL Connection Phase
     obproxy ----- connect ---------------> observer
-                  ^--- COM_HANDSHAKE(non-standard)
+                  ^--- OB_MYSQL_COM_HANDSHAKE(non-standard)
     obproxy <---- handshake -------------- observer
     obproxy ----- handshake response ----> observer
-                  ^--- COM_LOGIN(non-standard)
+                  ^--- OB_MYSQL_COM_LOGIN(non-standard)
     obproxy <---- ok/err packet ---------- observer
   */
   OB_MYSQL_COM_HANDSHAKE,
   OB_MYSQL_COM_LOGIN,
   /*
     MySQL Command Phase: load data local infile
-    obproxy ----- COM_QUERY: load data local ----> observer
+    obproxy ----- OB_MYSQL_COM_QUERY: load data local ----> observer
     obproxy <---- 0xFB filename ------------------ observer
     obproxy ----- content of file ---------------> observer
-                  ^--- COM_LOAD_DATA_TRANSFER_CONTENT(non-standard)
+                  ^--- OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT(non-standard)
     obproxy ----- empty packet ------------------> observer
     obproxy <---- ok/err packet ------------------ observer
   */
   OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT,
   /*
-    proxy ----- COM_CHANGE_USER -----> server
+    proxy ----- OB_MYSQL_COM_CHANGE_USER -----> server
     proxy <--------- 0xFE ------------ server
                        ^--- COM_AUTH_SWITCH_REQUEST(non-standard)
     proxy ---------- data -----------> server

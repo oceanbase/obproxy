@@ -149,8 +149,7 @@ int ObProxyTableScanOp::handle_result(void *data, bool &is_final, ObProxyResultR
     LOG_WDIAG("fail to push result resp to array", K(ret));
   } else {
     if (pres->is_ok_resp()) { // it is the OK packet
-      // For the OK package, it is only necessary to construct an OK package in the case of
-      // the last package, and the others can be swallowed.
+      // OK 包只需要在最后包的情况下, 构造一个 OK 包, 其他吞掉就行了
       if (is_final) {
         if (OB_FAIL(build_ok_packet(result))) {
           LOG_WDIAG("fail to build_ok_packet", K(ret));
@@ -394,7 +393,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
 
   if (OB_SUCC(ret)) {
     if (OB_PROXY_EXPR_TYPE_FUNC_AVG == expr_type) {
-      // Avg-dependent count and sum expressions also set index
+      // Avg 依赖的 count 和 sum 表达式也要设置 index
       ObProxyExprAvg *avg_expr = dynamic_cast<ObProxyExprAvg*>(expr);
       ObProxyExprSum *sum_expr = NULL;
       ObProxyExprCount *count_expr = NULL;
@@ -413,8 +412,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
         LOG_WDIAG("fail to set index for count expr", K(ret));
       }
     } else if (expr->has_agg() && !expr->is_agg()) {
-      // If the expression contains an aggregate, but it is not an aggregate function, 
-      // set an index for its parameter, which is used to calculate
+      // 如果表达式包含聚合, 但本身不是聚合函数, 要为其参数设置 index, 用于计算
       ObProxyFuncExpr *func_expr = dynamic_cast<ObProxyFuncExpr*>(expr);
       if (OB_ISNULL(func_expr)) {
         ret = OB_ERR_UNEXPECTED;
@@ -436,7 +434,7 @@ int ObProxyTableScanOp::set_index_for_expr(ObProxyExpr *expr)
 
 ObProxyTableScanInput::~ObProxyTableScanInput()
 {
-  // free reference count
+  // 释放引用计数
   for (int64_t i = 0; i < db_key_names_.count(); i++) {
     dbconfig::ObShardConnector *db_key_name = db_key_names_.at(i);
     db_key_name->dec_ref();
@@ -447,6 +445,37 @@ ObProxyTableScanInput::~ObProxyTableScanInput()
     shard_prop->dec_ref();
   }
 }
+
+int ObProxyTableScanInput::set_db_key_names(const common::ObIArray<dbconfig::ObShardConnector*> &db_key_names)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(db_key_names_.assign(db_key_names))) {
+    LOG_WDIAG("fail to assign db_key_names_", K(ret));
+  } else {
+    for (int64_t i = 0; i < db_key_names_.count(); ++i) {
+      db_key_names_.at(i)->inc_ref();
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyTableScanInput::set_shard_props(const common::ObIArray<dbconfig::ObShardProp*> &shard_props)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(shard_props_.assign(shard_props))) {
+    LOG_WDIAG("fail to assign shard_props_", K(ret));
+  } else {
+    for (int64_t i = 0; i < shard_props_.count(); ++i) {
+      shard_props_.at(i)->inc_ref();
+    }
+  }
+
+  return ret;
+}
+
 
 }
 }

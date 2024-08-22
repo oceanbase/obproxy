@@ -631,7 +631,7 @@ int ObNetHandler::main_net_event(int event, ObEvent *e)
               net_signal_hook_callback(*ethread);
             } else if (EVENTIO_TIMER == epd->type_) {
               uint64_t exp;
-              read(ethread->get_net_poll().get_timer_fd(), &exp, sizeof(uint64_t)); //Need to read uint64_t size, otherwise an error will occur
+              read(ethread->get_net_poll().get_timer_fd(), &exp, sizeof(uint64_t)); //需要读出uint64_t大小, 不然会发生错误
             }
           }
         }

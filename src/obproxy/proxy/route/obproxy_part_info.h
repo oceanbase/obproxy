@@ -38,11 +38,14 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   share::schema::ObPartitionFuncType part_func_type_;
-  int32_t part_space_;
+  int32_t part_space_; // 分区id空间，详情observer的二级分区设计文档
   int64_t part_num_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyPartOption);
+  // this variables is not used yet
+  // common::ObString interval_start_; // interval分区起始值
+  // common::ObString part_interval_; // interval分区步长
 };
 
 class ObProxyPartInfo
@@ -65,8 +68,10 @@ public:
   void set_unknown_part_key(bool has_unknown_part_key) { has_unknown_part_key_ = has_unknown_part_key; }
   bool is_template_table() const { return is_template_table_; }
   void set_template_table(bool is_template_table) { is_template_table_ = is_template_table; }
-   bool is_primary_key_as_part_expr() const { return is_primary_key_as_part_expr_; }
+  bool is_primary_key_as_part_expr() const { return is_primary_key_as_part_expr_; }
   void set_primary_key_as_part_expr(bool is_pk_as_part_expr) { is_primary_key_as_part_expr_ = is_pk_as_part_expr; }
+
+
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }

@@ -1,7 +1,11 @@
 AM_CPPFLAGS += -I${top_srcdir}/src\
                -I${top_srcdir}/src/lib\
                -I${top_srcdir}/unittest\
-							 -DSQL_PARSER_COMPILATION
+	       -I${top_srcdir}/dependency/easy/src/include\
+               -I${top_srcdir}/dependency/easy/src/io\
+	       -I${top_srcdir}/dependency/easy/src/util\
+	       -I${top_srcdir}/dependency/easy/src/thread\
+                                                         -DSQL_PARSER_COMPILATION
 
 AM_CPPFLAGS += -I${top_srcdir}/src/obproxy/iocore/eventsystem               \
                -I${top_srcdir}/src/obproxy/iocore/net                       \
@@ -11,14 +15,14 @@ AM_CPPFLAGS += -I${top_srcdir}/src/obproxy/iocore/eventsystem               \
                -I${top_srcdir}/src/obproxy/proxy/omt                        \
                -I${top_srcdir}/src/obproxy/obutils                          \
                -I${top_srcdir}/src/obproxy/utils                            \
-	       -I${top_srcdir}/src/lib/hash                                 \
-	       -I${top_srcdir}/deps/easy/src/include                        \
+               -I${top_srcdir}/src/lib/hash                                 \
+               -I${top_srcdir}/deps/easy/src/include                        \
                -I${top_srcdir}/deps/easy/src/io                             \
-	       -I${top_srcdir}/deps/easy/src/util                           \
-	       -I${top_srcdir}/deps/easy/src/thread                         \
-	       -I${DEP_DIR}/include/mariadb                                 \
+               -I${top_srcdir}/deps/easy/src/util                           \
+               -I${top_srcdir}/deps/easy/src/thread                         \
+               -I${DEP_DIR}/include/mariadb                                 \
                -I${top_srcdir}/src/obproxy                                  \
-	       -Wno-array-bounds
+               -Wno-array-bounds
 LIBTOOLFLAGS=--preserve-dup-deps
 
 
@@ -28,27 +32,35 @@ LDADD = $(top_builddir)/src/obproxy/libobproxy.la           \
         ${DEP_DIR}/lib64/libprometheus-cpp-pull.a \
         ${DEP_DIR}/lib64/libprometheus-cpp-core.a \
         ${RUNTIME_DIR}/lib/libob_sql_proxy_parser_static.a \
-				${DEP_DIR}/lib64/libprotobuf.a \
-				${DEP_DIR}/lib/libgrpc++.a \
-				${DEP_DIR}/lib/libgrpc.a \
-				${DEP_DIR}/lib/libgtest.a \
+                                ${DEP_DIR}/lib64/libprotobuf.a \
+                                ${DEP_DIR}/lib/libgrpc++.a \
+                                ${DEP_DIR}/lib/libgrpc.a \
+                                ${DEP_DIR}/lib/libgtest.a \
         ${DEP_DIR}/lib/libgpr.a \
-				${DEP_DIR}/lib/libgmock.a \
-				${DEP_DIR}/lib/libaddress_sorting.a \
-				${DEP_DIR}/lib/libcares.a \
-				${DEP_DIR}/lib/libssl.a \
-				${DEP_DIR}/lib/libcurl.a \
-				${DEP_DIR}/lib/libcrypto.a \
-				${DEP_DIR}/lib/sqlite/libsqlite3.a \
+                                ${DEP_DIR}/lib/libgmock.a \
+                                ${DEP_DIR}/lib/libaddress_sorting.a \
+                                ${DEP_DIR}/lib/libcares.a \
+                                ${DEP_DIR}/lib/libcurl.a \
+                                ${DEP_DIR}/lib/sqlite/libsqlite3.a \
         -lc -lm -lrt -ldl -lpthread
+
+if BUILD_OPENSOURCE
+    LDADD += ${DEP_DIR}/lib/libssl.a \
+             ${DEP_DIR}/lib/libcrypto.a
+else
+    LDADD += ${BABASSL_DIR}/lib/libssl.a \
+             ${BABASSL_DIR}/lib/libcrypto.a
+endif
 
 pub_sources=                                           \
                  test_eventsystem_api.h                \
                  test_eventsystem_api.cpp              \
-								 ob_mysql_test_utils.h
+                 ob_mysql_test_utils.h
 
 bin_PROGRAMS =                                         \
                  test_atomic_store                     \
+                 test_global_ps_entry                  \
+                 test_ob_latch                         \
                  test_proxy_config                     \
                  test_event_processor                  \
                  test_ethread                          \
@@ -95,6 +107,8 @@ test_atomic_store_SOURCES = test_atomic_store.cpp
 test_dual_parser_SOURCES = test_dual_parser.cpp ${pub_sources}
 obproxy_parser_test_SOURCES = obproxy_parser_test.cpp
 test_proxy_config_SOURCES = test_proxy_config.cpp
+test_global_ps_entry_SOURCES = test_global_ps_entry.cpp
+test_ob_latch_SOURCES = test_ob_latch.cpp
 test_proxy_auth_parser_SOURCES = test_proxy_auth_parser.cpp ${pub_sources}
 test_field_heap_SOURCES = test_field_heap.cpp  ${pub_sources}
 #test_session_field_mgr_SOURCES = test_session_field_mgr.cpp ${pub_sources}

@@ -663,17 +663,6 @@ public:
   int get_physic_ip(sockaddr &addr);
 
   bool is_enc_beyond_trust() const { return ENC_BEYOND_TRUST == enc_type_; }
-
-  inline bool is_same_connection(const ObShardConnector *other) const {
-    bool bret = true;
-    if (server_type_ != other->server_type_ || full_username_ != other->full_username_) {
-      bret = false;
-    } else if (common::DB_OB_MYSQL != server_type_ && common::DB_OB_ORACLE != server_type_) {
-      bret = (physic_addr_ == other->physic_addr_ && physic_port_ == other->physic_port_);
-    }
-
-    return bret;
-  }
   void set_full_username(const common::ObString& str);
   void set_shard_name(const common::ObString& str) {
     shard_name_.set_value(str);
@@ -1250,7 +1239,7 @@ void ObDbConfigChildArrayInfo<T>::destroy()
 {
   typename CCRHashMap::iterator end = ccr_map_.end();
   typename CCRHashMap::iterator tmp_it;
-  for (typename CCRHashMap::iterator it = ccr_map_.begin(); it != end; ++it) {
+  for (typename CCRHashMap::iterator it = ccr_map_.begin(); it != end;) {
     tmp_it = it;
     ++it;
     tmp_it->dec_ref();

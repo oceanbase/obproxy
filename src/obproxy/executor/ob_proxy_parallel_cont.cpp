@@ -57,7 +57,8 @@ int ObProxyParallelCont::do_open(ObAction *&action, ObIArray<ObProxyParallelPara
     LOG_DEBUG("succ to schedule parallel task", KP(this));
   }
 
-  // if failed, no need cancel timeout and task which are canceled by call's destroy func
+  // 这里失败不用取消 timeout 和 task. 如果失败的话, 外层函数会调用 destroy 方法, 在该方法里会取消所有的异步任务
+  // 也会清理 parallel_action_array_
   return ret;
 }
 
@@ -125,7 +126,7 @@ int ObProxyParallelCont::handle_parallel_task(ObIArray<ObProxyParallelParam> &pa
     if (OB_ISNULL(mutex = new_proxy_mutex())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_EDIAG("fail to alloc memory for mutex", K(ret));
-    // child task's submit thread same as this cont's submit thread. so here no need to switch thread
+    //希望子任务的提交线程就是本 Cont 的提交线程, 这样本 Cont 就不用切换线程了
     } else if (OB_ISNULL(execute_cont = op_alloc_args(ObProxyParallelExecuteCont, mutex, this, submit_thread_))) {
       LOG_WDIAG("fail to alloc parallel execute cont", K(ret));
     } else if (OB_FAIL(execute_cont->init(parallel_param.at(i), i, allocator, timeout_ms_))) {
@@ -193,7 +194,7 @@ int ObProxyParallelCont::schedule_timeout()
   if (OB_UNLIKELY(NULL != timeout_action_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("timeout action must be NULL", K_(timeout_action), K(ret));
-  // no need switch thread
+  // 这里也用 submit_thread_, 这样如果超时了, 也不用切换 thread, 直接就可以回调了
   } else if (OB_ISNULL(timeout_action_ = submit_thread_->schedule_in(this, HRTIME_MSECONDS(timeout_ms_)))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("fail to schedule timeout", K_(timeout_action), K(ret));

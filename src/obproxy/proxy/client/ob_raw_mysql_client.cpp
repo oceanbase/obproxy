@@ -101,7 +101,7 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
   } else if (OB_FAIL(resp_->init())) {
     LOG_WDIAG("fail to init client mysql resp", K(ret));
   } else {
-    // Get the password again, it may be changed
+    // 重新获取一次密码，可能被改动
     if (!is_avail() &&
         OB_FAIL(connect(addr_, timeout_ms))) {
       if (!is_avail() && info_->change_password()) {
@@ -529,7 +529,7 @@ int ObRawMysqlClient::sync_raw_execute(const char *sql, const int64_t timeout_ms
       for (int64_t i = 0; (i < DEFAULT_SERVER_ADDRS_COUNT) && (retry) && OB_SUCC(ret); ++i) {
         idx = (idx + 1) % DEFAULT_SERVER_ADDRS_COUNT;
         if (replicas[idx].is_valid()) {
-          if ((!is_strong_stml && replicas[idx].is_weak_read_avail())
+          if ((!is_strong_stml && replicas[idx].is_full_or_readonly_replica())
               || (is_strong_stml && replicas[idx].is_full_replica())) {
             actor_.reset();
             LOG_INFO("ObRawMysqlClient::sync_raw_execute will connect to",

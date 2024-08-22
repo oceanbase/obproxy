@@ -60,9 +60,9 @@ private:
                              const common::ObString &public_key,
                              const common::ObString &private_key);
 private:
-  static void *malloc_for_ssl(size_t num);
-  static void *realloc_for_ssl(void *p, size_t num);
-  static void free_for_ssl(void *str);
+  static void *malloc_for_ssl(size_t num, const char *file, int line);
+  static void *realloc_for_ssl(void *p, size_t num, const char *file, int line);
+  static void free_for_ssl(void *str, const char *file, int line);
 
 private:
   typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, SSL_CTX*> SSLCtxHashMap;

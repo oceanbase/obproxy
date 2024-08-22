@@ -41,7 +41,7 @@
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_sql_table_cache.h"
 #include "prometheus/ob_prometheus_processor.h"
-#include "proxy/rpc_optimize/rpclib/ob_rpc_cache_cleaner.h"
+#include "proxy/rpc/rpclib/ob_rpc_cache_cleaner.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obutils;
@@ -378,10 +378,10 @@ int ObNetAccept::fetch_tenant_cpu(ObVipTenant& vip_tenant, ObTenantCpu*& tenant_
 int ObNetAccept::handle_tenant_cpu_isolated(ObTenantCpu* tenant_cpu, ObEThread*& ethread)
 {
   int ret = OB_SUCCESS;
-  // 1. Assign as many threads as there are max_thread_num, and then save the thread id
-  // 2. Create the tenant's cgroup filesystem
-  //    2.1 Write cfs_period_us and cfs_quota_us to the cgroup filesystem
-  //    2.2 tasks that write the thread id to the cgroup filesystem
+  // 1. 有多少个 max_thread_num 就分配多少个线程，然后保存线程id
+  // 2. 创建该租户的cgroup文件系统
+  //    2.1 把 cfs_period_us 和 cfs_quota_us 写入到cgroup文件系统
+  //    2.2 把 thread id 写入 cgroup文件系统的tasks
   if (OB_ISNULL(tenant_cpu)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WDIAG, "tenant cpu point is null", K(ret));

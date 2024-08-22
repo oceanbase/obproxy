@@ -553,15 +553,18 @@ int ObMysqlSessionUtils::init_common_addr_with_client_session(ObCommonAddr& comm
   int ret = OB_SUCCESS;
   ObClientSessionInfo& session_info = client_session->get_session_info();
   if (client_session->is_proxy_mysql_client_) {
+    //内部连接池已经被设置
     common_addr = client_session->common_addr_;
   } else if (session_info.is_sharding_user() &&
               NULL != session_info.get_shard_connector() &&
               common::DB_MYSQL == session_info.get_shard_connector()->server_type_ &&
               !session_info.get_shard_connector()->is_physic_ip_) {
+    //Mysql的域名设置为域名
     common_addr.assign(session_info.get_shard_connector()->physic_addr_,
       session_info.get_shard_connector()->physic_port_,
       false);
   } else {
+    //其他情况设置为server ip
     common_addr.assign(server_ip.sa_);
   }
   LOG_DEBUG("init_common_addr_with_client_session", K(common_addr));

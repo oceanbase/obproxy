@@ -437,7 +437,7 @@ public:
   // is session system variable equal with snapshot
   int is_equal_with_snapshot(const common::ObString &sys_var_name,
                              const common::ObObj &value, bool &is_equal);
-  // @synopsis get variable type by name
+  // @synopsis 根据变量名，取得这个变量的类型
   int get_sys_variable_type(const common::ObString &var_name, common::ObObjType &type);
 
   //sys variables related methords
@@ -670,12 +670,12 @@ private:
   ObUserVarFieldBlock *user_first_block_;
   ObStrFieldBlock *str_block_list_tail_; //string field can only be set once
   ObStrFieldBlock *str_first_block_;
-  ObSysVarFieldBlock *common_sys_block_list_tail_; //common sys var
+  ObSysVarFieldBlock *common_sys_block_list_tail_; //公共系统变量, 即用户主动修改的
   ObSysVarFieldBlock *common_sys_first_block_;
-  ObSysVarFieldBlock *mysql_sys_block_list_tail_; // mysql sys var
+  ObSysVarFieldBlock *mysql_sys_block_list_tail_; //mysql 特有的系统变量
   ObSysVarFieldBlock *mysql_sys_first_block_;
   ObDefaultSysVarSet *default_sys_var_set_;
-  bool allow_var_not_found_; //control log level when not find var
+  bool allow_var_not_found_; //用于控制SererSession找不到时打印日志级别
 };
 
 template<class K, class V>

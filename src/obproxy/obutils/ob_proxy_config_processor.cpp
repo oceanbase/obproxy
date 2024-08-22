@@ -26,6 +26,7 @@
 #include "iocore/net/ob_ssl_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "omt/ob_ssl_config_table_processor.h"
+#include "lib/profile/ob_trace_id.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::json;
@@ -43,68 +44,70 @@ namespace obproxy
 namespace obutils
 {
 
-const static char *CONFIG_META              = "meta";
-const static char *CONFIG_SPEC              = "spec";
+const static char *CONFIG_META = "meta";
+const static char *CONFIG_SPEC = "spec";
 
-const static char *CONFIG_API_VERSION       = "api_version";
-const static char *CONFIG_VERSION           = "version";
-const static char *CONFIG_APP_NAME          = "app_name";
-const static char *CONFIG_TYPE              = "config_type";
-const static char *CONFIG_SYNC              = "need_sync";
+const static char *CONFIG_API_VERSION = "api_version";
+const static char *CONFIG_VERSION = "version";
+const static char *CONFIG_APP_NAME = "app_name";
+const static char *CONFIG_TYPE = "config_type";
+const static char *CONFIG_SYNC = "need_sync";
 
 // index config
-const static char *CONFIG_REFERENCE         = "reference";
-const static char *CONFIG_DATAID            = "data_id";
+const static char *CONFIG_REFERENCE = "reference";
+const static char *CONFIG_DATAID = "data_id";
 
 // config spec
-const static char *CONFIG_VALUE             = "value";
-const static char *CONFIG_ATTR              = "category";
-const static char *CONFIG_PERSISTENT        = "persistent";
+const static char *CONFIG_VALUE = "value";
+const static char *CONFIG_ATTR = "category";
+const static char *CONFIG_PERSISTENT = "persistent";
 
 // limit config
-const static char *LIMITERS                 = "limiters";
-const static char *CLUSTER_NAME             = "cluster";
-const static char *TENANT_NAME              = "tenant";
-const static char *DATABASE_NAME            = "database";
-const static char *USER_NAME                = "username";
-const static char *LIMIT_NAME               = "limitName";
-const static char *LIMIT_MODE               = "mode";
-const static char *LIMIT_RULE               = "rule";
-const static char *LIMIT_PRIORITY           = "priority";
-const static char *LIMIT_STATUS             = "status";
+const static char *LIMITERS = "limiters";
+const static char *CLUSTER_NAME = "cluster";
+const static char *TENANT_NAME = "tenant";
+const static char *DATABASE_NAME = "database";
+const static char *USER_NAME = "username";
+const static char *LIMIT_NAME = "limitName";
+const static char *LIMIT_MODE = "mode";
+const static char *LIMIT_RULE = "rule";
+const static char *LIMIT_PRIORITY = "priority";
+const static char *LIMIT_STATUS = "status";
+
+const static char *LIMIT_IN_USE = "inUse";
 
 // limit rule
-const static char *LIMIT_SQL_TYPE           = "sqlType";
-const static char *LIMIT_KEY_WORDS          = "keyWords";
-const static char *LIMIT_TABLE_NAME         = "tableName";
-const static char *LIMIT_QPS                = "qps";
-const static char *LIMIT_RT                 = "averageRt";
-const static char *LIMIT_CONDITION          = "scene";
+const static char *LIMIT_SQL_TYPE = "sqlType";
+const static char *LIMIT_KEY_WORDS = "keyWords";
+const static char *LIMIT_TABLE_NAME = "tableName";
+const static char *LIMIT_QPS = "qps";
+const static char *LIMIT_RT = "averageRt";
+const static char *LIMIT_CONDITION = "scene";
 const static char *LIMIT_CONDITION_USE_LIKE = "Uselike";
 const static char *LIMIT_CONDITION_NO_WHERE = "Nowhere";
-const static char *LIMIT_TIME_WINDOW        = "timeWindow";
-const static char *LIMIT_CONN               = "limitConn";
-const static char *LIMIT_FUSE_TIME          = "fuseTime";
+const static char *LIMIT_TIME_WINDOW = "timeWindow";
+const static char *LIMIT_CONN = "limitConn";
+const static char *LIMIT_FUSE_TIME = "fuseTime";
 
 // security
-const static char *SECURITY_SOURCE_TYPE     = "sourceType";
-const static char *SECURITY_CA              = "CA";
-const static char *SECURITY_PUBLIC_KEY      = "publicKey";
-const static char *SECURITY_PRIVATE_KEY     = "privateKey";
+const static char *SECURITY_SOURCE_TYPE = "sourceType";
+const static char *SECURITY_CA = "CA";
+const static char *SECURITY_PUBLIC_KEY = "publicKey";
+const static char *SECURITY_PRIVATE_KEY = "privateKey";
 
-#define MONITOR_LIMIT_LOG_FORMAT "%s,%s,%s," \
+#define MONITOR_LIMIT_LOG_FORMAT "%s," TRACE_ID_FORMAT "%s," \
                                  "%s,%.*s:%.*s:%.*s,%s,"  \
                                  "%s,%.*s,%s,%s,%s,%.*s,%.*s"
 
 #define MONITOR_LIMIT_LOG_PARAM \
           get_global_proxy_config().app_name_str_,       \
-          "",                                            \
+          trace_id_0, trace_id_1,                        \
           "",                                            \
                                                          \
           "",                                            \
-          cluster_name_.length(), cluster_name_.ptr(),   \
-          tenant_name_.length(), tenant_name_.ptr(),     \
-          database_name_.length(), database_name_.ptr(), \
+          cluster_name.length(), cluster_name.ptr(),   \
+          tenant_name.length(), tenant_name.ptr(),     \
+          database_name.length(), database_name.ptr(), \
           database_type_str,                             \
                                                          \
           "",                                            \
@@ -447,8 +450,8 @@ int ObProxyConfigReference::parse_config_reference(Value &json_value)
     LOG_WDIAG("invalid json config type", "expected type", JT_OBJECT,
              "actual type", json_value.get_type(), K(ret));
   }
-  // TODO: support multi version config
-  // now, only save one
+  // 目前我们不支持多版本的配置，但是推送下来的reference 是个array
+  // 这里只保存一个
   if (OB_SUCC(ret) && OB_NOT_NULL(ref_value)) {
     if (JT_ARRAY == ref_value->get_type()) {
       DLIST_FOREACH(it, ref_value->get_array()) {
@@ -624,7 +627,8 @@ int64_t ObProxyLimitConfig::to_string(char *buf, const int64_t buf_len) const
   J_OBJ_START();
   J_KV(K_(cluster_name), K_(tenant_name), K_(database_name), K_(user_name),
        K_(limit_name), K_(limit_mode), K_(limit_priority), K_(limit_qps),
-       K_(limit_status), K_(limit_time_window), K_(limit_conn));
+       K_(limit_status), K_(limit_time_window), K_(limit_conn), K_(in_use));
+  J_KV(K_(user_name));
   J_OBJ_END();
   return pos;
 }
@@ -636,6 +640,20 @@ int ObProxyLimitConfig::init(ObArenaAllocator &allocator)
     LOG_WDIAG("fail to init limit rule map", K(ret));
   } else {
     allocator_ = &allocator;
+  }
+
+  return ret;
+}
+
+int ObProxyLimitConfig::add_user_name(const ObString &user_name)
+{
+  int ret = OB_SUCCESS;
+
+  ObString tmp_user_name;
+  if (OB_FAIL(copy_param(tmp_user_name, user_name))) {
+    LOG_WDIAG("fail to copy user name", K(user_name), K(ret));
+  } else if (OB_FAIL(user_name_array_.push_back(tmp_user_name))) {
+    LOG_WDIAG("fail to push back", K(tmp_user_name), K(ret));
   }
 
   return ret;
@@ -711,7 +729,7 @@ int ObProxyLimitConfig::parse_limit_rule(const ObString &key, const ObString &va
     if (0 == value.case_compare("ALL")) {
       ((ObProxyQosCondStmtType*)cond)->set_stmt_kind(OB_PROXY_QOS_COND_STMT_KIND_ALL);
     } else {
-      ((ObProxyQosCondStmtType*)cond)->set_stmt_type(get_stmt_type_by_name(value));
+      ((ObProxyQosCondStmtType*)cond)->add_stmt_type(get_stmt_type_by_name(value));
     }
   } else if (key == LIMIT_TABLE_NAME) {
     if (OB_FAIL(create_action_or_cond<ObProxyQosCondTableName>(cond))) {
@@ -720,7 +738,7 @@ int ObProxyLimitConfig::parse_limit_rule(const ObString &key, const ObString &va
       LOG_WDIAG("fail to init table name cond", K(value), K(ret));
     }
 
-    // qps, rt in rule must use with TESTLOAD_FUSE mode
+    // rule 里的 qps, rt 必须要搭配 TESTLOAD_FUSE 才能使用
   } else if (key == LIMIT_QPS) {
     if (OB_FAIL(get_int_value(value, limit_rule_qps_))) {
       LOG_WDIAG("fail to get int", K(key), K(value), K(ret));
@@ -848,6 +866,8 @@ int ObProxyLimitConfig::assign(ObProxyLimitConfig &other)
     LOG_WDIAG("fail to set limit name", K(ret));
   } else if (OB_FAIL(parse_limit_action(other.get_limit_mode()))) {
     LOG_WDIAG("fail to parse limit action", K(ret));
+  } else if (OB_FAIL(user_name_array_.assign(other.user_name_array_))) {
+    LOG_WDIAG("fail to assign ", K(ret));
   } else {
     set_limit_priority(other.get_limit_priority());
     set_limit_qps(other.get_limit_qps());
@@ -881,11 +901,17 @@ int ObProxyLimitConfig::calc(ObMysqlTransact::ObTransState &trans_state, const O
   if (LIMIT_STATUS_OBSERVE == limit_status_ || LIMIT_STATUS_RUNNING == limit_status_) {
     ObProxyMysqlRequest &client_request = trans_state.trans_info_.client_request_;
 
-    for (int64_t i = 0; OB_SUCC(ret) && is_match && i < cond_array_.count(); i++) {
+    if (OB_UNLIKELY(cond_array_.empty())) {
       is_match = false;
-      ObProxyQosCond *cond = cond_array_.at(i);
-      if (OB_FAIL(cond->calc(client_request, calc_allocator, is_match))) {
-        LOG_WDIAG("fail to calc cond", KPC(cond), K(ret));
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("empty firewall rule", K(ret));
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && is_match && i < cond_array_.count(); i++) {
+        is_match = false;
+        ObProxyQosCond *cond = cond_array_.at(i);
+        if (OB_FAIL(cond->calc(client_request, calc_allocator, is_match))) {
+          LOG_WDIAG("fail to calc cond", KPC(cond), K(ret));
+        }
       }
     }
 
@@ -924,6 +950,19 @@ int ObProxyLimitConfig::calc(ObMysqlTransact::ObTransState &trans_state, const O
                                         new_sql_buf, PRINT_SQL_LEN, new_sql_len);
         new_sql.assign_ptr(new_sql_buf, new_sql_len);
       }
+      const uint64_t *trace_id = ObCurTraceId::get();
+      uint64_t trace_id_0 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[0];
+      uint64_t trace_id_1 = (OB_ISNULL(trace_id)) ? OB_INVALID_ID : trace_id[1];
+      ObString cluster_name;
+      ObString tenant_name;
+      ObString database_name;
+      IGNORE_RETURN(cs_info.get_cluster_name(cluster_name));
+      IGNORE_RETURN(cs_info.get_tenant_name(tenant_name));
+      if (!parse_result.get_database_name().empty()) {
+        database_name = parse_result.get_database_name();
+      } else {
+        IGNORE_RETURN(cs_info.get_database_name(database_name));
+      }
 
       _OBPROXY_LIMIT_LOG(INFO, MONITOR_LIMIT_LOG_FORMAT, MONITOR_LIMIT_LOG_PARAM);
     }
@@ -960,26 +999,77 @@ int ObProxyLimitControlConfig::calc(ObMysqlTransact::ObTransState &trans_state, 
   ObString tenant_name;
   ObString database_name;
   ObString user_name;
-  cs_info.get_cluster_name(cluster_name);
-  cs_info.get_tenant_name(tenant_name);
-  cs_info.get_user_name(user_name);
-
   const ObSqlParseResult &parse_result = trans_state.trans_info_.client_request_.get_parse_result();
   database_name = parse_result.get_database_name();
-  if (OB_UNLIKELY(database_name.empty())) {
-    cs_info.get_database_name(database_name);
+
+  if (OB_FAIL(cs_info.get_cluster_name(cluster_name))) {
+    LOG_WDIAG("fail to get cluster name", K(ret));
+  } else if (OB_FAIL(cs_info.get_tenant_name(tenant_name))) {
+    LOG_WDIAG("fail to get tenant name", K(ret));
+  } else if (OB_FAIL(cs_info.get_user_name(user_name))) {
+    LOG_WDIAG("fail to get user name", K(ret));
+  } else {
+    if (OB_UNLIKELY(database_name.empty())) {
+      cs_info.get_database_name(database_name);
+    }
+
+    for (int64_t i = 0; OB_SUCC(ret) && is_pass && i < limit_config_array_.count(); i++) {
+      ObProxyLimitConfig *limit_conf = limit_config_array_.at(i);
+      if (OB_ISNULL(limit_conf)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to get limit conf", K(ret));
+      } else if ((LIMIT_STATUS_OBSERVE == limit_conf->get_limit_status()
+            || LIMIT_STATUS_RUNNING == limit_conf->get_limit_status())
+          && 0 == limit_conf->get_cluster_name().case_compare(cluster_name)
+          && 0 == limit_conf->get_tenant_name().case_compare(tenant_name)
+          && 0 == limit_conf->get_database_name().case_compare(database_name)
+          && 0 == limit_conf->get_user_name().case_compare(user_name)) {
+        if (OB_FAIL(limit_conf->calc(trans_state, cs_info, calc_allocator, is_pass, limit_name))) {
+          LOG_WDIAG("fail to calc limit conf", KPC(limit_conf), K(ret));
+        }
+      }
+    }
   }
 
-  for (int64_t i = 0; OB_SUCC(ret) && is_pass && i < limit_config_array_.count(); i++) {
-    ObProxyLimitConfig *limit_conf = limit_config_array_.at(i);
-    if ((LIMIT_STATUS_OBSERVE == limit_conf->get_limit_status()
-         || LIMIT_STATUS_RUNNING == limit_conf->get_limit_status())
-        && 0 == limit_conf->get_cluster_name().case_compare(cluster_name)
-        && 0 == limit_conf->get_tenant_name().case_compare(tenant_name)
-        && 0 == limit_conf->get_database_name().case_compare(database_name)
-        && 0 == limit_conf->get_user_name().case_compare(user_name)) {
-      if (OB_FAIL(limit_conf->calc(trans_state, cs_info, calc_allocator, is_pass, limit_name))) {
-        LOG_WDIAG("fail to calc limit conf", KPC(limit_conf), K(ret));
+  return ret;
+}
+
+int ObProxyLimitControlConfig::calc_for_sql_firewall(ObMysqlTransact::ObTransState &trans_state, const ObClientSessionInfo &cs_info,
+                                ObIAllocator *calc_allocator, bool &is_pass, ObString &limit_name)
+{
+  int ret = OB_SUCCESS;
+  is_pass = true;
+
+  ObString user_name;
+  if (OB_FAIL(cs_info.get_user_name(user_name))) {
+    LOG_WDIAG("fail to get user name", K(user_name));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && is_pass && i < limit_config_array_.count(); i++) {
+      ObProxyLimitConfig *limit_conf = limit_config_array_.at(i);
+      LOG_DEBUG("limit config info", K(i), KPC(limit_conf));
+      bool need_check = false;
+      if (OB_ISNULL(limit_conf)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to get limit conf", K(ret));
+      } else if (limit_conf->get_in_use()
+          && (LIMIT_STATUS_OBSERVE == limit_conf->get_limit_status()
+              || LIMIT_STATUS_RUNNING == limit_conf->get_limit_status())) {
+        if (limit_conf->get_user_name_array().empty()) {
+          need_check = true;
+        } else {
+          for (int64_t j = 0; j < limit_conf->get_user_name_array().count(); ++j) {
+            if (0 == user_name.case_compare(limit_conf->get_user_name_array().at(j))) {
+              need_check = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (need_check) {
+        if (OB_FAIL(limit_conf->calc(trans_state, cs_info, calc_allocator, is_pass, limit_name))) {
+          LOG_WDIAG("fail to calc limit conf", KPC(limit_conf), K(ret));
+        }
       }
     }
   }
@@ -1060,7 +1150,7 @@ int ObProxyLimitControlConfig::parse_limit_conf(Value &json_value)
           } else if (p->name_ == LIMIT_STATUS) {
             limit_config->set_limit_status(get_limit_status_by_str(p->value_->get_string()));
 
-            // just handle first limit_mode
+            // 只处理第一个 limit_mode
           } else if (p->name_ == LIMIT_MODE && NULL == limit_config->get_action()) {
             if (OB_FAIL(limit_config->parse_limit_action(get_limit_mode_by_str(p->value_->get_string())))) {
               LOG_WDIAG("fail to parse limit action", K(ret));
@@ -1080,8 +1170,8 @@ int ObProxyLimitControlConfig::parse_limit_conf(Value &json_value)
         if (OB_SUCC(ret)) {
           if (OB_FAIL(limit_config->handle_action())) {
             LOG_WDIAG("fail to handle action", K(ret));
-          } else {
-            limit_config_array_.push_back(limit_config);
+          } else if (OB_FAIL(limit_config_array_.push_back(limit_config))) {
+            LOG_WDIAG("fail to push back limit_config", K(ret));
           }
         }
       } else {
@@ -1125,6 +1215,263 @@ int ObProxyLimitControlConfig::parse_config_spec(Value &json_value)
   return ret;
 }
 
+// 用于 SQL 防火墙 V2 基于配置项 "sql_firewall_config" 的反序列化
+int ObProxyLimitControlConfig::parse_from_config_string(const ObString& sql_firewall_config_json_str)
+{
+  int ret = OB_SUCCESS;
+  LOG_DEBUG("get limit control config string", K(sql_firewall_config_json_str));
+
+  bool need_convert = (-1 != sql_firewall_config_json_str.find("\\\""))
+                      || (-1 != sql_firewall_config_json_str.find("\\\\"));
+  ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
+  ObString convert_escape_str = sql_firewall_config_json_str;
+  Value *json_root = NULL;
+  Parser parser;
+
+  if (need_convert
+      && OB_FAIL(convert_escape_string(sql_firewall_config_json_str, convert_escape_str, json_allocator))) {
+    LOG_WDIAG("fail to convert escape string", K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_FAIL(parser.init(&json_allocator))) {
+    LOG_WDIAG("json parser init failed", K(ret));
+  } else if (OB_FAIL(parser.parse(convert_escape_str.ptr(), convert_escape_str.length(), json_root))) {
+    LOG_WDIAG("parse json failed", K(ret), "json_str", get_print_json(convert_escape_str));
+  } else if (OB_ISNULL(json_root)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("json root is null", K(ret));
+  } else if (OB_UNLIKELY(JT_OBJECT != json_root->get_type())) {
+    ret = OB_INVALID_CONFIG;
+    LOG_WDIAG("invalid json config type", "expected type", JT_OBJECT,
+             "actual type", json_root->get_type(), K(ret));
+  } else {
+    Value *json_limiter = NULL;
+    DLIST_FOREACH(it, json_root->get_object()) {
+      if (it->name_ == LIMITERS) {
+        json_limiter = it->value_;
+        if (OB_FAIL(parse_limit_conf_for_config_string(*json_limiter))) {
+          LOG_WDIAG("fail to parse limit conf", K(ret));
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyLimitControlConfig::parse_limit_conf_for_config_string(Value &json_value)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_UNLIKELY(JT_ARRAY != json_value.get_type())) {
+    ret = OB_INVALID_CONFIG;
+    LOG_WDIAG("invalid json config type", "expected type", JT_ARRAY,
+             "actual type", json_value.get_type(), K(ret));
+  } else {
+    ObProxyLimitConfig *limit_config = NULL;
+    DLIST_FOREACH(it, json_value.get_array()) {
+      if (OB_UNLIKELY(JT_OBJECT != it->get_type())) {
+        ret = OB_INVALID_CONFIG;
+        LOG_WDIAG("invalid json config type", "expected type", JT_OBJECT,
+                 "actual type", it->get_type(), K(ret));
+      } else {
+        limit_config = NULL;
+        void *ptr = allocator_.alloc(sizeof(ObProxyLimitConfig));
+        if (OB_ISNULL(ptr)) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WDIAG("fail to alloc ObProxyLimitConfig", K(ret));
+        } else if (FALSE_IT(limit_config = new(ptr) ObProxyLimitConfig())) {
+          // nothing
+        } else if (OB_FAIL(limit_config->init(allocator_))) {
+          LOG_WDIAG("fail to init ObProxyLimitConfig", K(ret));
+        } else if (OB_FAIL(limit_config->parse_limit_action(LIMIT_MODE_KEY_WORD_MATCH))) {
+          // 基于配置项 "sql_friewall_config", 只有一种 mode：LIMIT_MODE_KEY_WORD_MATCH
+          LOG_WDIAG("fail to set limit action", K(ret));
+        }
+        limit_config->set_limit_qps(0); // 不传 qps，默认为 0
+        DLIST_FOREACH(p, it->get_object()) {
+          if (p->name_ == USER_NAME) {
+            if (OB_UNLIKELY(JT_ARRAY != p->value_->get_type())) {
+              ret = OB_INVALID_CONFIG;
+              LOG_WDIAG("invalid json config type", "expected type", JT_ARRAY,
+                        "actual type", p->value_->get_type(), K(ret));
+            } else {
+              ObString user_name;
+              DLIST_FOREACH(v, p->value_->get_array()) {
+                if (OB_UNLIKELY(JT_STRING != v->get_type())) {
+                  LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                            "actual type", v->get_type(), K(ret));
+                } else if (OB_FAIL(limit_config->add_user_name(v->get_string()))) {
+                  LOG_WDIAG("fail to add user name", K(ret));
+                } else {
+                  // nothing
+                }
+              }
+            }
+          } else if (p->name_ == LIMIT_NAME) {
+            ret = limit_config->set_limit_name(p->value_->get_string());
+
+          } else if (p->name_ == LIMIT_QPS) {
+            int64_t limit_qps = 0;
+            if (OB_FAIL(get_int_value(p->value_->get_string(), limit_qps))) {
+              LOG_WDIAG("fail to get int", "key:", p->name_, "value:", p->value_->get_string(), K(ret));
+            } else {
+              limit_config->set_limit_qps(limit_qps);
+            }
+
+          } else if (p->name_ == LIMIT_STATUS) {
+            limit_config->set_limit_status(get_limit_status_by_str(p->value_->get_string()));
+
+          } else if (p->name_ == LIMIT_RULE) {
+            if (OB_FAIL(limit_config->parse_limit_rule_for_config_string(*(p->value_)))) {
+              LOG_WDIAG("fail to parse limit rule", K(ret));
+            }
+
+            if (OB_UNLIKELY(limit_config->get_cond_array().empty())) {
+              ret = OB_NOT_SUPPORTED;
+              LOG_WDIAG("fail to parse limit rule", K(ret));
+            }
+
+          } else if (p->name_ == LIMIT_IN_USE) {
+            if (JT_TRUE == p->value_->get_type()) {
+              limit_config->set_in_use(true);
+            } else if (JT_FALSE == p->value_->get_type()) {
+              limit_config->set_in_use(false);
+            } else {
+              ret = OB_INVALID_CONFIG;
+              LOG_WDIAG("invalid json config type", "expected type", JT_TRUE,
+                        "actual type", p->value_->get_type(), K(ret));
+            }
+          }
+
+          if (OB_FAIL(ret)) {
+            LOG_WDIAG("fail to handle limit conf", "name:", p->name_, "value:", p->value_, K(ret));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          if (OB_FAIL(limit_config->handle_action())) {
+            LOG_WDIAG("fail to handle action", K(ret));
+          } else if (OB_FAIL(limit_config_array_.push_back(limit_config))) {
+            LOG_WDIAG("fail to push back limit_config", K(ret));
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyLimitConfig::parse_limit_rule_for_config_string(Value &json_value)
+{
+  int ret = OB_SUCCESS;
+
+  ObProxyQosCond *cond = NULL;
+  if (OB_UNLIKELY(JT_OBJECT != json_value.get_type())) {
+    ret = OB_INVALID_CONFIG;
+    LOG_WDIAG("invalid json config type", "expected type", JT_OBJECT,
+             "actual type", json_value.get_type(), K(ret));
+  } else {
+    DLIST_FOREACH(it, json_value.get_object()) {
+      const ObString &key = it->name_;
+      ObString value;
+      if (0 == key.case_compare(LIMIT_SQL_TYPE)) {
+        if (OB_UNLIKELY(JT_ARRAY != it->value_->get_type())) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("invalid json config type", "expected type", JT_ARRAY,
+                    "actual type", it->value_->get_type(), K(ret));
+        } else if (OB_FAIL(create_action_or_cond<ObProxyQosCondStmtType>(cond))) {
+          LOG_WDIAG("fail to create cond", K(ret));
+        } else {
+          DLIST_FOREACH(p, it->value_->get_array()) {
+            value = p->get_string();
+            if (OB_UNLIKELY(JT_STRING != p->get_type())) {
+              ret = OB_INVALID_CONFIG;
+              LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                        "actual type", p->get_type(), K(ret));
+            } else if (0 == value.case_compare("ALL")) {
+              ((ObProxyQosCondStmtType*)cond)->set_stmt_kind(OB_PROXY_QOS_COND_STMT_KIND_ALL);
+            } else {
+              ret = ((ObProxyQosCondStmtType*)cond)->add_stmt_type(get_stmt_type_by_name(value));
+            }
+          }
+        }
+
+      } else if (0 == key.case_compare(LIMIT_TABLE_NAME)) {
+        if (OB_UNLIKELY(JT_STRING != it->value_->get_type())) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                    "actual type", it->value_->get_type(), K(ret));
+        } else if (FALSE_IT(value = it->value_->get_string())) {
+          // nothing
+        } else if (OB_FAIL(create_action_or_cond<ObProxyQosCondTableName>(cond))) {
+          LOG_WDIAG("fail to create cond", K(value), K(ret));
+        } else if (OB_FAIL(((ObProxyQosCondTableName*)cond)->init(value, allocator_))){
+          LOG_WDIAG("fail to init table name cond", K(value), K(ret));
+        }
+
+      } else if (0 == key.case_compare(LIMIT_QPS)) {
+        if (OB_UNLIKELY(JT_STRING != it->value_->get_type())) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                    "actual type", it->value_->get_type(), K(ret));
+        } else if (FALSE_IT(value = it->value_->get_string())) {
+          // nothing
+        } else if (OB_FAIL(get_int_value(value, limit_rule_qps_))) {
+          LOG_WDIAG("fail to get int", K(key), K(value), K(ret));
+        }
+
+      } else if (0 == key.case_compare(LIMIT_KEY_WORDS)) {
+        if (OB_UNLIKELY(JT_STRING != it->value_->get_type())) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                    "actual type", it->value_->get_type(), K(ret));
+        } else if (FALSE_IT(value = it->value_->get_string())) {
+          // nothing
+        } else if (OB_FAIL(create_action_or_cond<ObProxyQosCondSQLMatch>(cond))) {
+          LOG_WDIAG("fail to create cond", K(value), K(ret));
+        } else if (OB_FAIL(((ObProxyQosCondSQLMatch*)cond)->init(value, allocator_))){
+          LOG_WDIAG("fail to init sql match cond", K(value), K(ret));
+        }
+
+      } else if (0 == key.case_compare(LIMIT_CONDITION)) {
+        if (OB_UNLIKELY(JT_STRING != it->value_->get_type())) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("invalid json config type", "expected type", JT_STRING,
+                    "actual type", it->value_->get_type(), K(ret));
+        } else if (FALSE_IT(value = it->value_->get_string())) {
+          // nothing
+        } else if (0 == value.case_compare(LIMIT_CONDITION_NO_WHERE)) {
+          if (OB_FAIL(create_action_or_cond<ObProxyQosCondNoWhere>(cond))) {
+            LOG_WDIAG("fail to create cond", K(value), K(ret));
+          }
+        } else if (0 == value.case_compare(LIMIT_CONDITION_USE_LIKE)) {
+          if (OB_FAIL(create_action_or_cond<ObProxyQosCondUseLike>(cond))) {
+            LOG_WDIAG("fail to create cond", K(value), K(ret));
+          }
+        }
+      }
+
+      if (OB_SUCC(ret)) {
+        if (OB_FAIL(push_limit_rule(key, value))) {
+          LOG_WDIAG("fail to set limit rule map", K(key), K(value), K(ret));
+        } else if(OB_NOT_NULL(cond)) {
+          if (OB_FAIL(cond_array_.push_back(cond))) {
+            LOG_WDIAG("fail to push back cond", K(cond), K(ret));
+          }
+        }
+      } else {
+        LOG_WDIAG("fail to parse limit rule", K(key), K(value), K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObProxyLimitControlConfig::spec_to_json(ObSqlString &buf) const
 {
   int ret = OB_SUCCESS;
@@ -1151,7 +1498,7 @@ int ObProxyLimitControlConfig::spec_to_json(ObSqlString &buf) const
       LOG_WDIAG("fail to append config", K(ret));
     }
 
-    // save limit_rule
+    // 输出 limit_rule
     if (OB_SUCC(ret)) {
       int64_t size = limit_conf->get_limit_rule().size();
       hash::ObHashMap<ObString, ObString>::iterator it = limit_conf->get_limit_rule().begin();
@@ -1208,8 +1555,8 @@ int ObProxyLimitControlConfig::assign(const ObProxyLimitControlConfig &other)
         LOG_WDIAG("fail to init ObProxyLimitConfig", K(ret));
       } else if (OB_FAIL(limit_config->assign(*other_limit_config))) {
         LOG_WDIAG("fail to assign ObProxyLimitConfig", K(ret));
-      } else {
-        limit_config_array_.push_back(limit_config);
+      } else if (OB_FAIL(limit_config_array_.push_back(limit_config))) {
+        LOG_WDIAG("fail to push back limit_config", K(ret));
       }
     }
   }
@@ -1730,13 +2077,13 @@ int ObProxyConfigProcessor::load_local_app_config(const ObString &app_name)
   return ret;
 }
 
-// if config from odp_agent:
-//   1. dump to local file
-//   2. replace current app config
-//   3. update ObProxyConfig using init config and dynamic config
-// if config from local file:
-//   1. replace current app config
-//   2. update ObProxyConfig using init config and dynamic config
+// 如果配置来自于 odp agent：
+// 1. dump 配置到本地文件
+// 2. 替换当前的app config
+// 3. 更新 init config 和dynamic config 对应的ObProxyConfig
+// 如果配置来自本地文件：
+// 1. 替换当前的 app config
+// 2. 更新 init config 和dynamic config 对应的ObProxyConfig
 int ObProxyConfigProcessor::handle_app_config_complete(ObProxyAppConfig &new_app_config, const bool is_from_local/*false*/)
 {
   int ret = OB_SUCCESS;
@@ -1816,14 +2163,14 @@ int ObProxyConfigProcessor::replace_app_config(const ObString &app_name,
   return ret;
 }
 
-// dump order:
-//   app.old  ---> app.old.bak
-//   app ---> app.old
-//   app.tmp ---> app
-// rollbak order:
-//   app ---> app.tmp
-//   app.old ---> app
-//   app.old.bak ---> app.old
+// dump 本地目录顺序：
+// app.old  ---> app.old.bak
+// app ---> app.old
+// app.tmp ---> app
+// 回滚本地目录顺序:
+// app ---> app.tmp
+// app.old ---> app
+// app.old.bak ---> app.old
 void ObProxyConfigProcessor::move_local_dir(const ObString &app_name, const bool is_rollback/*false*/)
 {
   char tmp_path[FileDirectoryUtils::MAX_PATH];
@@ -1839,12 +2186,12 @@ void ObProxyConfigProcessor::move_local_dir(const ObString &app_name, const bool
   snprintf(old_bak_path, FileDirectoryUtils::MAX_PATH, "%s/%.*s.old.bak",
            get_global_layout().get_control_config_dir(), app_name.length(), app_name.ptr());
   if (!is_rollback) {
-    ObProxyFileUtils::clear_dir(old_bak_path); // need delete old.bak, otherwise move will fail
+    ObProxyFileUtils::clear_dir(old_bak_path); // 删除old.bak，否则move 会失败
     ObProxyFileUtils::move_file_dir(old_path, old_bak_path);
     ObProxyFileUtils::move_file_dir(cur_path, old_path);
     ObProxyFileUtils::move_file_dir(tmp_path, cur_path);
   } else {
-    ObProxyFileUtils::clear_dir(tmp_path); // need delete tmp_path, otherwise move will fail
+    ObProxyFileUtils::clear_dir(tmp_path); // 删除tmp_path，否则move 会失败
     ObProxyFileUtils::move_file_dir(cur_path, tmp_path);
     ObProxyFileUtils::move_file_dir(old_path, cur_path);
     ObProxyFileUtils::move_file_dir(old_bak_path, old_path);
@@ -1872,7 +2219,7 @@ int ObProxyConfigProcessor::update_global_proxy_config(const ObProxyAppConfig &n
     ret = OB_ERR_NULL_VALUE;
     LOG_WDIAG("fail to get reload config", K(ret));
   }
-  // Update the configuration of dynamic_config, the init configuration passes in the parameters at startup
+  // 只更新 dynamic_config 的配置, init 配置在启动时传入参数
   if (OB_SUCC(ret)) {
     if (NULL == cur_app_config || new_app_config.dynamic_config_.version_ != cur_app_config->dynamic_config_.version_) {
       if (OB_FAIL(do_update_global_proxy_config(new_app_config.dynamic_config_, old_global_config_items))) {
@@ -2142,6 +2489,18 @@ ObProxyBasicStmtType get_stmt_type_by_name(const ObString &stmt_name)
     stmt_type = OBPROXY_T_DELETE;
   } else if (0 == stmt_name.case_compare("MERGE")) {
     stmt_type = OBPROXY_T_MERGE;
+  } else if (0 == stmt_name.case_compare("CREATE")) {
+    stmt_type = OBPROXY_T_CREATE;
+  } else if (0 == stmt_name.case_compare("DROP")) {
+    stmt_type = OBPROXY_T_DROP;
+  } else if (0 == stmt_name.case_compare("ALTER")) {
+    stmt_type = OBPROXY_T_ALTER;
+  } else if (0 == stmt_name.case_compare("TRUNCATE")) {
+    stmt_type = OBPROXY_T_TRUNCATE;
+  } else if (0 == stmt_name.case_compare("RENAME")) {
+    stmt_type = OBPROXY_T_RENAME;
+  } else if (0 == stmt_name.case_compare("REPLACE")) {
+    stmt_type = OBPROXY_T_REPLACE;
   }
 
   return stmt_type;

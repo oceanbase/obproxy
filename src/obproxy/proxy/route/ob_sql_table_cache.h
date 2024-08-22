@@ -96,7 +96,7 @@ struct ObGetSqlTableEntryKey
 static const int64_t SQL_TABLE_ENTRY_HASH_MAP_SIZE = 16 * 1024; // 16KB
 typedef obproxy::ObRefHashMap<ObSqlTableEntryKey, ObSqlTableEntry *, ObGetSqlTableEntryKey, SQL_TABLE_ENTRY_HASH_MAP_SIZE> ObSqlTableHashMap;
 
-// ObRefHashMap get/put action will add ref automatically, put acton will dec ref automatically
+// ObRefHashMap get/put 操作时会自动加引用计数，put操作会把老的对象减引用计数
 class ObSqlTableRefHashMap : public ObSqlTableHashMap
 {
 public:

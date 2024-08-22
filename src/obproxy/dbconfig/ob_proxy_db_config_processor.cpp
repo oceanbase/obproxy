@@ -19,6 +19,9 @@
 #include "dbconfig/ob_dbconfig_tenant_cont.h"
 #include "dbconfig/ob_proxy_db_config_task.h"
 #include "iocore/eventsystem/ob_shard_watch_task.h"
+#if HAVE_BEYONDTRUST
+#include "obutils/ob_beyond_trust_processor.h"
+#endif
 
 using namespace grpc;
 using namespace google::protobuf;
@@ -251,8 +254,29 @@ int ObDbConfigProcessor::sync_fetch_tenant_config(const google::protobuf::Messag
 
 int ObDbConfigProcessor::handle_bt_sdk()
 {
-  int ret = OB_ERR_UNEXPECTED;
+  int ret = OB_SUCCESS;
+#if HAVE_BEYONDTRUST
+  if (!is_bt_updated_) {
+    ObBeyondTrustProcessor &bt_processor = get_global_beyond_trust_processor();
+    if (!bt_processor.is_inited()) {
+      if (OB_FAIL(bt_processor.init_bt_sdk())) {
+        LOG_EDIAG("fail to init beyond trust sdk", K(ret));
+      } else {
+        LOG_INFO("succ to init beyond trust sdk");
+      }
+    } else if (OB_FAIL(bt_processor.update_bt_cache())) {
+      LOG_EDIAG("fail to update bt cache", K(ret));
+    } else {
+      LOG_INFO("succ to update bt cache");
+    }
+    if (OB_SUCC(ret)) {
+      is_bt_updated_ = true;
+    }
+  }
+#else
+  ret = OB_ERR_UNEXPECTED;
   LOG_EDIAG("not support beyond trust password", K(ret));
+#endif
   return ret;
 }
 

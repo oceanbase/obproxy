@@ -583,6 +583,7 @@ int ObProxyExprHash::calc(const ObProxyExprCtx &ctx,
           int64_t num = ctx.sharding_physical_size_;
 
           ObObj &test_load_obj = param_result.at(0);
+          //处理test load模式
           if (testload_need_handle_special_char(ctx.test_load_type_)
               && test_load_obj.is_varchar()) {
             ObString str = test_load_obj.get_varchar();
@@ -3296,6 +3297,14 @@ int ObProxyExprToNumber::calc(const ObProxyExprCtx &ctx,
   return ret;
 }
 
-} // end opsql
-} // end obproxy
-} // end oceanbase
+int ObProxyExprNotSupport::calc(const ObProxyExprCtx &ctx,
+                                const ObProxyExprCalcItem &calc_item,
+                                common::ObIArray<common::ObObj> &result_obj_array)
+{
+  UNUSEDx(ctx, calc_item, result_obj_array);
+  int ret = OB_ERR_FUNCTION_UNKNOWN;
+  return ret;
+}
+} // namespace opsql
+} // namespace obproxy
+} // namespace oceanbase

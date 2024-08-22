@@ -45,6 +45,7 @@ do {\
 #define RETURN_NONE_PARAM_FUNC() \
   { store_func_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NONE_PARAM_FUNC; }
 
+// todo : we should return STR_VAL in GENERATE_FUNC_PARSE_MODE
 #define RETURN_NAME_OB_WITH_QUOTE(quote_type) \
 { \
   store_func_expr_str_with_quote(quote_type, yytext + 1, yyleng - 2, yytext + yyleng, yyscanner); \

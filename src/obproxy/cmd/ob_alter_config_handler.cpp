@@ -84,7 +84,16 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     }
   }
 
-  if (OB_UNLIKELY(!is_argument_valid(event, data))) {
+  if (OB_SUCC(ret)
+      && 0 == key_string.case_compare("sql_firewall_config")) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_INFO("sql firewall should use 'replace into proxy_config' rather than 'alter proxy config'",
+             K(key_string), K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_UNLIKELY(!is_argument_valid(event, data))) {
     ret = OB_INVALID_ARGUMENT;
     WDIAG_ICMD("invalid argument, it should not happen", K(ret));
   } else if (OB_ISNULL(reload_config = get_global_internal_cmd_processor().get_reload_config())) {
@@ -151,7 +160,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
     }
   }
 
-  // Global configuration items need to be synchronized to the proxy_config table
+  //5. global config need to sync proxy_config table
   if (OB_SUCC(ret) &&
       OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string, value_string))) {
     LOG_WDIAG("store proxy config failed", K(ret));
@@ -179,6 +188,7 @@ int ObAlterConfigSetHandler::handle_set_config(int event, void *data)
       }
     }
   }
+
 
   if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_ok_packet(0, capability_))) {

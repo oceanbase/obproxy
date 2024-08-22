@@ -34,15 +34,23 @@ class ObSafeSnapshotManager;
 class ObProxyNameString;
 class ObClusterResource;
 }
+
+namespace omt
+{
+class ObZoneWeakReadWeight;
+class ObTargetReplicaType;
+}
+
 namespace proxy
 {
 const int64_t OB_MAX_LDC_ITEM_COUNT = 16;
+const int64_t OB_MAX_ZONE_COUNT = 8;
 
 class ObLDCItem
 {
 public:
   ObLDCItem() : replica_(NULL), idc_type_(MAX_IDC_TYPE),
-                zone_type_(common::ZONE_TYPE_INVALID), priority_(0), is_merging_(false),
+                zone_type_(common::ZONE_TYPE_INVALID), priority_(0), weight_zone_index_(-1), is_merging_(false),
                 is_partition_server_(false), is_force_congested_(false), is_used_(false)
   {}
   ObLDCItem(const ObProxyReplicaLocation &replica, const bool is_merging,
@@ -86,6 +94,7 @@ public:
   ObIDCType idc_type_;
   common::ObZoneType zone_type_;
   int64_t priority_;
+  int32_t weight_zone_index_;
   bool is_merging_;
   bool is_partition_server_;
   bool is_force_congested_;
@@ -102,6 +111,7 @@ inline void ObLDCItem::reset()
   is_force_congested_ = false;
   is_used_ = false;
   priority_ = 0;
+  weight_zone_index_ = -1;
 }
 
 inline void ObLDCItem::set(const ObProxyReplicaLocation &replica, const bool is_merging,
@@ -126,6 +136,7 @@ inline void ObLDCItem::set_partition_item(const ObProxyReplicaLocation &replica,
   zone_type_ = non_partition_item.zone_type_;
   is_force_congested_ = non_partition_item.is_force_congested_;
   priority_ = non_partition_item.priority_;
+  weight_zone_index_ = non_partition_item.weight_zone_index_;
   is_partition_server_ = true;
   is_used_ = false;
 }
@@ -136,11 +147,27 @@ inline void ObLDCItem::set_non_partition_item(const ObLDCItem &non_partition_ite
   is_used_ = false;
 }
 
+// 权重zone数组的每个元素：<zone_name, weight_value>: item1, item2,...
+class ObWeightZoneItems
+{
+public:
+  ObWeightZoneItems(): zone_name_(), weight_value_(0), weight_zone_item_array_() {}
+  ~ObWeightZoneItems() {};
+  bool is_valid() const;
+  TO_STRING_KV(K_(zone_name),
+               K_(weight_value),
+               K_(weight_zone_item_array));
+  common::ObConfigVariableString zone_name_;
+  int64_t weight_value_;
+  ObSEArray<ObLDCItem, 4> weight_zone_item_array_;
+};
+
 class ObLDCLocation
 {
 public:
   ObLDCLocation()
-    : item_array_(NULL), item_count_(0), primary_zone_item_array_(NULL), primary_zone_item_count_(0),
+    : item_array_(NULL), item_count_(0), all_weight_zone_array_(NULL), all_weight_zone_item_count_(0),
+      primary_zone_item_array_(NULL), primary_zone_item_count_(0),
       site_start_index_array_(), pl_(NULL), ts_(NULL), safe_snapshot_mananger_(NULL),
       readonly_exist_status_(READONLY_ZONE_UNKNOWN), use_ldc_(false), idc_name_(), idc_name_buf_(),
       random_()
@@ -172,18 +199,24 @@ public:
 
   bool is_empty() const;
   int64_t count() const { return (is_empty() ? 0 : item_count_)
-                                 + (is_primary_zone_empty() ? 0 : primary_zone_item_count_); }
+                                 + (is_primary_zone_empty() ? 0 : primary_zone_item_count_)
+                                 + (is_weight_zone_empty() ? 0 : all_weight_zone_item_count_); }
   void reset_item_status();
   void reset_item_array();
   void reset();
   const ObLDCItem *get_item_array() const { return item_array_; }
   ObLDCItem *get_item_array() { return item_array_; }
+  typedef common::ObSEArray<ObWeightZoneItems*, OB_MAX_ZONE_COUNT> ObWeightZoneArray;
   
   bool is_primary_zone_empty() const { return (NULL == primary_zone_item_array_ || primary_zone_item_count_ <= 0); }
+  bool is_weight_zone_empty() const { return NULL == all_weight_zone_array_ || all_weight_zone_item_count_ <= 0; }
+  int64_t get_weight_zone_count() const { return is_weight_zone_empty() ? 0 : all_weight_zone_array_->count(); }
+  int64_t get_rand_zone_index();
   int64_t primary_zone_count() const { return ((is_primary_zone_empty()) ? 0 : primary_zone_item_count_); }
 
   const ObLDCItem *get_primary_zone_item_array() const { return primary_zone_item_array_; }
   ObLDCItem *get_primary_zone_item_array() { return primary_zone_item_array_; }
+  ObWeightZoneArray *get_all_weight_zone_array() { return all_weight_zone_array_; }
   
   const int64_t *get_site_start_index_array() const { return site_start_index_array_; }
   int64_t get_other_region_site_start_index() const { return site_start_index_array_[OTHER_REGION]; }
@@ -196,6 +229,7 @@ public:
   const ObTenantServer *get_tenant_server() const { return ts_;}
   const ObProxyPartitionLocation *get_partition_location() const { return pl_;}
   const ObLDCItem *get_item(const int64_t index) const;
+  const int64_t get_item_count() const;
   int64_t get_same_idc_count() const;
   int64_t get_same_region_count() const;
   int64_t get_other_region_count() const;
@@ -232,6 +266,11 @@ public:
                                        const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                        const common::ObString &tenant_name,
                                        obutils::ObClusterResource *cluster_resource);
+  static bool is_weak_read_avail_replica(const ObProxyReplicaLocation &replica,
+                                const ObRoutePolicyEnum &route_policy,
+                                const omt::ObTargetReplicaType *target_replica_type,
+                                const ObIArray<ObString> &proxy_primary_zone_name,
+                                const bool is_proxy_mysql_client);
   static int fill_weak_read_location(const ObProxyPartitionLocation *pl,
                                      ObLDCLocation &dummy_ldc,
                                      ObLDCLocation &ldc_location,
@@ -239,7 +278,11 @@ public:
                                      const bool is_only_readonly_zone,
                                      const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                      const common::ObIArray<common::ObString> &region_names,
-                                     const common::ObIArray<common::ObString> &proxy_primary_zone_name);
+                                     const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+                                     const ObRoutePolicyEnum &route_policy,
+                                     const omt::ObZoneWeakReadWeight *weight_zone = NULL,
+                                     const bool is_proxy_mysql_client = false,
+                                     const omt::ObTargetReplicaType *target_replica_type = NULL);
   static bool check_need_update_entry(const ObProxyReplicaLocation &replica,
                                       ObLDCLocation &dummy_ldc,
                                       const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
@@ -251,11 +294,19 @@ public:
   static bool is_in_primary_zone(const ObProxyReplicaLocation &replica,
                                  const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                  const common::ObString &primary_zone_name);
+  static bool is_in_weight_zone(const ObProxyReplicaLocation &replica,
+                               const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
+                               const omt::ObZoneWeakReadWeight &weight_zone,
+                               int32_t &weight_index);
   static int copy_dummy_ldc(ObLDCLocation &src_dummy_ldc, ObLDCLocation &dest_dummy_ldc);
+  int set_weight_zone_array(const ObIArray<ObLDCItem> &tmp_weight_zone_item_array,
+                            const omt::ObZoneWeakReadWeight &weight_zone);
   int set_ldc_location(const ObProxyPartitionLocation *pl,
                        const ObLDCLocation &dummy_ldc,
                        const common::ObIArray<ObLDCItem> &tmp_item_array,
-                       const common::ObIArray<ObLDCItem> &tmp_pz_item_array);
+                       const common::ObIArray<ObLDCItem> *tmp_pz_item_array,
+                       const ObIArray<ObLDCItem> *tmp_weight_zone_item_array_ptr,
+                       const omt::ObZoneWeakReadWeight *weight_zone = NULL);
 
   void set_safe_snapshot_manager(const obutils::ObSafeSnapshotManager *safe_snapshot_mananger)
   {
@@ -312,6 +363,8 @@ private:
   ObLDCItem *item_array_;
   int64_t item_count_;
 
+  ObWeightZoneArray *all_weight_zone_array_;
+  int64_t all_weight_zone_item_count_;
   ObLDCItem *primary_zone_item_array_;
   int64_t primary_zone_item_count_;
 
@@ -344,11 +397,26 @@ inline const ObLDCItem *ObLDCLocation::get_item(const int64_t index) const
   return ((!is_empty() && index >= 0 && index < item_count_) ? (item_array_ + index) : NULL);
 }
 
+inline const int64_t ObLDCLocation::get_item_count() const
+{
+  return item_count_;
+}
+
 void ObLDCLocation::reset_item_status()
 {
   if (!is_empty()) {
     for (int64_t i = 0; i < item_count_; ++i) {
       item_array_[i].is_used_ = false;
+    }
+  }
+  if (!is_weight_zone_empty()) {
+    for (int64_t i = 0; i < all_weight_zone_item_count_; ++i) {
+      if (OB_NOT_NULL(all_weight_zone_array_->at(i))) {
+        ObWeightZoneItems &weight_zone = *all_weight_zone_array_->at(i);
+        for (int64_t j = 0; j < weight_zone.weight_zone_item_array_.count(); ++j) {
+          weight_zone.weight_zone_item_array_.at(j).is_used_ = false;
+        }
+      }
     }
   }
 }
@@ -466,6 +534,7 @@ inline int ObLDCLocation::shuffle_dummy_ldc(ObLDCLocation &dummy_ldc, const int6
   } else if (is_weak_read && NULL != dummy_ldc.get_safe_snapshot_manager()) {
     //we will shuffle after fill replicas
   } else {
+    // 直接随机打散，对于带ldc路由后面会进行处理，非ldc情况每次都打散，保证随机路由
     dummy_ldc.shuffle();
   }
   return ret;

@@ -468,7 +468,7 @@ int ObRoutineCache::add_routine_entry(ObRoutineEntry &entry, bool direct_add)
       } else {
         param->op_ = ObRoutineCacheParam::ADD_ROUTINE_OP;
         param->hash_ = hash;
-        // No deep copy is needed, because the key here is obtained from the entry
+        // 无需 deep copy, 因为这里的 key 是从 entry 中获取的
         param->key_ = key;
         entry.inc_ref();
         param->entry_ = &entry;

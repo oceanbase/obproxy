@@ -210,7 +210,8 @@ TEST_F(TestConfigServerProcessor, test_get_json_config_info)
 {
   int ret = OB_SUCCESS;
   config_processor_.proxy_config_.app_name.set_value("ob1.kyle.sj");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
   ASSERT_EQ(0, memcmp(config_processor_.json_config_info_->data_info_.bin_url_.ptr(),
@@ -223,7 +224,8 @@ TEST_F(TestConfigServerProcessor, test_get_json_config_info)
       "admin", config_processor_.json_config_info_->data_info_.meta_table_info_.password_.length()));
   ASSERT_EQ(1, config_processor_.json_config_info_->data_info_.cluster_array_.count());
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_CURL_ERROR, ret);
 }
@@ -236,19 +238,22 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_json_config)
   ObString content;
   content.assign_buffer(buf, OB_PROXY_CONFIG_BUFFER_SIZE);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   const char *config_url = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(config_url, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
       static_cast<void *>(&content), ObConfigServerProcessor::write_data);
   ASSERT_EQ(OB_SUCCESS, ret);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   const char *wrong_config_url = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(wrong_config_url, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
       static_cast<void *>(&content), ObConfigServerProcessor::write_data);
   ASSERT_EQ(OB_CURL_ERROR, ret);
 
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   const char *wrong_http_port = config_processor_.proxy_config_.obproxy_config_server_url;
   ret = config_processor_.fetch_by_curl(wrong_http_port, ObConfigServerProcessor::CURL_TRANSFER_TIMEOUT,
           static_cast<void *>(&content), ObConfigServerProcessor::write_data);
@@ -259,7 +264,8 @@ TEST_F(TestConfigServerProcessor, test_get_newest_cluster_rs_list)
 {
   int ret = OB_SUCCESS;
   config_processor_.proxy_config_.app_name.set_value("");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
 
@@ -289,17 +295,14 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
   //test short timeout
   const char *bin_url = "";
 
-  int fd = -1;
+  int fd = 0;
   if ((fd = ::open(save_path, O_WRONLY | O_CREAT,
                 S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) > 0) {
     ret = config_processor_.fetch_by_curl(bin_url, 1L,
         reinterpret_cast<void *>(fd), config_processor_.write_proxy_bin);
 
   }
-  if (fd >= 0) {
-    close(fd);
-    fd = -1;
-  }
+  if (fd > 0) close(fd);
   ASSERT_EQ(OB_CURL_ERROR, ret);
   remove(save_path);
 
@@ -313,10 +316,7 @@ TEST_F(TestConfigServerProcessor, test_do_fetch_proxy_bin)
                        S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH)) > 0) {
     ret = config_processor_.fetch_by_curl(wrong_bin_url, fetch_timeout, reinterpret_cast<void *>((int64_t)fd), config_processor_.write_proxy_bin);
   }
-  if (fd >= 0) {
-    close(fd);
-    fd = -1;
-  }
+  if (fd > 0) close(fd);
   ASSERT_EQ(OB_CURL_ERROR, ret);
   remove(save_path);
 
@@ -331,7 +331,7 @@ TEST_F(TestConfigServerProcessor, test_get_idc_url)
   const char *expect_buf1 = "";
   const char *expect_buf2 = "";
   const char *expect_buf3 = "";
-  const char *expect_buf4 = "HTTP://OCP-API.ALIPAY.COM/SERVICES?ACTION=ObIDCRegionInfo&USER_ID=ALIBABA&UID=ZHITAO.RZT&OBREGION=RHZ_OBTRANS60";
+  const char *expect_buf4 = "";
   const int64_t max_size = 256;
   char common_buf[256];
   char *but_ptr = common_buf;
@@ -363,8 +363,9 @@ TEST_F(TestConfigServerProcessor, test_get_idc_url)
 TEST_F(TestConfigServerProcessor, test_get_idc_list)
 {
   int ret = OB_SUCCESS;
-  config_processor_.proxy_config_.app_name.set_value("ob1.kyle.sj");
-  config_processor_.proxy_config_.obproxy_config_server_url.set_value("");
+  config_processor_.proxy_config_.app_name.set_value("");
+  config_processor_.proxy_config_.obproxy_config_server_url.set_value(
+      "");
   ret = config_processor_.refresh_json_config_info();
   ASSERT_EQ(OB_SUCCESS, ret);
 

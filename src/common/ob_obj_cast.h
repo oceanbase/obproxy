@@ -45,14 +45,45 @@ namespace common
 #define CM_CONST_TO_DECIMAL_INT_DOWN  (1ULL << 18)
 #define CM_CONST_TO_DECIMAL_INT_EQ    (1ULL << 19)
 #define CM_BY_TRANSFORMER             (1ULL << 20)
+#define CM_ZERO_FILL                     (1ULL << 4)
+#define CM_FORMAT_NUMBER_WITH_LIMIT      (1ULL << 5)
+#define CM_CHARSET_CONVERT_IGNORE_ERR    (1ULL << 6)
+#define CM_FORCE_USE_STANDARD_NLS_FORMAT (1ULL << 7)
+#define CM_STRICT_MODE                   (1ULL << 8)
+#define CM_SET_MIN_IF_OVERFLOW           (1ULL << 9)
+#define CM_ERROR_ON_SCALE_OVER           (1ULL << 10)
+#define CM_STRICT_JSON                   (1ULL << 11)
+
+
+#define CM_ADD_ZEROFILL                  (1ULL << 47)
+#define CM_CS_LEVEL_RESERVED1            (1ULL << 48)
+#define CM_CS_LEVEL_RESERVED2            (1ULL << 49)
+#define CM_CS_LEVEL_RESERVED3            (1ULL << 50)
+#define CM_CS_LEVEL_SHIFT                48
+#define CM_CS_LEVEL_MASK                 7ULL
+#define CM_TIME_TRUNCATE_FRACTIONAL      (1ULL << 51)
+#define CM_TO_COLUMN_CS_LEVEL            (1ULL << 52)
+#define CM_ERROR_FOR_DIVISION_BY_ZERO    (1ULL << 53)
+#define CM_NO_ZERO_IN_DATE               (1ULL << 54) // reserve
+#define CM_NO_ZERO_DATE                  (1ULL << 55)
+#define CM_ALLOW_INVALID_DATES           (1ULL << 56)
+#define CM_GEOMETRY_TYPE_RESERVED1       (1ULL << 12)
+#define CM_GEOMETRY_TYPE_RESERVED2       (1ULL << 13)
+#define CM_GEOMETRY_TYPE_RESERVED3       (1ULL << 14)
+#define CM_GEOMETRY_TYPE_RESERVED4       (1ULL << 15)
+#define CM_GEOMETRY_TYPE_RESERVED5       (1ULL << 16)
+// obproxy use CM_CONST_TO_DECIMAL_INT_UP as (1ULL << 17)
+// here annotate CM_SQL_TO_JSON_SCALAR for safty
+//#define CM_SQL_TO_JSON_SCALAR            (1ULL << 17)
+
 // string->integer(int/uint)时默认进行round(round to nearest)，
 // 如果设置该标记，则会进行trunc(round to zero)
 // ceil(round to +inf)以及floor(round to -inf)暂时没有支持
-#define CM_STRING_INTEGER_TRUNC       (1ULL << 57)
-#define CM_COLUMN_CONVERT             (1ULL << 58)
-#define CM_ENABLE_BLOB_CAST           (1ULL << 59)
-#define CM_EXPLICIT_CAST              (1ULL << 60)
-#define CM_ORACLE_MODE (1ULL << 61)
+#define CM_STRING_INTEGER_TRUNC          (1ULL << 57)
+#define CM_COLUMN_CONVERT                (1ULL << 58)
+#define CM_ENABLE_BLOB_CAST              (1ULL << 59)
+#define CM_EXPLICIT_CAST                 (1ULL << 60)
+#define CM_ORACLE_MODE                   (1ULL << 61)
 
 #define CM_INSERT_UPDATE_SCOPE        (1ULL << 62)  // affect calculate values() function. return the insert values
                                                     // otherwise return NULL;
@@ -60,16 +91,16 @@ namespace common
                                                     // is external call.
 typedef uint64_t ObCastMode;
 
-#define CM_IS_WARN_ON_FAIL(mode)              (CM_WARN_ON_FAIL & (mode))
+#define CM_IS_WARN_ON_FAIL(mode)              ((CM_WARN_ON_FAIL & (mode)) != 0)
 #define CM_IS_ERROR_ON_FAIL(mode)             (!CM_IS_WARN_ON_FAIL(mode))
 #define CM_SET_WARN_ON_FAIL(mode)             (CM_WARN_ON_FAIL | (mode))
-#define CM_IS_NULL_ON_WARN(mode)              (CM_NULL_ON_WARN & (mode))
+#define CM_IS_NULL_ON_WARN(mode)              ((CM_NULL_ON_WARN & (mode)) != 0)
 #define CM_IS_ZERO_ON_WARN(mode)              (!CM_IS_NULL_ON_WARN(mode))
-#define CM_SKIP_RANGE_CHECK(mode)             (CM_NO_RANGE_CHECK & (mode))
+#define CM_SKIP_RANGE_CHECK(mode)             ((CM_NO_RANGE_CHECK & (mode)) != 0)
 #define CM_NEED_RANGE_CHECK(mode)             (!CM_SKIP_RANGE_CHECK(mode))
-#define CM_SKIP_CAST_INT_UINT(mode)           (CM_NO_CAST_INT_UINT & (mode))
+#define CM_SKIP_CAST_INT_UINT(mode)           ((CM_NO_CAST_INT_UINT & (mode)) != 0)
 #define CM_NEED_CAST_INT_UINT(mode)           (!CM_SKIP_CAST_INT_UINT(mode))
-#define CM_UNSET_NO_CAST_INT_UINT(mode)       (~CM_NO_CAST_INT_UINT & (mode))
+#define CM_UNSET_NO_CAST_INT_UINT(mode)       ((~CM_NO_CAST_INT_UINT & (mode)) != 0)
 #define CM_IS_INTERNAL_CALL(mode)             (CM_INTERNAL_CALL & (mode))
 #define CM_IS_EXTERNAL_CALL(mode)             (!CM_IS_INTERNAL_CALL(mode))
 #define CM_IS_CONST_TO_DECIMAL_INT(mode)                                                           \
@@ -77,8 +108,59 @@ typedef uint64_t ObCastMode;
    || (((mode)&CM_CONST_TO_DECIMAL_INT_EQ) != 0))
 
 #define CM_IS_COLUMN_CONVERT(mode)            ((CM_COLUMN_CONVERT & (mode)) != 0)
+#define CM_IS_BLOB_CAST_ENABLED(mode)         ((CM_ENABLE_BLOB_CAST & (mode)) != 0)
 #define CM_IS_EXPLICIT_CAST(mode)             ((CM_EXPLICIT_CAST & (mode)) != 0)
 #define CM_IS_IMPLICIT_CAST(mode)             (!CM_IS_EXPLICIT_CAST(mode))
+#define CM_IS_ORACLE_MODE(mode)               ((CM_ORACLE_MODE & (mode)) != 0)
+#define CM_SET_ORACLE_MODE(mode)              (CM_ORACLE_MODE | (mode))
+#define CM_IS_EXTERNAL_CALL(mode)             (!CM_IS_INTERNAL_CALL(mode))
+#define CM_IS_STRICT_MODE(mode)               ((CM_STRICT_MODE & (mode)) != 0)
+#define CM_IS_TIME_TRUNCATE_FRACTIONAL(mode)  ((CM_TIME_TRUNCATE_FRACTIONAL & (mode)) != 0)
+#define CM_IS_ERROR_FOR_DIVISION_BY_ZERO(mode)    \
+  ((CM_ERROR_FOR_DIVISION_BY_ZERO & (mode)) != 0)
+#define CM_IS_NO_ZERO_IN_DATE(mode)           ((CM_NO_ZERO_IN_DATE & (mode)) != 0)
+#define CM_IS_NO_ZERO_DATE(mode)              ((CM_NO_ZERO_DATE & (mode)) != 0)
+#define CM_IS_ALLOW_INVALID_DATES(mode)       ((CM_ALLOW_INVALID_DATES & (mode)) != 0)
+#define CM_IS_STRING_INTEGER_TRUNC(mode)      ((CM_STRING_INTEGER_TRUNC & (mode)) != 0)
+#define CM_UNSET_STRING_INTEGER_TRUNC(mode)   ((~CM_STRING_INTEGER_TRUNC & (mode)))
+#define CM_IS_IGNORE_ON_TRUNC(mode)           (!CM_IS_FAIL_ON_ROUNDING(mode))
+#define CM_IS_ZERO_FILL(mode)                 ((CM_ZERO_FILL & (mode)) != 0)
+#define CM_IS_FORMAT_NUMBER_WITH_LIMIT(mode)      \
+  ((CM_FORMAT_NUMBER_WITH_LIMIT & (mode)) != 0)
+#define CM_IS_IGNORE_CHARSET_CONVERT_ERR(mode)    \
+  ((CM_CHARSET_CONVERT_IGNORE_ERR & (mode)) != 0)
+#define CM_IS_FORCE_USE_STANDARD_NLS_FORMAT(mode) \
+  ((CM_FORCE_USE_STANDARD_NLS_FORMAT & (mode)) != 0)
+#define CM_IS_SET_MIN_IF_OVERFLOW(mode)       ((CM_SET_MIN_IF_OVERFLOW & (mode)) != 0)
+#define CM_IS_ERROR_ON_SCALE_OVER(mode)       ((CM_ERROR_ON_SCALE_OVER & (mode)) != 0)
+#define CM_IS_STRICT_JSON(mode)               ((CM_STRICT_JSON & (mode)) != 0)
+#define CM_IS_JSON_VALUE(mode)                CM_IS_ERROR_ON_SCALE_OVER(mode)
+#define CM_IS_TO_COLUMN_CS_LEVEL(mode)        ((CM_TO_COLUMN_CS_LEVEL & (mode)) != 0)
+// for json type cast
+#define CM_IS_SQL_AS_JSON_SCALAR(mode)        ((CM_SQL_TO_JSON_SCALAR & (mode)) != 0)
+#define CM_SET_SQL_AS_JSON_SCALAR(mode)       (CM_SQL_TO_JSON_SCALAR | (mode))
+// for geomerty type cast
+#define CM_IS_GEOMETRY_GEOMETRY(mode)             ((((mode) >> 12) & 0x1F) == 0)
+#define CM_IS_GEOMETRY_POINT(mode)                ((((mode) >> 12) & 0x1F) == 1)
+#define CM_IS_GEOMETRY_LINESTRING(mode)           ((((mode) >> 12) & 0x1F) == 2)
+#define CM_IS_GEOMETRY_POLYGON(mode)              ((((mode) >> 12) & 0x1F) == 3)
+#define CM_IS_GEOMETRY_MULTIPOINT(mode)           ((((mode) >> 12) & 0x1F) == 4)
+#define CM_IS_GEOMETRY_MULTILINESTRING(mode)      ((((mode) >> 12) & 0x1F) == 5)
+#define CM_IS_GEOMETRY_MULTIPOLYGON(mode)         ((((mode) >> 12) & 0x1F) == 6)
+#define CM_IS_GEOMETRY_GEOMETRYCOLLECTION(mode)   ((((mode) >> 12) & 0x1F) == 7)
+#define CM_SET_GEOMETRY_GEOMETRY(mode)            ((mode) &= 0xFFFE0FFF, (mode) |= (0 << 12))
+#define CM_SET_GEOMETRY_POINT(mode)               ((mode) &= 0xFFFE0FFF, (mode) |= (1 << 12))
+#define CM_SET_GEOMETRY_LINESTRING(mode)          ((mode) &= 0xFFFE0FFF, (mode) |= (2 << 12))
+#define CM_SET_GEOMETRY_POLYGON(mode)             ((mode) &= 0xFFFE0FFF, (mode) |= (3 << 12))
+#define CM_SET_GEOMETRY_MULTIPOINT(mode)          ((mode) &= 0xFFFE0FFF, (mode) |= (4 << 12))
+#define CM_SET_GEOMETRY_MULTILINESTRING(mode)     ((mode) &= 0xFFFE0FFF, (mode) |= (5 << 12))
+#define CM_SET_GEOMETRY_MULTIPOLYGON(mode)        ((mode) &= 0xFFFE0FFF, (mode) |= (6 << 12))
+#define CM_SET_GEOMETRY_GEOMETRYCOLLECTION(mode)  ((mode) &= 0xFFFE0FFF, (mode) |= (7 << 12))
+#define CM_GET_CS_LEVEL(mode)                     (((mode) >> CM_CS_LEVEL_SHIFT) & CM_CS_LEVEL_MASK)
+#define CM_SET_CS_LEVEL(mode, level) \
+  ((mode) &= ~(CM_CS_LEVEL_MASK << CM_CS_LEVEL_SHIFT), \
+  (mode) |= ((level & CM_CS_LEVEL_MASK) << CM_CS_LEVEL_SHIFT))
+#define CM_IS_ADD_ZEROFILL(mode)                 ((CM_ADD_ZEROFILL & (mode)) != 0)
 
 struct ObObjCastParams
 {
@@ -285,6 +367,9 @@ enum AllocatorSource
   FromString = 2,
   FromAllocator = 3,
 };
+
+int get_bit_len(const ObString &str, int32_t &bit_len);
+int get_bit_len(uint64_t value, int32_t &bit_len);
 
 template <AllocatorSource Source, class AllocatorTmpl = void>
 class ObObjCaster

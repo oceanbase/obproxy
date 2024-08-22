@@ -31,6 +31,7 @@ public:
   ~ObVariableLenBuffer() { destroy(); }
 
   int init(const int64_t mem_len);
+  int init_and_write(const char *data, const int64_t len);
   bool is_inited() const { return is_inited_; }
   void reset();
   void destroy() { reset(); }
@@ -116,6 +117,20 @@ inline int ObVariableLenBuffer<BUF_LEN>::init(const int64_t mem_len)
     total_len_ = mem_len;
     valid_len_ = 0;
     is_inited_ = true;
+  }
+
+  return ret;
+}
+
+template <int64_t BUF_LEN>
+inline int ObVariableLenBuffer<BUF_LEN>::init_and_write(const char *data, const int64_t len)
+{
+  int ret = common::OB_SUCCESS;
+
+  if (OB_FAIL(init(len))) {
+    PROXY_LOG(WDIAG, "fail to init", K(len), K(ret));
+  } else if (OB_FAIL(write(data, len))) {
+    PROXY_LOG(WDIAG, "fail to write", K(data), K(len), K(ret));
   }
 
   return ret;

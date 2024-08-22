@@ -52,7 +52,7 @@ public:
 } PacketErrorInfo;
 
 const int16_t OP_DEFAULT_ERROR_NO = 8001;
-const char* OP_DEFAULT_ERROR_MSG  = "Inner error occured in Operator and not have any other info";
+const char* OP_DEFAULT_ERROR_MSG = "Inner error occured in Operator and not have any other info";
 
 int change_sql_field(const ObMysqlField *src_field, obmysql::ObMySQLField *&dst_field,
                      common::ObIAllocator &allocator)
@@ -142,7 +142,7 @@ int change_sql_value(ObObj &value, obmysql::ObMySQLField &field, ObIAllocator *a
     value.set_collation_type(cs_type);
 
     if (0 != value.get_string_len()) {
-      // Convert the column to a specific type, if it cannot be converted, keep varchar
+      // 把列转成具体的类型, 如果转换不了就保持 varchar
       if (OB_FAIL(ObSMUtils::get_ob_type(ob_type, field.type_))) {
         COMMON_LOG(INFO, "cast ob type from mysql type failed", K(ob_type), "elem_type", field.type_, K(ret));
         ret = OB_SUCCESS;

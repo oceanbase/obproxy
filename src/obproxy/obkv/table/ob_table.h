@@ -504,7 +504,7 @@ class ObNoRetry : public ObIRetryPolicy
 {};
 
 /// consistency levels
-/// @see https://www.atatech.org/articles/102030
+/// @see
 enum class ObTableConsistencyLevel
 {
   STRONG = 0,
@@ -721,6 +721,34 @@ private:
   ObString filter_string_;
 };
 
+enum ObTableAggregationType
+{
+  INVAILD = 0,
+  MAX = 1,
+  MIN = 2,
+  COUNT = 3,
+  SUM = 4,
+  AVG = 5,
+};
+
+class ObTableAggregation
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObTableAggregation()
+      : type_(ObTableAggregationType::INVAILD),
+        column_()
+  {}
+  ObTableAggregationType get_type() const { return type_; }
+  const common::ObString &get_column() const { return column_; }
+  bool is_agg_all_column() const { return column_ == "*"; };
+  int deep_copy(common::ObIAllocator &allocator, ObTableAggregation &dst) const;
+  TO_STRING_KV(K_(type), K_(column));
+private:
+  ObTableAggregationType type_; // e.g. max
+  common::ObString column_; // e.g. age
+};
+
 /// A table query
 /// 1. support multi range scan
 /// 2. support reverse scan
@@ -794,6 +822,9 @@ public:
   //uint64_t get_checksum() const;
   //int deep_copy(common::ObIAllocator &allocator, const ObTableQuery &other);
 
+  const common::ObIArray<ObTableAggregation> &get_aggregations() const { return aggregations_; }
+  bool is_aggregate_query() const { return !aggregations_.empty(); }
+
   void clear_scan_range() { key_ranges_.reset(); }
   //void set_deserialize_allocator(common::ObIAllocator *allocator) { deserialize_allocator_ = allocator; }
   TO_STRING_KV(K_(key_ranges),
@@ -806,7 +837,8 @@ public:
                K_(htable_filter),
                K_(batch_size),
                K_(max_result_size),
-               K_(rowkey_columns));
+               K_(rowkey_columns),
+               K_(aggregations));
 public:
   static ObString generate_filter_condition(const ObString &column, const ObString &op, const ObObj &value);
   static ObString combile_filters(const ObString &filter1, const ObString &op, const ObString &filter2);
@@ -824,6 +856,7 @@ protected:
   int64_t max_result_size_;
   OB_UNIS_IGNORE_HTABLE_FILTER htable_filter_;
   ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> rowkey_columns_;
+  ObSEArray<ObTableAggregation, 8> aggregations_;
   int64_t cluster_version_;
 };
 

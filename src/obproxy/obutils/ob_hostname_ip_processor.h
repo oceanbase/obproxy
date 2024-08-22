@@ -69,7 +69,6 @@ public:
 private:
 
   const static int HASH_MAP_SIZE = 128;
-  const static int MAX_HOSTNAME_LEN = 256; // according to DNS standard
   struct ObHostnameIpItem
   {
     ObHostnameIpItem(): last_access_time_ns_(0), hostname_(0), ip_list_() {}
@@ -77,7 +76,7 @@ private:
     bool is_expired(const int64_t expired_time_ns) const { return event::get_hrtime() - last_access_time_ns_ > expired_time_ns; }
     void renew_last_access_time() { last_access_time_ns_ = event::get_hrtime(); }
     int64_t last_access_time_ns_;
-    ObFixedLengthString<MAX_HOSTNAME_LEN> hostname_;
+    ObFixedLengthString<MAX_HOSTNAME_ADDR_LENGTH> hostname_;
     ObSEArray<net::ObIpAddr, 2> ip_list_;
     LINK(ObHostnameIpItem, hostname_ip_item_link_);
 

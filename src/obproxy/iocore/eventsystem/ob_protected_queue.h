@@ -27,14 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * **************************************************************
- *
- * Protected Queue, a FIFO queue with the following functionality:
- * (1). Multiple threads could be simultaneously trying to enqueue
- *      and dequeue. Hence the queue needs to be protected with mutex.
- * (2). In case the queue is empty, dequeue() sleeps for a specified
- *      amount of time, or until a new element is inserted, whichever
- *      is earlier
  */
 
 #ifndef OBPROXY_PROTECTED_QUEUE_H

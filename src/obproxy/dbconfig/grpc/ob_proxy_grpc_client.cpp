@@ -238,13 +238,15 @@ int ObGrpcClient::getip_from_nodeid(char *ipstr, int64_t length)
   return ret;
 }
 
+// 虚拟机方案需要的 lable, 用来告知 Pilot 匹配哪些 CR:
 int ObGrpcClient::fill_labels_values(const char *ipstr, ObIArray<obmysql::ObStringKV>& labels)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(ipstr)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invaild arg in ObGrpcClient::fill_labels_values func", KP(ipstr), K(ret));
-  // need by alipay main site
+  // TODO: 改成动态可配置的
+  // 主站需要的
   } else if (OB_FAIL(build_label("odp-version", build_version(), labels))) {
     LOG_WDIAG("can not set odp-version to labels", K(ret));
   } else if (OB_FAIL(build_label("cloudmesh.workload/ip", ipstr, labels))) {
@@ -257,7 +259,7 @@ int ObGrpcClient::fill_labels_values(const char *ipstr, ObIArray<obmysql::ObStri
     LOG_WDIAG("can not set env to labels", K(ret));
   } else if (OB_FAIL(build_label("VMMODE", "true", labels))) {
     LOG_WDIAG("can not set VMMODE to labels", K(ret));
-  // need by E-Commerce Bank
+  // 网商需要的
   } else if (OB_FAIL(build_label("app.kubernetes.io/name", get_global_proxy_config().app_name.str(), labels))) {
     LOG_WDIAG("can not set app.kubernetes.io/name to labels", K(ret));
   } else if (OB_FAIL(build_label("cafe.sofastack.io/tenant", get_global_proxy_config().env_tenant_name.str(), labels))) {

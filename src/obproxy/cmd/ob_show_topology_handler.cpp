@@ -240,6 +240,7 @@ int ObShowTopologyHandler::handle_show_topology(const ObString &tenant_name,
       ret = OB_ERR_BAD_DATABASE;
       WARN_CMD("logic database not exist", K(tenant_name), K(db_name), K(ret));
     } else if (OB_UNLIKELY(db_info->is_single_shard_db_table())) {
+      //单库单表
       if (OB_FAIL(dump_shard_topology_for_single_db(table_name))) {
         WARN_CMD("fail to encode topology packet for single db", K(tenant_name), K(db_name), K(ret));
       }
@@ -247,14 +248,17 @@ int ObShowTopologyHandler::handle_show_topology(const ObString &tenant_name,
       // no logic table
       ret = OB_TABLE_NOT_EXIST;
     } else if (OB_UNLIKELY((1 == shard_rule->db_size_) && (1 == shard_rule->tb_size_))) {
+      //分库单表
       if (OB_FAIL(dump_shard_topology_for_shard_db_single_tb(table_name))) {
         WARN_CMD("fail to encode topology packet for shard_db_single_tb", K(tenant_name), K(db_name), K(shard_rule->db_size_), K(shard_rule->tb_size_), K(ret));
       }
     } else if (OB_UNLIKELY(1 == shard_rule->tb_size_)) {
+      //分库不分表
       if (OB_FAIL(dump_shard_topology_for_shard_db_non_shard_tb(table_name, shard_rule))) {
         WARN_CMD("fail to encode topology packet for shard_db_non_shard_tb", K(tenant_name), K(db_name), K(shard_rule->db_size_), K(shard_rule->tb_size_), K(ret));
       }
     } else {
+      //分库分表
       if (OB_FAIL(dump_shard_topology_for_shard_db_shard_tb(shard_rule))) {
         WARN_CMD("fail to encode topology packet for shard_db_shard_tb", K(tenant_name), K(db_name), K(shard_rule->db_size_), K(shard_rule->tb_size_), K(ret));
       }

@@ -215,7 +215,7 @@ public:
 
 
   ObMysqlRoute();
-  virtual ~ObMysqlRoute() {}
+  virtual ~ObMysqlRoute();
 
   static int get_route_entry(ObRouteParam &route_param,
                              obutils::ObClusterResource *cr,
@@ -235,6 +235,7 @@ private:
   void kill_this();
 
   int state_route_start(int event, void *data);
+  int do_route_lookup(int event, void *data);
 
   int main_handler(int event, void *data);
   void set_state_and_call_next(const ObMysqlRouteAction next_action);
@@ -242,6 +243,8 @@ private:
 
   void setup_routine_entry_lookup();
   int state_routine_entry_lookup(int event, void *data);
+  OB_INLINE int state_routine_entry_lookup_local(int event, void *data);
+  OB_INLINE int state_routine_entry_lookup_remote(int event, void *data);
   void handle_routine_entry_lookup_done();
 
   void setup_route_sql_parse();
@@ -251,6 +254,9 @@ private:
 
   void setup_table_entry_lookup();
   int state_table_entry_lookup(int event, void *data);
+  OB_INLINE int state_table_entry_lookup_local(int event, void *data);
+  OB_INLINE int state_table_entry_lookup_remote(int event, void *data);
+
   void handle_table_entry_lookup_done();
 
   void setup_partition_id_calc();
@@ -260,6 +266,8 @@ private:
 
   void setup_partition_entry_lookup();
   int state_partition_entry_lookup(int event, void *data);
+  OB_INLINE int state_partition_entry_lookup_local(int event, void *data);
+  OB_INLINE int state_partition_entry_lookup_remote(int event, void *data);
   void handle_partition_entry_lookup_done();
 
   void handle_timeout();
@@ -302,7 +310,7 @@ private:
   bool terminate_route_;
   // observer use int64_t to store part id
   int64_t part_id_;
-  obutils::ObSqlParseResult route_sql_result_;
+  obutils::ObSqlParseResult *route_sql_result_;
 
   MysqlRouteHandler default_handler_;
   int32_t reentrancy_count_;
@@ -310,6 +318,51 @@ private:
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlRoute);
 };
+
+int ObMysqlRoute::state_table_entry_lookup_local(int event, void *data)
+{
+  int ret = state_table_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE;
+  return ret;
+}
+
+int ObMysqlRoute::state_table_entry_lookup_remote(int event, void *data)
+{
+  int ret = state_table_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE;
+  do_route_lookup(event, NULL);
+  return ret;
+}
+
+int ObMysqlRoute::state_partition_entry_lookup_local(int event, void *data)
+{
+  int ret = state_partition_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_DONE;
+  return ret;
+}
+
+int ObMysqlRoute::state_partition_entry_lookup_remote(int event, void *data)
+{
+  int ret = state_partition_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_DONE;
+  do_route_lookup(event, NULL);
+  return ret;
+}
+
+int ObMysqlRoute::state_routine_entry_lookup_local(int event, void *data)
+{
+  int ret = state_routine_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE;
+  return ret;
+}
+
+int ObMysqlRoute::state_routine_entry_lookup_remote(int event, void *data)
+{
+  int ret = state_routine_entry_lookup(event, data);
+  next_action_ = ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE;
+  do_route_lookup(event, NULL);
+  return ret;
+}
 
 } // end of namespace proxy
 } // end of namespace obproxy

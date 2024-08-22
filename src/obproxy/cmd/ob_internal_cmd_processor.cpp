@@ -109,7 +109,7 @@ int ObInternalCmdProcessor::execute_cmd(ObContinuation *cont, ObInternalCmdInfo 
     // do nothing
   } else if (get_global_config_processor().is_table_in_service(table_name)
              || OBPROXY_T_DELETE == type || OBPROXY_T_REPLACE == type) {
-    // Take the new configuration parsing framework
+    // 走新的配置解析框架
     DEBUG_ICMD("begin to handle table", K(table_name));
     if (OB_FAIL(ObConfigV2Handler::config_v2_cmd_callback(cont, info, buf, action))) {
       WDIAG_ICMD("fail to call config_v2_cmd_callback", K(ret));

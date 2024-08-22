@@ -59,7 +59,7 @@ public:
 public:
   static const int64_t MAX_RULES_COUNT = 16;
 
-  obutils::ObProxyConfigString shard_rule_str_; //save sharding expr
+  obutils::ObProxyConfigString shard_rule_str_; //保存配置中的分区表达式
   opsql::ObProxyExpr *expr_;
 
 private:

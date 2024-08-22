@@ -28,9 +28,9 @@
  * limitations under the License.
  */
 
+#include "lib/ob_errno.h"
 #define USING_LOG_PREFIX PROXY
 
-#include "lib/ob_errno.h"
 #include "omt/ob_proxy_config_table_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "obutils/ob_proxy_config.h"
@@ -40,6 +40,7 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "opsql/parser/ob_proxy_parser.h"
 #include "obproxy/cmd/ob_show_config_handler.h"
+#include "obproxy/utils/ob_proxy_utils.h"
 
 static const char *EXECUTE_SQL =
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
@@ -297,6 +298,92 @@ int ObProxyConfigTableProcessor::get_proxy_multi_config(const obutils::ObVipAddr
   return ret;
 }
 
+int ObZoneWeakReadWeight::parse_weight_zone(const ObConfigItem& item, ObZoneWeakReadWeight &weight_zone)
+{
+  // 解析配置的zone&weight，配置插入时判断了值合法性，这里无需再校验
+  int ret = OB_SUCCESS;
+  ObString config_value(item.str());
+  bool zone_finish = false;
+  while (OB_SUCC(ret) && !config_value.empty() && !zone_finish) {
+    ObString zone_and_value = config_value.split_on(';');
+    if (zone_and_value.empty()) {
+      zone_and_value = config_value;
+      zone_finish = true;
+    }
+    ObString config_zone_name = zone_and_value.split_on(':');
+    int64_t value = 0;
+    if (OB_FAIL(get_int_value(zone_and_value, value))) {
+      LOG_WDIAG("parse weight value is invalid", K(value), K(ret));
+    } else if (OB_FAIL(weight_zone.weight_array_.push_back(value))) {
+      LOG_WDIAG("fail to push back weight value", K(value), K(ret));
+    } else {
+      ObConfigVariableString zone_name;
+      if (OB_FAIL(zone_name.rewrite(config_zone_name))) {
+        LOG_WDIAG("fail to rewrite config zone name", K(zone_name), K(config_zone_name), K(ret));
+      } else if (OB_FAIL(weight_zone.zone_array_.push_back(zone_name))) {
+        LOG_WDIAG("fail to push back weight zone name", K(zone_name), K(config_zone_name), K(ret));
+      }
+    }
+  }
+  if (OB_SUCC(ret) && OB_UNLIKELY(weight_zone.zone_array_.count() != weight_zone.weight_array_.count())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected zone name len != weight value len", K_(weight_zone.zone_array), K_(weight_zone.weight_array), K(ret));
+  }
+  LOG_DEBUG("parse weight zone array", K_(weight_zone.zone_array), K_(weight_zone.weight_array), K(ret));
+  return ret;
+}
+
+int ObTargetReplicaType::find_replica_index(const ObString &replica_str)
+{
+  // 目前只支持设置Full/ReadOnly/Column副本
+  int found_index = -1;
+  const char *valid_str[] = {"Full", "Readonly", "ColumnStore"};
+  for (int64_t i = 0; -1 == found_index && i < ARRAYSIZEOF(valid_str); ++i) {
+    if (0 == replica_str.case_compare(valid_str[i])) {
+      found_index = i;
+    }
+  }
+  return found_index;
+}
+
+void ObTargetReplicaType::parse_target_replica_type(const ObConfigItem& item)
+{
+  ObString config_value(item.str());
+  bool finish = false;
+  while (!config_value.empty() && !finish) {
+    ObString replica_str = config_value.split_on(';');
+    if (replica_str.empty()) {
+      replica_str = config_value;
+      finish = true;
+    }
+    int found_index = ObTargetReplicaType::find_replica_index(replica_str);
+    switch (found_index) {
+      case 0:
+        set_full_replica();
+        break;
+      case 1:
+        set_readonly_replica();
+        break;
+      case 2:
+        set_column_store_replica();
+        break;
+      default:
+        // do noting
+        break;
+    }
+  }
+
+}
+
+ObZoneWeakReadWeight& ObZoneWeakReadWeight::operator=(const ObZoneWeakReadWeight& other)
+{
+  if (this != &other) {
+    zone_array_ = other.zone_array_;
+    weight_array_ = other.weight_array_;
+  }
+  return *this;
+}
+
 int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
 {
   // 注意：由于外面加了写锁，函数中每次调用get_proxy_config，都必须调用无锁的方法，否则会死锁
@@ -335,7 +422,7 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
     SSLAttributes ssl_attributes;
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
       addr, cluster_name.ptr(), tenant_name.ptr(), "ssl_attributes", item, false))) {
-      PROXY_LOG(WDIAG, "get ssl attributes failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+      PROXY_LOG(WDIAG, "fail to get ssl attributes", K(addr), K(cluster_name), K(tenant_name), K(ret));
     } else if (0 != strlen(item.str())) {
       if (OB_FAIL(ObProxyConfigTableProcessor::parse_ssl_attributes(item, ssl_attributes))) {
         PROXY_LOG(WDIAG, "fail to parse ssl attributes", K(ret));
@@ -343,6 +430,43 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
     }
     if (OB_SUCC(ret)) {
       ssl_attributes_ = ssl_attributes;
+    }
+  }
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    ObZoneWeakReadWeight weakread_weight_zone;
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+      addr, cluster_name.ptr(), tenant_name.ptr(), "weakread_weight_zone", item, false))) {
+      PROXY_LOG(WDIAG, "get weakread weight zone failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else if (0 != strlen(item.str())) {
+      if (OB_FAIL(ObZoneWeakReadWeight::parse_weight_zone(item, weakread_weight_zone))) {
+        PROXY_LOG(WDIAG, "fail to parse weight zone", K(ret));
+      }
+    }
+    if (OB_SUCC(ret)) {
+      weakread_weight_zone_ = weakread_weight_zone;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+      addr, cluster_name.ptr(), tenant_name.ptr(), "sql_firewall_config", item, false))) {
+      PROXY_LOG(WDIAG, "fail to get sql_firewall_config", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else if (0 != strlen(item.str())) {
+      ObString limit_config = ObString(strlen(item.str()), item.str());
+      if (OB_FAIL(limit_config_.parse_from_config_string(limit_config))) {
+        PROXY_LOG(WDIAG, "fail to parse sql_firewall_config", K(limit_config), K(ret));
+      }
+    }
+  }
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+      addr, cluster_name.ptr(), tenant_name.ptr(), "route_target_replica_type", item, false))) {
+      PROXY_LOG(WDIAG, "get weakread weight zone failed", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else if (0 != strlen(item.str())) {
+      route_target_replica_type_.parse_target_replica_type(item);
     }
   }
   // mysql_config_params中的Time要做转换，乘1000
@@ -642,8 +766,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
       } else {
         int64_t index = is_backup ? (index_ + 1) % 2 : index_;
         ProxyConfigHashMap &config_map = proxy_config_map_array_[index];
-        // Unique_set needs to be guaranteed to be the last step,
-        // and the previous failure needs to release the item memory
+        // unique_set需要保证是最后一步，前面失败需要释放item内存
         ObProxyConfigItem* tmp_item = config_map.remove(*item);
         if (NULL != tmp_item) {
           tmp_item->destroy();
@@ -671,8 +794,73 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             ret = OB_NOT_SUPPORTED;
           }
         }
+        // weakread_weight_zone仅支持tenant/vip级别配置: z1:value1;z2:value2;
+        if (OB_SUCC(ret) && 0 == strcasecmp("weakread_weight_zone", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()) {
+          if ((0 != strcasecmp("LEVEL_TENANT",item->config_level_.ptr()))
+              && (0 != strcasecmp("LEVEL_VIP",item->config_level_.ptr()))) {
+            ret = OB_NOT_SUPPORTED;
+            LOG_WDIAG("weakread_weight_zone only supported LEVEL_TENANT/LEVEL_VIP config", K(ret));
+          } else {
+            ObString config_value(item->config_item_.str());
+            ObSEArray<ObString, 4> zones;
+            bool zone_finish = false;
+            while (OB_SUCC(ret) && !config_value.empty() && !zone_finish) {
+              ObString zone_and_value = config_value.split_on(';');
+              if (zone_and_value.empty()) {
+                zone_and_value = config_value;
+                zone_finish = true;
+              }
+              ObString zone_name = zone_and_value.split_on(':');
+              int64_t value = 0;
 
-        if (0 == strcasecmp("init_sql", item->config_item_.name())
+              if (zone_name.empty()) {
+                ret = OB_INVALID_CONFIG;
+                LOG_WDIAG("zone name is empty, config value is invalid", K(zone_and_value), K(ret));
+              } else if (OB_FAIL(get_int_value(zone_and_value, value))) { // 这里的zone_and_value已经是value了
+                LOG_WDIAG("weight value is invalid", K(zone_name), K(value), K(ret));
+              } else if (value < 0 || value > 100) {
+                ret = OB_INVALID_CONFIG;
+                LOG_WDIAG("weight value need limit [0, 100]", K(zone_name), K(value), K(ret));
+              } else {
+                bool found = false;
+                for (int64_t i = 0; !found && i < zones.count(); ++i) {
+                  if (zones.at(i) == zone_name) {
+                    found = true;
+                  }
+                }
+                if (found) {
+                  ret = OB_INVALID_CONFIG;
+                  LOG_WDIAG("weight zone name can't duplicated", K(zone_name), K(value), K(ret));
+                } else if (zones.push_back(zone_name)) {
+                  LOG_WDIAG("fail to push back zone name", K(zone_name), K(value), K(ret));
+                }
+              }
+            }
+          }
+        }
+        // route_target_replica_type校验
+        if (OB_SUCC(ret) && 0 == strcasecmp("route_target_replica_type", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()) {
+          ObString config_value(item->config_item_.str());
+          bool replica_finish = false;
+          while (OB_SUCC(ret) && !config_value.empty() && !replica_finish) {
+            ObString replica_str = config_value.split_on(';');
+            if (replica_str.empty()) {
+              replica_str = config_value;
+              replica_finish = true;
+            }
+            int found_index = ObTargetReplicaType::find_replica_index(replica_str);
+            if (-1 == found_index) {
+              ret = OB_INVALID_CONFIG;
+              LOG_WDIAG("route_target_replica_type value is invalid", K(replica_str), K(ret));
+            }
+          }// end of while
+        }
+
+        if (OB_SUCC(ret) && 0 == strcasecmp("init_sql", item->config_item_.name())
             && NULL != item->config_item_.str()
             && '\0' != *item->config_item_.str()) {
           ObArenaAllocator allocator;
@@ -750,8 +938,19 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             && NULL != item->config_item_.str()
             && '\0' != *item->config_item_.str()
             && OB_FAIL(ObProxyConfigTableProcessor::parse_ssl_attributes(item->config_item_, ssl_attributes))) {
-          LOG_WDIAG("parse ssl attributes failed", KPC(item), K(ret));
+          LOG_WDIAG("fail to parse ssl attributes", KPC(item), K(ret));
         }
+
+        obutils::ObProxyLimitControlConfig limit_config;
+        if (OB_SUCC(ret)
+            && 0 == strcasecmp("sql_firewall_config", item->config_item_.name())
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()
+            && OB_FAIL(limit_config.parse_from_config_string(ObString(item->config_item_.str())))) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("fail to parse limit config", KPC(item), K(ret));
+        }
+
         // 检查配置设置时的主键信息和 level 是否匹配
         if (OB_SUCC(ret)) {
           if (0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
@@ -826,7 +1025,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
 
 int ObProxyConfigTableProcessor::delete_proxy_config(void *arg, const bool is_backup)
 {
-  // todo: Intercept and delete global configuration items
+  // todo：拦截删除全局配置项
   int ret = OB_SUCCESS;
   DRWLock::WRLockGuard guard(proxy_config_lock_);
   if (OB_ISNULL(arg)) {

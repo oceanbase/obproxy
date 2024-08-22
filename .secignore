@@ -8,91 +8,142 @@
 ##########################################################
 **
   http://license.coscl.org.cn/MulanPubL-2.0
-  https://open.oceanbase.com/
-  https://open.oceanbase.com
-  https://www.unicode.org/*
-  http://unicode.org/*
-  http://cldr.unicode.org/*
-  https://github.com/oceanbase/oceanbase
-  https://github.com/oceanbase/oceanbase/issues
+  https://open.oceanbase.com*
+  https://github.com/*
   http://1.taobao.com/
-  https://mirrors.aliyun.com/oceanbase/development-kit/el/8/x86_64/
-  https://mirrors.aliyun.com/oceanbase/development-kit/el/7/aarch64/
-  https://mirrors.aliyun.com/oceanbase/development-kit/el/8/aarch64/
-  https://mirrors.aliyun.com/oceanbase/development-kit/el/7/x86_64/
-  https://mirrors.aliyun.com/oceanbase/community/stable/el/
-  http://foo.bar.com
-  http://foo.bar.com:1234
+  https://mirrors.aliyun.com/oceanbase*
+  http://foo.bar.com*
   http://oceanbase.alibaba-inc.com/
-  http://www.apache.org/licenses/LICENSE-2.0
-  https://dev.mysql.com/doc/refman/5.6/en/c-api-data-structures.html
-  http://dev.mysql.com/doc/internals/en/client-server-protocol.html
-  http://dev.mysql.com/doc/refman/5.6/en/sql-mode.html
-  http://dev.mysql.com/doc/internals/en/prepared-statements.html#null-bitmap
-  http://dev.mysql.com/doc/internals/en/status-flags.html
-  http://dev.mysql.com/doc/internals/en/capability-flags.html
-  http://dev.mysql.com/doc/refman/5.7/en/information-functions.html#function_current-user
-  http://forums.freebsd.org/archive/index.php/t-10270.html)
+  http://forums.freebsd.org/*
   http://www.ussg.indiana.edu/hypermail/linux/kernel/0711.3/1208.html
-  https://bugs.mysql.com/bug.php?id=79612
+  https://bugs.mysql.com/*
+  http://bugs.mysql.com/*
+  http://lists.mysql.com/*
   http://imysql.com/mysql-internal-manual/com-change-user.html
-  http://murmurhash.googlepages.com/)
-  http://www.opensource.org/licenses/bsd-license.php)
-  https://github.com/Cyan4973/FiniteStateEntropy
-  https://github.com/mcmilk/zstdmt
-  http://www.zlib.net)
-  http://www.oberhumer.com/opensource/lzo/)
-  http://www.quicklz.com/)
-  http://www.goof.com/pcg/marc/liblzf.html)
-  http://www.fastlz.org/
+  http://murmurhash.googlepages.com/*
+  http://www.opensource.org/*
+  http://docbook.sourceforge.net/*
+  http://sourceforge.net/*
+  http://gnuwin32.sourceforge.net/*
+  http://graphics.stanford.edu/*
+  http://www.springframework.org/*
+  http://java.sun.com/*
+  http://www.zlib.net*
+  http://www.oberhumer.com/*
+  http://www.quicklz.com/*
+  http://www.goof.com/*
+  http://www.fastlz.org/*
   http://stackoverflow.com/*
   https://stackoverflow.com/*
   http://fastcompression.blogspot.com/p/lz4.html
   https://groups.google.com/forum/#
-  https://github.com/mcmilk/zstdmt
   http://www.open-std.org/JTC1/SC22/WG21/docs/lwg-defects.html#530)
-  http://code.google.com/p/lz4/
-  http://www.apache.org/licenses/LICENSE-2.0
+  http://code.google.com/*
+  http://code.jellycan.com/*
+  http://www.apache.org/*
   https://www.cnblogs.com/westfly/p/5139645.html
-  https://docs.oracle.com/en/database/oracle/oracle-database/12.2/sqlrf/RAWTOHEX.html
-  https://www.techonthenet.com/oracle/functions/rawtohex.php
-  http://www.atatech.org/articles/56575
-  https://msdn.microsoft.com/fr-fr/library/84szxsww(v=vs.90).aspx
+  https://www.techonthenet.com/oracle/*
+
+  https://msdn.microsoft.com*
+  http://msdn.microsoft.com*
+  http://www.microsoft.com/*
+  http://support.microsoft.com/*
+  http://msdl.microsoft.com/*
+  http://www.w3.org/*
+  http://www.perl.org/*
   http://www.cse.wustl.edu/~schmidt/win32-cv-1.html
+  http://www.info-zip.org/*
   http://oceanbase.taobao.org/
-  http://tools.ietf.org/html/rfc1950
-  http://fastcompression.blogspot.fr/2014/02/fse-distributing-symbol-values.html
-  http://fastcompression.blogspot.fr/2015/08/accessing-unaligned-memory.html
-  https://github.com/facebook/folly/blob/master/folly/CpuId.h
-  https://github.com/Cyan4973/xxHash
-  https://github.com/facebook/zstd/blob/master/doc/zstd_compression_format.md#default-distributions
-  http://tools.ietf.org/html/rfc1951
-  http://en.wikipedia.org/wiki/Cyclic_redundancy_check
-  http://en.wikipedia.org/wiki/X86-64#Linux
+  http://tools.ietf.org/*
+  http://fastcompression.blogspot.fr/*
+  http://en.wikipedia.org/*
   http://bazaar.launchpad.net/~mysql/mysql-server/5.6/view/head:/storage/innobase/ut/ut0crc32.cc
-  https://docs.oracle.com/cd/B19306_01/server.102/b14200/sql_elements004.htm#i34924
+  https://docs.oracle.com/*
+  http://oracle.chinaitlab.com/*
   http://cxh.me/2014/07/01/nvi-usage-of-virtual-template/
-  https://github.com/facebook/zstd/pull/1146.
-  https://docs.oracle.com/cd/B19306_01/server.102/b14225/ch4datetime.htm
-  http://dev.mysql.com/doc/internals/en/packet-OK_Packet.html
-  https://dev.mysql.com/doc/internals/en/integer.html#packet-Protocol::LengthEncodedInteger
   http://www.augustana.ca/~mohrj/courses/1999.fall/csc210/lecture_notes/hashing.html
-  http://www.gnu.org/licenses/
-  https://dev.mysql.com/doc/refman/5.6/en/keywords.html
-  https://github.com/lyft/envoy-api#apis
+  http://www.gnu.org*
+  http://gcc.gnu.org/*
   http://x.x.x.x/services?Action=xxx&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
-  https://dev.mysql.com/doc/refman/5.6/en/keywords.html
-  http://dev.mysql.com/doc/internals/en/packet-EOF_Packet.html
-  https://dev.mysql.com/doc/internals/en/connection-phase-packets.html#packet-Protocol::HandshakeV10
+  http://x.x.x.x:xxxx/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+  http://x.x.x.x/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx&database=xxx&k=v
+  http://x.x.x.x:xxxx/services?Action=ObIDCRegionInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+  http://x.x.x.x:xxxx/oceanbase_obconfig/
+  http://x.x.x.x:xxxx/oceanbase_obconfig/
+  http://x.x.x.x:xxxx/diamond/cgi/a.py?key=xxx&method=get
+  http://x.x.x.x:xxxx
   https://www.openssl.org/docs/man1.0.2/man3/blowfish.html
-  https://tools.ietf.org/html/rfc1950
-  https://tools.ietf.org/html/rfc1952
-  https://github.com/facebook/zstd/blob/master/doc/zstd_compression_format.md#dictionary-format
+  https://tools.ietf.org/*
   http://www.xxhash.com
   http://murmurhash.googlepages.com/
-  https://dev.mysql.com/doc/refman/8.0/en/select.html
-  https://dev.mysql.com/doc/internals/en/com-stmt-prepare-response.html
-  http://dev.mysql.com/doc/internals/en/packet-ERR_Packet.html
+  https://dev.mysql.com/*
+  http://dev.mysql.com/*
+  http://softwarecommunity.intel.com*
+  http://software.intel.com*
+  http://unicode.org/*
+  http://web.archive.org/*
+  http://www.anysql.net
+  http://www.codeproject.com/*
+  http://www.cpan.org/*
+  http://www.discuz.com*
+  http://www.erlenstar.demon.co.uk/*
+  http://www.faqs.org/*
+  http://www.fileformat.info/*
+  http://www.foo.com/*
+  http://www.freediscuz.net*
+  http://www.gzip.org/*
+  http://www.lordoftherings.net
+  http://www.mjmwired.net/*
+  http://www.mysql.com*
+  www.mysql.com
+  http://www.ncftp.com/*
+  http://www.netlib.org/*
+  http://www.opengroup.org/*
+  http://www.othemovie.com/*
+  http://www.plover.com/*
+  http://www.python.org/*
+  http://www.reviewboard.org/*
+  https://www.reviewboard.org/*
+  http://downloads.reviewboard.org/releases/RBTools/0.4/
+  http://www.schneier.com/*
+  http://www.siamzone.com/*
+  http://www.stileproject.com
+  https://www.percona.com/*
+  https://clustra.no.oracle.com/*
+  http://kb.askmonty.org/v/segmented-key-cache
+  http://kris.koehntopp.de/artikel/sql-self-references
+  http://issues.apache.org/jira/browse/OPENJPA-1224
+  http://bugs.debian.org/*
+  http://bugs.python.org/issue1336
+  http://cldr.unicode.org/*
+  http://csrc.nist.gov/cryptval/shs.htm
+  http://datacharmer.blogspot.com/2007/12/data-from-nothing-solution-to-pop-quiz.html
+  http://dbmsmag.com/9603d06.html
+  http://distcc.googlecode.com/files/distcc-3.1.tar.gz
+  http://abc.com/def/hijklmn
+
+
+  http://k.alibaba-inc.com/*
+  http://bugfree.corp.taobao.com/bug/*
+  http://kelude.taobao.net/issues/*
+
+
+  https://issues.apache.org/jira/browse/HBASE-4176
+  ftp://elsie.ncih.nist.gov/
+  ftp://ftp.info-zip.org/pub/infozip/license.html
+  ftp://ftp.software.ibm.com/ps/products/db2/info/vr6/htm/db2m0/db2state.htm
+  ftp://ftp.unicode.org/*
+  www.sawtooth-consulting.com/emailAddress=info@yassl.com
+  www.test_url.com/abcdefg/
+  www.washingtonpost.com/*
+  www.baidu.com*
+  abw@kfs.org
+  ajs@ajs.com
+  antoon.bosselaers@esat.kuleuven.ac.be
+  arthur_david_olson@nih.gov
+  astrand@lysator.liu.se
+  bailey@newman.upenn.edu
+  bar@aol.com
   libev@schmorp.de
   wawasa@gmail.com
   sesse@google.com
@@ -100,11 +151,94 @@
   rbrown64@csc.com.au
   jloup@gzip.org
   madler@alumni.caltech.edu
-  pwd1
-  user_name2
-  string_passwd
-  string_db
   wgs13579@gmail.com
+  xxx@111.com
+  xxx@xxx.com
+  wwww@98765.com
+  xingxing1@163.com
+  xingxing@163.com
+  xingxing2@163.com
+  xingxing3@163.com
+  xingxing4@163.com
+  xingxing5@163.com
+  www.tcx.se
+  www.b111aidu.com
+  www.b123aidu.com
+  www.bAAAaidu.com
+  www.baidu12:13:14.com
+  www.baiduwww.com
+  www.google.com
+  www.help.com
+  www.host.com
+  test1@testdomain.com
+  test2@testdomain.com
+  test3@testdomain.com
+  bug-bash@gnu.org
+  bug-readline@gnu.org
+  chet.ramey@case.edu
+  dev-innodb@mysql.com
+  docteam@oraclehelp.com
+  earl@hpato.aus.hp.com
+  emily@163.com
+  foo@aol.com
+  foo@hotmail.com
+  frankie@etsetb.upc.es
+  skozlov@mysql.com
+  info@yassl.com
+  innodb_dev_ww@oracle.com
+  jakkhandy@hotmail.com
+  jcn@pith.org
+  jean-cedric.costa@ensmp.fr
+  joc@presence-pc.com
+  joey@sina.com
+  jonathan.perkin@oracle.com
+  kaido@tradenet.ee
+  kane@dwim.org
+  kevin@stileproject.com
+  lh@pbm.de
+  mail@xyz.com
+  marc@anyware.co.uk
+  m.barilley@cryo-networks.fr
+  mike@sohu.com
+  monty@mysql.com
+  neilh@scintilla.org
+  nikki@saddam.cityline.ru
+  paulo.barreto@terra.com.br
+  p.favre@cryo-networks.fr
+  pgsql-bugs@postgresql.org
+  roy@vem.ca
+  sansh777@hotmail.com
+  santa.claus@example.com
+  sasha@mysql.com
+  serge.kozlov@oracle.com
+  shirish@yahoo.com
+  sinisa@mysql.com
+  sonali@bolly.com
+  soren@t.dk
+  sroussey@network54.com
+  stephen@brandonitconsulting.co.uk
+  tibor.simko@cern.ch
+  Tim.Bunce@ig.co.uk
+  vincent.rijmen@esat.kuleuven.ac.be
+  voi@ims.at
+  gbarr@pobox.com
+  hewei@mail.ied.ac.cn
+  proxyro@sys
+  ZYW5HYVdkRxc56PTfgJ/zn/ai8ubv33vHxrALbQAMGcutp09fp/iZ7Td9yOvbJPq
+
+
+  http://127.0.0.1:8877
+  http://127.0.0.1:1234
+  http://127.0.0.1:1234/xxx
+  http://127.0.0.1/xxx
+  http://127.127.127.127:1/obconfig/region1?version=1
+  http://127.0.0.1:1234/diamond/cgi/a.py?key=xxx&method=get
+  http://127.0.0.1:1234/method=get
+  http://127.0.0.1:1234/method=get&Version=xxx
+  http://127.0.0.1:1234/xxx/xxx
+  http://test.alipay.com/services?Action=xxx&User_ID=xxx&UID=xxx&ObRegion=xxx
+  http://test.alipay.com/services?action=xxx&user_id=xxx&uid=xxx&obregion=xxx
+  HTTP://TEST.ALIPAY.COM/SERVICES?ACTION=XXX&USER_ID=XXX&UID=XXX&OBREGION=XXX
 **/*.c
   http://www.gnu.org/licenses/
 **/.ce
@@ -116,15 +250,100 @@
 /README-CN.md
 /CONTRIBUTING.md
 /CODE_OF_CONDUCT.md
+/src/obproxy/README
 /.github/**
 /.git/**
 /LICENSE
 /deps/easy/src/io/easy_ssl.c
+/ob-pretest
+/ob-commit
+/ob-commit.pl
+/gotest.pl
+/ob-pretest.pl
+/ob-make
+/gcc-4.9.1-setup.sh
+/ob-perf
+/ob-review
+/doc/**
+/dependency/easy/src/io/easy_ssl.c
+/dependency/easy/sample/ca.crt
+/dependency/easy/sample/ca.key
+/dependency/easy/.svn/**
+/dependency/easy/**/.svn/**
+/dependency/easy/rpm/t_libeasy.spec
+/dependency/easy/rpm/scm.xml
+/dependency/easy/rpm/libeasy.spec.in
+/dependency/easy/doc/README.txt
+/src/obproxy/doc/startup_method.md
+/src/obproxy/doc/show_proxycluster.md
+/src/obproxy/doc/hot_upgrade_flow.md
+/src/obproxy/doc/hot_upgrade_simple.md
+/src/liboblog/tests/liboblog.conf
+/src/liboblog/tests/liboblog.conf.dongjian
+/unittest/**
+/script/dooba/dooba
+/script/dooba/README.md
+/docker/Dockerfile
+/docker/build.sh
+/docker/start_obproxy.sh
+/tools/sysbench/**
+/tools/codestyle/astyle/doc/**
+/tools/log_tool/log_tool.cpp
+/tools/obtest/r/proxy/**
+/tools/obtest/t/proxy/5010_compress_obproxy_config_server_info.test
+/tools/obtest/t/proxy/hu_case_header.inc
+/tools/obtest/t/proxy/net_stat.test.bk
+/tools/obtest/t/proxy/1022_proxy_restart_kinds_of_situation.test
+/tools/obtest/t/proxy/batch_upgrade.test
+/tools/obtest/copy.sh
+/tools/obtest/update.sh
+/tools/obtest/update_local_bin.sh
+/tools/obtest/mytest
+/tools/obtest/jar/readme
+/tools/deploy/readme.org
+/tools/deploy/b/dtalk
+/tools/deploy/s/sbperf.py
+/tools/deploy/copy.sh
+/tools/deploy/conf/configure.ini
+/tools/deploy/client/obpbench/obpbench.py
+/tools/deploy/utils/get_rpm.py
+/tools/deploy/run_sysbench.pl
+/tools/deploy/h/obm.py
+/tools/deploy/h/opi.py
+/tools/deploy/h/mysqltest.py
+/tools/deploy/h/obi.py
+/tools/deploy/mysql_test/r/**
+/tools/deploy/mysql_test/**/r/**
+/tools/deploy/mysql_test/t/**
+/tools/deploy/mysql_test/**/t/**
+/tools/deploy/mysql_test/mysqltest.py
+/tools/deploy/mysql_test/include/a_trade_mkdata.inc
+/tools/deploy/mysql_test/include/a_trade_create.inc
+/tools/deploy/mysql_test/case_transfer/suite/ndb/backups/packed/BACKUP-1-0.2.Data
+/tools/deploy/mysql_test/case_transfer/std_data/server-cert-sha512.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-client-revoked-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-ca-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/server8k-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/untrusted-cacert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/ca-sha512.pem
+/tools/deploy/mysql_test/case_transfer/std_data/cacert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-server-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/client-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/server-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-client-cert.pem
+/tools/deploy/mysql_test/case_transfer/std_data/rsa_public_key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/server-key-sha512.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-client-key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/server8k-key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-client-revoked-key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/rsa_private_key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/crl-server-key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/server-key.pem
+/tools/deploy/mysql_test/case_transfer/std_data/client-key.pem
 --------------------------------------------------------
 # Config the ignored fold to escape the Chinese scan by GLOB wildcard
 **/*.md
 /deps/easy/test/packet/easy_http_handler_test.c
 /unittest/obproxy/test_parser.sql
 /src/share/config/ob_server_config.h
-/src/lib/charset/ob_charset.cpp
 /LICENSE

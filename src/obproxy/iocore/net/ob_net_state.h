@@ -27,11 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * *************************************************************
- *
- * State information for a particular channel of a ObNetVConnection
- * This information is private to the Net module. It is only here
- * because of the the C++ compiler needs it to define ObNetVConnection.
  */
 
 #ifndef OBPROXY_NET_STATE_H

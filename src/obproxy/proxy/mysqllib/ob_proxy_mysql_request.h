@@ -65,7 +65,7 @@ public:
   ~ObProxyMysqlRequest() { reset(); }
   void reuse(bool is_reset_origin_db_table = true); // do not free req_buf
   void reset(bool is_reset_origin_db_table = true); // reuse and free req_buf
-
+  inline void reset_parse_result() { result_.reset(); }
   common::ObString get_sql();
   common::ObString get_sql_id();
   char *get_sql_id_buf() { return sql_id_buf_; }
@@ -99,6 +99,8 @@ public:
   bool is_inspector_user() const { return USER_TYPE_INSPECTOR == user_identity_; }
   bool is_rootsys_user() const { return USER_TYPE_ROOTSYS == user_identity_; }
   bool is_proxysys_tenant() const { return (is_proxysys_user() || is_inspector_user()); }
+  bool is_for_update_sql();
+  static bool is_for_update_sql(common::ObString src_sql);
 
   void set_internal_cmd(const bool flag) { is_internal_cmd_ = flag; }
   void set_is_kill_query(const bool flag) { is_kill_query_ = flag; }
@@ -156,6 +158,11 @@ private:
   bool is_mysql_req_in_ob20_payload_; // whether the mysql req is in ob20 protocol req payload
   bool enable_server_kill_connection_; // whether server handle OBPROXY_T_SUB_KILL_CONNECTION
 
+  struct {
+    bool valid_ : 1;
+    bool value_: 1;
+  } is_for_update_sql_;
+
   common::ObArenaAllocator allocator_;
   char sql_id_buf_[common::OB_MAX_SQL_ID_LENGTH + 1];
 };
@@ -187,6 +194,8 @@ bool ObProxyMysqlRequest::is_real_dml_sql() const
 
 inline void ObProxyMysqlRequest::reset(bool is_reset_origin_db_table /* true */)
 {
+  is_for_update_sql_.valid_ = false;
+  is_for_update_sql_.value_ = false;
   reuse(is_reset_origin_db_table);
   allocator_.reset();
   int ret = common::OB_SUCCESS;

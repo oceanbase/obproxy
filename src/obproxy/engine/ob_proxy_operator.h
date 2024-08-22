@@ -238,7 +238,7 @@ public:
 protected:
   int64_t limit_offset_;
   int64_t limit_size_;
-  /* All operations need the select_expr, so need put it inito here. */
+  /* All operations need the select_expr，so need put it inito here. */
   common::ObSEArray<ObProxyExpr*, 4> select_exprs_;
 };
 

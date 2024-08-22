@@ -218,6 +218,10 @@ static const char *get_route_info_type_name(const ObRouteInfoType type)
       name = "USE_SINGLE_LEADER";
       break;
 
+    case ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER:
+      name = "USE_SINGLE_LEADERS_FOLLOWER";
+      break;
+
     case ObRouteInfoType::USE_PARTITION_LOCATION_LOOKUP:
       name = "USE_PARTITION_LOCATION_LOOKUP";
       break;
@@ -676,7 +680,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
          ObRouteInfoType::USE_LAST_SESSION == route_info_type_ ||
          ObRouteInfoType::USE_COORDINATOR_SESSION == route_info_type_ ||
          ObRouteInfoType::USE_CACHED_SESSION == route_info_type_ ||
-         ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_)) {
+         ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_ ||
+         ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_)) {
       DIAGNOSE_WARN("Unexpected invalid server addr")
     } else if (ObRouteInfoType::USE_CURSOR == route_info_type_ || ObRouteInfoType::USE_PIECES_DATA == route_info_type_) {
       DIAGNOSE_INFO("Will route to starting server(%s) because use streaming data transfer", svr_buf);
@@ -703,7 +708,7 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
         }
       } else if (ObRouteInfoType::USE_LAST_SESSION == route_info_type_) {
         if (depent_func_) {
-          DIAGNOSE_INFO("Will route to last connected server(%s) because 'select found_rows()/select row_count()/select connection_id()/show warnings/show errors/show trace' command and these queries depend on the last query session", svr_buf)
+          DIAGNOSE_INFO("Will route to last connected server(%s) because 'select found_rows()/select row_count()/select connection_id()/select last_trace_id()/show warnings/show errors/show trace' command and these queries depend on the last query session", svr_buf)
         } else if (trans_specified_) {
           DIAGNOSE_INFO("Will route to last connected server(%s) because query for session temporary table", svr_buf);
         } else if (in_transaction_) {
@@ -715,6 +720,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
         DIAGNOSE_INFO("Will route to cached connected server(%s)", svr_buf);
       } else if (ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_) {
         DIAGNOSE_INFO("Will route to tenant's single leader node(%s)", svr_buf);
+      } else if (ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_) {
+        DIAGNOSE_INFO("Will route to tenant's single leader's follower node(%s) with the SAME_IDC and FULL replica first priority", svr_buf);
       }
     }
   )
@@ -811,6 +818,8 @@ int64_t ObDiagnosisRoutePolicy::to_string(char *buf, const int64_t buf_len) cons
     if (chosen_route_type_ == ROUTE_TYPE_LEADER) {
       J_COMMA();
       J_KV("chosen_route_type", get_route_type_string(chosen_route_type_));
+      J_COMMA();
+      J_KV("type", replica_.get_replica_type_string(replica_.replica_type_));
     } else if (!replica_.is_valid()) {
       J_COMMA();
       J_KV("chosen_server", "Invalid");

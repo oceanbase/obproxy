@@ -674,54 +674,6 @@ private:
   }                                                                                           \
 }
 
-//for TraceLog
-#define DEFINE_FILL_LOG_KV(n)                                                               \
-  template <LOG_TYPENAME_TN##n>                                                             \
-  static void fill_log_kv(LogBuffer &log_buffer, const char *function,                      \
-                          const char *info_string, LOG_PARAMETER_KV##n)                      \
-  {                                                                                         \
-    int ret = OB_SUCCESS;                                                                   \
-    log_buffer.check_and_lock();                                                            \
-    int64_t MAX_LOG_SIZE = LogBuffer::LOG_BUFFER_SIZE - log_buffer.cur_pos_;                \
-    if (MAX_LOG_SIZE > 0) {                                                                 \
-      char *data = log_buffer.buffer_ + log_buffer.cur_pos_;                                \
-      int64_t pos = 0;                                                                      \
-      LOG_DATA_PRINTF("[%s] ", function);                                                   \
-      LOG_PRINT_INFO_BEGIN(info_string);                                                          \
-      LOG_FUNC_BODY_##n;                                                                    \
-      LOG_KV_END();                                                                         \
-      if (pos >= 0                                                                          \
-          && pos < MAX_LOG_SIZE) {                                                          \
-        log_buffer.cur_pos_ += pos;                                                         \
-        add_stamp(log_buffer, MAX_LOG_SIZE, pos);                                           \
-      } else {                                                                              \
-        if (log_buffer.cur_pos_ >= 0                                                        \
-            && log_buffer.cur_pos_ < LogBuffer::LOG_BUFFER_SIZE) {                          \
-          log_buffer.buffer_[log_buffer.cur_pos_] = '\0';                                   \
-        }                                                                                   \
-        print_log(log_buffer);                                                              \
-        MAX_LOG_SIZE = LogBuffer::LOG_BUFFER_SIZE - log_buffer.cur_pos_;                    \
-        data = log_buffer.buffer_ + log_buffer.cur_pos_;                                    \
-        pos = 0;                                                                            \
-        LOG_DATA_PRINTF("[%s] ", function);                                                 \
-        LOG_PRINT_INFO_BEGIN(info_string);                                                        \
-        LOG_FUNC_BODY_##n;                                                                  \
-        LOG_KV_END();                                                                       \
-        if (pos >= 0                                                                        \
-            && pos < MAX_LOG_SIZE) {                                                        \
-          log_buffer.cur_pos_ += pos;                                                       \
-          add_stamp(log_buffer, MAX_LOG_SIZE, pos);                                         \
-        } else {                                                                            \
-          print_log(log_buffer);                                                            \
-        }                                                                                   \
-      }                                                                                     \
-      if (log_buffer.cur_pos_ >=0                                                           \
-          && log_buffer.cur_pos_ < LogBuffer::LOG_BUFFER_SIZE) {                            \
-        log_buffer.buffer_[log_buffer.cur_pos_] = '\0';                                     \
-      }                                                                                     \
-    }                                                                                       \
-    log_buffer.check_and_unlock();                                                          \
-  }
 
 #define LOG_KV(key, obj) \
   (::oceanbase::common::ObILogKV&&)::oceanbase::common::ObLogKV<decltype(obj), \

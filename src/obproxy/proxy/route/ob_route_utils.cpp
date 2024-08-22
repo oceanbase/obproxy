@@ -25,7 +25,7 @@
 #include "proxy/route/ob_routine_cache.h"
 #include "proxy/route/ob_routine_entry.h"
 #include "proxy/route/ob_tenant_server.h"
-#include "proxy/rpc_optimize/rpclib/ob_tablegroup_entry.h"
+#include "proxy/rpc/rpclib/ob_tablegroup_entry.h"
 #include "opsql/expr_resolver/ob_expr_resolver.h"
 #include "opsql/func_expr_parser/ob_func_expr_parser.h"
 #include "opsql/func_expr_parser/ob_func_expr_parser_utils.h"
@@ -51,7 +51,7 @@ namespace obproxy
 namespace proxy
 {
 
-static const char PART_KEY_EXTRA_SEPARATOR               = ';';
+static const char PART_KEY_EXTRA_SEPARATOR = ';';
 
 //Not to use any more
 // static const char *PROXY_PLAIN_SCHEMA_SQL =
@@ -123,23 +123,23 @@ static const char *PROXY_TENANT_SCHEMA_SQL_RPC_V4 =
     "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' AND A.sql_port > 0 "
     "ORDER BY A.tablet_id ASC, role ASC LIMIT %ld";
 
-static const char *PROXY_PART_INFO_SQL                   =
+static const char *PROXY_PART_INFO_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu order by part_key_idx LIMIT %d;";
 
-static const char *PROXY_PART_INFO_SQL_V4                =
+static const char *PROXY_PART_INFO_SQL_V4 =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu and tenant_name = '%.*s' order by part_key_idx LIMIT %d;";
 
-static const char *PROXY_FIRST_PART_SQL                  =
+static const char *PROXY_FIRST_PART_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, high_bound_val_bin, sub_part_num "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
 
-// observer 2.1.1 do not have high_bound_val_bin, so use two different sql
-static const char *PROXY_HASH_FIRST_PART_SQL             =
+// observer 2.1.1不兼容high_bound_val_bin, 所以分成2条sql
+static const char *PROXY_HASH_FIRST_PART_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, sub_part_num "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
@@ -153,17 +153,17 @@ static const char *PROXY_FIRST_PART_SQL_V4 =
     "A.part_id as part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin, A.sub_part_num AS sub_part_num "
     "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
-static const char *PROXY_SUB_PART_SQL                    =
+static const char *PROXY_SUB_PART_SQL =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu and part_id = %ld LIMIT %ld;";
 
-static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL       =
+static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu LIMIT %ld;";
 
-static const char *PROXY_SUB_PART_SQL_V4                 =
+static const char *PROXY_SUB_PART_SQL_V4 =
     // tablet_id, ls_id(ifnull return INVALID_LS_ID), sub_part_id, part_name, high_bound_val_bin
     "SELECT /*+READ_CONSISTENCY(WEAK)*/  A.tablet_id as tablet_id, "
     "IFNULL((SELECT B.ls_id FROM oceanbase.%s B "
@@ -172,7 +172,7 @@ static const char *PROXY_SUB_PART_SQL_V4                 =
     "A.part_id as part_id, A.sub_part_id as sub_part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin "
     "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
-static const char *PROXY_ROUTINE_SCHEMA_SQL              =
+static const char *PROXY_ROUTINE_SCHEMA_SQL =
   "SELECT /*+READ_CONSISTENCY(WEAK)*/ * "
   "FROM oceanbase.%s "
   "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
@@ -456,7 +456,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
                                     const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
-  int64_t tmp_real_str_len = 0;
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
   char ip_str[MAX_IP_ADDR_LENGTH];
   ip_str[0] = '\0';
   int64_t port = 0;
@@ -973,6 +973,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_precision", part_key_precision, int64_t);
       PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "part_key_scale", part_key_scale, int64_t);
     }
+
     // primary key as part key expr only for first part in mysql mode
     if (OB_SUCC(ret)) {
       if (part_info.is_primary_key_as_part_expr() && PARTITION_LEVEL_ONE == part_key_level) {
@@ -990,6 +991,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
     }
 
     if (OB_SUCC(ret)) {
+      // 可选列 3.2.3 7u 之前的版本没有 part_key_default_value 列
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL_UNLIMIT_LENGTH(rs_fetcher, "part_key_default_value", part_key_default_value, default_val_len, allocator);
       if (OB_ERR_COLUMN_NOT_FOUND == ret) {
         LOG_DEBUG("part key default value not exist, continue", K(ret));
@@ -1662,7 +1664,7 @@ int ObRouteUtils::fetch_one_partition_entry_info(
       const int64_t cluster_version)
 {
   int ret = OB_SUCCESS;
-  int64_t tmp_real_str_len = 0;
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
   char ip_str[MAX_IP_ADDR_LENGTH];
   ip_str[0] = '\0';
   int64_t port = 0;

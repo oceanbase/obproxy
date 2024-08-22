@@ -1,13 +1,12 @@
 #!/bin/bash
 #
+# AUTHOR: GuJian
 # DATE: 2016-02-01
 # DESCRIPTION:
 #
 set +x
-CURDIR="$(dirname $(readlink -f "$0"))"
-export PATH=${CURDIR}/../../../..//deps/3rd/usr/local/oceanbase/devtools/bin/:/usr/local/bin:$PATH
-export BISON_PKGDATADIR=${CURDIR}/../../../../deps/3rd/usr/local/oceanbase/devtools/share/bison/
-# generate oracle utf8 obproxy_parser(support multi_byte_space, multi_byte_comma, multi_byte_left_parenthesis, multi_byte_right_parenthesis)
+export PATH=/usr/local/bin:$PATH
+# generate oracle utf8 obproxy_parser(support multi_byte_space、multi_byte_comma、multi_byte_left_parenthesis、multi_byte_right_parenthesis)
 ##1.copy lex and yacc files
 cat ob_proxy_parser.y > ob_proxy_parser_utf8.y
 cat ob_proxy_parser.l > ob_proxy_parser_utf8.l
@@ -20,7 +19,7 @@ sed  "s/ob_proxy_parser_tab/ob_proxy_parser_utf8_tab/g" -i ob_proxy_parser_utf8.
 sed  "s/ob_proxy_parser_fatal_error/ob_proxy_utf8_parser_fatal_error/g" -i ob_proxy_parser_utf8.y
 sed  "s/ob_proxy_parser_fatal_error/ob_proxy_utf8_parser_fatal_error/g" -i ob_proxy_parser_utf8.l
 sed  "s/obproxy_parse_sql/obproxy_parse_utf8_sql/g" -i ob_proxy_parser_utf8.y
-##3.add multi_byte_space, multi_byte_comma, multi_byte_left_parenthesis, multi_byte_right_parenthesis code.
+##3.add multi_byte_space、multi_byte_comma、multi_byte_left_parenthesis、multi_byte_right_parenthesis code.
 sed  "s/multi_byte_space              \[\\\u3000\]/multi_byte_space              ([\\\xe3\][\\\x80\][\\\x80])/g" -i ob_proxy_parser_utf8.l
 sed  "s/multi_byte_comma              \[\\\uff0c\]/multi_byte_comma              ([\\\xef\][\\\xbc\][\\\x8c])/g" -i ob_proxy_parser_utf8.l
 sed  "s/multi_byte_left_parenthesis   \[\\\uff08\]/multi_byte_left_parenthesis   ([\\\xef\][\\\xbc\][\\\x88])/g" -i ob_proxy_parser_utf8.l
@@ -53,7 +52,7 @@ sed 's/multi_byte_connect_char/UTF8_CHAR/g' -i ob_proxy_parser_utf8.l
 
 # run bison
 #bison -p obproxy -v -Werror -d ob_proxy_parser.y -o ob_proxy_parser_tab.c
-bison -v -Werror -d ob_proxy_parser_utf8.y -o ob_proxy_parser_utf8_tab.c
+/usr/bin/bison -v -Werror -d ob_proxy_parser_utf8.y -o ob_proxy_parser_utf8_tab.c
 if [ $? -ne 0 ]
 then
     echo Compile error[$?], abort.
@@ -125,7 +124,7 @@ rm -f ob_proxy_parser_utf8.y
 rm -f ob_proxy_parser_utf8.output
 
 
-# generate oracle gbk obproxy_parser(support multi_byte_space, multi_byte_comma, multi_byte_left_parenthesis, multi_byte_right_parenthesis)
+# generate oracle gbk obproxy_parser(support multi_byte_space、multi_byte_comma、multi_byte_left_parenthesis、multi_byte_right_parenthesis)
 ##1.copy lex and yacc files
 cat ob_proxy_parser.y > ob_proxy_parser_gbk.y
 cat ob_proxy_parser.l > ob_proxy_parser_gbk.l
@@ -138,7 +137,7 @@ sed  "s/ob_proxy_parser_tab/ob_proxy_parser_gbk_tab/g" -i ob_proxy_parser_gbk.l
 sed  "s/ob_proxy_parser_fatal_error/ob_proxy_gbk_parser_fatal_error/g" -i ob_proxy_parser_gbk.y
 sed  "s/ob_proxy_parser_fatal_error/ob_proxy_gbk_parser_fatal_error/g" -i ob_proxy_parser_gbk.l
 sed  "s/obproxy_parse_sql/obproxy_parse_gbk_sql/g" -i ob_proxy_parser_gbk.y
-##3.add multi_byte_space, multi_byte_comma, multi_byte_left_parenthesis, multi_byte_right_parenthesis code.
+##3.add multi_byte_space、multi_byte_comma、multi_byte_left_parenthesis、multi_byte_right_parenthesis code.
 sed  "s/multi_byte_space              \[\\\u3000\]/multi_byte_space              ([\\\xa1][\\\xa1])/g" -i ob_proxy_parser_gbk.l
 sed  "s/multi_byte_comma              \[\\\uff0c\]/multi_byte_comma              ([\\\xa3][\\\xac])/g" -i ob_proxy_parser_gbk.l
 sed  "s/multi_byte_left_parenthesis   \[\\\uff08\]/multi_byte_left_parenthesis   ([\\\xa3][\\\xa8])/g" -i ob_proxy_parser_gbk.l
@@ -169,7 +168,7 @@ sed 's/multi_byte_connect_char/GB_CHAR/g' -i ob_proxy_parser_gbk.l
 
 # run bison
 #bison -p obproxy -v -Werror -d ob_proxy_parser.y -o ob_proxy_parser_tab.c
-bison -v -Werror -d ob_proxy_parser_gbk.y -o ob_proxy_parser_gbk_tab.c
+/usr/bin/bison -v -Werror -d ob_proxy_parser_gbk.y -o ob_proxy_parser_gbk_tab.c
 if [ $? -ne 0 ]
 then
     echo Compile error[$?], abort.

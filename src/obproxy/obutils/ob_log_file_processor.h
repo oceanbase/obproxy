@@ -62,9 +62,9 @@ public:
   int set_log_cleanup_interval();
 
 
-  //1.traverse all the log files in the dir, ignore files that are used now, put the rest into an ob_array
-  //2.if in hot upgrade status, only put current pid log files into ob_array
-  //3.cleanup files in the sorted ob_array
+  //1、traverse all the log files in the dir, ignore files that are used now, put the rest into an ob_array
+  //2、if in hot upgrade status, only put current pid log files into ob_array
+  //3、cleanup files in the sorted ob_array
   int cleanup_log_file();
   obutils::ObAsyncCommonTask *get_cleanup_cont() { return cleanup_cont_; }
 

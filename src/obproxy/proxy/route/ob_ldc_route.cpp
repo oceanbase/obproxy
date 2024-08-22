@@ -542,6 +542,92 @@ static ObRouteType route_order_cursor_of_primary_zone_first[] = {
   ROUTE_TYPE_MAX
 };
 
+//ANP, BNP, AMP, BMP;
+//ANT, BNT, AMT, BMT;
+//CNP, CMP;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_target_replica_type_with_leader[] = {
+    ROUTE_TYPE_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
+
+//ANPF, BNPF, AMPF, BMPF;
+//ANPL, BNPL, AMPL, BMPL;
+//ANT, BNT, AMT, BMT;
+//CNPF, CMPF;
+//CNPL, CMPL;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_target_replica_type_follower_first[] = {
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_LEADER_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_LEADER_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_LEADER_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_LEADER_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_LEADER_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_LEADER_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
+
+//ANPF, BNPF, AMPF, BMPF;
+//ANT, BNT, AMT, BMT;
+//CNPF, CMPF;
+//CNT, CMT
+static ObRouteType route_order_cursor_of_target_replica_type_follower_only[] = {
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REGION,
+    ROUTE_TYPE_NONPARTITION_MERGE_LOCAL,
+    ROUTE_TYPE_NONPARTITION_MERGE_REGION,
+
+    ROUTE_TYPE_FOLLOWER_PARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_FOLLOWER_PARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_NONPARTITION_UNMERGE_REMOTE,
+    ROUTE_TYPE_NONPARTITION_MERGE_REMOTE,
+
+    ROUTE_TYPE_MAX
+};
+
+static ObRouteType route_order_cursor_of_weight_load_balance[] = {
+  ROUTE_TYPE_MAX
+};
+
 const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_merge_idc_order,
     route_order_cursor_of_readonly_zone_first,
@@ -563,6 +649,10 @@ const ObRouteType *ObLDCRoute::route_order_cursor_[] = {
     route_order_cursor_of_proxy_primary_zone_name_only,
     route_order_cursor_of_target_db_server_only,
     route_order_cursor_of_primary_zone_first,
+    route_order_cursor_of_target_replica_type_with_leader,
+    route_order_cursor_of_target_replica_type_follower_first,
+    route_order_cursor_of_target_replica_type_follower_only,
+    route_order_cursor_of_weight_load_balance,
 };
 
 int64_t ObLDCRoute::route_order_size_[] = {
@@ -589,6 +679,10 @@ int64_t ObLDCRoute::route_order_size_[] = {
     sizeof(route_order_cursor_of_proxy_primary_zone_name_only) / sizeof(ObRouteType),//1
     sizeof(route_order_cursor_of_target_db_server_only) / sizeof(ObRouteType),//1
     sizeof(route_order_cursor_of_primary_zone_first) / sizeof(ObRouteType),//1
+    sizeof(route_order_cursor_of_target_replica_type_with_leader) / sizeof(ObRouteType),//13
+    sizeof(route_order_cursor_of_target_replica_type_follower_first) / sizeof(ObRouteType),//19
+    sizeof(route_order_cursor_of_target_replica_type_follower_only) / sizeof(ObRouteType),//13
+    sizeof(route_order_cursor_of_weight_load_balance) / sizeof(ObRouteType),//1
 };
 
 const ObLDCItem *ObLDCRoute::get_next_item()
@@ -598,10 +692,10 @@ const ObLDCItem *ObLDCRoute::get_next_item()
     const int64_t *site_start_index_array = location_.get_site_start_index_array();
     ObLDCItem *item_array = location_.get_item_array();
     // 目前PROXY_PRIMARY_ZONE_NAME_ONLY、TARGET_DB_SERVER_ONLY、PRIMARY_ZONE_FIRST没有机器列表，不关心observer类型
-    bool need_random_policy = is_random_policy();
+    bool not_check_route_type = is_not_check_route_type();
     ObRouteType route_type = get_route_type(curr_cursor_index_);
-    ObIDCType idc_type = need_random_policy ? ObIDCType::OTHER_REGION : get_idc_type(route_type);
-    bool need_break = need_random_policy ? false : (ROUTE_TYPE_MAX == route_type);
+    ObIDCType idc_type = not_check_route_type ? ObIDCType::OTHER_REGION : get_idc_type(route_type);
+    bool need_break = not_check_route_type ? false : (ROUTE_TYPE_MAX == route_type);
     while (!need_break) {
       if (next_index_in_site_ >= site_start_index_array[idc_type + 1]) {
         LOG_DEBUG("need try next cursor type", K_(curr_cursor_index),
@@ -622,7 +716,7 @@ const ObLDCItem *ObLDCRoute::get_next_item()
         ++next_index_in_site_;
         // 对新增路由策略，采用随机的方式，没有机器优先级，无需比较
         if (!ret_item->is_used_
-            && (need_random_policy
+            && (not_check_route_type
                 || (is_same_role(route_type, *ret_item)
                     && is_same_partition_type(route_type, *ret_item)
                     && is_same_zone_type(route_type, *ret_item)
@@ -631,7 +725,7 @@ const ObLDCItem *ObLDCRoute::get_next_item()
           ret_item->is_used_ = true;
           need_break = true;
           LOG_DEBUG("succ to get_next_replica", KPC(ret_item), K_(disable_merge_status_check),
-                    "curr_route_type", get_route_type_string(route_type), K(need_random_policy));
+                    "curr_route_type", get_route_type_string(route_type), K(not_check_route_type));
         } else {
           LOG_DEBUG("item is not excepted, try next", KPC(ret_item),
                     "curr_route_type", get_route_type_string(route_type),
@@ -666,6 +760,43 @@ const ObLDCItem *ObLDCRoute::get_next_primary_zone_item()
     }
   }
 
+  return ret_item;
+}
+
+const ObLDCItem *ObLDCRoute::get_next_weight_item()
+{
+  ObLDCItem *ret_item = NULL;
+  if (!is_weight_zone_empty()) {
+    bool finish = false;
+    if (weight_zone_index_ >= location_.get_weight_zone_count()) {
+      weight_zone_index_ = -1;
+    }
+    ObLDCLocation::ObWeightZoneArray &weight_zone_array = *location_.get_all_weight_zone_array();
+    while (!finish && NULL == ret_item)  {
+      if (!finish && -1 == weight_zone_index_) {
+        weight_zone_index_ = location_.get_rand_zone_index();
+        finish = (-1 == weight_zone_index_);
+      }
+      LOG_DEBUG("random weight zone index", K_(weight_zone_index), K(finish));
+      if (!finish && NULL == ret_item && -1 != weight_zone_index_) {
+        ObWeightZoneItems* weight = weight_zone_array.at(weight_zone_index_);
+        if (OB_NOT_NULL(weight)) {
+          ObIArray<ObLDCItem> &item_array = weight->weight_zone_item_array_;
+          for (int64_t i = 0; i < item_array.count(); ++i) {
+            if (!item_array.at(i).is_used_) {
+              ret_item = &item_array.at(i);
+              ret_item->is_used_ = true;
+              break;
+            }
+          }
+        }
+      }// end if
+      // 触发重试时，会先选择某个zone的replica。所有replica重试后，需要重置
+      if (!finish && NULL == ret_item && -1 != weight_zone_index_) {
+        weight_zone_index_ = -1;
+      }
+    }// end while
+  }
   return ret_item;
 }
 

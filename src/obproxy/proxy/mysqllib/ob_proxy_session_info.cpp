@@ -224,7 +224,7 @@ ObClientSessionInfo::ObClientSessionInfo()
     : lock_session_num_(0), is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
       is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false),
       is_proxy_route_policy_set_(false),
-      enable_shard_authority_(false), enable_reset_db_(true), need_record_shard_txn_server_(false),
+      enable_shard_authority_(false), enable_reset_db_(true),
       need_close_last_server_session_(false), client_cap_(0), server_cap_(0),
       safe_read_snapshot_(0),
       syncing_safe_read_snapshot_(0), route_policy_(1), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY),
@@ -866,7 +866,7 @@ int ObClientSessionInfo::sys_variable_exists(const ObString &var_name, bool &is_
   return  ret;
 }
 
-// @synopsis get variable type by name
+// @synopsis 根据变量名，取得这个变量的类型
 int ObClientSessionInfo::get_sys_variable_type(const ObString &var_name, ObObjType &type)
 {
   int ret = OB_SUCCESS;
@@ -1070,8 +1070,11 @@ int ObClientSessionInfo::extract_variable_reset_sql(ObServerSessionInfo &server_
       }
     }
 
-    // Attention!! need first set OB or MySQL var, then set common var
-    // because OB or MySQL var set maybe have same var with common var set. But common var set is neweset
+    // 要注意, 需要先设置 OB 或 Mysql 特有变量, 再设置公共变量
+    // 因为在用户发送 SET 命令修改之前, 可能就会有一些系统变量通过 OK 包返还回来, 这是会直接保存到特有变量集中
+    // 随后当用户修改相同系统变量后, 会保存到公共变量集中
+    // 因此, 如果公共变量集里有, 就一定是最新的. 同步 SET 命令, 如果有同名变量, 使用后一个的值. 所以公共变量集里的变量要放到后面.
+    // 同时因为common_sys和sys连可能有重名的，但是common_sys才是最新的值，所以保险起见，一旦同步就要同步common_hot，保障使用common里的
     //reset cold common sys variable
     if (OB_SUCC(ret)) {
       if (need_reset || need_reset_common_cold_session_vars(server_info)) {
@@ -1294,7 +1297,7 @@ int ObClientSessionInfo::set_start_trans_sql(const ObString &sql)
     LOG_WDIAG("fail to alloc mem", K(sql.length()), K(ret));
   } else {
     // if we have save start_trans_sql before, reset it (and free memory buf)
-    // TODO: reuse it?
+    // TODO @gujian: reuse it?
     reset_start_trans_sql();
     saved_start_trans_sql_.assign_buffer(buf, sql.length());
     int32_t writed_size = saved_start_trans_sql_.write(sql.ptr(), sql.length());
@@ -1412,7 +1415,6 @@ void ObClientSessionInfo::destroy()
 
   enable_shard_authority_ = false;
   enable_reset_db_ = true;
-  need_record_shard_txn_server_ = false;
   need_close_last_server_session_ = false;
 
   is_read_only_user_ = false;

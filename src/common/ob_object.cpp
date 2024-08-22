@@ -246,6 +246,28 @@ int ObObj::build_not_strict_default_value()
         set_otimestamp_null(data_type);
         break;
     }
+    case ObRawType: {
+        ObString null_str;
+        set_raw(null_str);
+      break;
+    }
+    case ObNumberFloatType: {
+      number::ObNumber zero;
+      zero.set_zero();
+      set_number_float(zero);
+      break;
+    }
+    case ObURowIDType: {
+      ObURowIDData urowid_data;
+      set_urowid(urowid_data);
+      break;
+    }
+    case ObMySQLDateType:
+      set_mysql_date(ObTimeConverter::MYSQL_ZERO_DATE);
+      break;
+    case ObMySQLDateTimeType:
+      set_mysql_datetime(ObTimeConverter::MYSQL_ZERO_DATETIME);
+      break;
     default:
       ret = OB_INVALID_ARGUMENT;
       _OB_LOG(WDIAG, "unexpected data type=%hhd", data_type);
@@ -465,7 +487,10 @@ ObObjTypeFuncs OBJ_FUNCS[ObMaxType] =
   DEF_FUNC_ENTRY(ObNullType),          // 47, json
   DEF_FUNC_ENTRY(ObNullType),      // 48, geometry TODO!!!!!
   DEF_FUNC_ENTRY(ObNullType),// 49, udt
-  DEF_FUNC_ENTRY(ObDecimalIntType)     // 50, decimal int
+  DEF_FUNC_ENTRY(ObDecimalIntType),     // 50, decimal int
+  DEF_FUNC_ENTRY(ObNullType),  // 51, collection
+  DEF_FUNC_ENTRY(ObMySQLDateType),      // 52, mysql date
+  DEF_FUNC_ENTRY(ObMySQLDateTimeType),  // 53, mysql datetime
 };
 
 ////////////////////////////////////////////////////////////////

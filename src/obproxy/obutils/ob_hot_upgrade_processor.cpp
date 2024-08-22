@@ -278,30 +278,28 @@ int get_binary_md5(const char *binary, char *md5_buf, const int64_t md5_buf_len)
       } else if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &action, &old_action))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+      } else if (OB_ISNULL((fp = popen(shell_str, "r")))) {
+        ret = ob_get_sys_errno();
+        LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
+      } else if (OB_ISNULL(fgets(md5_buf, static_cast<int32_t>(md5_buf_len), fp))) {
+        ret = ob_get_sys_errno();
+        LOG_WDIAG("fail to fgets md5_str", K(shell_str), K(md5_buf), KERRMSGS, K(ret));
       } else {
-        if (OB_ISNULL((fp = popen(shell_str, "r")))) {
+        LOG_INFO("succeed to get binary md5", K(shell_str), K(md5_buf), K(md5_buf_len));
+      }
+
+      if (OB_LIKELY(NULL != fp)) {
+        if (-1 == pclose(fp)) {
           ret = ob_get_sys_errno();
-          LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
-        } else if (OB_ISNULL(fgets(md5_buf, static_cast<int32_t>(md5_buf_len), fp))) {
-          ret = ob_get_sys_errno();
-          LOG_WDIAG("fail to fgets md5_str", K(shell_str), K(md5_buf), KERRMSGS, K(ret));
+          LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
         } else {
-          LOG_INFO("succeed to get binary md5", K(shell_str), K(md5_buf), K(md5_buf_len));
+          fp = NULL;
         }
+      }
 
-        if (OB_LIKELY(NULL != fp)) {
-          if (-1 == pclose(fp)) {
-            ret = ob_get_sys_errno();
-            LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
-          } else {
-            fp = NULL;
-          }
-        }
-
-        if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
-        }
+      if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
       }
     }
 
@@ -648,39 +646,37 @@ int ObHotUpgradeProcessor::check_proxy_bin_release(const char *binary)
       } else if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &action, &old_action))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
+      } else if (OB_ISNULL((fp = popen(shell_str, "r")))) {
+        ret = ob_get_sys_errno();
+        LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
       } else {
-        if (OB_ISNULL((fp = popen(shell_str, "r")))) {
-          ret = ob_get_sys_errno();
-          LOG_WDIAG("failed to popen fp", K(shell_str), K(binary), KERRMSGS, K(ret));
+        char *result_buf = shell_str;
+        MEMSET(result_buf, 0, MAX_SHELL_STR_LENGTH);
+        fgets(result_buf, static_cast<int32_t>(MAX_SHELL_STR_LENGTH), fp);
+        if (0 != STRLEN(result_buf)
+            && (NULL != strstr(result_buf, ".el") || NULL != strstr(result_buf, ".alios"))) {
+          if (OB_FAIL(get_global_config_server_processor().check_kernel_release(result_buf))) {
+            LOG_WDIAG("failed to parser linux kernel release in result_buf", K(result_buf), K(ret));
+          } else {
+            LOG_INFO("succeed to check proxy binary release", K(result_buf));
+          }
         } else {
-          char *result_buf = shell_str;
-          MEMSET(result_buf, 0, MAX_SHELL_STR_LENGTH);
-          fgets(result_buf, static_cast<int32_t>(MAX_SHELL_STR_LENGTH), fp);
-          if (0 != STRLEN(result_buf)
-              && (NULL != strstr(result_buf, ".el") || NULL != strstr(result_buf, ".alios"))) {
-            if (OB_FAIL(get_global_config_server_processor().check_kernel_release(result_buf))) {
-              LOG_WDIAG("failed to parser linux kernel release in result_buf", K(result_buf), K(ret));
-            } else {
-              LOG_INFO("succeed to check proxy binary release", K(result_buf));
-            }
-          } else {
-            LOG_INFO("maybe upgrade to old proxy, treat it succ", K(result_buf));
-          }
+          LOG_INFO("maybe upgrade to old proxy, treat it succ", K(result_buf));
         }
+      }
 
-        if (OB_LIKELY(NULL != fp)) {
-          if (-1 == pclose(fp)) {
-            ret = ob_get_sys_errno();
-            LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
-          } else {
-            fp = NULL;
-          }
+      if (OB_LIKELY(NULL != fp)) {
+        if (-1 == pclose(fp)) {
+          ret = ob_get_sys_errno();
+          LOG_WDIAG("failed to pclose fp", K(fp), KERRMSGS, K(ret));
+        } else {
+          fp = NULL;
         }
+      }
 
-        if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
-        }
+      if (OB_UNLIKELY(0 != sigaction(SIGCHLD, &old_action, NULL))) {//reset it
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to sigaction SIGCHLD", KERRMSGS, K(ret));
       }
 
       if (NULL != shell_str) {
@@ -1686,7 +1682,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
       break;
     }
     case OB_LOCAL_CMD_OFFLINE: {
-      // Reuse hot_upgrade_exit_timeout as the timeout time for the rolling upgrade connection to enter INACTIVE
+      // 复用hot_upgrade_exit_timeout作为滚动升级连接进入INACTIVE超时时间
       get_global_proxy_config().reset_local_cmd();
       info_.graceful_offline_start_time_ = get_hrtime_internal();
       info_.graceful_offline_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)

@@ -71,6 +71,7 @@ namespace proxy
 
 #define MYSQL_INCREMENT_TRANS_STAT(X) update_stat(s, X, 1);
 #define MYSQL_SUM_TIME_STAT(X, cost) update_stat(s, X, cost);
+#define GET_MULTI_CONFIG(sm, config)  (OB_NOT_NULL((sm)->multi_level_config_) ? &((sm)->multi_level_config_->config##_) : NULL)
 
 bool ObMysqlTransact::is_in_trans(ObTransState &s)
 {
@@ -229,41 +230,6 @@ inline bool ObMysqlTransact::is_session_memory_overflow(ObTransState &s)
   return bret;
 }
 
-bool ObMysqlTransact::ObTransState::is_for_update_sql(common::ObString src_sql)
-{
-  bool bret = false;
-  const char FOR_STRING_BUF[] = "for";
-  const ObString FOR_STRING(FOR_STRING_BUF);
-  const ObString UPDATE_STRING("update");
-  //' for update'
-  if (src_sql.length() > (FOR_STRING.length() + UPDATE_STRING.length() + 2)
-      && '\0' == src_sql[src_sql.length()]) {
-    char *ptr = src_sql.ptr();
-    char *last_pos  = NULL;
-    char *pos = ptr;
-    const char *end = src_sql.ptr() + src_sql.length();
-    while (!bret && NULL != (pos = strcasestr(pos, FOR_STRING_BUF))) {
-      last_pos = pos;
-      pos += 3;
-
-      if (NULL != last_pos
-          && last_pos > ptr
-          && IS_SPACE(*(last_pos-1))
-          && IS_SPACE(*(last_pos+3))) {
-        last_pos = last_pos + 3;
-        while (last_pos < end && IS_SPACE(*last_pos)) {
-          last_pos++;
-        }
-        if (0 == strncasecmp(last_pos, UPDATE_STRING.ptr(), UPDATE_STRING.length())
-            && ('\0' == last_pos[UPDATE_STRING.length()] || ';' == last_pos[UPDATE_STRING.length()])) {
-          bret = true;
-        }
-      }
-    }
-  }
-  return bret;
-}
-
 ObConsistencyLevel ObMysqlTransact::ObTransState::get_read_write_consistency_level(ObClientSessionInfo &session_info)
 {
   ObConsistencyLevel ret_level = common::STRONG;
@@ -334,10 +300,13 @@ ObConsistencyLevel ObMysqlTransact::ObTransState::get_trans_consistency_level(
       }
       if (common::WEAK == ret_level) {
         ObString sql;
+        bool is_for_update = false;
         if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == trans_info_.client_request_.get_packet_meta().cmd_) {
           cs_info.get_ps_sql(sql);
+          is_for_update = ObProxyMysqlRequest::is_for_update_sql(sql);
         } else {
           sql = trans_info_.client_request_.get_sql();
+          is_for_update = trans_info_.client_request_.is_for_update_sql();
         }
         if (OB_UNLIKELY(!cs_info.is_server_support_read_weak())) {
           ret_level = common::STRONG;
@@ -346,7 +315,7 @@ ObConsistencyLevel ObMysqlTransact::ObTransState::get_trans_consistency_level(
               "sys_var", get_consistency_level_str(sys_var),
               "ret_level", get_consistency_level_str(ret_level),
               "sql", trans_info_.client_request_.get_sql());
-        } else if (OB_UNLIKELY(is_for_update_sql(sql))) {
+        } else if (OB_UNLIKELY(is_for_update)) {
           ret_level = common::STRONG;
           PROXY_LOG(DEBUG, "For select .. for update sql, treat it as strong read",
               "sql_hint", get_consistency_level_str(sql_hint),
@@ -357,6 +326,7 @@ ObConsistencyLevel ObMysqlTransact::ObTransState::get_trans_consistency_level(
           PROXY_LOG(DEBUG, "current use weak read",
               "sql_hint", get_consistency_level_str(sql_hint),
               "sys_var", get_consistency_level_str(sys_var),
+              "read_write_consistence_level", read_write_consistence_level,
               "ret_level", get_consistency_level_str(ret_level),
               "sql", sql);
         }
@@ -428,7 +398,7 @@ bool ObMysqlTransact::need_use_dup_replica(const ObConsistencyLevel level, ObTra
 {
   return (STRONG == level)
           && (s.trans_info_.client_request_.get_parse_result().is_select_stmt())
-          && (!ObTransState::is_for_update_sql(s.trans_info_.client_request_.get_sql()))
+          && (s.trans_info_.client_request_.is_for_update_sql())
           && (s.pll_info_.route_.has_dup_replica_);
 }
 
@@ -914,6 +884,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
 
   s.pl_lookup_state_ = state;
   if (OB_UNLIKELY(!cs_info.is_allow_use_last_session())) {
+    // means sharding user cross shard compared to the previous shard
     if (in_trans) {
       // sharding cross-shard txn
       s.reset_trans_internal_server_info();
@@ -922,17 +893,23 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
         LOG_DEBUG("use last shard txn session on txn shard");
       } else {
         s.pl_lookup_state_ = NEED_PL_LOOKUP;
-        LOG_DEBUG("need partition location lookup for non-txn shrd");
+        LOG_DEBUG("need partition location lookup for non-txn shard");
       }
     } else {
       s.pl_lookup_state_ = NEED_PL_LOOKUP;
       LOG_DEBUG("need partition location lookup for no txn");
     }
-  } else if (cs_info.is_sharding_user()
-             && OB_NOT_NULL(cs_info.get_txn_shard_connector())
-             && OB_ISNULL(s.sm_->get_client_session()->get_server_session())) {
-    s.pl_lookup_state_ = NEED_PL_LOOKUP;
-    LOG_DEBUG("last server session is close for sharding, do partition location lookup");
+  } else {
+    // same shard connector, need use last shard txn session if in trans
+    if (cs_info.is_on_txn_shard_connector()) {
+      s.pl_lookup_state_ = USE_SHARD_TXN_SESSION;
+      LOG_DEBUG("use last shard txn session on txn shard");
+    } else if (cs_info.is_sharding_user()
+               && OB_NOT_NULL(cs_info.get_txn_shard_connector())
+               && OB_ISNULL(s.sm_->get_client_session()->get_server_session())) {
+      s.pl_lookup_state_ = NEED_PL_LOOKUP;
+      LOG_DEBUG("last server session is close for sharding, do partition location lookup");
+    }
   }
 
   // generate full link trace span before each request
@@ -998,7 +975,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
         LOG_DEBUG("@obproxy_route_addr is set", "address", s.server_info_.addr_, K(addr));
         route_info_type = ObRouteInfoType::USE_OBPROXY_ROUTE_ADDR;
       } else if (obmysql::OB_MYSQL_COM_STMT_FETCH == cmd
-                 || obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == cmd) {
+                || obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == cmd) {
         ObCursorIdAddr *cursor_id_addr = NULL;
         if (OB_FAIL(cs_info.get_cursor_id_addr(cursor_id_addr))) {
           LOG_WDIAG("fail to get client cursor id addr", K(ret));
@@ -1119,22 +1096,41 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
       }
 
       // find single leader
-      if (OB_SUCC(ret) && !s.pll_info_.lookup_success_) {
+      if (OB_SUCC(ret)
+          && !s.pll_info_.lookup_success_
+          && !s.sm_->client_session_->is_need_update_dummy_entry_) {
         if (OB_NOT_NULL(s.sm_->multi_level_config_)
             && s.sm_->multi_level_config_->proxy_primary_zone_name_.is_empty()
             && !cs_info.is_sharding_user()
             // 登录请求需要获取 __all_dummy entry 不走单主路由
             && s.trans_info_.sql_cmd_ != OB_MYSQL_COM_LOGIN) {
           s.sm_->refresh_single_leader();
-          if (s.sm_->is_vaild_single_leader()) {
-            if (ObConsistencyLevel::STRONG == s.get_trans_consistency_level(cs_info)) {
+          const ObIpEndpoint *addr = NULL;
+          if (ObConsistencyLevel::STRONG == s.get_trans_consistency_level(cs_info)) {
+            if (OB_NOT_NULL(addr = s.sm_->get_single_leader())) {
               s.pll_info_.lookup_success_ = true;
               route_info_type = ObRouteInfoType::USE_SINGLE_LEADER;
-              s.server_info_.set_addr(s.sm_->get_single_leader());
-              LOG_DEBUG("succ to use sinlge leader", "addr", s.server_info_.addr_);
+              s.server_info_.set_addr(*addr);
+              LOG_DEBUG("succ to use single leader", "addr", s.server_info_.addr_);
             } else {
-              LOG_DEBUG("weak read request will not directly route to single leader");
+              LOG_INFO("get single leader addr is NULL");
             }
+          } else if (ObConsistencyLevel::WEAK == s.get_trans_consistency_level(cs_info)) {
+            // not support read stale and unmerge_follower_first route policy
+            ObRoutePolicyEnum policy = s.get_route_policy(*s.sm_->client_session_, false, NULL);
+            if (OB_LIKELY(s.sm_->multi_level_config_->ob_max_read_stale_time_ == -1)
+                && OB_LIKELY(policy == ObRoutePolicyEnum::FOLLOWER_FIRST || policy == ObRoutePolicyEnum::FOLLOWER_ONLY)) {
+              if (OB_NOT_NULL(addr = s.sm_->get_single_leaders_follower())) {
+                s.pll_info_.lookup_success_ = true;
+                route_info_type = ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER;
+                s.server_info_.set_addr(*addr);
+                LOG_DEBUG("succ to use single leader's follower", "addr", s.server_info_.addr_);
+              } else {
+                LOG_INFO("get single leader's follower addr is NULL");
+              }
+            }
+          } else {
+            LOG_WDIAG("invalid consistency level", K(s.get_trans_consistency_level(cs_info)));
           }
         }
       }
@@ -1156,7 +1152,8 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
       }
 
       if (OB_SUCC(ret)) {
-        if (route_info_type == ObRouteInfoType::USE_SINGLE_LEADER) {
+        if (route_info_type == ObRouteInfoType::USE_SINGLE_LEADER ||
+            route_info_type == ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER) {
           TRANSACT_RETURN(SM_ACTION_CONGESTION_CONTROL_LOOKUP, handle_congestion_control_lookup);
         } else {
           TRANSACT_RETURN(SM_ACTION_PARTITION_LOCATION_LOOKUP, handle_pl_lookup);
@@ -1413,6 +1410,34 @@ void ObMysqlTransact::handle_target_db_not_allow(ObTransState &s)
   TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
 }
 
+void ObMysqlTransact::handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type)
+{
+  int ret = OB_SUCCESS;
+
+  int tmp_ret = OB_NO_REPLICA_VALID;
+  s.mysql_errcode_ = OB_NO_REPLICA_VALID;
+  if (!target_replica_type.is_exist_readonly_replica()) {
+    s.mysql_errmsg_ = "Not exist Column Store Replicas, check route_target_replica_type and proxy_route_policy";
+  } else if (!target_replica_type.is_exist_column_store_replica()) {
+    s.mysql_errmsg_ = "Not exist ReadOnly replica, check route_target_replica_type and proxy_route_policy";
+  } else {
+    s.mysql_errmsg_ = "Not exist Column Store/ReadOnly replica, check route_target_replica_type and proxy_route_policy";
+  }
+  if (OB_FAIL(ObMysqlTransact::encode_error_message(s))) {
+    LOG_WDIAG("fail to build err packet", K(ret));
+  }
+
+  if (OB_SUCC(ret)) {
+    ret = tmp_ret;
+  } else {
+    /* if something error, disconnect */
+    s.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
+  }
+
+  s.inner_errcode_ = ret;
+  TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+}
+
 void ObMysqlTransact::handle_explain_route(ObTransState &s)
 {
   int ret = OB_SUCCESS;
@@ -1631,7 +1656,7 @@ inline ObMysqlTransact::ObPLLookupState ObMysqlTransact::need_pl_lookup(ObTransS
   bool trans_specified = is_trans_specified(s);
   bool is_dep_func = has_dependent_func(s);
   bool in_trans = is_in_trans(s);
-  // 如果 OB_MYSQL_COM_LOAD
+  // 如果 COM_LOAD
   if (OB_UNLIKELY(ObMysqlTransact::is_transfer_content_of_file(s))) {
     state = USE_LAST_SERVER_SESSION;
   } else if (in_trans && s.sm_->get_client_session()->is_proxy_enable_trans_internal_routing()) {
@@ -1669,11 +1694,14 @@ inline ObMysqlTransact::ObPLLookupState ObMysqlTransact::need_pl_lookup(ObTransS
     }
   }
   // if we don't use last server session/coordinator session, we must do pl lookup
+  ObProxyMysqlRequest &client_request = s.trans_info_.client_request_;
+  bool has_last_trace_id = client_request.get_parse_result().has_last_trace_id();
   LOG_DEBUG("need pl lookup", "state", get_pl_lookup_state_string(state),
             "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
             "is trans specified", trans_specified,
             "has dependent func", is_dep_func,
-            "is in trans", in_trans);
+            "is in trans", in_trans,
+            "has last trace id", has_last_trace_id);
 
   return state;
 }
@@ -1709,7 +1737,7 @@ inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
   // if enable_reroute, strong read req allowed to reroute
   // if enable_weak_reroute, weak read allowed to reroute
   is_need_reroute = ((!is_weak_read && s.mysql_config_params_->enable_reroute_)
-                      || (is_weak_read && OB_ISNULL(mc) && mc->enable_weak_reroute_))
+                      || (is_weak_read && OB_NOT_NULL(mc) && mc->enable_weak_reroute_))
                     && (OB_ISNULL(mc) || mc->proxy_primary_zone_name_.is_empty())
                     && !s.is_rerouted_ && s.is_need_pl_lookup()
                     && (s.is_trans_first_request_
@@ -2079,9 +2107,9 @@ inline void ObMysqlTransact::ObPartitionLookupInfo::pl_update_if_necessary(const
 
     // feedback of routing to single leader
     // route_.consistency_level_ will be set when call s.get_trans_consistency_level in handle_oceanbase_request
-    if (!is_partition_hit && route_.is_strong_read() && s.sm_->is_vaild_single_leader()) {
+    if (!is_partition_hit && route_.is_strong_read() && OB_NOT_NULL(s.sm_->single_leader_)) {
       int ret = OB_SUCCESS;
-      s.sm_->reset_single_leader();
+      s.sm_->free_single_leader();
       ObClusterResource *cr;
       if (OB_ISNULL(cr = s.sm_->sm_cluster_resource_)) {
       } else if (OB_FAIL(cr->remove_single_leader_info(tenant_name))) {
@@ -2751,6 +2779,10 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
             ObServerStateRefreshCont::DEFAULT_SERVER_COUNT, *allocator);
         get_region_name_and_server_info(s, simple_servers_info, region_names);
         ObSEArray<ObString, 5> zone_array;
+        ObZoneWeakReadWeight *weight_zone = NULL;
+        if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy) {
+          weight_zone = &s.sm_->multi_level_config_->weakread_weight_zone_;
+        }
         if (OB_FAIL(get_proxy_primary_zone_array(zone, zone_array))) {
           LOG_WDIAG("fail to fill proxy primary zone array", K(ret));
         } else if (OB_FAIL(s.pll_info_.route_.fill_replicas(
@@ -2762,7 +2794,9 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
                       s.sm_->sm_cluster_resource_,
                       simple_servers_info,
                       region_names,
-                      zone_array
+                      zone_array,
+                      weight_zone,
+                      GET_MULTI_CONFIG(s.sm_, route_target_replica_type)
 #if OB_DETAILED_SLOW_QUERY
                       ,
                       s.sm_->cmd_time_stats_.debug_random_time_,
@@ -2816,14 +2850,28 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
           t1 = t2;
 #endif
           if (OB_ISNULL(replica)) {
-            COLLECT_INTERNAL_DIAGNOSIS(
-                s.sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
-                OB_PROXY_INTERNAL_ERROR, "proxy routing find no avail replicas");
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WDIAG("no replica avail", K(replica), K(ret));
+            // 对指定副本路由，没指定F副本下不断连接，返回err_msg便于排查问题
+            if (is_target_replica_route(route_policy)
+                && OB_NOT_NULL(GET_MULTI_CONFIG(s.sm_, route_target_replica_type))
+                && !GET_MULTI_CONFIG(s.sm_, route_target_replica_type)->is_exist_full_replica()) {
+              const omt::ObTargetReplicaType &target_replica_type = *GET_MULTI_CONFIG(s.sm_, route_target_replica_type);
+              handle_not_exist_replica(s, target_replica_type);
+              ret = OB_NO_REPLICA_VALID;
+            } else {
+              ObString route_policy_string = get_route_policy_enum_string(route_policy);
+              COLLECT_INTERNAL_DIAGNOSIS(
+                  s.sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
+                  OB_PROXY_INTERNAL_ERROR,
+                  "proxy routing find no avail replicas route policy:%s, "
+                  "valid replicas count:%ld, ss_info count:%ld",
+                  route_policy_string.ptr(), s.pll_info_.route_.replica_size(), simple_servers_info.count());
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("no replica avail", K(replica), K(ret));
+            }
           } else {
             s.server_info_.set_addr(ops_ip_sa_cast(replica->server_.get_sockaddr()));
-            LOG_DEBUG("get replica by pl lookup, set addr", K(s.server_info_.addr_));
+            LOG_DEBUG("get replica by pl lookup, set addr", K(s.server_info_.addr_),
+                      "is_proxy_mysql_client", s.sm_->client_session_->is_proxy_mysql_client_);
           }
 
           if (found_leader_force_congested) {
@@ -2849,10 +2897,8 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
           diagnosis_route_policy->replica_ = *s.pll_info_.route_.cur_chosen_server_.replica_;
         }
       }
-      if (OB_NOT_NULL(info)) {
-        info->dec_ref();
-      }
     }
+    DEC_SHARED_REF(info);
 
     if (OB_SUCC(ret)) {
       LOG_DEBUG("[ObMysqlTransact::handle_pl_lookup] chosen server, and begin to congestion lookup",
@@ -4289,7 +4335,7 @@ int ObMysqlTransact::handle_reset_connection_request_succ(ObTransState &s)
   return ret;
 }
 
-// clear after OB_MYSQL_COM_RESET_CONNECTION / OB_MYSQL_COM_CHANGE_USR
+// clear after OB_MYSQL_COM_RESET_CONNECTION / COM_CHANGE_USR
 int ObMysqlTransact::clear_session_related_source(ObTransState &s)
 {
   int ret = OB_SUCCESS;
@@ -6827,7 +6873,7 @@ bool ObMysqlTransact::is_depend_last_session(ObTransState &s)
   if ((trans_specified || in_trans || is_dep_func || is_load_data)
       || obmysql::OB_MYSQL_COM_STMT_FETCH == cmd
       || obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA == cmd
-      || obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP == cmd) {
+      || OB_MYSQL_COM_AUTH_SWITCH_RESP == cmd) {
     bret = true;
   }
   return bret;
@@ -7622,6 +7668,14 @@ inline void ObMysqlTransact::ObTransState::get_route_policy(ObProxyRoutePolicyEn
     ret_policy = UNMERGE_FOLLOWER_FIRST;
   } else if (FOLLOWER_ONLY_ENUM == policy) {
     ret_policy = FOLLOWER_ONLY;
+  } else if (TARGET_REPLICA_TYPE_WITH_LEADER_ENUM == policy) {
+    ret_policy = TARGET_REPLICA_TYPE_WITH_LEADER;
+  } else if (Target_Replica_Type_Follower_First_ENUM == policy) {
+    ret_policy = TARGET_REPLICA_TYPE_FOLLOWER_FIRST;
+  } else if (Target_Replica_Type_Follower_Only_ENUM == policy) {
+    ret_policy = TARGET_REPLICA_TYPE_FOLLOWER_ONLY;
+  } else if (WEAKREAD_WEIGHT_LOAD_BALANCE_ENUM == policy) {
+    ret_policy = WEAKREAD_WEIGHT_LOAD_BALANCE;
   }
 }
 inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysqlClientSession &cs,
@@ -7698,6 +7752,15 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
         PROXY_CS_LOG(DEBUG, "succ to global variable proxy_route_policy",
                  "policy", get_proxy_route_policy_enum_string(policy));
         get_route_policy(policy, proxy_route_policy);
+      }
+      // 权重负载均衡路由要配合多级别配置生效
+      if (WEAKREAD_WEIGHT_LOAD_BALANCE == proxy_route_policy) {
+        if (OB_ISNULL(sm_->multi_level_config_)
+            || !sm_->multi_level_config_->weakread_weight_zone_.is_valid()
+            ) {
+          LOG_DEBUG("weadread weight zone is empty, weight load balance not valid");
+          proxy_route_policy = MAX_ROUTE_POLICY_COUNT;
+        }
       }
       if (proxy_route_policy != MAX_ROUTE_POLICY_COUNT) {
         ret_policy = proxy_route_policy;

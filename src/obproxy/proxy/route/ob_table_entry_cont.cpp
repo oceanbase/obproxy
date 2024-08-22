@@ -204,17 +204,20 @@ void ObTableEntryCont::kill_this()
     newest_table_entry_ = NULL;
   }
 
-  if (NULL != mysql_client_) {
-    mysql_client_->kill_this();
-    mysql_client_ = NULL;
+  if (OB_LIKELY(NULL != mysql_client_)) {
+    if (OB_ISNULL(self_ethread().schedule_imm(mysql_client_, CLIENT_DESTROY_SELF_EVENT))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("fail to schedule destroy mysql client event, memory will leak", K(ret));
+    } else {
+      LOG_DEBUG("schedule to destory mysql client imm", K(mysql_client_), K(this_ethread()));
+    }
   }
-
   table_cache_ = NULL;
   action_.set_continuation(NULL);
   submit_thread_ = NULL;
   magic_ = OB_TABLE_ENTRY_CONT_MAGIC_DEAD;
   mutex_.release();
-
+  LOG_INFO("debug checking free ObTableEntryCont", K(lbt()));
   op_free(this);
 }
 

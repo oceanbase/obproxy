@@ -68,7 +68,7 @@ public:
   TO_STRING_KV(K_(is_cpu_backup_succ));
 
 private:
-  bool is_cpu_backup_succ_;  // false: backup failed; true: backup successful
+  bool is_cpu_backup_succ_;  // false: backup失败; true: backup成功
   ObCgroupCtrl cgroup_ctrl_;
   common::DRWLock tenant_cpu_rwlock_;
   ObTenantCpuCache tenant_cpu_cache_;

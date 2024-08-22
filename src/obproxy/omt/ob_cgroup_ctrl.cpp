@@ -48,7 +48,7 @@ namespace obproxy
 namespace omt
 {
 
-// Create cgroup initial directory structure
+// 创建cgroup初始目录结构
 int ObCgroupCtrl::init()
 {
   int ret = OB_SUCCESS;
@@ -61,10 +61,10 @@ int ObCgroupCtrl::init()
   //      ├── cpu.cfs_period_us
   //      ├── cpu.cfs_quota_us
   //      └── cpu.tasks
-  // 1. Initialize the obproxy root cgroup
+  // 1. 初始化obproxy root cgroup
   if (OB_FAIL(init_cgroup_root_dir(root_cgroup_))) {
     LOG_INFO("init cgroup dir failed, check config whether support", K(ret), K(root_cgroup_));
-  // 2. Create a user cgroup for the user tenant
+  // 2. 创建用户租户的 user cgroup
   } else if (init_cgroup_dir(user_cgroup_)) {
     LOG_WDIAG("init tenants cgroup dir failed", K(ret), K(user_cgroup_));
   } else if (init_cgroup_dir(other_cgroup_)) {
@@ -87,7 +87,7 @@ int ObCgroupCtrl::create_tenant_cgroup(const ObString& tenant_id)
   if (OB_FAIL(FileDirectoryUtils::is_exists(tenant_cg_dir, exist_cgroup))) {
     LOG_WDIAG("fail check file exist", K(tenant_cg_dir), K(ret));
   } else if (!exist_cgroup && OB_FAIL(init_cgroup_dir(tenant_cg_dir))) {
-    // note: Support concurrent creation of the same directory, all return OB_SUCCESS
+    // note: 支持并发创建同一个目录，都返回 OB_SUCCESS
     LOG_WDIAG("init tenant cgroup dir failed", K(ret), K(tenant_cg_dir), K(tenant_id));
   }
   return ret;
@@ -157,8 +157,7 @@ int ObCgroupCtrl::set_cpu_cfs_quota(const ObString tenant_id, const int32_t cfs_
   return ret;
 }
 
-// TODO: This value can be unchanged, and the same value is shared globally,
-// so there is no need to read from the file system every time.
+// TODO: 这个值可以不变，全局共享一个相同的值，那么就不需要每次都从文件系统读了
 int ObCgroupCtrl::get_cpu_cfs_period(const ObString tenant_id, int32_t &cfs_period_us)
 {
   int ret = OB_SUCCESS;
@@ -183,17 +182,17 @@ int ObCgroupCtrl::init_cgroup_root_dir(const char *cgroup_path)
   bool exist_cgroup = false;
   if (OB_ISNULL(cgroup_path)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(cgroup_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(cgroup_path), K(ret));
   } else if (OB_FAIL(FileDirectoryUtils::is_exists(cgroup_path, exist_cgroup))) {
     LOG_WDIAG("fail check file exist", K(cgroup_path), K(ret));
   } else if (!exist_cgroup) {
     ret = OB_FILE_NOT_EXIST;
     LOG_INFO("no cgroup directory found. disable cgroup support", K(cgroup_path), K(ret));
   } else {
-    // set mems and cpus
-    //  The cpu may be discontinuous, and it is very complicated to detect it
-    //  This always inherits the parent's settings, no need to detect it
-    //  Subsequent child cgroups no longer need to set mems and cpus
+    // 设置 mems 和 cpus
+    //  cpu 可能是不连续的，自己探测很复杂。
+    //  这里总是继承父级的设置，无需自己探测。
+    //  后继 child cgroup 无需再设置 mems 和 cpus
     if (OB_SUCC(ret)) {
       snprintf(current_path, PATH_BUFSIZE, "%s/cgroup.clone_children", cgroup_path);
       snprintf(value_buf, VALUE_BUFSIZE, "1");
@@ -212,14 +211,14 @@ int ObCgroupCtrl::init_cgroup_dir(const char *cgroup_path)
   char value_buf[VALUE_BUFSIZE];
   if (OB_ISNULL(cgroup_path)) {
     ret = OB_INVALID_ARGUMENT;
-    LIB_LOG(WARN, "invalid arguments.", K(cgroup_path), K(ret));
+    LIB_LOG(WDIAG, "invalid arguments.", K(cgroup_path), K(ret));
   } else if (OB_FAIL(FileDirectoryUtils::create_directory(cgroup_path))) {
     LOG_WDIAG("create tenant cgroup dir failed", K(ret), K(cgroup_path));
   } else {
-    // set mems and cpus
-    //  The cpu may be discontinuous, and it is very complicated to detect it
-    //  This always inherits the parent's settings, no need to detect it
-    //  Subsequent child cgroups no longer need to set mems and cpus
+    // 设置 mems 和 cpus
+    //  cpu 可能是不连续的，自己探测很复杂。
+    //  这里总是继承父级的设置，无需自己探测。
+   // 后继 child cgroup 无需再设置 mems 和 cpus
     if (OB_SUCC(ret)) {
       snprintf(current_path, PATH_BUFSIZE, "%s/cgroup.clone_children", cgroup_path);
       snprintf(value_buf, VALUE_BUFSIZE, "1");

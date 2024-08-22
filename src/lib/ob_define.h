@@ -42,40 +42,42 @@ const int16_t MAX_PRECISION_DECIMAL_INT_256 = 76;
 const int16_t MAX_PRECISION_DECIMAL_INT_512 = 154;
 const int16_t MAX_SIGNED_INTEGER_PRECISION = 18;
 
-const int64_t OB_ALL_SERVER_CNT                                = INT64_MAX;
-const uint16_t OB_COMPACT_COLUMN_INVALID_ID                    = UINT16_MAX;
-const int64_t OB_INVALID_TIMESTAMP                             = -1;
-const uint64_t OB_INVALID_ID                                   = UINT64_MAX;
-const int64_t OB_LATEST_VERSION                                = 0;
-const uint32_t OB_INVALID_FILE_ID                              = UINT32_MAX;
-const int16_t OB_COMPACT_INVALID_INDEX                         = -1;
-const int OB_INVALID_INDEX                                     = -1;
-const int64_t OB_INVALID_INDEX_INT64                           = -1;
-const int OB_INVALID_SIZE                                      = -1;
-const int OB_INVALID_COUNT                                     = -1;
-const int OB_INVALID_PTHREAD_KEY                               = -1;
-const int64_t OB_INVALID_VERSION                               = -1;
-const int64_t OB_INVALID_STMT_ID                               = -1;
-const int64_t OB_INVALID_PARTITION_ID                          = 65535;
-const int64_t OB_MIN_CLUSTER_ID                                = 1;
-const int64_t OB_MAX_CLUSTER_ID                                = 4294901759;
-const int64_t OB_INVALID_CLUSTER_ID                            = -1;
-const int64_t OB_INVALID_ORG_CLUSTER_ID                        = 0;
-const int64_t OB_MAX_ITERATOR                                  = 16;
-const int64_t MAX_IP_ADDR_LENGTH                               = 64;
-const int64_t MAX_IP_PORT_LENGTH                               = MAX_IP_ADDR_LENGTH + 5;
-const int64_t MAX_IP_PORT_SQL_LENGTH                           = MAX_IP_ADDR_LENGTH + 10;
-const int64_t OB_MAX_SQL_ID_LENGTH                             = 32;
-const int64_t MAX_ZONE_LENGTH                                  = 128;
-const int64_t MAX_REGION_LENGTH                                = 128;
-const int64_t MAX_PROXY_IDC_LENGTH                             = 128;
-const int32_t MAX_ZONE_NUM                                     = 64;
-const int64_t MAX_OPERATOR_NAME_LENGTH                         = 32;
-const int64_t MAX_ZONE_LIST_LENGTH                             = MAX_ZONE_LENGTH * MAX_ZONE_NUM;
-const int64_t MAX_ZONE_STATUS_LENGTH                           = 16;
-const int64_t MAX_RESOURCE_POOL_NAME_LEN                       = 128;
-const int32_t MAX_REPLICA_COUNT_PER_ZONE                       = 5;
-const int32_t MAX_REPLICA_COUNT_TOTAL                          = MAX_ZONE_NUM
+const int64_t OB_ALL_SERVER_CNT = INT64_MAX;
+const uint16_t OB_COMPACT_COLUMN_INVALID_ID = UINT16_MAX;
+const int64_t OB_INVALID_TIMESTAMP = -1;
+const uint64_t OB_INVALID_ID = UINT64_MAX;
+const int64_t OB_LATEST_VERSION = 0;
+const uint32_t OB_INVALID_FILE_ID = UINT32_MAX;
+const int16_t OB_COMPACT_INVALID_INDEX = -1;
+const int OB_INVALID_INDEX = -1;
+const int64_t OB_INVALID_INDEX_INT64 = -1;
+const int OB_INVALID_SIZE = -1;
+const int OB_INVALID_COUNT = -1;
+const int OB_INVALID_PTHREAD_KEY = -1;
+const int64_t OB_INVALID_VERSION = -1;
+const int64_t OB_INVALID_STMT_ID = -1;
+const int64_t OB_INVALID_PARTITION_ID = 65535;
+const int64_t OB_MIN_CLUSTER_ID = 1;
+const int64_t OB_MAX_CLUSTER_ID = 4294901759;
+const int64_t OB_INVALID_CLUSTER_ID = -1;
+const int64_t OB_INVALID_ORG_CLUSTER_ID = 0;
+const int64_t OB_MAX_ITERATOR = 16;
+const int64_t MAX_IP_ADDR_LENGTH = 64;
+const int64_t MAX_IP_PORT_LENGTH = MAX_IP_ADDR_LENGTH + 5;
+const int64_t MAX_IP_PORT_SQL_LENGTH = MAX_IP_ADDR_LENGTH + 10;
+const int64_t MAX_HOSTNAME_ADDR_LENGTH = 1024; // DNS standard is 255, we set more for future standard
+const int64_t MAX_HOSTNAME_PORT_LENGTH = MAX_HOSTNAME_ADDR_LENGTH + 5;
+const int64_t OB_MAX_SQL_ID_LENGTH = 32;
+const int64_t MAX_ZONE_LENGTH = 128;
+const int64_t MAX_REGION_LENGTH = 128;
+const int64_t MAX_PROXY_IDC_LENGTH = 128;
+const int32_t MAX_ZONE_NUM = 64;
+const int64_t MAX_OPERATOR_NAME_LENGTH = 32;
+const int64_t MAX_ZONE_LIST_LENGTH = MAX_ZONE_LENGTH * MAX_ZONE_NUM;
+const int64_t MAX_ZONE_STATUS_LENGTH = 16;
+const int64_t MAX_RESOURCE_POOL_NAME_LEN = 128;
+const int32_t MAX_REPLICA_COUNT_PER_ZONE = 5;
+const int32_t MAX_REPLICA_COUNT_TOTAL = MAX_ZONE_NUM
                                         *MAX_REPLICA_COUNT_PER_ZONE;
 const int64_t MAX_RESOURCE_POOL_LENGTH                         = 128;
 const int64_t MAX_RESOURCE_POOL_COUNT_OF_TENANT                = 16;
@@ -100,18 +102,20 @@ typedef int64_t ObPreciseDateTime;
 typedef ObPreciseDateTime ObModifyTime;
 typedef ObPreciseDateTime ObCreateTime;
 
-const int32_t NOT_CHECK_FLAG                                   = 0;
-const int64_t MAX_SERVER_COUNT                                 = 1024;
-const uint64_t OB_SERVER_USER_ID                               = 0;
-const int64_t OB_MAX_INDEX_PER_TABLE                           = 128;
-const int64_t OB_MAX_SSTABLE_PER_TABLE                         = OB_MAX_INDEX_PER_TABLE + 1;
-const int64_t OB_MAX_SQL_LENGTH                                = 32 * 1024;
-const int64_t OB_SHORT_SQL_LENGTH                              = 1 * 1024; // 1KB
-const int64_t OB_MEDIUM_SQL_LENGTH                             = 2 * OB_SHORT_SQL_LENGTH; // 2KB
-const int64_t OB_MAX_SERVER_ADDR_SIZE                          = 128;
-const int64_t OB_MAX_JOIN_INFO_NUMBER                          = 10;
-static const int64_t OB_MAX_USER_ROW_KEY_LENGTH                = 16 * 1024L; // 16K
-static const int64_t OB_MAX_ROW_KEY_LENGTH                     = 17 *
+const int32_t NOT_CHECK_FLAG = 0;
+const int64_t MAX_SERVER_COUNT = 1024;
+const uint64_t OB_SERVER_USER_ID = 0;
+const int64_t OB_MAX_INDEX_PER_TABLE = 128;
+const int64_t OB_MAX_SSTABLE_PER_TABLE = OB_MAX_INDEX_PER_TABLE + 1;
+const int64_t OB_MAX_SQL_LENGTH = 32 * 1024;
+const int64_t OB_SHORT_SQL_LENGTH = 1 * 1024; // 1KB
+const int64_t OB_MEDIUM_SQL_LENGTH = 2 * OB_SHORT_SQL_LENGTH; // 2KB
+const int64_t OB_3K_SQL_LENGTH = 3 * OB_SHORT_SQL_LENGTH; // 3kb
+const int64_t OB_4K_SQL_LENGTH = 4 * OB_SHORT_SQL_LENGTH; // 4kb
+const int64_t OB_MAX_SERVER_ADDR_SIZE = 128;
+const int64_t OB_MAX_JOIN_INFO_NUMBER = 10;
+static const int64_t OB_MAX_USER_ROW_KEY_LENGTH = 16 * 1024L; // 16K
+static const int64_t OB_MAX_ROW_KEY_LENGTH = 17 *
                                              1024L; // 1K for extra varchar columns of root table
 const int64_t OB_MAX_ROW_KEY_SPLIT                             = 32;
 const int64_t OB_USER_MAX_ROWKEY_COLUMN_NUMBER                 = 64;
@@ -757,15 +761,16 @@ static const int64_t OB_COMMON_MEM_BLOCK_SIZE                = 64 * 1024;
 static const int64_t OB_MAX_USER_ROW_LENGTH                  = 1572864L; // 1.5M
 static const int64_t OB_MAX_ROW_LENGTH                       = OB_MAX_USER_ROW_LENGTH
                                          + 64L * 1024L/*for root table extra columns*/;
-static const int64_t OB_MAX_MONITOR_INFO_LENGTH              = 65535;
-static const int64_t OB_MAX_CHAR_LENGTH                      = 256; // Compatible with mysql, unit character mysql is 256
-static const int64_t OB_MAX_VARCHAR_LENGTH                   = 256 * 1024L; // Unit byte
-static const int64_t OB_MAX_VARCHAR_LENGTH_KEY               = 16 * 1024L;  //KEY key varchar maximum length limit
-static const int64_t OB_OLD_MAX_VARCHAR_LENGTH               = 64 * 1024; // for compatible purpose
-static const int64_t OB_MAX_DEFAULT_VALUE_LENGTH             = OB_MAX_VARCHAR_LENGTH;
-static const int64_t OB_MAX_BINARY_LENGTH                    = 255;
-static const int64_t OB_MAX_VARBINARY_LENGTH                 = 64 * 1024L;
-static const int64_t OB_MAX_DECIMAL_PRECISION                = 65;
+static const int64_t OB_MAX_MONITOR_INFO_LENGTH = 65535;
+static const int64_t OB_MAX_CHAR_LENGTH = 256; // 兼容mysql, 单位字符 mysql为256
+static const int64_t OB_MAX_VARCHAR_LENGTH = 256 * 1024L; // 单位字节
+static const int64_t OB_MAX_BIT_LENGTH = 64; // Compatible with mysql, 64 bit
+static const int64_t OB_MAX_VARCHAR_LENGTH_KEY = 16 * 1024L;  //KEY键varchar最大长度限制
+static const int64_t OB_OLD_MAX_VARCHAR_LENGTH = 64 * 1024; // for compatible purpose
+static const int64_t OB_MAX_DEFAULT_VALUE_LENGTH = OB_MAX_VARCHAR_LENGTH;
+static const int64_t OB_MAX_BINARY_LENGTH = 255;
+static const int64_t OB_MAX_VARBINARY_LENGTH = 64 * 1024L;
+static const int64_t OB_MAX_DECIMAL_PRECISION = 65;
 static const int64_t OB_MAX_DECIMAL_POSSIBLE_PRECISION = 81;
 static const int64_t OB_MIN_DECIMAL_PRECISION = 1;
 static const int64_t OB_MAX_DECIMAL_SCALE                    = 30;
@@ -866,16 +871,19 @@ static const char *const OB_CONFIG_MULTI_LEVEL_CLUSTER = "LEVEL_CLUSTER";
 static const char *const OB_CONFIG_MULTI_LEVEL_TENANT = "LEVEL_TENANT";
 static const char *const OB_CONFIG_MULTI_LEVEL_VIP = "LEVEL_VIP";
 
-//Precision in user data type
-static const int16_t MAX_SCALE_FOR_TEMPORAL                  = 6;
-static const int16_t MIN_SCALE_FOR_TEMPORAL                  = 0;
-static const int16_t MAX_SCALE_FOR_ORACLE_TEMPORAL           = 9;
-static const int16_t DEFAULT_SCALE_FOR_INTEGER               = 0;
-static const int16_t DEFAULT_LENGTH_FOR_NUMERIC              = -1;
-static const int16_t DEFAULT_SCALE_FOR_DATE                  = 0;
-static const int16_t DEFAULT_SCALE_FOR_YEAR                  = 0;
-static const int16_t SCALE_UNKNOWN_YET                       = -1;
-static const int16_t PRECISION_UNKNOWN_YET                   = -1;
+//用户数据类型中的精度
+static const int16_t MAX_SCALE_FOR_TEMPORAL = 6;
+static const int16_t MIN_SCALE_FOR_TEMPORAL = 0;
+static const int16_t MAX_SCALE_FOR_ORACLE_TEMPORAL = 9;
+static const int16_t DEFAULT_SCALE_FOR_INTEGER = 0;
+static const int16_t DEFAULT_NUMBER_PRECISION_FOR_INTEGER = 38;
+static const int16_t DEFAULT_NUMBER_SCALE_FOR_INTEGER = 0;
+static const int16_t DEFAULT_SCALE_FOR_BIT = 0;
+static const int16_t DEFAULT_LENGTH_FOR_NUMERIC = -1;
+static const int16_t DEFAULT_SCALE_FOR_DATE = 0;
+static const int16_t DEFAULT_SCALE_FOR_YEAR = 0;
+static const int16_t SCALE_UNKNOWN_YET = -1;
+static const int16_t PRECISION_UNKNOWN_YET = -1;
 static const int16_t ORA_NUMBER_SCALE_UNKNOWN_YET = OB_MIN_NUMBER_SCALE - 1;
 #define NUMBER_SCALE_UNKNOWN_YET (lib::is_oracle_mode() ? ORA_NUMBER_SCALE_UNKNOWN_YET: SCALE_UNKNOWN_YET)
 static const int16_t LENGTH_UNKNOWN_YET                      = -1;
@@ -1031,12 +1039,13 @@ inline bool is_not_supported_err(int err)
 }
 
 /*
- * |--- 4 bits ---|--- 2 bits ---|--- 2 bits ---| LSB
- * |---  clog  ---|-- SSStore ---|--- MemStore--| LSB
+ * |---- 2 bits ---|---- 2 bits ---|--- 4 bits ---|--- 2 bits ---|--- 2 bits ---| LSB
+ * |--column-store-|-- encryption--|---  clog  ---|-- SSStore ---|--- MemStore--| LSB
  */
 static const int64_t SSSTORE_BITS_SHIFT    = 2;
 static const int64_t CLOG_BITS_SHIFT       = 4;
 static const int64_t ENCRYPTION_BITS_SHIFT = 8;
+const int64_t COLUMN_SSSTORE_BITS_SHIFT = 10;
 // replica type associated with memstore
 static const int64_t WITH_MEMSTORE      = 0;
 static const int64_t WITHOUT_MEMSTORE   = 1;
@@ -1049,6 +1058,8 @@ static const int64_t ASYNC_CLOG         = 1 << CLOG_BITS_SHIFT;
 // replica type associated with encryption
 const int64_t WITHOUT_ENCRYPTION        = 0 << ENCRYPTION_BITS_SHIFT;
 const int64_t WITH_ENCRYPTION           = 1 << ENCRYPTION_BITS_SHIFT;
+const int64_t WITH_COLUMNSTORE = 1 << COLUMN_SSSTORE_BITS_SHIFT;
+
 
 // Need to manually maintain the replica_type_to_str function in utility.cpp,
 // Currently there are only three types: REPLICA_TYPE_FULL, REPLICA_TYPE_READONLY, and REPLICA_TYPE_LOGONLY
@@ -1068,6 +1079,8 @@ enum ObReplicaType
   REPLICA_TYPE_MEMONLY = (ASYNC_CLOG | WITHOUT_SSSTORE | WITH_MEMSTORE), // 20
   // Encrypted log copy: encrypted; paxos member; no sstore; no memstore
   REPLICA_TYPE_ENCRYPTION_LOGONLY = (WITH_ENCRYPTION | SYNC_CLOG | WITHOUT_SSSTORE | WITHOUT_MEMSTORE), // 261
+    // 列存副本: not a member of paxos; column_ssstore, ssstore; memstore
+  REPLICA_TYPE_COLUMNSTORE = (WITH_COLUMNSTORE | ASYNC_CLOG | WITH_SSSTORE | WITH_MEMSTORE),	// 1040
   // invalid value
   REPLICA_TYPE_MAX,
 };

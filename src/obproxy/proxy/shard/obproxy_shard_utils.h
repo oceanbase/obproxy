@@ -166,7 +166,7 @@ private:
                               bool allow_cross_shards = false);
   static int handle_dml_request(ObMysqlClientSession &client_session,
                                 ObMysqlTransact::ObTransState &trans_state,
-                                const ObString &table_name,
+                                const ObString &origin_table_name,
                                 dbconfig::ObDbConfigLogicDb &db_info,
                                 const ObString& sql,
                                 ObSqlString& new_sql,

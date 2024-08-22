@@ -25,8 +25,8 @@
 #include "obutils/ob_resource_pool_processor.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "opsql/parser/ob_proxy_parser.h"
-#include "proxy/rpc_optimize/ob_rpc_req.h"
-#include "proxy/rpc_optimize/rpclib/ob_rpc_req_analyzer.h"
+#include "proxy/rpc/ob_rpc_req.h"
+#include "proxy/rpc/rpclib/ob_rpc_req_analyzer.h"
 #include "proxy/route/ob_route_diagnosis.h"
 
 using namespace oceanbase::common;
@@ -101,7 +101,7 @@ ObMysqlRoute::ObMysqlRoute()
     is_routine_entry_lookup_succ_(true), is_route_sql_parse_succ_(true),
     is_table_entry_lookup_succ_(true), is_part_id_calc_succ_(true),
     is_part_entry_lookup_succ_(true), terminate_route_(false),
-    part_id_(OB_INVALID_INDEX), route_sql_result_(), reentrancy_count_(0), src_type_(OB_PROXY_ROUTE_FOR_SQL)
+    part_id_(OB_INVALID_INDEX), route_sql_result_(NULL), reentrancy_count_(0), src_type_(OB_PROXY_ROUTE_FOR_SQL)
 {
   SET_HANDLER(&ObMysqlRoute::main_handler);
   MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_route_start);
@@ -122,7 +122,8 @@ int ObMysqlRoute::main_handler(int event, void *data)
   if (action_.cancelled_) {
     terminate_route_ = true;
   } else if (EVENT_INTERVAL == event) {
-    set_state_and_call_next(ROUTE_ACTION_TIMEOUT);
+    next_action_ = ROUTE_ACTION_TIMEOUT;
+    handle_timeout();
   } else {
     if (OB_ISNULL(default_handler_)) {
       LOG_EDIAG("invalid internal state, default handler is NULL",
@@ -144,6 +145,14 @@ int ObMysqlRoute::main_handler(int event, void *data)
   }
 
   return event_ret;
+}
+
+ObMysqlRoute::~ObMysqlRoute()
+{
+  if (OB_UNLIKELY(route_sql_result_ != NULL)) {
+    op_free(route_sql_result_);
+    route_sql_result_ = NULL;
+  }
 }
 
 inline void ObMysqlRoute::kill_this()
@@ -202,16 +211,112 @@ int ObMysqlRoute::state_route_start(int event, void *data)
   pending_action_ = NULL;
 
   if (param_.need_pl_route_) {
-    set_state_and_call_next(ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_START);
+    next_action_ = ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_START;
   } else {
-    set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START);
+    next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START;
+  }
+  do_route_lookup(event, data);
+  return EVENT_CONT;
+}
+
+int ObMysqlRoute::do_route_lookup(int event, void *data)
+{
+  UNUSED(event);
+  UNUSED(data);
+  pending_action_ = NULL;
+
+  bool continue_loop = true;
+  while (continue_loop) {
+    switch (next_action_) {
+      case ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_START: {
+        setup_routine_entry_lookup();
+        // wait sub-continuation to callback ObMysqlRoute::state_routine_entry_lookup()
+        if (pending_action_ != NULL) {
+          continue_loop = false;
+        }
+        break;
+      }
+      case ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE: {
+        handle_routine_entry_lookup_done();
+        break;
+      }
+      case ROUTE_ACTION_ROUTE_SQL_PARSE_START: {
+        // init dbname and table name
+        if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
+          setup_route_rpc_request();
+        } else {
+          setup_route_sql_parse();
+        }
+        break;
+      }
+      case ROUTE_ACTION_ROUTE_SQL_PARSE_DONE: {
+        handle_route_sql_parse_done();
+        break;
+      }
+      case ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START: {
+        setup_table_entry_lookup();
+        // wait sub-continuation to callback ObMysqlRoute::state_table_entry_lookup()
+        if (pending_action_ != NULL) {
+          continue_loop = false;
+        }
+        break;
+      }
+      case ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE: {
+        handle_table_entry_lookup_done();
+        break;
+      }
+      case ROUTE_ACTION_PARTITION_ID_CALC_START: {
+        if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
+          setup_partition_id_calc_for_rpc();
+        } else {
+          setup_partition_id_calc();
+        }
+        break;
+      }
+      case ROUTE_ACTION_PARTITION_ID_CALC_DONE: {
+        handle_partition_id_calc_done();
+        break;
+      }
+      case ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_START: {
+        setup_partition_entry_lookup();
+        if (pending_action_ != NULL) {
+          continue_loop = false;
+        }
+        break;
+      }
+      case ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_DONE: {
+        handle_partition_entry_lookup_done();
+        break;
+      }
+      case ROUTE_ACTION_NOTIFY_OUT: {
+        notify_caller();
+        continue_loop = false;
+        break;
+      }
+      case ROUTE_ACTION_TIMEOUT: {
+        handle_timeout();
+        continue_loop = false;
+        break;
+      }
+      case ROUTE_ACTION_UNEXPECTED_NOOP: {
+        setup_error_route();
+        continue_loop = false;
+        break;
+      }
+      default: {
+        LOG_EDIAG("unknown route next action", K_(next_action));
+        setup_error_route();
+        continue_loop = false;
+        break;
+      }
+    }
   }
   return EVENT_CONT;
 }
 
 inline void ObMysqlRoute::setup_routine_entry_lookup()
 {
-  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_routine_entry_lookup);
+  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_routine_entry_lookup_remote);
   int ret = OB_SUCCESS;
   LOG_DEBUG("ObMysqlRoute::setup_routine_entry_lookup");
   ObRoutineParam routine_param;
@@ -224,6 +329,7 @@ inline void ObMysqlRoute::setup_routine_entry_lookup()
 
   if (OB_SUCC(ret)) {
     if (NULL == pending_action_) {
+      MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_routine_entry_lookup_local);
       handle_event(ROUTINE_ENTRY_LOOKUP_CACHE_DONE, &routine_param.result_);
       routine_param.result_.reset();
     } else {
@@ -232,7 +338,7 @@ inline void ObMysqlRoute::setup_routine_entry_lookup()
   } else {
     LOG_WDIAG("fail to get routine entry", K(routine_param), K(ret));
     is_table_entry_lookup_succ_ = false;
-    set_state_and_call_next(ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE);
+    next_action_ = ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE;
   }
 }
 
@@ -260,8 +366,6 @@ int ObMysqlRoute::state_routine_entry_lookup(int event, void *data)
     LOG_DEBUG("ObMysqlRoute get routine entry succ", KPC_(routine_entry));
   }
 
-  set_state_and_call_next(ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE);
-
   return EVENT_DONE;
 }
 
@@ -285,7 +389,7 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
   } else if ((NULL != routine_entry_) && routine_entry_->get_routine_type() == ROUTINE_RPC_OBKV_TYPE) {
     //TODO if not found by RPC Service, need to return error response to client, directly.
     // RPC service has done
-    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_START);
+    next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_START;
   } else {
     // SQL service has done
     // table entry lookup succ
@@ -299,7 +403,7 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
                       is_routine_entry_from_remote_,
                       is_routine_entry_lookup_succ_,
                       routine_entry_->get_entry_state());
-      set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_START);
+      next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_START;
     } else {
       LOG_DEBUG("can not find avai route sql, use default route",
                "routine name", param_.name_, K(ret));
@@ -314,11 +418,11 @@ inline void ObMysqlRoute::handle_routine_entry_lookup_done()
       //if empty route sql, use __all_dummy instead
       param_.name_.package_name_.reset();
       rewrite_route_names(OB_SYS_DATABASE_NAME, share::OB_ALL_DUMMY_TNAME);
-      set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START);
+      next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START;
     }
   }
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -366,28 +470,31 @@ inline void ObMysqlRoute::setup_route_sql_parse()
       ObProxyParseResult obproxy_parse_result;
       int tmp_ret = OB_SUCCESS;
       const common::ObString &parse_sql = ObProxyMysqlRequest::get_parse_sql(routine_entry_->get_route_sql());
-      // Because it is a sys tenant, the default UTF8 character set can be used
+      // 这里因为是 sys 租户, 可以使用默认的 UTF8 字符集
       if (OB_SUCCESS != (tmp_ret = obproxy_parser.parse(parse_sql,
                                                         obproxy_parse_result,
                                                         CS_TYPE_UTF8MB4_GENERAL_CI))) {
         LOG_INFO("fail to parse sql, will go on anyway", K(parse_sql), K(tmp_ret));
-      } else if (OB_SUCCESS != (tmp_ret = route_sql_result_.load_result(obproxy_parse_result,
+      } else if (OB_ISNULL(route_sql_result_ = op_alloc(ObSqlParseResult))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WARN("fail to alloc memory for sql parse result", K(ret));
+      } else if (OB_SUCCESS != (tmp_ret = route_sql_result_->load_result(obproxy_parse_result,
                                                                         param_.use_lower_case_name_))) {
         LOG_INFO("fail to load result, will go on anyway", K(parse_sql),
                  "use_lower_case_name", param_.use_lower_case_name_, K(tmp_ret));
       } else {
-        LOG_DEBUG("success to do proxy parse", K(parse_sql), K(route_sql_result_));
+        LOG_DEBUG("success to do proxy parse", K(parse_sql), K(*route_sql_result_));
 
         param_.name_.package_name_.reset();
-        ObString table_name = route_sql_result_.get_table_name();
-        ObString database_name = route_sql_result_.get_database_name();
+        ObString table_name = route_sql_result_->get_table_name();
+        ObString database_name = route_sql_result_->get_database_name();
 
         if (param_.is_oracle_mode_) {
-          if (!table_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_table_name_quote()) {
+          if (!table_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_->get_table_name_quote()) {
             string_to_upper_case(table_name.ptr(), table_name.length());
           }
 
-          if (!database_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_database_name_quote()) {
+          if (!database_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_->get_database_name_quote()) {
             string_to_upper_case(database_name.ptr(), database_name.length());
           }
         }
@@ -400,7 +507,7 @@ inline void ObMysqlRoute::setup_route_sql_parse()
       }
       allocator->reuse();
     }
-    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+    next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_DONE;
   } else {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("this routine entry is available, should not arrive here", KPC_(routine_entry), K(ret));
@@ -408,7 +515,7 @@ inline void ObMysqlRoute::setup_route_sql_parse()
 
   if (OB_FAIL(ret)) {
     is_route_sql_parse_succ_ = false;
-    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+    next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_DONE;
   }
 }
 
@@ -431,22 +538,12 @@ inline void ObMysqlRoute::setup_route_rpc_request()
     ObString table_name;
     ObString database_name;
 
-    if (param_.is_oracle_mode_) {
-      if (!table_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_table_name_quote()) {
-        string_to_upper_case(table_name.ptr(), table_name.length());
-      }
-
-      if (!database_name.empty() && OBPROXY_QUOTE_T_INVALID == route_sql_result_.get_database_name_quote()) {
-        string_to_upper_case(database_name.ptr(), database_name.length());
-      }
-    }
-
     if (database_name.empty() && routine_entry_->is_package_database()) {
       rewrite_route_names(routine_entry_->get_package_name(), table_name);
     } else {
       rewrite_route_names(database_name, table_name);
     }
-    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+    next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_DONE;
   } else {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("this routine entry is available, should not arrive here", KPC_(routine_entry), K(ret));
@@ -454,7 +551,7 @@ inline void ObMysqlRoute::setup_route_rpc_request()
 
   if (OB_FAIL(ret)) {
     is_route_sql_parse_succ_ = false;
-    set_state_and_call_next(ROUTE_ACTION_ROUTE_SQL_PARSE_DONE);
+    next_action_ = ROUTE_ACTION_ROUTE_SQL_PARSE_DONE;
   }
 }
 
@@ -472,18 +569,17 @@ inline void ObMysqlRoute::handle_route_sql_parse_done()
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("[ObMysqlRoute::handle_route_sql_parse_done] fail to parse route sql", K(ret));
   } else {
-    set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START);
+    next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START;
   }
 
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
 inline void ObMysqlRoute::setup_table_entry_lookup()
 {
-  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_table_entry_lookup);
-
+  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_table_entry_lookup_remote);
   LOG_DEBUG("ObMysqlRoute::setup_table_entry_lookup");
   ObTableProcessor &table_processor = get_global_table_processor();
   int ret = OB_SUCCESS;
@@ -498,6 +594,7 @@ inline void ObMysqlRoute::setup_table_entry_lookup()
 
   if (OB_SUCC(ret)) {
     if (NULL == table_entry_action_handle) { // cache hit
+      MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_table_entry_lookup_local);
       handle_event(TABLE_ENTRY_EVENT_LOOKUP_DONE, &table_param.result_);
       table_param.result_.reset();
     } else {
@@ -506,7 +603,7 @@ inline void ObMysqlRoute::setup_table_entry_lookup()
   } else {
     LOG_WDIAG("fail to get table entry", K(table_param), K(ret));
     is_table_entry_lookup_succ_ = false;
-    set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE);
+    next_action_ = ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE;
   }
 }
 
@@ -533,7 +630,7 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
 
     result->target_entry_ = NULL;
     is_table_entry_from_remote_ = result->is_from_remote_;
-    // use different log level only for debug
+    // 当使用本地table_entry并且不为available状态是打印INFO日志方便调试
     if (NULL != table_entry_ && (table_entry_->is_avail_state())) {
       LOG_DEBUG("ObMysqlRoute get table entry succ", K(param_.name_),
           KPC_(table_entry), K_(is_table_entry_from_remote));
@@ -542,7 +639,6 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
           KPC_(table_entry), K_(is_table_entry_from_remote));
     }
   }
-  set_state_and_call_next(ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE);
 
   return EVENT_DONE;
 }
@@ -568,13 +664,13 @@ inline void ObMysqlRoute::handle_table_entry_lookup_done()
     if (NULL != table_entry_
         && table_entry_->is_partition_table()
         && param_.is_partition_table_route_supported_) {
-      set_state_and_call_next(ROUTE_ACTION_PARTITION_ID_CALC_START);
+      next_action_ = ROUTE_ACTION_PARTITION_ID_CALC_START;
     } else {
-      set_state_and_call_next(ROUTE_ACTION_NOTIFY_OUT);
+      next_action_ = ROUTE_ACTION_NOTIFY_OUT;
     }
   }
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -665,7 +761,12 @@ inline void ObMysqlRoute::setup_partition_id_calc()
         // for call stmt, here result is parse_result for the first sql in the function,
         // parse_result in client_request is for the original "call xxx()"
         user_sql = routine_entry_->get_route_sql();
-        result = &route_sql_result_;
+        if (OB_ISNULL(route_sql_result_)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("route_sql_result_ should be allocated and init in setup_route_sql_parse()", K(ret));
+        } else {
+          result = route_sql_result_;
+        }
       }
     } else {
       result = &param_.client_request_->get_parse_result();
@@ -707,15 +808,14 @@ inline void ObMysqlRoute::setup_partition_id_calc()
     if (NULL != allocator) {
       allocator->reuse();
     }
-
-    set_state_and_call_next(ROUTE_ACTION_PARTITION_ID_CALC_DONE);
+    next_action_ = ROUTE_ACTION_PARTITION_ID_CALC_DONE;
   } else {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("this table entry is non-partition table", KPC_(table_entry), K(ret));
   }
 
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -773,7 +873,7 @@ inline void ObMysqlRoute::setup_partition_id_calc_for_rpc()
         allocator->reuse();
       }
 
-      set_state_and_call_next(ROUTE_ACTION_PARTITION_ID_CALC_DONE);
+      next_action_ = ROUTE_ACTION_PARTITION_ID_CALC_DONE;
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
@@ -784,7 +884,7 @@ inline void ObMysqlRoute::setup_partition_id_calc_for_rpc()
     LOG_WDIAG("setup_partition_id_calc_for_rpc calc error", K_(param_.result_.rpc_calc_error), K(ret));
     param_.result_.rpc_calc_error_ = true;
     param_.result_.rpc_error_code_ = ret;
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -808,22 +908,22 @@ inline void ObMysqlRoute::handle_partition_id_calc_done()
     // 3. the sql do not contains part key
     if (common::OB_INVALID_INDEX == part_id_) {
       // just inform out
-      set_state_and_call_next(ROUTE_ACTION_NOTIFY_OUT);
+      next_action_ = ROUTE_ACTION_NOTIFY_OUT;
     } else {
       // begin to get partition entry
-      set_state_and_call_next(ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_START);
+      next_action_ = ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_START;
     }
   }
 
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
 inline void ObMysqlRoute::setup_partition_entry_lookup()
 {
   LOG_DEBUG("ObMysqlRoute::setup_partition_entry_lookup");
-  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_partition_entry_lookup);
+  MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_partition_entry_lookup_remote);
   int ret = OB_SUCCESS;
   // get partition entry from cache or remote
   ObPartitionParam part_param;
@@ -845,13 +945,14 @@ inline void ObMysqlRoute::setup_partition_entry_lookup()
   ret = ObPartitionProcessor::get_partition_entry(part_param, pending_action_);
   if (OB_SUCC(ret)) {
     if (NULL == pending_action_) {
+      MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_partition_entry_lookup_local);
       handle_event(PARTITION_ENTRY_LOOKUP_CACHE_DONE, &part_param.result_);
       part_param.result_.reset();
     } else {
       // wait callback
     }
   } else {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -889,8 +990,6 @@ int ObMysqlRoute::state_partition_entry_lookup(int event, void *data)
     }
   }
 
-  set_state_and_call_next(ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_DONE);
-
   return EVENT_DONE;
 }
 
@@ -923,11 +1022,11 @@ inline void ObMysqlRoute::handle_partition_entry_lookup_done()
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("[ObMysqlRoute::handle_partition_entry_lookup_done] fail to lookup part entry", K(ret));
   } else {
-    set_state_and_call_next(ROUTE_ACTION_NOTIFY_OUT);
+    next_action_ = ROUTE_ACTION_NOTIFY_OUT;
   }
 
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
   }
 }
 
@@ -1021,78 +1120,6 @@ inline void ObMysqlRoute::set_state_and_call_next(const ObMysqlRouteAction next_
 {
   next_action_ = next_action;
   call_next_action();
-}
-
-inline void ObMysqlRoute::call_next_action()
-{
-  switch (next_action_) {
-    case ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_START: {
-      setup_routine_entry_lookup();
-      break;
-    }
-    case ROUTE_ACTION_ROUTINE_ENTRY_LOOKUP_DONE: {
-      handle_routine_entry_lookup_done();
-      break;
-    }
-    case ROUTE_ACTION_ROUTE_SQL_PARSE_START: {
-      // init dbname and table name
-      if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
-        setup_route_rpc_request();
-      } else {
-        setup_route_sql_parse();
-      }
-      break;
-    }
-    case ROUTE_ACTION_ROUTE_SQL_PARSE_DONE: {
-      handle_route_sql_parse_done();
-      break;
-    }
-    case ROUTE_ACTION_TABLE_ENTRY_LOOKUP_START: {
-      setup_table_entry_lookup();
-      break;
-    }
-    case ROUTE_ACTION_TABLE_ENTRY_LOOKUP_DONE: {
-      handle_table_entry_lookup_done();
-      break;
-    }
-    case ROUTE_ACTION_PARTITION_ID_CALC_START: {
-      if (src_type_ == OB_RPOXY_ROUTE_FOR_RPC) {
-        setup_partition_id_calc_for_rpc();
-      } else {
-        setup_partition_id_calc();
-      }
-      break;
-    }
-    case ROUTE_ACTION_PARTITION_ID_CALC_DONE: {
-      handle_partition_id_calc_done();
-      break;
-    }
-    case ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_START: {
-      setup_partition_entry_lookup();
-      break;
-    }
-    case ROUTE_ACTION_PARTITION_ENTRY_LOOKUP_DONE: {
-      handle_partition_entry_lookup_done();
-      break;
-    }
-    case ROUTE_ACTION_NOTIFY_OUT: {
-      notify_caller();
-      break;
-    }
-    case ROUTE_ACTION_TIMEOUT: {
-      handle_timeout();
-      break;
-    }
-    case ROUTE_ACTION_UNEXPECTED_NOOP: {
-      setup_error_route();
-      break;
-    }
-    default: {
-      LOG_EDIAG("unknown route next action", K_(next_action));
-      setup_error_route();
-      break;
-    }
-  }
 }
 
 inline int ObMysqlRoute::init(ObRouteParam &route_param)
@@ -1243,7 +1270,8 @@ inline int ObMysqlRoute::schedule_timeout_action()
   }
 
   if (OB_FAIL(ret)) {
-    set_state_and_call_next(ROUTE_ACTION_UNEXPECTED_NOOP);
+    next_action_ = ROUTE_ACTION_UNEXPECTED_NOOP;
+    setup_error_route();
   }
   return ret;
 }

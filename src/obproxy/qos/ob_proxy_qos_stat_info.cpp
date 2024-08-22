@@ -51,11 +51,11 @@ int ObProxyQosStatNode::do_push_index(int64_t current_time_sec)
 {
   int ret = OB_SUCCESS;
 
-  // if current_time_sec > index_time_sec_, need update index time
+  // 如果当前时间大于 index 时间, 则更新 index 时间
   if (current_time_sec > index_time_sec_) {
-    // acquire write lock, avoid other use the index time
+    // 先获取写锁，避免同时有人使用 index 时间
     if (OB_SUCC(value_lock_.try_wrlock())) {
-      // if current_time_sec still greate than index_time_sec_, update index time and cleare values;
+      // 如果确实大于 index 时间, 则更新 index 时间, 更新时间时, 需要把推进的数组中的值清空
       if (current_time_sec > index_time_sec_) {
         if (current_time_sec - index_time_sec_ > QOS_STAT_VALUE_COUNT) {
           MEMSET(values_, 0, sizeof(values_));
@@ -70,12 +70,12 @@ int ObProxyQosStatNode::do_push_index(int64_t current_time_sec)
         }
         index_time_sec_ = current_time_sec;
       } else {
-        // if current_time_sec < index_time_sec_, other has updated the index_time_sec, re-enter this func
+        // 如果当前时间小于等于 index, 说明有并发更新了这个时间, 重新进来即可
         ret = OB_EAGAIN;
       }
       value_lock_.wrunlock();
     } else {
-      // if acquire lock failed, other is updating the index_time_sec, re-enter this func
+      // 如果获取锁失败, 说明有并发在用或者更新 index, 重新进来即可
       ret = OB_EAGAIN;
     }
   }
@@ -102,8 +102,8 @@ int ObProxyQosStatNode::store_stat(int64_t cost)
   if (OB_FAIL(push_index())) {
     PROXY_LOG(WDIAG, "fail to push index", K(ret));
   } else {
-    // after updating, current time must less than index time
-    // acquire read lock, avoid other update index_time
+    // push 之后, 当前时间肯定小于 index_time
+    // 获取读锁, 避免有其他并发请求推进 index_time
     if (OB_SUCC(value_lock_.rdlock())) {
       int64_t index = index_time_sec_ % QOS_STAT_VALUE_COUNT;
       int64_t new_value = ATOMIC_AAF(&values_[QOS_STAT_TYPE_COUNT][index], 1);
@@ -134,8 +134,8 @@ int ObProxyQosStatNode::calc_qps(int64_t limit_qps, bool &is_reach)
 
     databuff_printf(debug_buf, MAX_BUF_LEN, pos, "type:%s, index_time_sec:%ld, limit_qps:%ld, ", "QOS_STAT_TYPE_QPS", index_time_sec, limit_qps);
 
-    // after updating, can use index_time without lock.
-    // algorithm: if there are more than 5 times, it is considered to be a problem. use 5s to anti-shake
+    // 推进后, 这个时候可以无锁使用 index_time 了, 因为有并发请求再次推进 index_time 也没关系, 不用这么精准
+    // 算法: 判断当前时间前 10s, 有超过 5 次就认为是有问题的. 有一定的放抖能力, 后续可以考虑加权计算
     for (int64_t i = index_time_sec - QOS_STAT_CALC_COUNT; i < index_time_sec; i++) {
       index = i % QOS_STAT_VALUE_COUNT;
       if (values_[QOS_STAT_TYPE_COUNT][index] > limit_qps) {
@@ -175,8 +175,8 @@ int ObProxyQosStatNode::calc_rt(int64_t limit_rt, bool &is_reach)
 
     databuff_printf(debug_buf, MAX_BUF_LEN, pos, "type:%s, index_time_sec:%ld, limit_rt:%ld, ", "QOS_STAT_TYPE_RT", index_time_sec, limit_rt);
 
-    // after updating, can use index_time without lock.
-    // algorithm: if there are more than 5 times, it is considered to be a problem. use 5s to anti-shake
+    // 推进后, 这个时候可以无锁使用 index_time 了, 因为有并发请求再次推进 index_time 也没关系, 不用这么精准
+    // 算法: 判断当前时间前 10s, 有超过 5 次就认为是有问题的. 有一定的放抖能力, 后续可以考虑加权计算
     for (int64_t i = index_time_sec - QOS_STAT_CALC_COUNT; i < index_time_sec; i++) {
       index = i % QOS_STAT_VALUE_COUNT;
       if (0 == values_[QOS_STAT_TYPE_RT][index] && 0 != values_[QOS_STAT_TYPE_COUNT][index]) {
@@ -256,6 +256,7 @@ int64_t ObProxyQosStatNodeRoot::count()
     count += iter->count();
   }
 
+  // 自身+1
   count++;
 
   return count;

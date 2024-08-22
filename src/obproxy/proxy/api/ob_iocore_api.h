@@ -100,7 +100,7 @@ public:
 struct ObThreadInternal : public event::ObEThread
 {
   //TODO::when construct DEDICATED ObEThread, pending_event_ must be specified
-  //current construction is error
+  //current construction is error @yanhua
   ObThreadInternal()
       : ObEThread(event::DEDICATED, -1), func_(NULL), data_(NULL)
   {  }

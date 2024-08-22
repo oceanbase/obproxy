@@ -115,7 +115,7 @@ int ObDbConfigChildCont::init_task()
         ++fetch_faliure_count_;
       }
     } else {
-      // read or write failed means grpc connection meet some exception
+      // read write失败表示grpc网络连接有异常
       ++fetch_faliure_count_;
       need_reschedule = true;
     }
@@ -231,7 +231,7 @@ int ObDbConfigChildCont::parse_database_auth(const Any &res)
         }
       } // end for users
       if (OB_SUCC(ret)) {
-        // no need acquire write lock. Concurrent Task use different array and map. one array only use by one Task
+        // 不需要加写锁，这里并发的任务操作不同的array和map, 同一个array只会在一个任务里修改
         ObDataBaseAuth *old_child_info = db_info_->da_array_.ccr_map_.remove(child_info->name_.config_string_);
         if (NULL != old_child_info) {
           if (OB_UNLIKELY(old_child_info->version_ != child_info->version_)) {

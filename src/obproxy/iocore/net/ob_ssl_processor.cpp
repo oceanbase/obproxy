@@ -53,8 +53,10 @@ int ObSSLProcessor::init()
   return ret;
 }
 
-void *ObSSLProcessor::malloc_for_ssl(size_t size)
+void *ObSSLProcessor::malloc_for_ssl(size_t size, const char *file, int line)
 {
+  UNUSED(file);
+  UNUSED(line);
   void *ptr = NULL;
   lib::glibc_hook_opt = lib::GHO_HOOK;
   __COMPILER_BARRIER();
@@ -63,8 +65,10 @@ void *ObSSLProcessor::malloc_for_ssl(size_t size)
   return ptr;
 }
 
-void *ObSSLProcessor::realloc_for_ssl(void *ptr, size_t size)
+void *ObSSLProcessor::realloc_for_ssl(void *ptr, size_t size, const char *file, int line)
 {
+  UNUSED(file);
+  UNUSED(line);
   void *nptr = NULL;
   lib::glibc_hook_opt = lib::GHO_HOOK;
   __COMPILER_BARRIER();
@@ -73,8 +77,10 @@ void *ObSSLProcessor::realloc_for_ssl(void *ptr, size_t size)
   return nptr;
 }
 
-void ObSSLProcessor::free_for_ssl(void *ptr)
+void ObSSLProcessor::free_for_ssl(void *ptr, const char *file, int line)
 {
+  UNUSED(file);
+  UNUSED(line);
   lib::glibc_hook_opt = lib::GHO_HOOK;
   __COMPILER_BARRIER();
   free(ptr);
@@ -207,7 +213,7 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(ret));
   } else {
-    //load ca cert
+    //加载ca证书
     BIO *cbio = BIO_new_mem_buf((void*)ca.ptr(), -1);
     X509 *cert_x509 = PEM_read_bio_X509(cbio, NULL, 0, NULL);
     X509_STORE *x509_store = X509_STORE_new();
@@ -237,7 +243,7 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
       X509_free(cert_x509);
     }
 
-    // load app cert chain
+    //加载应用证书链
     if (OB_SUCC(ret)) {
       cbio = BIO_new_mem_buf((void*)public_key.ptr(), -1);
       STACK_OF(X509_INFO) *inf = PEM_X509_INFO_read_bio(cbio, NULL, NULL, NULL);
@@ -279,7 +285,7 @@ int ObSSLProcessor::update_key_from_string(SSL_CTX *ssl_ctx,
       }
     }
 
-    //load private key
+    //加载私钥
     if (OB_SUCC(ret)) {
       RSA *rsa = NULL;
       cbio = BIO_new_mem_buf((void*)private_key.ptr(), -1);
@@ -315,7 +321,7 @@ SSL* ObSSLProcessor::create_new_ssl(const common::ObString &cluster_name,
   SSL *new_ssl = NULL;
   SSL_CTX *ssl_ctx = NULL;
   ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH> key_string;
-  // Take the tenant-level configuration first
+  // 先拿租户级别的配置
   DRWLock::RDLockGuard guard(ssl_ctx_lock_);
   if (OB_FAIL(paste_tenant_and_cluster_name(tenant_name, cluster_name, key_string))) {
     LOG_WDIAG("paste tenant and cluster_name failed", K(ret), K(tenant_name), K(cluster_name));
@@ -327,7 +333,7 @@ SSL* ObSSLProcessor::create_new_ssl(const common::ObString &cluster_name,
     }
   }
 
-  // If you do not get the tenant configuration, get the cluster configuration
+  // 如果未拿到租户配置，拿集群的配置
   if (OB_HASH_NOT_EXIST == ret) {
     key_string.reset();
     if (OB_FAIL(paste_tenant_and_cluster_name("*", cluster_name, key_string))) {
@@ -341,7 +347,7 @@ SSL* ObSSLProcessor::create_new_ssl(const common::ObString &cluster_name,
     }
   }
 
-  // If you don't get the cluster configuration, get the global configuration
+  // 如果未拿到集群配置，拿全局的配置
   if (OB_HASH_NOT_EXIST == ret) {
     key_string.reset();
     if (OB_FAIL(paste_tenant_and_cluster_name("*", "*", key_string))) {

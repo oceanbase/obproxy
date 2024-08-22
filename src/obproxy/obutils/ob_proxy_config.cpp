@@ -188,7 +188,7 @@ int ObProxyConfig::check_proxy_serviceable() const
     }
   }
 
-  //7. mysql-version should be digital
+  //7、mysql-version should be digital
   if (OB_SUCC(ret)) {
     CRLockGuard guard(rwlock_);
     const int64_t len = static_cast<int64_t>(strlen(mysql_version.str()));

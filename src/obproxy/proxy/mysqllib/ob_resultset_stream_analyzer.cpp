@@ -129,7 +129,7 @@ inline int ObResultsetStreamAnalyzer::get_mysql_resp_meta(
     LOG_WDIAG("reader buf is not enough", "buf_len", reader->read_avail(),
              "need_len", start_pos + MYSQL_NET_META_LENGTH, K(ret));
   } else {
-    // TODO, later optimization
+    // TODO oushen, later optimization
     char meta_buf[MYSQL_NET_META_LENGTH];
     meta_buf[0] = '\0';
     char *written_pos = reader->copy(meta_buf, MYSQL_NET_META_LENGTH, start_pos);

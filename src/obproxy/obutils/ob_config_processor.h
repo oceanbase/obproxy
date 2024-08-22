@@ -113,9 +113,6 @@ public:
   int get_proxy_config_int_item(const ObVipAddr &addr, const common::ObString &cluster_name,
                                  const common::ObString &tenant_name, const common::ObString& name,
                                  common::ObConfigIntItem &ret_item, const bool lock_required = true);
-  int get_proxy_config_strlist_item(const ObVipAddr &addr, const common::ObString &cluster_name,
-                                 const common::ObString &tenant_name, const common::ObString& name,
-                                 common::ObConfigStrListItem &ret_item, const bool lock_required = true);
   int get_proxy_config_with_level(const ObVipAddr &addr, const common::ObString &cluster_name,
                                   const common::ObString &tenant_name, const common::ObString& name,
                                   common::ObConfigItem &ret_item, const ObString level, bool &found, const bool lock_required = true);
@@ -137,7 +134,6 @@ private:
   int execute_and_commit_config(const ObString &sql, const ObConfigHandler &handler, ObFnParams &params, const int64_t row_num);
   int handle_dml_stmt(common::ObString &sql, ParseResult& parse_result, ObArenaAllocator&allocator);
   int handle_select_stmt(common::ObString &sql, obproxy::ObConfigV2Handler *v2_handler);
-
   static int init_callback(void *data, int argc, char **argv, char **column_name);
   static int sqlite3_callback(void *data, int argc, char **argv, char **column_name);
 private:

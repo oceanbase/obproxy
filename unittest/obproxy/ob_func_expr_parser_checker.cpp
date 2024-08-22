@@ -10,8 +10,6 @@
  * See the Mulan PubL v2 for more details.
  */
 
-#define USING_LOG_PREFIX PROXY
-
 #include <fstream>
 #include <string>
 #include <dirent.h>
@@ -24,12 +22,14 @@
 #include "lib/oblog/ob_log.h"
 #define private public
 
+
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::opsql;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::proxy;
 
 #define DUMP_RESULT(fmt, args...) if (is_verbose_) fprintf(result_file_ ? result_file_ : stdout, fmt, ##args)
+
 
 namespace oceanbase
 {
@@ -115,7 +115,6 @@ ObProxyParseString ObFuncExprParserChecker::get_value(std::string &extra_str, co
                                                       std::size_t &pos)
 {
   ObProxyParseString ret_str;
-  memset(&ret_str, 0, sizeof(ObProxyParseString));
   ret_str.str_len_ = 0;
   std::size_t key_index = extra_str.find(key_name, pos);
   if (key_index != std::string::npos) {

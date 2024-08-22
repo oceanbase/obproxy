@@ -183,6 +183,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
       expr_sql += static_cast<int32_t>(pos - expr_sql_str);
     }
 
+    //
     if (OBPROXY_T_TEXT_PS_PREPARE == stmt_type || OBPROXY_T_TEXT_PS_EXECUTE == stmt_type) {
       int i, j, index = 0;
       replace_sql_len = expr_sql.length();
@@ -190,7 +191,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
         ret = OB_ALLOCATE_MEMORY_FAILED;
         PROXY_LOG(WDIAG, "fail to alloc mem", "alloc_size", replace_sql_len, K(ret));
       } else {
-        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; remove escape symbols
+        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; 去除转义符号
         for (i = 0; i < expr_sql.length() - 1; ++i) {
           if (expr_sql[i] == 0x5c && (expr_sql[i+1] == 0x27 || expr_sql[i+1] == 0x22)) {
             // do nothing
@@ -200,7 +201,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
         }
         replace_sql_str[index++] = expr_sql[i];
 
-        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; remove trailing single quotes
+        // PREPARE ps_stmt FROM 'select * from test9 where ID = \\'001\\''; 去除末尾的单引符号
         if (replace_sql_str[index-3] == 0x27 || replace_sql_str[index-3] == 0x22) {
           for (j = index - 3; j < index - 1; ++j) {
             replace_sql_str[j] = replace_sql_str[j+1];

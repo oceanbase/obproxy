@@ -37,7 +37,7 @@ namespace obproxy
 {
 namespace obutils
 {
-static const char *INADDR_ANY_IP      = "0.0.0.0";
+static const char *INADDR_ANY_IP = "0.0.0.0";
 static const char *INADDR_LOOPBACK_IP = "127.0.0.1";
 
 static const char *GET_PROXY_INFO_SQL =
@@ -135,7 +135,7 @@ static const char *GET_PROXY_ALL_VIP_TENANT_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ vid, vip, vport, tenant_name, cluster_name, info FROM %s LIMIT %ld";
 
 static const char *JSON_REQUEST_TARGET = "REQUEST_TARGET";
-static const char *JSON_RW_TYPE        = "RW_TYPE";
+static const char *JSON_RW_TYPE = "RW_TYPE";
 
 
 int ObProxyTableProcessorUtils::get_proxy_info(ObMysqlProxy &mysql_proxy,
@@ -188,7 +188,7 @@ int ObProxyTableProcessorUtils::fill_proxy_info(ObMysqlResultHandler &result_han
                                                 ObProxyServerInfo &proxy_info)
 {
   int ret = OB_SUCCESS;
-  int64_t tmp_real_str_len = 0;
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
   char cmd_str_buf[OB_MAX_PROXY_HOT_UPGRADE_CMD_LEN + 1];
   int64_t cmd_str_len = 0;
   const ObProxyKernelRelease kernel_release = get_global_config_server_processor().get_kernel_release();
@@ -475,7 +475,7 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     ObVipTenantCache::VTHashMap &cache_map)
 {
   int ret = OB_SUCCESS;
-  int64_t tmp_real_str_len = 0;
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
   int64_t vid = 0;
   int64_t vport = 0;
   char vip[MAX_IP_ADDR_LENGTH];
@@ -527,6 +527,8 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "cluster_name", cluster_name);
     PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "info", info);
 
+    // info字段之前保留未使用，这里保存json字符串表示一些配置信息，目前格式为{"REQUEST_TARGET":1, "RW_TYPE":0}，
+    // 取值信息参考文档
     if (OB_SUCC(ret) && !info.empty()) {
       if (OB_FAIL(parser.parse(info.ptr(), info.length(), info_config))) {
         LOG_WDIAG("parse json failed", K(ret), K(info));
@@ -675,7 +677,7 @@ int ObProxyTableProcessorUtils::get_proxy_local_addr(ObAddr &addr)
 
   // get inbound ip and port
   if (OB_LIKELY(info.is_inherited_)) {
-    // Does not support ipv6 yet
+    // 暂未支持ipv6
     if (OB_UNLIKELY(NO_FD == info.ipv4_fd_)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("this process is inherited born, but listen fd is invalid",

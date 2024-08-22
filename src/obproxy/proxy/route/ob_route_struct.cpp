@@ -71,6 +71,10 @@ ObString ObProxyReplicaLocation::get_replica_type_string(const ObReplicaType typ
       string = ObString::make_string("ENCRYPTION_LOGONLY");
       break;
     }
+    case REPLICA_TYPE_COLUMNSTORE: {
+      string = ObString::make_string("COLUMNSTORE");
+      break;
+    }
     case REPLICA_TYPE_MAX: {
       string = ObString::make_string("MAX");
       break;
@@ -324,7 +328,7 @@ void ObRouteEntry::check_and_set_expire_time(const uint64_t tenant_version, cons
   if (AVAIL == state_ && !is_sys_dummy_entry) {
     if (tenant_version != tenant_version_) {
       tenant_version_ = tenant_version;
-      // -1 means the change comes from a locality change
+      // -1表示变更来自于locality变更
       current_expire_time_config_ = TENANT_LOCALITY_CHANGE_TIME_CONFIG;
       period_us = TENANT_LOCALITY_CHANGE_TIME;
       time_for_expired_ = ObRandomNumUtils::get_random_half_to_full(period_us) + common::ObTimeUtility::current_time();

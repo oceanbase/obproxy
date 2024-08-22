@@ -685,15 +685,15 @@ inline int ObSocketManager::handle_ssl_error(int tmp_code)
       ret = common::OB_SSL_ERROR;
       PROXY_NET_LOG(WDIAG, "the ssl peer has closed", K(ret));
       break;
+    // I/O error need check errno to get more info
     case SSL_ERROR_SYSCALL: {
       unsigned long e = ERR_get_error();
       ret = common::OB_SSL_ERROR;
       if (e == 0) {
-        ret = common::OB_SSL_ERROR;
         PROXY_NET_LOG(INFO, "the ssl peer has closed with no error", K(ret));
       } else {
         ret = ob_get_sys_errno();
-        // Shouldn't have come here, be defensive
+        // 不应该走到这，做一下防御
         if (common::OB_SUCCESS == ret) {
           ret = common::OB_SSL_ERROR;
         }

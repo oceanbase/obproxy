@@ -153,23 +153,27 @@ private:
 class ObRpcExprCalcTool 
 {
 public:
-  static int eval_rowkey_index(const ObProxyPartKeyInfo &part_info,
-                               const common::ObIArray<common::ObString> &rowkey_columns_name,
-                               const common::ObIArray<common::ObString> &part_columns_name,
+  static int eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                ObProxyPartKeyLevel level,
-                               common::ObIArray<int64_t> &rowkey_index);
+                               const common::ObIArray<common::ObString> &rowkey_columns_name,
+                               common::ObIArray<int64_t> &rowkey_index,
+                               common::ObIArray<int64_t> &part_info_index);
 
-  // eval part key from rowkey, stored in eval_rowkey
-  static int eval_rowkey_values(common::ObArenaAllocator &allocator,
-                                const common::ObRowkey &rowkey,
+      // eval part key from rowkey, stored in eval_rowkey
+  static int eval_rowkey_values(ObProxyPartInfo &proxy_part_info,
+                                const ObRowkey &rowkey,
+                                common::ObArenaAllocator &allocator,
                                 common::ObIArray<int64_t> &rowkey_index,
-                                common::ObRowkey &eval_part_rowkey);
+                                common::ObIArray<int64_t> &part_info_index,
+                                ObRowkey &eval_part_rowkey,
+                                const obkv::ObTableEntityType entity_type);
   static int do_partition_id_calc_for_obkv(opsql::ObExprResolverResult &resolve_result,
                                            // ObRpcClientSessionInfo &client_info,
                                            ObProxyPartInfo &part_info,
                                            common::ObIAllocator &allocator,
                                            common::ObIArray<int64_t> &partition_ids,
                                            common::ObIArray<int64_t> &ls_ids);
+  static void trim_part_key_name(const ObString &part_key_name, ObString &trim_name);
 };
 
 class ObExprCalcTool {
@@ -180,7 +184,8 @@ public:
                                            common::ObDataTypeCastParams &dtc_params);
   static int build_tz_info(ObClientSessionInfo *session_info,
                            common::ObObjType obj_type,
-                           common::ObTimeZoneInfo &tz_info);
+                           common::ObTimeZoneInfo &tz_info,
+                           const ObDataTypeCastParams *dtc_params = NULL);
 
   static int build_tz_info_for_all_type(ObClientSessionInfo *session_info,
                                         common::ObTimeZoneInfo &tz_info);

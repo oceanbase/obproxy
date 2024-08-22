@@ -85,8 +85,8 @@ namespace proxy
 class ObRespPacketAnalyzeResult;
 enum ObPacketFoldType {
   OB_PACKET_FOLD_TYPE_NONE,
-  OB_PACKET_FOLD_TYPE_ROW,
-  OB_PACKET_FOLD_TYPE_COL_DEF,
+  OB_PACKET_FOLD_TYPE_ROW, // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset_row.html
+  OB_PACKET_FOLD_TYPE_COL_DEF, // https://dev.mysql.com/doc/dev/mysql-server/latest/page_protocol_com_query_response_text_resultset_column_definition.html
 };
 enum ObPacketRecordType {
   OB_PACKET_RECORD_TYPE_MYSQL = 0,

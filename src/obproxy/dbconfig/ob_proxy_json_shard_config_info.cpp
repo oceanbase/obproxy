@@ -48,6 +48,7 @@ ObProxyShardRuleInfo::ObProxyShardRuleInfo()
 
 bool ObProxyShardRuleInfo::is_valid() const
 {
+  // 走表达式新的计算逻辑，只要expr不为空就有效
   if (NULL != expr_) {
     return true;
   } else {

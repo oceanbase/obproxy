@@ -71,7 +71,7 @@ int ObSQLPrometheus::handle_prometheus(const ObClientSessionInfo &cs_info,
   if (cs_info.is_sharding_user()) {
     cs_info.get_logic_database_name(logic_database_name);
   } else {
-    //shardng mode no need physic datasource
+    //这个函数只会处理 session 链接数, 在 sharding 模式下就不需要物理数据源了
     cs_info.get_cluster_name(cluster_name);
     cs_info.get_tenant_name(tenant_name);
     cs_info.get_database_name(database_name);

@@ -63,7 +63,7 @@ int ObResourceUnitTableProcessor::get_config_params(void* args,
       ret = OB_INVALID_ARGUMENT;
       LOG_WDIAG("fields is null", K(ret));
     } else {
-      // The storage format is:[cluster|tenant|name|value]
+      // 存储格式为[cluster|tenant|name|value](
       for (int64_t i = 0; OB_SUCC(ret) && i < fields->field_num_; i++) {
         SqlField* sql_field = fields->fields_.at(i);
         if (index >= sql_field->column_values_.count()) {
@@ -210,7 +210,7 @@ int ObResourceUnitTableProcessor::handle_delete_config(
     ObString& cluster_name, ObString& tenant_name, ObString& name_str, const bool need_to_backup)
 {
   int ret = OB_SUCCESS;
-  // note: Now only supports the deletion of cluster and tenant information
+  // note: 现在只支持删除集群、租户两列信息
   if (name_str.empty()) {
     if (OB_FAIL(get_global_conn_table_processor().conn_handle_delete_config(cluster_name, tenant_name, need_to_backup))) {
       LOG_WDIAG("fail to handle delete conn config", K(ret), K(cluster_name), K(tenant_name));

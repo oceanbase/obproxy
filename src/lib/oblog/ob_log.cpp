@@ -2127,23 +2127,23 @@ void ObLogger::async_log_message(const ObLogFDType type,
 
 
 void ObLogger::log_message_kv(const char *mod_name,
-                                     const int32_t level,
-                                     const char *file,
-                                     const int32_t line,
-                                     const char *function,
-                                     const char *info_string)
+                              const int32_t level,
+                              const char *file,
+                              const int32_t line,
+                              const char *function,
+                              const char *info_string)
 {
   const ObLogFDType type = (NULL == mod_name ? FD_XFLUSH_FILE : FD_DEFAULT_FILE);
   log_message_kv(type, mod_name, level, file, line, function, info_string);
 }
 
 void ObLogger::log_message_kv(const ObLogFDType type,
-                                     const char *mod_name,
-                                     const int32_t level,
-                                     const char *file,
-                                     const int32_t line,
-                                     const char *function,
-                                     const char *info_string)
+                              const char *mod_name,
+                              const int32_t level,
+                              const char *file,
+                              const int32_t line,
+                              const char *function,
+                              const char *info_string)
 {
   int ret = common::OB_SUCCESS;
   LogBuffer *log_buffer = NULL;

@@ -27,7 +27,7 @@ namespace obproxy
 namespace proxy
 {
 
-const static int64_t DBKEY_COUNT = 1;
+const static int64_t DBKEY_COUNT = 199;
 
 class TestBlowFish : public ::testing::Test
 {

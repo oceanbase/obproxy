@@ -175,7 +175,7 @@ int ObWhiteListTableProcessor::set_ip_list(ObString &cluster_name, ObString &ten
       if (ip_list[pos] == ',' || pos == ip_list.length() - 1 || ip_list[pos] == '/') {
         char buf[64];
         int64_t len = static_cast<int64_t>(ip_list.ptr() + pos - start);
-        // to the end
+        // 到了结尾
         if (pos == ip_list.length() - 1) {
           len++;
         }
@@ -429,9 +429,8 @@ void ObWhiteListTableProcessor::print_config()
 }
 
 uint32_t ObWhiteListTableProcessor::to_little_endian(uint32_t value) {
-  // Regardless of whether the current host is big endian or little endian,
-  // the storage format of uint32_t is changed to the same as the little endian type
-  // Because the network sequence is a big-endian type, the conversion is performed directly
+  // 无论目前主机是大端还是小端，uint32_t的存储格式都改为和小端类型一样
+  // 因为网络序为大端类型，直接进行转换
   return __bswap_32 (value);
 }
 

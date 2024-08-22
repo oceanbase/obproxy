@@ -317,7 +317,6 @@ int ObMysqlRequestBuilder::build_binlog_login_packet(ObMysqlSM *sm,
   OMPKHandshakeResponse tg_hsr = client_info.get_login_req().get_hsr_result().response_;
   tg_hsr.set_username(client_info.get_login_req().get_hsr_result().full_name_);
   tg_hsr.set_seq(1);
-  tg_hsr.reset_connect_attr();
 
   return packet::ObMysqlPacketWriter::write_packet(mio_buf, tg_hsr);
 }

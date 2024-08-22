@@ -258,6 +258,10 @@ inline bool ObUnixNetVConnection::calculate_towrite_size(int64_t &towrite, bool 
     towrite = ntodo;
   }
 
+  /* 有的地方依赖这里提前调用回调函数, 比如建连, 先触发写事件, 但是需要 Server 先发数据, 所以这里先回调, 后续就不用写数据了
+   * 但是有的地方缺需要先写数据再执行回调, 比如 tunnel 里, 回调函数里会检查是否真正写了数据, 才决定是否放开上游的限流
+   * 所以这里加一个 towrite < = 0. 只有当不需要真正写数据时, 才提前执行回调
+   */
   if (OB_UNLIKELY(towrite <= 0 && towrite < ntodo && writer->write_avail() > 0)) {
     if (EVENT_CONT == write_signal_and_update(VC_EVENT_WRITE_READY)) {
       if ((ntodo = write_.vio_.ntodo()) <= 0) {
@@ -704,7 +708,7 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
 
           block = block->next_;
 
-          //openssl not support iovec, just need one buffer
+          //openssl 接口不支持iovec格式，只需要一个buffer
           if (using_ssl_) {
             if (NULL != block) {
               len = block->read_avail();
@@ -762,6 +766,9 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
     PROXY_NET_LOG(DEBUG, "fail to check_write_state", K(this));
   } else {
     ObIOBufferReader &reader = *(write_.vio_.buffer_.reader());
+    /* write_.vio_.buffer_ 中的 reader 可能在 write_complete 事件中被干掉
+     * 所以不能直接使用指针, 只能用指针来比较
+     */
     ObIOBufferReader *old_reader = write_.vio_.buffer_.reader();
     is_done = calculate_towrite_size(towrite, signalled);
 
@@ -781,8 +788,8 @@ inline void ObUnixNetVConnection::write_to_net(ObEThread &thread)
     if(!is_done) {
       int64_t read_avail = reader.read_avail();
       if (0 == read_avail) {
-        /* compare new reader and old reader. because reader maybe modify on write_complete event
-         * if not same, get read avail from new reader
+        /* 可能写事件触发后, 更换了 reader, 需要再次触发写事件
+         * 所以这里换成新的 reader, 来判断是否还有要写的数据
          */
         ObIOBufferReader *new_reader = write_.vio_.buffer_.reader();
         if (OB_UNLIKELY(NULL != new_reader && new_reader != old_reader)) {
@@ -988,8 +995,8 @@ ObVIO *ObUnixNetVConnection::do_io_read(
   if (NULL != buf) {
     read_.vio_.buffer_.writer_for(buf);
     io_type_ = IO_READ;
-    // SSL_read maybe trigger write and SSL_write maybe trigger read
-    // so reenable read
+    // SSL打乱了读写逻辑，SSL_read能触发读写，SSL_write能触发读写，所以
+    // 重新reenable一下
     if (!read_.enabled_ || using_ssl_) {
       read_.vio_.reenable();
     }
@@ -1013,8 +1020,8 @@ ObVIO *ObUnixNetVConnection::do_io_write(
   if (NULL != reader) {
     write_.vio_.buffer_.reader_for(reader);
     io_type_ = IO_WRITE;
-    // SSL_read maybe trigger write and SSL_write maybe trigger read
-    // so reenable write
+    // SSL打乱了读写逻辑，SSL_read能触发读写，SSL_write能触发读写，所以
+    // 重新reenable一下
     if (nbytes > 0 && (!write_.enabled_ || using_ssl_)) {
       if (using_ssl_) {
         write_.triggered_ = true;
@@ -1204,11 +1211,11 @@ int ObUnixNetVConnection::set_virtual_addr()
   get_remote_addr();
 
   if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
-    // Simulate public cloud SLB to assign IP addresses
-    // Get the real client address first, then modify the virutal address
+    // 模拟公有云的SLB分配IP地址
+    // 先获取 real client 地址, 然后修改 virutal 地址
     do_set_virtual_addr();
     if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
-      PROXY_CS_LOG(WARN, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
+      PROXY_CS_LOG(WDIAG, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
                    get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
     } else {
       virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
@@ -1683,8 +1690,8 @@ int ObUnixNetVConnection::ssl_init(const SSLType ssl_type,
   return ret;
 }
 
-// SSL_read maybe trigger write and SSL_write maybe trigger read
-// so adjust enable_ and triggered_ value 
+// do_ssl_io要模拟正常的读写逻辑，因为SSL_read和SSL_write都会
+// 触发读写打乱了顺序，所以通过调整enable和trigger使符合预期
 void ObUnixNetVConnection::do_ssl_io(ObEThread &thread)
 {
   int ret = OB_SUCCESS;

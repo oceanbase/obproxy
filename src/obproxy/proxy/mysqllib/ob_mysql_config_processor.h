@@ -109,6 +109,9 @@ public:
   CfgBool enable_bad_route_reject_;
   CfgBool enable_cluster_checkout_;
   CfgBool enable_client_ip_checkout_;
+#ifdef BUILD_OPENSOURCE
+  CfgBool enable_force_request_follower_;
+#endif
   CfgBool enable_proxy_scramble_;
   CfgBool enable_compression_protocol_;
   CfgBool enable_ob_protocol_v2_;

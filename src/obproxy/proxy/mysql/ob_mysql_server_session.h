@@ -180,7 +180,7 @@ public:
   DECLARE_TO_STRING;
 
 public:
-  // Round Trip Time between proxy and server, 200ms, choose a better later
+  // Round Trip Time between proxy and server, 200ms, choose a better later @gujian
   static const int64_t RTT_BETWEEN_PROXY_AND_SERVER = HRTIME_MSECONDS(200);
   // when receive 'quit' cmd, obproxy should disconnect(in 1ms) after sending it to observer
   static const int64_t QUIT_TIMEOUT = HRTIME_MSECONDS(1);

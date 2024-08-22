@@ -84,10 +84,10 @@ bool ObConnTableProcessor::check_and_inc_conn(
     DRWLock::RDLockGuard guard(rwlock_);
     if (OB_FAIL(get_vt_conn_object(cluster_name, tenant_name, ip_name, vt_conn))) {
       if (OB_ENTRY_NOT_EXIST == ret) {
-        // Scheme review comments: Connections without configuration information are allowed to access
+        // 方案评审意见：没有配置信息的连接都允许接入
         LOG_DEBUG("get vip tenant connect failed", K(ret));
       } else {
-        // Other errors, access denied
+        // 其他错误，拒绝接入
         dec_conn(cluster_name, tenant_name, ip_name);
         throttle = true;
       }
@@ -352,7 +352,7 @@ int ObConnTableProcessor::conn_rollback()
   int ret = OB_SUCCESS;
   LOG_INFO("conn rollback");
   DRWLock::WRLockGuard guard(rwlock_);
-  // The backup can be rolled back only if the backup is successful
+  // 备份成功前提下才能回滚
   if (OB_LIKELY(conn_backup_status_)) {
     if (OB_FAIL(vt_conn_cache_.recover())) {
       LOG_WDIAG("recover connect cache failed");

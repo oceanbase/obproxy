@@ -320,7 +320,9 @@ struct SqlField {
   ObProxyVariantString column_name_;
 
   common::ObSEArray<SqlColumnValue, 3> column_values_;
-  // TODO: erase deprecated
+  //下面两个将被替换成数组的，单个的后续将被删除，目前为了保障编译先保留
+  //deprecated
+  //TODO:下个版本迭代删除以下两个变量
   ObProxyTokenType value_type_;
   int64_t  column_int_value_;
   ObProxyVariantString column_value_;
@@ -533,6 +535,7 @@ struct ObSqlParseResult
       has_last_insert_id_(false),
       has_found_rows_(false),
       has_row_count_(false),
+      has_last_trace_id_(false),
       has_explain_(false),
       has_explain_route_(false),
       has_simple_route_info_(false),
@@ -545,7 +548,7 @@ struct ObSqlParseResult
       is_xa_start_stmt_(false),
       is_binlog_related_(false),
       is_sharding_req_(false) {}
-  ~ObSqlParseResult() { release(); }
+  ~ObSqlParseResult() { reset(); }
   void release();
   void clear_proxy_stmt();
   void reset(bool is_reset_origin_db_table = true);
@@ -577,6 +580,7 @@ struct ObSqlParseResult
   bool is_select_tx_ro() const { return OBPROXY_T_SELECT_TX_RO == stmt_type_; }
   bool is_select_proxy_version() const { return OBPROXY_T_SELECT_PROXY_VERSION == stmt_type_; }
   bool is_select_route_addr() const { return OBPROXY_T_SELECT_ROUTE_ADDR == stmt_type_; }
+  bool is_select_global_port() const { return OBPROXY_T_SELECT_GLOBAL_PORT == stmt_type_; }
   bool is_set_route_addr() const { return OBPROXY_T_SET_ROUTE_ADDR == stmt_type_; }
   bool is_set_ob_read_consistency() const { return OBPROXY_T_SET_OB_READ_CONSISTENCY == stmt_type_; }
   bool is_set_tx_read_only() const { return OBPROXY_T_SET_TX_READ_ONLY == stmt_type_; }
@@ -702,6 +706,7 @@ struct ObSqlParseResult
   bool has_last_insert_id() const { return has_last_insert_id_; }
   bool has_found_rows() const { return has_found_rows_; }
   bool has_row_count() const { return has_row_count_; }
+  bool has_last_trace_id() const { return has_last_trace_id_; }
   bool has_explain() const { return has_explain_; }
   bool has_explain_route() const { return has_explain_route_; }
   bool has_simple_route_info() const { return has_simple_route_info_; }
@@ -827,6 +832,7 @@ struct ObSqlParseResult
       has_last_insert_id_ = other.has_last_insert_id_;
       has_found_rows_ = other.has_found_rows_;
       has_row_count_ = other.has_row_count_;
+      has_last_trace_id_ = other.has_last_trace_id_;
       has_explain_ = other.has_explain_;
       has_explain_route_ = other.has_explain_route_;
       has_simple_route_info_ = other.has_simple_route_info_;
@@ -914,6 +920,7 @@ struct ObSqlParseResult
     has_last_insert_id_ = other.has_last_insert_id_;
     has_found_rows_ = other.has_found_rows_;
     has_row_count_ = other.has_row_count_;
+    has_last_trace_id_ = other.has_last_trace_id_;
     is_dblink_name_ = other.is_dblink_name_;
     is_table_lock_related_ = other.is_table_lock_related_;
     has_simple_route_info_ = other.has_simple_route_info_;
@@ -987,29 +994,22 @@ private:
   common::ObString database_name_;
   common::ObString origin_table_name_;
   common::ObString origin_database_name_;
-
-  // internal select info
   common::ObString col_name_;
-
   common::ObString part_name_;
   ObPartNameBuf part_name_buf_;
-  // text ps
   common::ObString text_ps_name_;
   int64_t batch_insert_values_count_;
   char* text_ps_buf_;
   int32_t text_ps_buf_len_;
-
   int64_t hint_query_timeout_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
   common::ObString trace_id_;
   common::ObString rpc_id_;
   char trace_id_buf_[common::OB_MAX_OBPROXY_TRACE_ID_LENGTH];
   char rpc_id_buf_[common::OB_MAX_OBPROXY_TRACE_ID_LENGTH];
-
   ParseResult *ob_parser_result_;
   ObProxyStmt* proxy_stmt_;
   ObTargetDbServer *target_db_server_;
-
   ObProxyBasicStmtType stmt_type_;
   ObProxyBasicStmtSubType cmd_sub_type_;
   ObProxyErrorStmtType cmd_err_type_;
@@ -1024,12 +1024,12 @@ private:
   bool use_dbp_hint_;
   bool use_column_value_from_hint_;
   bool is_multi_semicolon_in_stmt_;
-
   bool has_connection_id_;
   bool has_sys_context_;
   bool has_last_insert_id_;
   bool has_found_rows_;
   bool has_row_count_;
+  bool has_last_trace_id_;
   bool has_explain_;
   bool has_explain_route_;
   bool has_simple_route_info_;
@@ -1046,12 +1046,12 @@ private:
   bool is_table_lock_related_;
 };
 
-const int OB_T_IDENT_NUM_CHILD                   = 0;
-const int OB_T_RELATION_FACTOR_NUM_CHILD         = 2;
-const int OB_T_COLUMN_REF_NUM_CHILD              = 3;
-const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD        = 5;
-const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD        = 2;
-const int OB_T_INDEX_NUM_CHILD                   = 3;
+const int OB_T_IDENT_NUM_CHILD = 0;
+const int OB_T_RELATION_FACTOR_NUM_CHILD = 2;
+const int OB_T_COLUMN_REF_NUM_CHILD     = 3;
+const int OB_T_ALIAS_TABLE_NAME_NUM_CHILD = 5;
+const int OB_T_ALIAS_CLUMN_NAME_NUM_CHILD = 2;
+const int OB_T_INDEX_NUM_CHILD = 3;
 const int OB_T_RELATION_FACTOR_IN_HINT_NUM_CHILD = 2;
 
 class ObProxySqlParser
@@ -1102,9 +1102,7 @@ inline void ObSqlParseResult::release()
     text_ps_info_.reset();
   }
 
-  if (fileds_result_.field_num_ > 0) {
-    fileds_result_.reset();
-  }
+  fileds_result_.reset();
 
   if (set_info_.node_count_ > 0) {
     set_info_.reset();
@@ -1179,9 +1177,10 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
     has_dbmesh_hint_ = false;
     use_dbp_hint_ = false;
   }
-
-  allocator_.reset();
+  // proxy_stmt_ must clear before allocator_.reset()
+  // because proxy_stmt_ has pointers to mem allocated by allocator_
   clear_proxy_stmt();
+  allocator_.reset();
 
   ob_parser_result_ = NULL; //TODO check delete it
   batch_insert_values_count_ = 0; // numbers of values like insert into xx(x1,x2) values(..), (..), (..);
@@ -1207,6 +1206,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_last_insert_id_ = false;
   has_found_rows_ = false;
   has_row_count_ = false;
+  has_last_trace_id_ = false;
   has_explain_ = false;
   has_explain_route_ = false;
   has_simple_route_info_ = false;
@@ -1232,13 +1232,15 @@ inline bool ObSqlParseResult::has_dependent_func() const
   // 1. found_rows()
   // 2. row_count()
   // 3. show errors/warnings
+  // 4. last_trace_id()
   return (has_row_count()
           || has_found_rows()
           || has_show_errors()
           || has_show_warnings()
           || is_show_trace_stmt()
           || has_connection_id()
-          || has_sys_context());
+          || has_sys_context()
+          || has_last_trace_id());
 }
 
 inline bool ObSqlParseResult::is_not_supported() const
@@ -1317,6 +1319,7 @@ inline bool ObSqlParseResult::is_internal_request() const
           || is_select_route_addr()
           || is_ping_proxy_cmd()
           || is_select_proxy_status_stmt()
+          || is_select_global_port()
           || is_show_slave_hosts()
           || is_show_relaylog_events()
           || is_binlog_str());

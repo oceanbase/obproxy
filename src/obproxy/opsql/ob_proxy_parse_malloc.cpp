@@ -108,7 +108,7 @@ void obproxy_parse_free(void *ptr)
 }
 
 
-// must implement below 4 func
+// 必须实现以下4个函数, used for fast parser
 void *parser_alloc_buffer(void *malloc_pool, const int64_t buff_size)
 {
   return obproxy_parse_malloc(buff_size, malloc_pool);

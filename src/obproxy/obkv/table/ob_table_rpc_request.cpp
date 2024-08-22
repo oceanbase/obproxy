@@ -22,8 +22,8 @@
 #include "proxy/route/obproxy_expr_calculator.h"
 #include "share/part/ob_part_mgr_util.h"
 #include "lib/hash/ob_hashset.h"
-#include "proxy/rpc_optimize/ob_rpc_req.h"
-#include "proxy/rpc_optimize/rpclib/ob_table_query_async_entry.h"
+#include "proxy/rpc/ob_rpc_req.h"
+#include "proxy/rpc/rpclib/ob_table_query_async_entry.h"
 #include "lib/utility/ob_tablet_id.h"
 
 using namespace oceanbase::obproxy::obkv;
@@ -484,8 +484,13 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
     obkv_info.set_ls_id(partition_ids.at(0));
     set_partition_id(partition_ids.at(0));
   } else if (partition_ids.count() > 1) {
-    obkv_info.set_shard(true);
-    partition_id = common::OB_INVALID_INDEX;
+    if (is_aggregate_query()) {
+      ret = common::OB_NOT_SUPPORTED;
+      LOG_WDIAG("query request with aggregate is a shard request", K(ret), K(rpc_trace_id));
+    } else {
+      obkv_info.set_shard(true);
+      partition_id = common::OB_INVALID_INDEX;
+    }
   } else {
     obkv_info.set_empty_query_result(true);
     partition_id = common::OB_INVALID_INDEX;

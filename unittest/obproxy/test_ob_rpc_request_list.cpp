@@ -1,7 +1,7 @@
 #define USING_LOG_PREFIX PROXY
 #include <gtest/gtest.h>
-#include "proxy/rpc_optimize/net/ob_rpc_server_net_handler.h"
-#include "proxy/rpc_optimize/ob_rpc_req.h"
+#include "proxy/rpc/net/ob_rpc_server_net_handler.h"
+#include "proxy/rpc/ob_rpc_req.h"
 #include "lib/list/ob_intrusive_list.h"
 #include "lib/utility/utility.h"
 

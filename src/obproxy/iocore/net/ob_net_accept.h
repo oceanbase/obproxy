@@ -27,14 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * *************************************************************
- *
- * ObNetAccept is a generalized facility which allows
- * Connections of different classes to be accepted either
- * from a blockable thread or by adaptive polling.
- *
- * It is used by the ObNetProcessor and the ClusterProcessor
- * and should be considered PRIVATE to processor implementations.
  */
 
 #ifndef OBPROXY_NET_ACCEPT_H

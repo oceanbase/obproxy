@@ -47,9 +47,9 @@ int ObSqlParseResult::set_real_table_name(const char *table_name, int64_t len)
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(table_name), K(len));
   } else if (table_name_ != tmp_str) {
-    // if the table name is getted from parser result or real physic table name returned by observer
-    //   1. if mysql mode, case-insensitive
-    //   2. if oracle mode, cmp directly
+    // table name 来自parse result 或者ob 返回的真正物理表名
+    // 1. 如果是mysql 模式，大小写无关，sql 中表名为大写，而真实物理表名为小写时，这里会多一次拷贝操作
+    // 2. 如果是oracle 模式, 可以直接比较
     MEMCPY(dml_buf_.table_name_buf_, table_name, len);
     table_name_.assign_ptr(dml_buf_.table_name_buf_, static_cast<int32_t>(len));
   }
@@ -534,17 +534,18 @@ int ObSqlParseResult::set_var_info(const ObProxyParseResult &parse_result)
         var_node->value_type_ = tmp_node->value_type_;
         if (SET_VALUE_TYPE_INT == tmp_node->value_type_) {
           var_node->int_value_ = tmp_node->int_value_;
-          //Floating point numbers will be converted to double type when saving
+          //浮点数会在保存时转成换 double 类型
         } else if (SET_VALUE_TYPE_NUMBER == tmp_node->value_type_) {
           tmp_str.assign_ptr(tmp_node->str_value_.str_, tmp_node->str_value_.str_len_);
           var_node->str_value_.set_value(tmp_str);
         } else {
-          // compatible observer:
-          //  for user var: the var will be returned from observer by OK packet:
-          //    1. if varchar is digital, observer return value not with '
-          //    2. if varchar is string, observer return vaue with '
-          //   so, varchar type, do not add ' when format SQL
-          //  for sys var: varchar type will add ' on format SQL
+          //为了保持和 OB 兼容
+          //对于用户变量: 如果是 varchar 类型, 在 format SQL 时外层不会加单引号. OB 在额外 OK 包返回时
+          // 1. 如果 varchar 的实际值是数字, 则不带引号, format SQL 不加引号, 正好
+          // 2. 如果 varchar 的实际值是字符串, 在返回的值中会带有引号, format SQL 不加引号, 也正好
+          //对于系统变量: 如果是 varchar 类型, 会在 format SQL 时, 在外层加上单引号
+
+          // 所以对于用户变量, 如果实际值是字符串, 需要加上引号
           if (SET_VAR_USER == tmp_node->type_) {
             tmp_str.assign_ptr(tmp_node->str_value_.str_, tmp_node->str_value_.str_len_);
             if (OBPROXY_QUOTE_T_SINGLE == tmp_node->str_value_.quote_type_) {
@@ -619,6 +620,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   is_dual_request_ = parse_result.is_dual_request_;
   has_found_rows_ = parse_result.has_found_rows_;
   has_row_count_  = parse_result.has_row_count_;
+  has_last_trace_id_  = parse_result.has_last_trace_id_;
   has_explain_ = parse_result.has_explain_;
   has_explain_route_ = parse_result.has_explain_route_;
   has_shard_comment_ = parse_result.has_shard_comment_;
@@ -1451,6 +1453,12 @@ int ObSqlParseResult::load_ob_parse_result(const ParseResult &parse_result,
         }
         break;
       default:
+        if (need_handle_result) {
+          ObProxyDMLStmt* dml_stmt= NULL;
+          if (OB_FAIL(alloc_stmt_and_handle_parse_result(dml_stmt, OBPROXY_T_INVALID, parse_result, sql))) {
+            LOG_WDIAG("fail to handle parse result", K(ret));
+          }
+        }
         LOG_DEBUG("node type", "node_type", get_type_name(node->type_));
     }
   }
@@ -1482,8 +1490,17 @@ int ObSqlParseResult::alloc_stmt_and_handle_parse_result(Stmt*& dml_stmt,
     dml_stmt->set_stmt_property(sql, type, origin_table_name_, &fileds_result_,
                                 use_column_value_from_hint_);
     proxy_stmt_ = dml_stmt;
+    ObString table_name = static_cast<ObProxyDMLStmt*>(proxy_stmt_)->table_name_;
     if (OB_FAIL(proxy_stmt_->handle_parse_result(parse_result))) {
       LOG_WDIAG("handle select parse result failed", K(ret));
+    } else if (OB_UNLIKELY(origin_table_name_.empty()
+               && !table_name.empty())) {
+      // don`t get table name from obproxy parser
+      // but from observer parser
+      LOG_DEBUG("succ to get table name from ob parser", K(table_name));
+      if (OB_FAIL(set_real_table_name(table_name.ptr(), table_name.length()))) {
+        LOG_WDIAG("fail to set real table name", K(table_name), K(ret));
+      }
     }
   }
 
@@ -1543,9 +1560,9 @@ int ObProxySqlParser::split_multiple_stmt(const ObString &stmt,
 
   trim_multi_stmt(stmt, remain);
 
-  // Special handling for empty statements
+  // 对于空语句的特殊处理
   if (OB_UNLIKELY(0 >= remain)) {
-    ObString part;
+    ObString part; // 空串
     ret = queries.push_back(part);
   }
 
@@ -1672,15 +1689,15 @@ int ObProxySqlParser::preprocess_multi_stmt(ObArenaAllocator &allocator,
 
 void ObProxySqlParser::trim_multi_stmt(const common::ObString &stmt, int64_t &remain)
 {
-  // Bypass parser's unfriendly approach to empty query processing: remove the trailing spaces by yourself
+  // 绕过parser对空查询处理不友好的方法：自己把末尾空格去掉
   while (remain > 0 && ISSPACE(stmt[remain - 1])) {
     --remain;
   }
-  //Remove the last '\0' to be compatible with mysql
+  //去除末尾一个‘\0’, 为与mysql兼容
   if (remain > 0 && '\0' == stmt[remain - 1]) {
     --remain;
   }
-  //remove trailing spaces
+  //再删除末尾空格
   while (remain > 0 && ISSPACE(stmt[remain - 1])) {
     --remain;
   }
@@ -1694,7 +1711,7 @@ bool ObProxySqlParser::is_multi_semicolon_in_stmt(const common::ObString &stmt)
   int64_t str_len = 0;
   trim_multi_stmt(stmt, remain);
 
-  // Special handling for empty statements
+  // 对于空语句的特殊处理
   if (OB_UNLIKELY(0 >= remain)) {
   } else {
     get_single_sql(stmt, offset, remain, str_len);

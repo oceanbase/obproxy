@@ -26,6 +26,10 @@ class ObNewRange;
 namespace obproxy
 {
 
+namespace obkv
+{
+enum class ObTableEntityType;
+}
 namespace obutils
 {
 struct SqlFieldResult;
@@ -86,6 +90,7 @@ public:
                          common::ObObj *target_obj,
                          obutils::SqlFieldResult *sql_field_result,
                          const bool has_rowid = false);
+  int calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type);
   void set_route_diagnosis(proxy::ObRouteDiagnosis *route_diagnosis);
 private:
   int preprocess_range(common::ObNewRange &range, common::ObIArray<common::ObBorderFlag> &border_flags);
@@ -130,6 +135,13 @@ private:
   proxy::ObRouteDiagnosis *route_diagnosis_;
 
   DISALLOW_COPY_AND_ASSIGN(ObExprResolver);
+};
+
+class ObFuncExprTool
+{
+public:
+  static int calc_int_value_from_func_parser(ObProxyParamNode *param_node, int64_t &int_value);
+  static int calc_str_value_from_func_parser(ObProxyParamNode *param_node, common::ObString &str_value);
 };
 
 } // end of namespace opsql

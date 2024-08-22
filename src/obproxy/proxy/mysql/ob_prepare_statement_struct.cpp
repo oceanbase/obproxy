@@ -152,8 +152,7 @@ int ObPsIdAddrs::remove_addr(const struct sockaddr &socket_addr) {
 void ObPsIdAddrs::destroy()
 {
   LOG_DEBUG("ps id addrs will be destroyed", KPC(this));
-
-  // release HashSet
+  /* 先调用析构函数释放 HashSet */
   this->~ObPsIdAddrs();
 
   int64_t total_len = sizeof(ObPsIdAddrs);

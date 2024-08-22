@@ -135,7 +135,7 @@ void ObMysqlClientSession::destroy()
   mutex_release(&g_debug_cs_list_mutex);
 #endif
 
-  // here need place before session_info_.destroy, because use some session_info's data
+  // 需要放在 session_info_ destroy 之前, 因为要用到里面的数据
   if (conn_prometheus_decrease_) {
     SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
     conn_prometheus_decrease_ = false;
@@ -398,7 +398,12 @@ int ObMysqlClientSession::new_connection(
               }
             }
           }
-
+#ifdef BUILD_OPENSOURCE
+          // set weak read flag global
+          if (obutils::get_global_proxy_config().enable_force_request_follower) {
+            session_info_.set_is_request_follower_user(true);
+          }
+#endif
           // 2. handle_new_connection no matter convert vip to tenant result.
           if (OB_SUCC(ret)) {
             handle_new_connection();
@@ -455,7 +460,7 @@ int ObMysqlClientSession::get_vip_addr()
   vid = static_cast<int64_t>(client_vc_->get_virtual_vid());
   ct_info_.vip_tenant_.vip_addr_.set(client_vc_->get_virtual_addr(), vid);
 
-  // TODO, get client ip, slb ip from kernal
+  // TODO oushen, get client ip, slb ip from kernal
 
   return ret;
 }
@@ -763,7 +768,7 @@ int ObMysqlClientSession::create_scramble()
 
 uint64_t ObMysqlClientSession::get_next_proxy_sessid()
 {
-  // TODO: Consider IPv6 support
+  // TODO:考虑是否支持IPv6
   static uint64_t next_proxy_sessid = 1;
   const ObAddr &addr = get_global_hot_upgrade_info().local_addr_;
   int64_t ipv4 = static_cast<int64_t>(addr.get_ipv4());
@@ -1005,13 +1010,16 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
         // Timeout - close it
         if (bound_ss_->get_session_info().is_sharding_txn_session()) {
           async_disconnect_code = OB_PROXY_SHARD_TXN_SESSION_CLOSE;
+          PROXY_CS_LOG(DEBUG, "client session closed because of sharding txn server session close");
         } else if (bound_ss_->get_session_info().is_lock_session()) {
           async_disconnect_code = OB_LOCK_SESSION_CLOSED_ERROR;
-        } else {
-          // nothing
+          PROXY_CS_LOG(DEBUG, "client session closed because of lock server session close");
+        } else if (OB_MYSQL_COM_STMT_SEND_LONG_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_
+                   || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_) {
+          async_disconnect_code = OB_PROXY_SEND_LONG_DATA_PIECES_ERROR;
+          PROXY_CS_LOG(DEBUG, "client session closed because of send long data/pieces server session close");
         }
         if (OB_UNLIKELY(OB_SUCCESS != async_disconnect_code)) {
-          PROXY_CS_LOG(DEBUG, "client session because of lock server session close");
           set_closed_key_server_session(bound_ss_);
           async_disconnect_by_internal_reason(async_disconnect_code);
         } else {
@@ -1267,8 +1275,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
       close_cs = true;
       PROXY_CS_LOG(INFO, "receive exit cmd, obproxy will exit, now close client session",
                    K(*this));
-    // here only check in non-sharding mode.
-    // in sharding mode, will switch cluster and set to NULL when use db
+    // 这里只判断非 sharding 的情况. sharding 模式 use db 可能会切换集群, 会置 NULL
     } else if (OB_LIKELY(!session_info_.is_sharding_user() && session_info_.is_oceanbase_server())) {
       if ((OB_ISNULL(cluster_resource_) || OB_UNLIKELY(cluster_resource_->is_deleting())) && !is_proxysys_tenant()) {
         if (NULL != cluster_resource_) {
@@ -1365,6 +1372,7 @@ int ObMysqlClientSession::acquire_svr_session_in_session_pool(const sockaddr &ad
   PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id), K_(schema_key));
   ObShardConnector *shard_conn = session_info_.get_shard_connector();
   ObCommonAddr common_addr;
+  //mysql 有域名模式，使用地址信息来获取
   if (shard_conn != NULL && common::DB_MYSQL == shard_conn->server_type_ && !shard_conn->is_physic_ip_) {
     if (OB_FAIL(common_addr.assign(shard_conn->physic_addr_.config_string_,
       shard_conn->physic_port_.config_string_, shard_conn->is_physic_ip_))) {
@@ -1396,7 +1404,7 @@ int ObMysqlClientSession::acquire_svr_session_no_pool(const sockaddr &addr, ObMy
   int ret = OB_SUCCESS;
   PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id));
   ObShardConnector *shard_conn = session_info_.get_shard_connector();
-  // if shard_conn not null, need use shard_conn
+  // 只要 shard_conn 不为空, 就需要用 shard_conn 来获取。而不能仅仅通过 shardingUser 来判断
   if (OB_UNLIKELY(NULL != shard_conn)) {
     if (OB_FAIL(session_manager_new_.acquire_server_session(shard_conn->shard_name_.config_string_,
                                                             addr, session_info_.get_full_username(), svr_session))) {
@@ -1913,6 +1921,17 @@ bool ObMysqlClientSession::need_print_trace_stat() const
   return (is_proxy_mysql_client_
           && OB_NOT_NULL(inner_request_param_)
           && inner_request_param_->need_print_trace_stat_);
+}
+
+ObProxyProtocol ObMysqlClientSession::get_server_protocol() const
+{
+  ObProxyProtocol ret;
+  if (OB_NOT_NULL(mysql_sm_)) {
+    ret = mysql_sm_->get_server_protocol();
+  } else {
+    ret = ObProxyProtocol::PROTOCOL_MAX;
+  }
+  return ret;
 }
 
 int ObMysqlClientSessionMap::set(ObMysqlClientSession &cs)

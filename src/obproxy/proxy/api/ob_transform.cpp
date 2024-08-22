@@ -8,46 +8,6 @@
  * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
- *
- * *************************************************************
- *
- * A brief file description
- * @section thoughts Transform thoughts
- *
- * - Must be able to handle a chain of transformations.
- * - Any transformation in the chain may fail.
- *   Failure options:
- *     - abort the client (if transformed data already sent)
- *     - serve the client the untransformed document
- *     - remove the failing transformation from the chain and attempt the transformation again (difficult to do)
- *     - never send untransformed document to client if client would not understand it (e.g. a set top box)
- * - Must be able to change response header fields up until the point that TRANSFORM_READ_READY is sent to the user.
- *
- * @section usage Transform usage
- *
- *   -# ObTransformProcessor.open (cont, hooks); - returns "tvc", a ObTransformVConnection if 'hooks != NULL'
- *   -# tvc->do_io_write (cont, nbytes, buffer1);
- *   -# cont->handle_event (TRANSFORM_READ_READY, NULL);
- *   -# tvc->do_io_read (cont, nbytes, buffer2);
- *   -# tvc->do_io_close ();
- *
- * @section visualization Transform visualization
- *
- * @verbatim
- *        +----+     +----+     +----+     +----+
- *   -IB->| T1 |-B1->| T2 |-B2->| T3 |-B3->| T4 |-OB->
- *        +----+     +----+     +----+     +----+
- * @endverbatim
- *
- * Data flows into the first transform in the form of the buffer
- * passed to ObTransformVConnection::do_io_write (IB). Data flows
- * out of the last transform in the form of the buffer passed to
- * ObTransformVConnection::do_io_read (OB). Between each transformation is
- * another buffer (B1, B2 and B3).
- *
- * A transformation is a ObContinuation. The continuation is called with the
- * event TRANSFORM_IO_WRITE to initialize the write and TRANSFORM_IO_READ
- * to initialize the read.
  */
 
 #include "proxy/api/ob_transform_internal.h"

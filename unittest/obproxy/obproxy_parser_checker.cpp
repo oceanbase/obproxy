@@ -164,6 +164,7 @@ void ObProxyParserChecker::print_stat()
 #define YYDEBUG 1
 #if YYDEBUG
 int ob_proxy_parser_utf8_yydebug;
+int ob_proxy_parser_gbk_yydebug;
 #endif
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
@@ -189,6 +190,7 @@ int main(int argc, char **argv)
       case 'D':
 #if YYDEBUG
         ob_proxy_parser_utf8_yydebug = 1;
+        ob_proxy_parser_gbk_yydebug = 1;
 #endif
         break;
       case 'n':

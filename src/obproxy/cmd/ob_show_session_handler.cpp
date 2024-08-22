@@ -59,6 +59,7 @@ enum
   OB_SILC_TID,
   OB_SILC_PID,
   OB_SILC_USING_SSL,
+  OB_SILC_SERVER_PROTOCOL,
   OB_SILC_MAX_SLIST_COLUMN_ID,
 };
 
@@ -90,7 +91,17 @@ enum
   OB_SSC_MAX_STAT_COLUMN_ID,
 };
 
-const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]           = {
+// SessionWeakReadStaleColumnId
+enum
+{
+  OB_SWRS_ADDR = 0,
+  OB_SWRS_TABLE_ID,
+  OB_SWRS_PARTITION_ID,
+  OB_SWRS_FEEDBACK_TIME,
+  OB_SWRS_MAX_STALE_COLUMN_ID,
+};
+
+const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_SLC_ID,           "Id",                 OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SLC_TENANT,       "Tenant",             OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_SLC_USER,         "User",               OB_MYSQL_TYPE_VARCHAR),
@@ -101,16 +112,6 @@ const ObProxyColumnSchema LIST_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]         
     ObProxyColumnSchema::make_schema(OB_SLC_STATE,        "state",              OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_SLC_TID,          "tid",                OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SLC_PID,          "pid",                OB_MYSQL_TYPE_LONG),
-};
-
-// SessionWeakReadStaleColumnId
-enum
-{
-  OB_SWRS_ADDR = 0,
-  OB_SWRS_TABLE_ID,
-  OB_SWRS_PARTITION_ID,
-  OB_SWRS_FEEDBACK_TIME,
-  OB_SWRS_MAX_STALE_COLUMN_ID,
 };
 
 const ObProxyColumnSchema INTERNAL_LIST_COLUMN_ARRAY[OB_SILC_MAX_SLIST_COLUMN_ID] = {
@@ -127,15 +128,16 @@ const ObProxyColumnSchema INTERNAL_LIST_COLUMN_ARRAY[OB_SILC_MAX_SLIST_COLUMN_ID
     ObProxyColumnSchema::make_schema(OB_SILC_TID,           "tid",                OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_SILC_PID,           "pid",                OB_MYSQL_TYPE_LONG),
     ObProxyColumnSchema::make_schema(OB_SILC_USING_SSL,     "using_ssl",          OB_MYSQL_TYPE_LONG),
+    ObProxyColumnSchema::make_schema(OB_SILC_SERVER_PROTOCOL, "server_protocol",  OB_MYSQL_TYPE_VARCHAR),
 };
 
-const ObProxyColumnSchema ATTRIBUTE_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID]      = {
+const ObProxyColumnSchema ATTRIBUTE_COLUMN_ARRAY[OB_SLC_MAX_SLIST_COLUMN_ID] = {
   ObProxyColumnSchema::make_schema(OB_SAC_NAME,   "attribute_name", OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SAC_VALUE,  "value",          OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SAC_INFO,   "info",           OB_MYSQL_TYPE_VARCHAR),
 };
 
-const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID]  = {
+const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID] = {
   ObProxyColumnSchema::make_schema(OB_SVC_NAME,   "variable_name",      OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SVC_VALUE,  "value",              OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SVC_INFO,   "info",               OB_MYSQL_TYPE_VARCHAR),
@@ -143,7 +145,7 @@ const ObProxyColumnSchema VARIABLES_COLUMN_ARRAY[OB_SVC_MAX_VARIABLES_COLUMN_ID]
   ObProxyColumnSchema::make_schema(OB_SVC_FLAG,   "sys_variable_flag",  OB_MYSQL_TYPE_VARCHAR),
 };
 
-const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID]            = {
+const ObProxyColumnSchema STAT_COLUMN_ARRAY[OB_SSC_MAX_STAT_COLUMN_ID] = {
   ObProxyColumnSchema::make_schema(OB_SSC_NAME,   "stat_name",  OB_MYSQL_TYPE_VARCHAR),
   ObProxyColumnSchema::make_schema(OB_SSC_VALUE,  "value",      OB_MYSQL_TYPE_LONGLONG),
 };
@@ -782,6 +784,7 @@ int ObShowSessionHandler::dump_cs_list(const ObMysqlClientSession &cs)
     cells[OB_SILC_TID].set_int(cs.get_current_tid());
     cells[OB_SILC_PID].set_mediumint(getpid());
     cells[OB_SILC_USING_SSL].set_int(static_cast<ObUnixNetVConnection*>(cs.get_netvc())->using_ssl());
+    cells[OB_SILC_SERVER_PROTOCOL].set_varchar(get_proxy_protocol_string(cs.get_server_protocol()));
     row.cells_ = cells;
     row.count_ = OB_SILC_MAX_SLIST_COLUMN_ID;
     if (OB_FAIL(encode_row_packet(row))) {

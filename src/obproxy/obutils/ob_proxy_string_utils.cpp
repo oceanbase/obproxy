@@ -70,8 +70,8 @@ DEF_TO_STRING(ObProxyVariantString)
   J_OBJ_END();
   return pos;
 }
-
-// To simplify, free mem everytime and alloc mem. so best save config which will not change after init
+// 目前为了简单，每次都释放内存，重新分配对应长度内存
+// 最好用于保存配置，初始化之后不需要变化的
 bool ObProxyVariantString::set_value(const common::ObString &value)
 {
   return set_value(value.length(), value.ptr());

@@ -9,7 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
  *
- * **************************************************************
+ * *************************************************************
  *
  * Licensed to the Apache Software Foundation (ASF) under one
  * or more contributor license agreements.  See the NOTICE file
@@ -26,48 +26,6 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
- *
- * **************************************************************
- *
- * Since data is transfered within Traffic Server, this is a two
- * headed beast.  One NetVC on initiating side (active side) and
- * one NetVC on the receiving side (passive side).
- *
- * The two NetVC subclasses, ObPluginVC, are part ObPluginVCCore object.  All
- * three objects share the same mutex.  That mutex is required
- * for doing operations that affect the shared buffers,
- * read state from the ObPluginVC on the other side or deal with deallocation.
- *
- * To simplify the code, all data passing through the system goes initially
- * into a shared buffer.  There are two shared buffers, one for each
- * direction of the connection.  While it's more efficient to transfer
- * the data from one buffer to another directly, this creates a lot
- * of tricky conditions since you must be holding the lock for both
- * sides, in additional this VC's lock.  Additionally, issues like
- * watermarks are very hard to deal with.  Since we try to
- * to move data by ObIOBufferData references the efficiency penalty shouldn't
- * be too bad and if it is a big penalty, a brave soul can reimplement
- * to move the data directly without the intermediate buffer.
- *
- * Locking is difficult issue for this multi-headed beast.  In each
- * ObPluginVC, there a two locks. The one we got from our ObPluginVCCore and
- * the lock from the state machine using the ObPluginVC.  The read side
- * lock & the write side lock must be the same.  The regular net processor has
- * this constraint as well.  In order to handle scheduling of retry events cleanly,
- * we have two event pointers, one for each lock.  sm_lock_retry_event can only
- * be changed while holding the using state machine's lock and
- * core_lock_retry_event can only be manipulated while holding the ObPluginVC's
- * lock.  On entry to ObPluginVC::main_handler, we obtain all the locks
- * before looking at the events.  If we can't get all the locks
- * we reschedule the event for further retries.  Since all the locks are
- * obtained in the beginning of the handler, we know we are running
- * exclusively in the later parts of the handler and we will
- * be free from do_io or reenable calls on the ObPluginVC.
- *
- * The assumption is made (consistent with IO Core spec) that any close,
- * shutdown, reenable, or do_io_{read,write) operation is done by the callee
- * while holding the lock for that side of the operation.
- *
  */
 
 #include "proxy/api/ob_plugin_vc.h"

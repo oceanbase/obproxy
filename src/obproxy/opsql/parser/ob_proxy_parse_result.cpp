@@ -129,6 +129,9 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_SELECT_ROUTE_ADDR:
       str_ret = "SELECT_ROUTE_ADDR";
       break;
+    case OBPROXY_T_SELECT_GLOBAL_PORT:
+      str_ret = "SELECT_GLOBAL_PORT";
+      break;
     case OBPROXY_T_SET_ROUTE_ADDR:
       str_ret = "SET_ROUTE_ADDR";
       break;

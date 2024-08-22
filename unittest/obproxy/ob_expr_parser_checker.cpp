@@ -86,7 +86,6 @@ ObProxyParseString ObExprParserChecker::get_value(std::string &extra_str, const 
                                                   std::size_t &pos)
 {
   ObProxyParseString ret_str;
-  memset(&ret_str, 0, sizeof(ObProxyParseString));
   ret_str.str_len_ = 0;
   std::size_t key_index = extra_str.find(key_name, pos);
   if (key_index != std::string::npos) {
@@ -289,6 +288,7 @@ void ObExprParserChecker::print_stat()
 } // end of namespace oceanbase
 
 int ob_expr_parser_utf8_yydebug;
+int ob_expr_parser_gbk_yydebug;
 using namespace oceanbase::obproxy::test;
 int main(int argc, char **argv)
 {
@@ -313,6 +313,7 @@ int main(int argc, char **argv)
         break;
       case 'D':
         ob_expr_parser_utf8_yydebug = 1;
+        ob_expr_parser_gbk_yydebug = 1;
         oceanbase::common::ObLogger::get_logger().set_log_level("DEBUG");
         OB_LOGGER.set_log_level("DEBUG");
         break;

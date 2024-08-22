@@ -26,7 +26,7 @@ namespace obproxy
 {
 namespace obutils
 {
-// variant string, alloc mem on demand
+// 变长string，根据需要分配空间
 class ObProxyVariantString
 {
 public:

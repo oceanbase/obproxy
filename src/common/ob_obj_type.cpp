@@ -93,6 +93,10 @@ const char *ob_sql_type_str(ObObjType type)
     "GEOMETRY",
     "UDT",
     "DECIMAL INT" /* 50 */
+
+    "COLLECTION",
+    "MYSQL_DATE",
+    "MYSQL_DATETIME",
     ""
   };
   return sql_type_name[OB_LIKELY(type < ObMaxType) ? type : ObMaxType];
@@ -127,6 +131,26 @@ typedef int (*obSqlTypeStrFunc)(char *buff, int64_t buff_length, int64_t length,
       ret = databuff_printf(buff, buff_length, pos, STYPE1 STYPE2);                                     \
     } else {                                                                                            \
       ret = databuff_printf(buff, buff_length, pos, STYPE1 "(%ld)" STYPE2, precision);                  \
+    }                                                                                                   \
+    return ret;                                                                                         \
+  }
+
+//For datetime/timestamp/time
+#define DEF_TYPE_STR_FUNCS_SCALE_DEFAULT_ZERO(TYPE, STYPE1, STYPE2, STYPE3)                             \
+  int ob_##TYPE##_str(char *buff, int64_t buff_length, int64_t &pos, int64_t length, int64_t precision, int64_t scale, ObCollationType coll_type) \
+  {                                                                                                     \
+    int ret = OB_SUCCESS;                                                                               \
+    UNUSED(length);                                                                                     \
+    UNUSED(precision);                                                                                  \
+    UNUSED(coll_type);                                                                                  \
+    if (scale <= 0) {                                                                                   \
+      if (lib::is_oracle_mode()) {                                                                      \
+        ret = databuff_printf(buff, buff_length, pos, STYPE3 STYPE2);                                   \
+      } else {                                                                                          \
+        ret = databuff_printf(buff, buff_length, pos, STYPE1 STYPE2);                                   \
+      }                                                                                                 \
+    } else {                                                                                            \
+      ret = databuff_printf(buff, buff_length, pos, STYPE1 "(%ld)" STYPE2, scale);                      \
     }                                                                                                   \
     return ret;                                                                                         \
   }
@@ -180,6 +204,21 @@ typedef int (*obSqlTypeStrFunc)(char *buff, int64_t buff_length, int64_t length,
     return ret;                                                         \
   }
 
+//For text/blob
+#define DEF_TYPE_TEXT_FUNCS_LENGTH(TYPE, STYPE1, STYPE2)                 \
+  int ob_##TYPE##_str(char *buff, int64_t buff_length, int64_t &pos, int64_t length, int64_t precision, int64_t scale, ObCollationType coll_type) \
+  {                                                                     \
+    int ret = OB_SUCCESS;                                               \
+    UNUSED(length);                                                  \
+    UNUSED(precision);                                                  \
+    UNUSED(scale) ;                                                     \
+    if (CS_TYPE_BINARY == coll_type) {                                  \
+      ret = databuff_printf(buff, buff_length, pos, STYPE2);            \
+    } else {                                                            \
+      ret = databuff_printf(buff, buff_length, pos, STYPE1);            \
+    }                                                                   \
+    return ret;                                                         \
+  }
 
 DEF_TYPE_STR_FUNCS(null, "null", "");
 DEF_TYPE_STR_FUNCS_PRECISION(tinyint, "tinyint", "");
@@ -212,6 +251,15 @@ DEF_TYPE_STR_FUNCS_LENGTH(tinytext, "tinytext", "tinyblob");
 DEF_TYPE_STR_FUNCS_LENGTH(text, "text", "blob");
 DEF_TYPE_STR_FUNCS_LENGTH(mediumtext, "mediumtext", "mediumblob");
 DEF_TYPE_STR_FUNCS_LENGTH(longtext, "longtext", "longblob");
+DEF_TYPE_STR_FUNCS_PRECISION(bit, "bit", "");
+DEF_TYPE_STR_FUNCS(enum, "enum", "");
+DEF_TYPE_STR_FUNCS(set, "set", "");
+DEF_TYPE_STR_FUNCS_PRECISION(number_float, "float", "");
+DEF_TYPE_TEXT_FUNCS_LENGTH(lob, (lib::is_oracle_mode() ? "clob" : "longtext"), (lib::is_oracle_mode() ? "blob" : "longblob"));
+DEF_TYPE_TEXT_FUNCS_LENGTH(json, "json", "json");
+DEF_TYPE_TEXT_FUNCS_LENGTH(geometry, (lib::is_oracle_mode() ? "sdo_geometry" : "geometry"), (lib::is_oracle_mode() ? "sdo_geometry" : "geometry"));
+DEF_TYPE_STR_FUNCS(mysql_date, "mysql_date", "");
+DEF_TYPE_STR_FUNCS_SCALE(mysql_datetime, "mysql_datetime", "")
 
 int ob_empty_str(char *buff, int64_t buff_length, int64_t length, int64_t precision, int64_t scale, ObCollationType coll_type)
 {
@@ -295,13 +343,20 @@ const char *ob_sql_tc_str(ObObjTypeClass tc)
     "UNKNOWN",
     "TEXT",
     "BIT",
-    "ENUMSET",
-    "ENUMSETINNER",
+    "ENUM_SET",
+    "ENUM_SET_INNER",
     "OTIMESTAMP",
     "RAW",
     "INTERVAL",
     "ROWID",
     "LOB",
+    "JSON",
+    "GEOMETRY",
+    "UDT",
+    "DECIMAL_INT",
+    "COLLECTION",
+    "MYSQL_DATE",
+    "MYSQL_DATETIME",
     ""
   };
   return sql_tc_name[OB_LIKELY(tc < ObMaxTC) ? tc : ObMaxTC];

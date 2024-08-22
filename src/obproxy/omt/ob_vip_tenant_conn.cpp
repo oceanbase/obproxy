@@ -230,12 +230,12 @@ int ObVipTenantConnCache::backup()
   int ret = OB_SUCCESS;
 
   //CWLockGuard guard(rwlock_);
-  // Initialization state:
+  // 初始化状态：
   // vt_conn_map_ = vt_conn_map_array[0];
   // replica_vt_conn_map = vt_conn_map_array[1];
   VTHashMap& replica_vt_conn_map = get_conn_map_replica();
   clear_conn_map(replica_vt_conn_map);
-  // Even if an error occurs in the backup process and an error is returned to the cloud platform, vt_conn_map_ is still the previous configuration information
+  // 就算备份过程发生错误，返回给云平台错误，但 vt_conn_map_ 还是之前的配置信息
   VTHashMap::iterator last = vt_conn_map_->end();
   for (VTHashMap::iterator it = vt_conn_map_->begin(); it != last; ++it) {
     ObVipTenantConn* tmp_vt_conn = NULL;

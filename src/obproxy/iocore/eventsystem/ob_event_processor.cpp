@@ -191,7 +191,7 @@ inline int ObEventProcessor::init_one_event_thread(const int64_t index)
     delete t;
     t = NULL;
   } else {
-    // It should be noted here that the thread with index 0 in rich client mode will be created
+    // 这里需要注意，富客户端模式下index为0的线程会被创建
     if (0 == index) {
       this_thread() = t;
       global_mutex = t->mutex_;

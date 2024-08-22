@@ -124,7 +124,7 @@ public:
 
   //mutable obsys::CRWLock rwlock_;
 private:
-  VTHashMap* vt_conn_map_;  // Always point to the latest configuration
+  VTHashMap* vt_conn_map_;  // 始终指向最新的配置
   VTHashMap  vt_conn_map_array[2];
   DISALLOW_COPY_AND_ASSIGN(ObVipTenantConnCache);
 };

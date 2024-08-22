@@ -68,7 +68,7 @@ int ObCpuTableProcessor::init()
   int ret = OB_SUCCESS;
   int tmp_ret = OB_SUCCESS;
   if (OB_SUCCESS != (tmp_ret = cgroup_ctrl_.init())) {
-    // cgroup failure does not affect initialization
+    // cgroup失败不影响初始化
     LOG_DEBUG("fail to init tenant cgroup ctrl", K(tmp_ret));
   }
   return ret;
@@ -178,7 +178,7 @@ int ObCpuTableProcessor::fill_local_cpu_cache(
               has_set_vip = true;
             }
           } else if (p->name_ == JSON_OBPROXY_VALUE) {
-            // note: Since json only supports integers but not doubles for numeric parsing, the JT_STRING type is used here
+            // note:由于json对于数值解析只支持整形不支持double, 这里使用 JT_STRING 类型
             if (OB_FAIL(ObProxyJsonUtils::check_config_info_type(p->value_, json::JT_STRING))) {
               LOG_WDIAG("check config info type failed", K(ret));
             } else {

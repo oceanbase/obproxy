@@ -29,8 +29,27 @@ public:
                              common::ObIArray<size_t> &byte_num,
                              common::ObIArray<size_t> &byte_offset);
 
-  static int kmp_reverse(const char *x, int64_t m, const char *y, int64_t n, int64_t count, int64_t &pos);
-  static int kmp(const char *x, int64_t m, const char *y, int64_t n, int64_t count, int64_t &pos);
+  // This function relies on `kmp_next` to do the calculation of next array
+  static int kmp(const char *pattern,
+                 const int64_t pattern_len,
+                 const char *text,
+                 const int64_t text_len,
+                 const int64_t nth_appearance,
+                 const int32_t *next, /* calculated, size same with pattern */
+                 int64_t &result);
+  static int kmp_next(const char *pattern, const int64_t pattern_len, int32_t *next);
+
+  // This function relies on `kmp_next_reverse` to do the calculation of next array
+  static int kmp_reverse(const char *pattern,
+                         const int64_t pattern_len,
+                         const char *text,
+                         const int64_t text_len,
+                         const int64_t nth_appearance,
+                         const int32_t *next, /* calculated, size same with pattern */
+                         int64_t &result);
+  static int kmp_next_reverse(const char *pattern,
+                              const int64_t pattern_len,
+                              int32_t *next);
 
   DISALLOW_COPY_AND_ASSIGN(ObExprUtil);
 };

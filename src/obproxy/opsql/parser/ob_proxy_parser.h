@@ -91,6 +91,7 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.has_last_insert_id_ = false;
   p.has_found_rows_ = false;
   p.has_row_count_ = false;
+  p.has_last_trace_id_ = false;
   p.has_explain_ = false;
   p.has_explain_route_ = false;
   p.has_simple_route_info_ = false;
@@ -214,7 +215,7 @@ inline int ObProxyParser::init_ob_result(ParseResult &parse_result, const common
   parse_result.is_for_trigger_ = false;
   parse_result.is_dynamic_sql_ = false;
   parse_result.is_batched_multi_enabled_split_ = false;
-  parse_result.realloc_cnt_ = 10; //control hint's alloc
+  parse_result.realloc_cnt_ = 10; //该参数控制hint的分配，OB会改造到
   char *buf = (char *)parse_malloc(new_length, parse_result.malloc_pool_);
 
   parse_result.param_nodes_ = NULL;

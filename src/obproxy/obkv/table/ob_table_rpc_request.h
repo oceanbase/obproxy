@@ -51,6 +51,7 @@ public:
   const ObString &get_database_name() const {return login_request_.database_name_;}
   ObString get_database_name() {return login_request_.database_name_;}
   uint64_t get_ttl_us() const {return login_request_.ttl_us_;}
+  ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC;}
 
   void set_auth_method(uint8_t auth_method) {login_request_.auth_method_ = auth_method;}
   void set_client_type(uint8_t client_type) {login_request_.client_type_ = client_type;}
@@ -63,6 +64,7 @@ public:
   void set_pass_scramble(const ObString &pass_scramble) {login_request_.pass_scramble_ = pass_scramble;}
   void set_database_name(const ObString &database_name) {login_request_.database_name_ = database_name;}
   void set_ttl_us(uint64_t ttl_us) {login_request_.ttl_us_ = ttl_us;}
+  void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
 
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
   virtual int64_t get_encode_size() const override;
@@ -90,7 +92,7 @@ public:
   ObString get_table_name() {return table_request_.table_name_;}
   uint64_t get_table_id() const override {return table_request_.table_id_;}
   uint64_t get_partition_id() const override {return table_request_.partition_id_;}
-  ObTableEntityType get_entity_type() const {return table_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return table_request_.entity_type_;}
   const OB_IGNORE_TABLE_OPERATION &get_table_operation() const {return table_request_.table_operation_;}
   ObTableConsistencyLevel get_consistency_level() const {return table_request_.consistency_level_;}
   bool get_return_rowkey() const {return table_request_.returning_rowkey_;}
@@ -102,7 +104,7 @@ public:
   void set_table_name(const ObString &table_name) {table_request_.table_name_ = table_name;}
   virtual void set_table_id(uint64_t table_id) override {table_request_.table_id_ = table_id;}
   virtual void set_partition_id(uint64_t part_id) override {table_request_.partition_id_ = part_id;}
-  void set_entity_type(ObTableEntityType type) {table_request_.entity_type_ = type;}
+  void set_entity_type(ObTableEntityType type) override {table_request_.entity_type_ = type;}
   void set_table_operation(const OB_IGNORE_TABLE_OPERATION &op)  {table_request_.table_operation_  = op;}
   void set_consistency_level(ObTableConsistencyLevel level) {table_request_.consistency_level_ = level;}
   void set_return_rowkey(bool return_rowkey) {table_request_.returning_rowkey_ = return_rowkey;}
@@ -139,7 +141,7 @@ public:
   int init_as_sub_batch_operation_request(const ObRpcTableBatchOperationRequest &request, const common::ObIArray<int64_t> &sub_index);
   uint64_t get_table_id() const override {return batch_request_.table_id_;}
   uint64_t get_partition_id() const override {return batch_request_.partition_id_;}
-  ObTableEntityType get_entity_type() const {return batch_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return batch_request_.entity_type_;}
   const ObTableBatchOperation &get_table_operation() const {return batch_request_.batch_operation_;}
   ObTableBatchOperation &get_table_operation() {return batch_request_.batch_operation_;}
   ObTableConsistencyLevel get_consistency_level() const {return batch_request_.consistency_level_;}
@@ -153,7 +155,7 @@ public:
   void set_table_name(const ObString &table_name) {batch_request_.table_name_ = table_name;}
   void set_table_id(uint64_t table_id) override {batch_request_.table_id_ = table_id;}
   void set_partition_id(uint64_t part_id) override {batch_request_.partition_id_ = part_id;}
-  void set_entity_type(ObTableEntityType type) {batch_request_.entity_type_ = type;}
+  void set_entity_type(ObTableEntityType type) override {batch_request_.entity_type_ = type;}
   void set_table_operation(const ObTableBatchOperation &op)  {batch_request_.batch_operation_  = op;}
   void set_consistency_level(ObTableConsistencyLevel level) {batch_request_.consistency_level_ = level;}
   void set_option_flag(uint8_t option_flag) { batch_request_.option_flag_ = option_flag; }
@@ -209,7 +211,7 @@ public:
 
   uint64_t get_table_id() const override {return query_request_.table_id_;}
   uint64_t get_partition_id() const override {return query_request_.partition_id_;}
-  ObTableEntityType get_entity_type() const {return query_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return query_request_.entity_type_;}
   const OB_IGNORE_TABLE_QUERY &get_query() const {return query_request_.query_;}
   ObTableConsistencyLevel get_consistency_level() const {return query_request_.consistency_level_;}
   const ObSEArray<int64_t, 1> &get_partition_ids() const { return partition_ids_; }
@@ -220,7 +222,7 @@ public:
   void set_table_name(const ObString &table_name) {query_request_.table_name_ = table_name;}
   void set_table_id(uint64_t table_id) override {query_request_.table_id_ = table_id;}
   void set_partition_id(uint64_t part_id) override {query_request_.partition_id_ = part_id;}
-  void set_entity_type(ObTableEntityType type) {query_request_.entity_type_ = type;}
+  void set_entity_type(ObTableEntityType type) override {query_request_.entity_type_ = type;}
   void set_table_operation(const OB_IGNORE_TABLE_QUERY &query)  {query_request_.query_ = query;}
   void set_consistency_level(ObTableConsistencyLevel level) {query_request_.consistency_level_ = level;}
   void set_partition_ids(ObSEArray<int64_t, 1> &partition_ids) { partition_ids_ = partition_ids; }
@@ -282,7 +284,7 @@ public:
   }
   uint64_t get_table_id() const override {return query_and_mutate_request_.table_id_;}
   uint64_t get_partition_id() const override {return query_and_mutate_request_.partition_id_;}
-  ObTableEntityType get_entity_type() const {return query_and_mutate_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return query_and_mutate_request_.entity_type_;}
   const OB_IGNORE_TABLE_QUERY_AND_MUTATE &get_query_and_mutate() const {return query_and_mutate_request_.query_and_mutate_;}
   // ObTableConsistencyLevel get_consistency_level() const {return query_request_.consistency_level_;}
   const ObSEArray<int64_t, 1> &get_partition_ids() const { return partition_ids_; }
@@ -292,7 +294,7 @@ public:
   void set_table_name(const ObString &table_name) {query_and_mutate_request_.table_name_ = table_name;}
   void set_table_id(uint64_t table_id) override {query_and_mutate_request_.table_id_ = table_id;}
   void set_partition_id(uint64_t part_id) override {query_and_mutate_request_.partition_id_ = part_id;}
-  void set_entity_type(ObTableEntityType type) {query_and_mutate_request_.entity_type_ = type;}
+  void set_entity_type(ObTableEntityType type) override {query_and_mutate_request_.entity_type_ = type;}
   void set_table_operation(const OB_IGNORE_TABLE_QUERY_AND_MUTATE &query_and_mutate)  {query_and_mutate_request_.query_and_mutate_ = query_and_mutate;}
   // void set_consistency_level(ObTableConsistencyLevel level) {query_request_.consistency_level_ = level;}
   void set_partition_ids(ObSEArray<int64_t, 1> &partition_ids) { partition_ids_ = partition_ids; }
@@ -351,7 +353,7 @@ public:
 
   uint64_t get_table_id() const override {return query_request_.table_id_;}
   uint64_t get_partition_id() const override {return query_request_.partition_id_;}
-  ObTableEntityType get_entity_type() const {return query_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return query_request_.entity_type_;}
   const OB_IGNORE_TABLE_QUERY &get_query() const {return query_request_.query_;}
   const ObTableQuerySyncRequest &get_query_request() const {return query_request_;}
   ObTableConsistencyLevel get_consistency_level() const {return query_request_.consistency_level_;}
@@ -369,7 +371,7 @@ public:
   void set_table_name(const ObString &table_name) {query_request_.table_name_ = table_name;}
   void set_table_id(uint64_t table_id) override {query_request_.table_id_ = table_id;}
   void set_partition_id(uint64_t part_id) override {query_request_.partition_id_ = part_id;}
-  void set_entity_type(ObTableEntityType type) {query_request_.entity_type_ = type;}
+  void set_entity_type(ObTableEntityType type) override {query_request_.entity_type_ = type;}
   void set_table_operation(const OB_IGNORE_TABLE_QUERY &query)  {query_request_.query_ = query;}
   void set_consistency_level(ObTableConsistencyLevel level) {query_request_.consistency_level_ = level;}
   void set_partition_ids(ObSEArray<int64_t, 1> &partition_ids) { partition_ids_ = partition_ids; }
@@ -425,6 +427,8 @@ public:
                                 proxy::ObRpcReq &ob_rpc_req,
                                 proxy::ObProxyPartInfo &part_info,
                                 int64_t &partition_id) override;
+  ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC; }
+  void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
   TO_STRING_KV(K_(rpc_packet_meta), K_(direct_load_request));
 private:
   // common::ObArenaAllocator allocator_;
@@ -439,7 +443,7 @@ public:
   const ObTableLSOp &get_operation() const {return ls_request_.ls_op_;}
   ObTableLSOp &get_operation() {return ls_request_.ls_op_;}
 
-  ObTableEntityType get_entity_type() const {return ls_request_.entity_type_;}
+  ObTableEntityType get_entity_type() const override {return ls_request_.entity_type_;}
   ObTableConsistencyLevel get_consistency_level() const {return ls_request_.consistency_level_;}
   uint64_t get_table_id() const {return ls_request_.ls_op_.get_table_id();}
   uint64_t get_ls_id() const {return ls_request_.ls_op_.get_ls_id();}
@@ -448,7 +452,7 @@ public:
   const ObSEArray<ObString, 4> &get_all_properties_names() const { return ls_request_.ls_op_.get_all_properties_names(); }
 
   void set_credential(const ObString &credential) {ls_request_.credential_ = credential;}
-  void set_entity_type(const ObTableEntityType type) {ls_request_.entity_type_ = type;}
+  void set_entity_type(const ObTableEntityType type) override {ls_request_.entity_type_ = type;}
   void set_consistency_level(const ObTableConsistencyLevel level) {ls_request_.consistency_level_ = level;}
   void set_table_id(const uint64_t table_id) {ls_request_.ls_op_.set_table_id(table_id);}
   void set_ls_id(const int64_t ls_id) {ls_request_.ls_op_.set_ls_id(ls_id);}

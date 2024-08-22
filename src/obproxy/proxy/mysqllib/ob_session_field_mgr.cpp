@@ -2943,7 +2943,8 @@ int ObFieldObjCaster::obj_cast(const ObObj &value, const ObSessionSysField &fiel
   } else {
     ObCastCtx cast_ctx(&allocator_, NULL, CM_NONE, ObCharset::get_system_collation());
     ret = ObObjCasterV2::to_type(field.type_, cast_ctx, value, casted_cell_, res_cell);
-    // some sys var is 1 or ON
+    // 处理有些系统变量可以是 1, 也可以是 ON 的情况
+    // 如果目标类型是 int，但 server 返回为 ON
     if (OB_ERR_TRUNCATED_WRONG_VALUE_FOR_FIELD == ret && value.is_varchar() && ObIntType == field.type_) {
       ObString str;
       value.get_varchar(str);

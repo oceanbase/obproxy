@@ -99,7 +99,7 @@ public:
                             uint64_t pmatch_size,
                             common::ObExprStringBuf &string_buf,
                             common::ObIArray<common::ObString> &subexpr_array) const;
-  TO_STRING_KV(K_(inited));
+  TO_STRING_KV(K_(inited), K_(debug_string));
 private:
   void reset_reg();
   int getwc(const common::ObString &text,
@@ -114,6 +114,7 @@ private:
   int convert_reg_err_code_to_ob_err_code(int reg_err) const;
 private:
   bool inited_;
+  ObString debug_string_;
   ob_regex_t reg_;
 };
 }

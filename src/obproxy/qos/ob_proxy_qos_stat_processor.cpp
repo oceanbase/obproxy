@@ -163,7 +163,7 @@ int ObProxyQosStatProcessor::get_target_node(ObProxyQosStatNode *&target_node, c
   }
 
   if (OB_SUCC(ret) && is_child_node_exist) {
-    // root_node_ no need dec ref
+    // root_node_ 不用减引用计数
     node = child_node;
     if (OB_FAIL(get_child_node(reinterpret_cast<ObProxyQosStatNodeMiddle*>(node), tenant_name, child_node, is_child_node_exist))) {
       LOG_WDIAG("fail to get node", KP(node), K(tenant_name), K(ret));
@@ -279,21 +279,21 @@ int ObProxyQosStatProcessor::recursive_do_clean(ObProxyQosStatNodeRoot *node, in
 {
   int ret = OB_SUCCESS;
 
-  // no need acquire lock on traverse. other either read, or insert
+  // 遍历时不需要获取锁, 其他并发情况要么是遍历读, 要么是新增插入
   ObProxyQosStatHashTable::iterator iter = node->get_hash_nodes().begin();
   ObProxyQosStatHashTable::iterator end = node->get_hash_nodes().end();
   for (; OB_SUCC(ret) && iter != end; ) {
-    // check whether parent node's child node exceed time Atomically
+    // 原子的检查父 node 下的每个子 node 是不是超过时间了
     if (iter->inc_and_fetch_idle_period_count() > max_idle_period) {
-      // if exceeded, acquire parent node's write lock
+      // 如果超过了, 获取父 node 的写锁
       if (OB_SUCC(node->get_hash_lock().wrlock())) {
-        // check whether child node exceed time agent
-        // no other handle this parent node, can delete child node safety
+        // 再次检查子 node 是不是超过时间了
+        // 这个时候没有其他并发处理该父 node, 可以放心删除子 node
         if (iter->get_idle_period_count() > max_idle_period) {
           ObProxyQosStatHashTable::iterator tmp_iter = iter;
           ++iter;
           node->get_hash_nodes().remove(&(*tmp_iter));
-          // can release write lock after delete from hash
+          // 从 hash 表中删除后就可以释放写锁了
           node->get_hash_lock().wrunlock();
 
           int64_t count = tmp_iter->count();
@@ -302,18 +302,18 @@ int ObProxyQosStatProcessor::recursive_do_clean(ObProxyQosStatNodeRoot *node, in
           ATOMIC_SAF(&qos_stat_num_, count);
           need_expire_qos_stat_ = false;
         } else {
-          // if othere already modify, release write lock and skip this child node
+          // 如果在获取写锁之前有并发修改, 则释放锁, 并跳过该子 node
           node->get_hash_lock().wrunlock();
           ++iter;
         }
       } else {
-        // if acquire wirte lock fail, skip this child node
+        // 如果获取写锁失败, 则跳过该子 node
         ++iter;
       }
     } else {
-      // if this cihld node do not exceed time
-      //   if leaf node, skip the child node
-      //   if not leaf node, Recursive check the child node
+      // 如果该子 node 没有超过时间
+      //   如果是叶子类型，就直接跳过该子 node
+      //   如果不是叶子类型, 就递归检查该子 node
       if (QOS_NODE_TYPE_LEAF != iter->get_node_type()) {
         if (OB_FAIL(recursive_do_clean(reinterpret_cast<ObProxyQosStatNodeRoot*>(&(*iter)), max_idle_period))) {
           LOG_WDIAG("fail to recursive clean", K(ret));
@@ -369,7 +369,7 @@ int ObProxyQosStatProcessor::start_qos_stat_clean_task()
     LOG_WDIAG("qos_stat_clean_cont should be null here", K_(qos_stat_clean_cont), K(ret));
   } else {
     int64_t interval_us = ObProxyMonitorUtils::get_next_schedule_time(get_global_proxy_config().qos_stat_clean_interval);
-    // avoid getting too close to the current, skip to next time
+    // 第一次避免距离当前太近, 直接跳到下个时间
     interval_us += get_global_proxy_config().qos_stat_clean_interval;
 
     if (interval_us > 0) {

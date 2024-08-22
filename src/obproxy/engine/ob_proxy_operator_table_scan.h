@@ -74,16 +74,12 @@ public:
   void set_request_sql(const ObString &request_sql) { request_sql_ = request_sql; }
   ObString &get_request_sql() { return request_sql_; }
 
-  int set_db_key_names(const common::ObIArray<dbconfig::ObShardConnector*> &db_key_names) {
-    return db_key_names_.assign(db_key_names);
-  }
+  int set_db_key_names(const common::ObIArray<dbconfig::ObShardConnector*> &db_key_names);
   common::ObIArray<dbconfig::ObShardConnector*> &get_db_key_names() {
     return db_key_names_;
   }
 
-  int set_shard_props(const common::ObIArray<dbconfig::ObShardProp*> &shard_props) {
-    return shard_props_.assign(shard_props);
-  }
+  int set_shard_props(const common::ObIArray<dbconfig::ObShardProp*> &shard_props);
   common::ObIArray<dbconfig::ObShardProp*> &get_shard_props() {
     return shard_props_;
   }

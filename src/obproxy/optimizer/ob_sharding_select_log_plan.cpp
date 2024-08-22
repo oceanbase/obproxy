@@ -187,9 +187,9 @@ int ObShardingSelectLogPlan::handle_agg_expr(ObProxyExpr *expr, bool need_add_ca
   int ret = OB_SUCCESS;
 
   if (expr->has_agg()) {
-    // If itself is an aggregate function
+    // 如果自身就是聚合函数
     if (expr->is_agg()) {
-      // If it is an avg aggregate function, it is actually a sum/count calculation function
+      // 如果是 avg 聚合函数, 实际是一个 sum/count 的计算函数
       if (OB_PROXY_EXPR_TYPE_FUNC_AVG == expr->get_expr_type()) {
         ObProxyExprAvg *avg_expr = NULL;
         if (OB_ISNULL(avg_expr = dynamic_cast<ObProxyExprAvg *>(expr))) {
@@ -201,7 +201,7 @@ int ObShardingSelectLogPlan::handle_agg_expr(ObProxyExpr *expr, bool need_add_ca
           LOG_WDIAG("fail to push back to calc expr", KP(avg_expr), K(ret));
         }
       } else {
-        // Other aggregate functions, put into the aggregate function array
+        // 其他聚合函数, 放入聚合函数数组中
         if (OB_FAIL(agg_exprs_.push_back(expr))) {
           LOG_WDIAG("fail to add agg expr to array", K(ret));
         }
@@ -217,7 +217,7 @@ int ObShardingSelectLogPlan::handle_agg_expr(ObProxyExpr *expr, bool need_add_ca
       } else {
         ObSEArray<ObProxyExpr*, 4>& param_array = func_expr->get_param_array();
 
-        // Parse each parameter for further processing
+        // 解析每个参数, 进一步处理
         for (int64_t i = 0; OB_SUCC(ret) && i < param_array.count(); i++) {
           ObProxyExpr* param_expr = param_array.at(i);
           if (OB_FAIL(handle_derived(param_expr))) {
@@ -298,7 +298,7 @@ int ObShardingSelectLogPlan::do_column_need_derived_with_star(ObIArray<ObProxyEx
           bret = false;
         } else if (tmp_table_name == table_name) {
           // bad case: select t1.*  from t1, t3 order by c3;
-          // c3 may be a column in t3, so the table must be the same
+          // c3 可能是 t3 中的列, 所以必须要 table 相同
           bret = false;
         }
       }
@@ -360,13 +360,13 @@ int ObShardingSelectLogPlan::do_column_need_derived(ObIArray<ObProxyExpr*> &expr
         ObString &tmp_column_name = tmp_expr_column->get_column_name();
         ObString &tmp_table_name = tmp_expr_column->get_table_name();
         if (tmp_table_name.empty() || table_name.empty()) {
-          // When there is no table name in the select column:
+          // select 列中没有表名的情况:
           //   select c1 from t1, t3 order by t1.c1;
           //   select c1 from t1, t3 order by c1;
-          //   If both t1 and t3 have c1 column, the execution will report an error
-          // When there is no table name in the order column:
+          //   如果 t1 和 t3 都有 c1 列, 执行会报错
+          // order 列中没有表名的情况:
           //   select t1.c1 from t1, t3 order by c1
-          //   This can be executed correctly, and it is also sorted according to the t1.c1 column
+          //   这样是能正确执行的, 也是按照 t1.c1 列排序
           if (0 == tmp_column_name.case_compare(column_name)) {
             bret = false;
             expr->set_alias_name(tmp_alias_name);
@@ -494,7 +494,7 @@ int ObShardingSelectLogPlan::handle_derived(ObProxyExpr *expr, bool column_first
       ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
       ObIArray<ObProxyExpr*> &select_expr_array = dml_stmt->select_exprs_;
 
-      // Priority is given to finding derived columns, all derived columns have aliases and can be uniquely located
+      // 优先找派生列, 派生列都有别名, 可以唯一定位
       if (bret && do_need_derived(derived_exprs_, expr, column_first, bret)) {
         LOG_WDIAG("fail to do need derived from select expr", K(ret));
       } else if (OB_FAIL(do_need_derived(select_expr_array, expr, column_first, bret))) {
@@ -640,13 +640,15 @@ int ObShardingSelectLogPlan::append_derived_order_by(bool &is_same_group_and_ord
   ObProxyDMLStmt *dml_stmt = static_cast<ObProxyDMLStmt*>(client_request_.get_parse_result().get_proxy_stmt());
   ObIArray<ObProxyGroupItem*> &group_by_exprs = dml_stmt->group_by_exprs_;
   ObIArray<ObProxyOrderItem*> &order_by_exprs = dml_stmt->order_by_exprs_;
+  // memory in order_by_exprs is managed by dml stmt, should alloc and free by dml_stmt
+  ObIAllocator& dml_allocator = dml_stmt->get_allocator();
 
   if (!group_by_exprs.empty() && order_by_exprs.empty()) {
     is_same_group_and_order = true;
     for (int64_t i = 0; OB_SUCC(ret) && i < group_by_exprs.count(); i++) {
       ObProxyGroupItem* group_expr = group_by_exprs.at(i);
       void *ptr = NULL;
-      if (OB_ISNULL(ptr = allocator_->alloc(sizeof(ObProxyOrderItem)))) {
+      if (OB_ISNULL(ptr = dml_allocator.alloc(sizeof(ObProxyOrderItem)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("fail to alloc order expr buf", K(ret));
       } else {
@@ -727,7 +729,7 @@ int ObShardingSelectLogPlan::rewrite_sql(ObSqlString &new_sql)
       }
 
       if (!derived_orders_.empty()) {
-        // Bottom group by id; scenes with semicolons
+        // 兜底group by id; 有分号的场景
         while (!new_sql.empty() && ';' == new_sql.ptr()[new_sql.length() - 1]) {
           new_sql.set_length(new_sql.length() - 1);
         }

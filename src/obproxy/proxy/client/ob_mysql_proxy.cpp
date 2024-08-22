@@ -324,8 +324,7 @@ int ObMysqlProxyCont::do_post_request()
     if (OB_SUCC(ret)) {
       ret = OB_EAGAIN;
       if (NULL == mysql_client_) {
-        // For probing requests, in order to prevent competition for connection pool connections,
-        // use a separate mysql_client
+        // 对于探活请求，为了防止争抢连接池连接，使用独立的mysql_client
         if (NULL != request_param_.mysql_client_) {
           mysql_client_ = request_param_.mysql_client_;
         } else {

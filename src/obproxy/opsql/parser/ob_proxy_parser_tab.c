@@ -112,9 +112,6 @@ static inline void handle_stmt_end(ObProxyParseResult* result)
       case OBPROXY_T_SELECT_TX_RO:
         result->stmt_type_ = OBPROXY_T_SELECT;
         break;
-      case OBPROXY_T_SET_AC_0:
-        result->stmt_type_ = OBPROXY_T_OTHERS;
-        break;
       case OBPROXY_T_BEGIN:
         result->stmt_type_ = OBPROXY_T_OTHERS;
         break;
@@ -147,7 +144,7 @@ static inline void handle_stmt_end(ObProxyParseResult* result)
 
 #define UPDATE_ALIAS_NAME(name) \
     /* only support select and update with alias name */ \
-    /* insert into ... select also have alias name */ \
+    /* insert into ... select 语法也需要支持 alias name */ \
     if (NULL != result && (OBPROXY_T_SELECT == result->cur_stmt_type_ || OBPROXY_T_UPDATE == result->cur_stmt_type_ \
                            || OBPROXY_T_INSERT == result->cur_stmt_type_ || OBPROXY_T_MERGE == result->cur_stmt_type_)) { \
       result->table_info_.alias_name_ = name; \

@@ -1253,7 +1253,12 @@ namespace common
 #define DEFINE_CMP_FUNCS_YEAR_YEAR() \
   DEFINE_CMP_FUNCS(ObYearTC, year);
 
-  
+#define DEFINE_CMP_FUNCS_MYSQL_DATE_MYSQL_DATE() \
+  DEFINE_CMP_FUNCS(ObMySQLDateTC, mysql_date);
+
+#define DEFINE_CMP_FUNCS_MYSQL_DATETIME_MYSQL_DATETIME() \
+  DEFINE_CMP_FUNCS(ObMySQLDateTimeTC, mysql_datetime);
+
 #define DEFINE_CMP_FUNCS_OTIMESTAMP_DATETIME() \
     DEFINE_CMP_OP_FUNC_OT_DT(CO_EQ, ==);         \
     DEFINE_CMP_OP_FUNC_OT_DT(CO_LE, <=);         \
@@ -1408,6 +1413,8 @@ DEFINE_CMP_FUNCS_NULL_XXX();
 DEFINE_CMP_FUNCS_XXX_NULL();
 DEFINE_CMP_FUNCS_XXX_EXT();
 DEFINE_CMP_FUNCS_EXT_XXX();
+DEFINE_CMP_FUNCS_MYSQL_DATE_MYSQL_DATE();
+DEFINE_CMP_FUNCS_MYSQL_DATETIME_MYSQL_DATETIME();
 
 #define DEFINE_CMP_FUNCS_ENTRY(tc1, tc2) \
 { \
@@ -1451,6 +1458,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),//geometry
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC),//udt
     DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC), // mysql date
+    DEFINE_CMP_FUNCS_ENTRY(ObNullTC, ObMaxTC), // mysql datetime
   },
   { // int
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1479,6 +1489,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY(ObIntTC, ObDecimalIntTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // uint
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1507,6 +1520,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY(ObUIntTC, ObDecimalIntTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // float
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1535,6 +1551,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL, // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // double
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1563,6 +1582,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // number
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1591,6 +1613,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY(ObNumberTC, ObDecimalIntTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // datetime
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1619,6 +1644,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // date
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1647,6 +1675,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // time
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1675,6 +1706,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // year
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1703,6 +1737,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // string
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1731,6 +1768,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // extend
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObNullTC),
@@ -1759,6 +1799,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC), // mysql date
+    DEFINE_CMP_FUNCS_ENTRY(ObExtendTC, ObMaxTC), // mysql datetime
   },
   { // unknown
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1787,6 +1830,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // text
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC),
@@ -1815,6 +1861,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // bit
@@ -1844,6 +1893,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // enumset
@@ -1873,6 +1925,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY(ObEnumSetTC, ObDecimalIntTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // enumsetinner
@@ -1902,6 +1957,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL, // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // otimestamp
@@ -1931,6 +1989,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // raw
@@ -1960,6 +2021,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // interval
@@ -1989,6 +2053,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // rowid
@@ -2018,6 +2085,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   {
     // lob
@@ -2047,6 +2117,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // json
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
@@ -2075,6 +2148,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL, // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // geometry
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
@@ -2103,6 +2179,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // udt
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
@@ -2131,6 +2210,9 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
   },
   { // decimalint
     DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
@@ -2159,6 +2241,101 @@ const obj_cmp_func ObObjCmpFuncs::cmp_funcs[ObMaxTC][ObMaxTC][CO_MAX] =
     DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
     DEFINE_CMP_FUNCS_ENTRY_NULL,  // udt
     DEFINE_CMP_FUNCS_ENTRY(ObDecimalIntTC, ObDecimalIntTC), // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
+  },
+  { // collection
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //json
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //udt
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
+  },
+  { // mysql date
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC), // extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // json
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // udt
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // collection
+    DEFINE_CMP_FUNCS_ENTRY(ObMySQLDateTC, ObMySQLDateTC), // mysql date
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql datetime
+  },
+  { // mysql datetime
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObNullTC), //null
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // int
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // uint
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // float
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // double
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // number
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // datetime
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // date
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // time
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // year
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // string
+    DEFINE_CMP_FUNCS_ENTRY(ObMaxTC, ObExtendTC), // extend
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // unknown
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // text
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // bit
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // enumset
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // enumsetInner will not go here
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // otimestamp
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // raw
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // interval
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //rowid
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //lob
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // json
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  //geometry
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // udt
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // decimal int
+    DEFINE_CMP_FUNCS_ENTRY_NULL,  // collection
+    DEFINE_CMP_FUNCS_ENTRY_NULL, // mysql date
+    DEFINE_CMP_FUNCS_ENTRY(ObMySQLDateTimeTC, ObMySQLDateTimeTC), // mysql datetime
   },
 };
 

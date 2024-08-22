@@ -27,21 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * *************************************************************
- *
- * I/O Buffer classes
- *
- * Watermarks can be used as an interface between the data transferring
- * layer (ObVConnection) and the user layer (a state machine).  Watermarks
- * should be used when you need to have at least a certain amount of data
- * to make some determination.  For example, when parsing a string, one
- * might wish to ensure that an entire line will come in before consuming
- * the data.  In such a case, the water_mark should be set to the largest
- * possible size of the string. (appropriate error handling should take
- * care of excessively long strings).
- *
- * In all other cases, especially when all data will be consumed, the
- * water_mark should be set to 0 (the default).
  */
 
 #ifndef OBPROXY_IOBUFFER_H

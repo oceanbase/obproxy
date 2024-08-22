@@ -340,7 +340,7 @@ public:
   {
     for (int i = 0; i < capacity_; i++) {
       if (cells_[i] != empty_v_ && cells_[i] != erased_v_) {
-        COMMON_LOG(INFO, "%s", to_cstring(get_key_(cells_[i])));
+        _COMMON_LOG(INFO, "%s", to_cstring(get_key_(cells_[i])));
       }
     }
   }

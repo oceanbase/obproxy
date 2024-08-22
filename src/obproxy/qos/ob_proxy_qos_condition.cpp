@@ -48,13 +48,13 @@ int ObProxyQosCondNoWhere::calc(ObProxyMysqlRequest &client_request,
     const char *pos = NULL;
     if (NULL != (pos = strcasestr(expr_sql_str, "WHERE"))
         && OB_LIKELY((pos - expr_sql_str) < expr_sql.length())) {
-      // this is NoWhere. so if have where, not match
+      // 这个条件是 noWhere, 匹配表示有 where, 就不满足条件
       is_match = false;
     } else {
       is_match = true;
     }
   } else {
-    // if expr_sql is empry, no where. match
+    // expr_sql 为空, 表示没有 where, 满足条件
     is_match = true;
   }
 
@@ -80,8 +80,19 @@ int ObProxyQosCondUseLike::calc(ObProxyMysqlRequest &client_request,
       is_match = false;
     }
   } else {
-    // if expr_sql is empry, no like. not match
+    // expr_sql 为空, 表示没有 like, 不满足条件
     is_match = false;
+  }
+
+  return ret;
+}
+
+int ObProxyQosCondStmtType::add_stmt_type(const ObProxyBasicStmtType stmt_type)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(stmt_type_array_.push_back(stmt_type))) {
+    LOG_WDIAG("fail to push back stmt type", K(stmt_type), K(ret));
   }
 
   return ret;
@@ -98,18 +109,20 @@ int ObProxyQosCondStmtType::calc(ObProxyMysqlRequest &client_request,
   ObProxyBasicStmtType stmt_type = parse_result.get_stmt_type();
 
   if (OB_PROXY_QOS_COND_STMT_KIND_ALL == stmt_kind_) {
-    // ALL is CURD
-    if (OBPROXY_T_SELECT == stmt_type
-        || OBPROXY_T_UPDATE == stmt_type
-        || OBPROXY_T_INSERT == stmt_type
-        || OBPROXY_T_DELETE == stmt_type
-        || OBPROXY_T_MERGE == stmt_type) {
-      is_match = true;
-    } else {
-      is_match = false;
-    }
+    is_match = true;
+  } else if (OB_UNLIKELY(stmt_type_array_.empty())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("empty stmt type array", K(ret));
   } else {
-    is_match = (stmt_type == stmt_type_);
+    // !stmt_type_array_.empty()
+    is_match = false;
+    for (int64_t i = 0; i < stmt_type_array_.count(); ++i) {
+      if (stmt_type == stmt_type_array_.at(i)) {
+        is_match = true;
+        break;
+      }
+    }
+
   }
 
   return ret;
@@ -136,7 +149,7 @@ int ObProxyQosCondTableName::calc(ObProxyMysqlRequest &client_request,
 {
   int ret = OB_SUCCESS;
 
-  // param empty means match all table
+  // 如果参数为空, 表示匹配全部表
   if (is_param_empty_) {
     is_match = true;
   } else {
@@ -150,6 +163,7 @@ int ObProxyQosCondTableName::calc(ObProxyMysqlRequest &client_request,
     } else {
       is_match = false;
     }
+    LOG_DEBUG("match sql result", K(is_match), K_(table_name_re), K(table_name));
   }
 
   return ret;
@@ -176,19 +190,20 @@ int ObProxyQosCondSQLMatch::calc(ObProxyMysqlRequest &client_request,
 {
   int ret = OB_SUCCESS;
 
-  ObString expr_sql = client_request.get_expr_sql();
+  ObString sql = client_request.get_parse_sql();
 
-  // param empty means match all sql
+  // 如果参数为空, 表示匹配所有 SQL
   if (is_param_empty_) {
     is_match = true;
   } else  {
-    if (OB_LIKELY(!expr_sql.empty())) {
-      if (OB_FAIL(sql_re_.match(expr_sql, 0, is_match, *allocator))) {
-        LOG_WDIAG("fail to match sql", K(expr_sql), K(ret));
+    if (OB_LIKELY(!sql.empty())) {
+      if (OB_FAIL(sql_re_.match(sql, 0, is_match, *allocator))) {
+        LOG_WDIAG("fail to match sql", K(sql), K(ret));
       }
     } else {
       is_match = false;
     }
+    LOG_DEBUG("match sql result", K(is_match), K_(sql_re), K(sql));
   }
 
   return ret;

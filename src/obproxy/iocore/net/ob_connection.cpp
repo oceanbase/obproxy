@@ -26,6 +26,7 @@
  * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
  * See the License for the specific language governing permissions and
  * limitations under the License.
+ *
  */
 
 #include "iocore/net/ob_connection.h"
@@ -131,11 +132,11 @@ ObConnection::~ObConnection()
  * order to tweak options.
  */
 const ObNetVCOptions ObConnection::DEFAULT_OPTIONS;
-const int32_t ObConnection::SOCKOPT_ON             = 1;
-const int32_t ObConnection::SOCKOPT_OFF            = 0;
+const int32_t ObConnection::SOCKOPT_ON = 1;
+const int32_t ObConnection::SOCKOPT_OFF = 0;
 const int32_t ObConnection::SNDBUF_AND_RCVBUF_PREC = 1024;
 
-const int32_t ObServerConnection::LISTEN_BACKLOG   = 1024;
+const int32_t ObServerConnection::LISTEN_BACKLOG = 1024;
 
 int ObConnection::open(const ObNetVCOptions &opt)
 {
@@ -259,6 +260,7 @@ int ObConnection::apply_options(const ObNetVCOptions &opt)
       }
     }
 
+    //
     if (OB_SUCC(ret) && (opt.sockopt_flags_ & ObNetVCOptions::SOCK_OPT_KEEP_ALIVE)) {
 
 #ifndef TCP_USER_TIMEOUT
@@ -360,10 +362,10 @@ int ObServerConnection::accept(ObConnection *c, bool need_return_eintr /* false 
     ret = OB_INVALID_ARGUMENT;
     PROXY_SOCK_LOG(WDIAG, "invalid argument conn", K(c), K(ret));
   } else {
-    int64_t sz = sizeof(c->addr_.sa_);
+    int64_t sz = sizeof(c->addr_);
     if (OB_FAIL(ObSocketManager::accept(fd_, &c->addr_.sa_, &sz, c->fd_, need_return_eintr))) {
       if (OB_SYS_EAGAIN != ret && (!need_return_eintr || OB_SYS_EINTR != ret)) {
-        PROXY_SOCK_LOG(WDIAG, "fail to accept", K(fd_), K(ret));
+        PROXY_SOCK_LOG(WARN, "fail to accept", K(fd_), K(ret));
       }
     } else {
       PROXY_SOCK_LOG(DEBUG, "connection accepted", "client", c->addr_, "server", addr_, "accepted_fd", c->fd_, "listen_fd", fd_);

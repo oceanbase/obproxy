@@ -229,7 +229,7 @@ int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_ta
         if (is_range_part(sub_part_func_type, cluster_version)) {
           ObPartDescRange *desc_range = (((ObPartDescRange*)sub_part_desc_) + i);
           RangePartition *part_array = desc_range->get_part_array();
-          // use first sub partition of everty first partition to get firt partition id
+          // 用每个一级分区的第一个二级分区元素来获取一级分区 ID
           if (first_part_id == part_array[0].first_part_id_) {
             sub_part_desc_tmp = desc_range;
             break;
@@ -237,7 +237,7 @@ int ObProxyPartMgr::get_sub_part_desc_by_first_part_id(const bool is_template_ta
         } else if (is_list_part(sub_part_func_type, cluster_version)) {
           ObPartDescList *desc_list = (((ObPartDescList*)sub_part_desc_) + i);
           ListPartition *part_array = desc_list->get_part_array();
-          // use first sub partition of everty first partition to get firt partition id
+          // 用每个一级分区的第一个二级分区元素来获取一级分区 ID
           if (first_part_id == part_array[0].first_part_id_) {
             sub_part_desc_tmp = desc_list;
             break;
@@ -358,7 +358,7 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
   ObString part_name;
   int64_t *part_array = NULL;
 
-  // After observer v4.0, there is no concept of template partition
+  // observer v4.0版本以后，没有了模版分区的概念
   if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version) && PARTITION_LEVEL_TWO == part_level) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("cluster version bigger than 4 and level is two", K(ret), K(cluster_version));
@@ -1565,8 +1565,8 @@ int ObProxyPartMgr::build_part_name_id_map(const PART_NAME_BUF * const name_buf,
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("part name buf is alloc twice", K(ret));
   } else if (OB_ISNULL(target_part_name_buf = (char *)allocator_.alloc(total_part_name_len))) {
-    ret = OB_REACH_MEMORY_LIMIT;
-    LOG_WDIAG("part mgr reach memory limit when alloc all first part name buf", K(ret));
+    LOG_WDIAG("part mgr reach memory limit when alloc all first part name buf", K(total_part_name_len), K(ret));
+    ret = OB_SUCCESS;
   } else {
     ObString part_name;
     int64_t pos = 0;
@@ -1667,12 +1667,12 @@ int64_t ObProxyPartMgr::to_string(char *buf, const int64_t buf_len) const
   J_KV(KP(this), KPC_(first_part_desc));
   J_COMMA();
 
-  // only sub_part_num_ != NULL, table is non-template partition table
+  /* 只有 sub_part_num_ != NULL 才会是非模板分区表 */
   if (NULL != sub_part_desc_ && NULL != sub_part_num_) {
     const ObPartitionFuncType sub_part_func_type = sub_part_desc_->get_part_func_type();
     ObPartDesc *sub_part_desc = NULL;
     int i = 0;
-    // If it is a non-template partition, only print the first secondary partition to avoid too many logs
+    // 如果是非模板分区, 只打印第一个二级分区, 避免日志太多
     if (is_range_part(sub_part_func_type, cluster_version_)) {
       sub_part_desc = (((ObPartDescRange*)sub_part_desc_) + i);
     } else if (is_list_part(sub_part_func_type, cluster_version_)) {

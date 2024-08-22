@@ -27,16 +27,6 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  *
- * ***************************************************************
- *
- * Continuations have a handle_event() method to invoke them. Userscan
- * determine the behavior of a ObContinuation by suppling a
- * "ContinuationHandler" (member function name) which is invoked when
- * events arrive. This function can be changed with the "setHandler"
- * method.
- *
- * Continuations can be subclassed to add additional state and
- * methods.
  */
 
 #ifndef OBPROXY_CONTINUATION_H

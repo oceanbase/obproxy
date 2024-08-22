@@ -37,6 +37,9 @@ public:
   const char *get_dbconfig_dir() const { return dbconfig_dir_; }
   const char *get_proxy_root_dir() const { return prefix_; }
   const char *get_unix_domain_path() const { return unix_domain_path_; }
+#if HAVE_MINIDUMP
+  const char *get_minidump_dir() const { return minidump_dir_; }
+#endif
   static int merge_file_path(const char *root, const char *file, common::ObIAllocator &allocator, char *&buf);
 
 private:
@@ -61,6 +64,9 @@ private:
   char *control_config_dir_;
   char *dbconfig_dir_;
   char *unix_domain_path_;
+#if HAVE_MINIDUMP
+  char *minidump_dir_;
+#endif
   event::ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator_;
 };
 

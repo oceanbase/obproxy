@@ -20,6 +20,9 @@
 #include "iocore/net/ob_net.h"
 
 #include "utils/ob_proxy_table_define.h"
+#if HAVE_MINIDUMP
+#include "utils/ob_proxy_breakpad.h"
+#endif
 #include "utils/ob_layout.h"
 
 #include "qos/ob_proxy_qos_stat_processor.h"
@@ -40,6 +43,9 @@
 #include "obutils/ob_tenant_stat_manager.h"
 #include "obutils/ob_proxy_config_processor.h"
 #include "obutils/ob_read_stale_processor.h"
+#if HAVE_BEYONDTRUST
+#include "obutils/ob_beyond_trust_processor.h"
+#endif
 #include "dbconfig/ob_proxy_db_config_processor.h"
 #include "dbconfig/ob_proxy_inotify_processor.h"
 
@@ -53,9 +59,9 @@
 #include "proxy/route/ob_route_utils.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
 
-#include "proxy/rpc_optimize/rpclib/ob_table_query_async_cache.h"
-#include "proxy/rpc_optimize/rpclib/ob_tablegroup_cache.h"
-#include "proxy/rpc_optimize/rpclib/ob_rpc_req_ctx_cache.h"
+#include "proxy/rpc/rpclib/ob_table_query_async_cache.h"
+#include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
+#include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"
 
 #include "cmd/ob_show_net_handler.h"
 #include "cmd/ob_show_warning_handler.h"
@@ -361,7 +367,6 @@ int ObProxy::start(ObAppVersionInfo &app_info)
   } else if (OB_FAIL(ObProxyMain::get_instance()->schedule_detect_task())) {
     LOG_EDIAG("fail to schedule detect task", K(ret));
   } else {
-
     // we can't strongly dependent on the OCP.
     // So if register_proxy fails here,
     // we can re register_proxy by proxy_table_processor_ check_task later
@@ -375,6 +380,18 @@ int ObProxy::start(ObAppVersionInfo &app_info)
       }
     }
 
+#if HAVE_MINIDUMP
+    ObAddr addr;
+    ObMinidumper &minidumper = get_global_minidumper();
+    // clean up dump file, we only keep 10 recent dump files
+    if (OB_FAIL(minidumper.cleanup_dump_file(get_global_layout().get_minidump_dir()))) {
+      LOG_WDIAG("fail to cleanup dump files", K(ret));
+    } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(addr))) {
+      LOG_WDIAG("fail to get proxy local addr", K(addr), K(ret));
+    } else if (OB_FAIL(minidumper.setup_dump_handler(get_global_layout().get_minidump_dir(), addr))) {
+      LOG_WDIAG("fail to setup dump handler", K(ret));
+    }
+#endif
   }
 
   // 从环境变量中获取密码
@@ -402,7 +419,7 @@ int ObProxy::start(ObAppVersionInfo &app_info)
     } else if (OB_FAIL(ObCacheCleaner::schedule_cache_cleaner())) {
       LOG_WDIAG("fail to alloc and schedule cache cleaner", K(ret));
     } else if (config_->enable_obproxy_rpc_service
-             && OB_FAIL(ObRpcCacheCleaner::schedule_cache_cleaner())) {
+               && OB_FAIL(ObRpcCacheCleaner::schedule_cache_cleaner())) {
       LOG_WDIAG("fail to alloc and schedule rpc cache cleaner", K(ret));
     } else if (config_->is_metadb_used() && OB_FAIL(proxy_table_processor_.start_check_table_task())) {
       LOG_WDIAG("fail to start check table task", K(ret));
@@ -560,9 +577,9 @@ int ObProxy::init_user_specified_config()
 
 int ObProxy::init_meta_client_proxy(const bool is_raw_init)
 {
-  // 1. if proxy start with "-e" or has no config bin file, we should strongly
+  // 1、if proxy start with "-e" or has no config bin file, we should strongly
   //    depend on metadb, so we must init meta client proxy before start;
-  // 2. if proxy start with local config bin file, we can schedule a repeat task to init
+  // 2、if proxy start with local config bin file, we can schedule a repeat task to init
   //    meta client proxy so as to start more quickly, it will be stoped until meta client proxy init successfully,
   //    and do remember create metadb cluster resource
   //    after meta client proxy init successfully

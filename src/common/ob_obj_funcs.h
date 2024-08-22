@@ -1807,6 +1807,16 @@ template <>
   return result;
 }
 
+// ObMySQLDateType=52
+DEF_CS_FUNCS(ObMySQLDateType, date, int32_t, int64_t); // reuse get_date for mysql_date type
+DEF_DATE_YEAR_PRINT_FUNCS(ObMySQLDateType, date);
+DEF_SERIALIZE_FUNCS(ObMySQLDateType, mysql_date, int32_t); // reuse get_date for mysql_date type
+
+// ObMySQLDateTimeType=53
+DEF_CS_FUNCS(ObMySQLDateTimeType, datetime, int64_t, int64_t); // reuse get_datetime for mysql_datetime type
+DEF_DATETIME_PRINT_FUNCS(ObMySQLDateTimeType, datetime);
+DEF_SERIALIZE_FUNCS(ObMySQLDateTimeType, mysql_datetime, int64_t); // reuse get_date for mysql_date type
+
 }
 }
 #endif

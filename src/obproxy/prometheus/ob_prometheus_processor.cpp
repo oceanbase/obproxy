@@ -40,7 +40,7 @@ ObPrometheusProcessor g_ob_prometheus_processor;
 int ObPrometheusProcessor::start_prometheus()
 {
   int ret = OB_SUCCESS;
-  // Initialize thread-level prometheus statistics
+  // 初始化线程级普罗米修斯统计
   int64_t net_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   ObEThread **ethreads = g_event_processor.event_thread_[ET_NET];
   for (int64_t i = 0; OB_SUCC(ret) && i < net_thread_count; i++) {

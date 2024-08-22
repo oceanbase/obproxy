@@ -1154,6 +1154,10 @@ int ObHTableFilter::deep_copy(common::ObIAllocator &allocator, const ObHTableFil
   return ret;
 }
 
+OB_SERIALIZE_MEMBER(ObTableAggregation,
+                    type_,
+                    column_);
+
 /*int ObTableQuery::deep_copy(common::ObIAllocator &allocator, const ObTableQuery &other)
 {
   int ret = OB_SUCCESS;
@@ -1383,7 +1387,8 @@ OB_DEF_SERIALIZE(ObTableQuery,)
               batch_size_,
               max_result_size_,
               htable_filter_,
-              rowkey_columns_)
+              rowkey_columns_,
+              aggregations_)
   return ret;
 }
 
@@ -1409,7 +1414,8 @@ OB_DEF_SERIALIZE_SIZE(ObTableQuery,)
               batch_size_,
               max_result_size_,
               htable_filter_,
-              rowkey_columns_);
+              rowkey_columns_,
+              aggregations_);
   return len;
 }
 
@@ -1456,13 +1462,14 @@ ODP_DEF_DESERIALIZE(ObTableQuery)
   }
   if (OB_SUCC(ret)) {
     LST_DO_CODE(OB_UNIS_DECODE, select_columns_, filter_string_, limit_, offset_, scan_order_, index_name_, batch_size_,
-                max_result_size_, htable_filter_, rowkey_columns_);
+                max_result_size_, htable_filter_, rowkey_columns_, aggregations_);
     // When parsing, if there is still data, additionally process the primary key column name
   }
 
   if (OB_SUCC(ret)) {
     rpc_request->set_index_name(index_name_);
     rpc_request->set_batch_size(batch_size_);
+    rpc_request->set_aggregate_query(aggregations_.count() != 0);
   }
   if (OB_SUCC(ret) && OB_FAIL(rpc_request->add_sub_req_columns(rowkey_columns_))) {
     LOG_WDIAG("fail to add rowkey columns to rpc_request", K(ret));

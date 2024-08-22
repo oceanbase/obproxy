@@ -32,6 +32,11 @@ namespace obutils
 class ObClusterResource;
 }
 
+namespace omt
+{
+class ObZoneWeakReadWeight;
+}
+
 namespace proxy
 {
 class ObMysqlRouteResult;
@@ -70,7 +75,9 @@ public:
                     obutils::ObClusterResource *cluster_resource,
                     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                     const common::ObIArray<common::ObString> &region_names,
-                    const common::ObIArray<common::ObString> &proxy_primary_zone_name
+                    const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+                    const omt::ObZoneWeakReadWeight *weight_zone,
+                    const omt::ObTargetReplicaType *target_replica_type
 #if OB_DETAILED_SLOW_QUERY
                     ,ObHRTime &debug_random_time,
                     ObHRTime &debug_fill_time
@@ -114,7 +121,10 @@ public:
   int fill_weak_read_replica(const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
                              const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                              const common::ObIArray<common::ObString> &region_names,
-                             const common::ObIArray<common::ObString> &proxy_primary_zone_name);
+                             const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+                             const omt::ObZoneWeakReadWeight *weight_zone = NULL,
+                             const bool is_proxy_mysql_client = false,
+                             const omt::ObTargetReplicaType *target_replica_type = NULL);
   bool is_non_partition_table() const;
   bool is_partition_table() const;
   bool is_dummy_table() const;
@@ -207,7 +217,10 @@ inline int ObServerRoute::fill_weak_read_replica(
     const ObProxyPartitionLocation *pl, ObLDCLocation &dummy_ldc,
     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const common::ObIArray<common::ObString> &proxy_primary_zone_name)
+    const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+    const omt::ObZoneWeakReadWeight *weight_zone/*NULL*/,
+    const bool is_proxy_mysql_client /*false*/,
+    const omt::ObTargetReplicaType *target_replica_type/*NULL*/)
 {
   int ret = common::OB_SUCCESS;
   const bool is_only_readonly_zone = (ONLY_READONLY_ZONE == ldc_route_.policy_);
@@ -215,7 +228,8 @@ inline int ObServerRoute::fill_weak_read_replica(
   leader_item_.reset();
   if (OB_FAIL(ObLDCLocation::fill_weak_read_location(pl, dummy_ldc, ldc_route_.location_,
                                                      entry_need_update, is_only_readonly_zone,
-                                                     ss_info, region_names, proxy_primary_zone_name))) {
+                                                     ss_info, region_names, proxy_primary_zone_name,
+                                                     ldc_route_.policy_, weight_zone, is_proxy_mysql_client, target_replica_type))) {
     PROXY_LOG(WDIAG, "fail to fill_weak_read_location", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count();
@@ -274,7 +288,9 @@ inline int ObServerRoute::fill_replicas(
     obutils::ObClusterResource *cluster_resource,
     const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
     const common::ObIArray<common::ObString> &region_names,
-    const common::ObIArray<common::ObString> &proxy_primary_zone_name
+    const common::ObIArray<common::ObString> &proxy_primary_zone_name,
+    const omt::ObZoneWeakReadWeight *weight_zone,
+    const omt::ObTargetReplicaType *target_replica_type
 #if OB_DETAILED_SLOW_QUERY
     ,ObHRTime &debug_random_time,
     ObHRTime &debug_fill_time
@@ -337,7 +353,7 @@ inline int ObServerRoute::fill_replicas(
         ret = fill_strong_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names,
                                        proxy_primary_zone_name, tenant_name, cluster_resource, is_random_routing_mode);
       } else {
-        ret = fill_weak_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name);
+        ret = fill_weak_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name, weight_zone, client_session->is_proxy_mysql_client_, target_replica_type);
       }
 #if OB_DETAILED_SLOW_QUERY
       t2 = common::get_hrtime_internal();
@@ -455,7 +471,11 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
   } else if (is_weak_read()) {
     leader_item_.is_used_ = true;
 
-    item = ldc_route_.get_next_item();
+    if (WEAKREAD_WEIGHT_LOAD_BALANCE == ldc_route_.policy_) {
+      item = ldc_route_.get_next_weight_item();
+    } else {
+      item = ldc_route_.get_next_item();
+    }
     cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
 
     if (NULL != item) {
@@ -659,11 +679,6 @@ inline bool ObServerRoute::set_target_dirty(bool is_need_force_flush /*false*/)
         && table_entry_->need_update_entry()
         && table_entry_->cas_set_dirty_state()) {
       table_entry_->set_need_force_flush(is_need_force_flush);
-      if (obutils::get_global_proxy_config().enable_async_pull_location_cache
-            && obutils::get_global_proxy_config().rpc_enable_async_pull_batch_tablets) {
-        //put it first, no care about that put it to batch set or not, we just try it, not to care about return value
-        table_entry_->put_batch_fetch_tablet_id(part_entry_->get_partition_id());
-      }
       bret = true;
       PROXY_LOG(INFO, "this table entry will set to dirty and wait for update", K(is_need_force_flush), KPC_(table_entry));
     }
@@ -671,7 +686,13 @@ inline bool ObServerRoute::set_target_dirty(bool is_need_force_flush /*false*/)
     if (NULL != part_entry_
         && part_entry_->need_update_entry()
         && part_entry_->cas_set_dirty_state()) {
+      // 对于分区表, 由于 partition table 拉取时没有参数, 所以这里设置在 table entry 上
       table_entry_->set_need_force_flush(is_need_force_flush);
+      if (obutils::get_global_proxy_config().enable_async_pull_location_cache
+            && obutils::get_global_proxy_config().rpc_enable_async_pull_batch_tablets) {
+        //put it first, no care about that put it to batch set or not, we just try it, not to care about return value
+        table_entry_->put_batch_fetch_tablet_id(part_entry_->get_partition_id());
+      }
       bret = true;
       PROXY_LOG(INFO, "this partition entry will set to dirty and wait for update", K(is_need_force_flush), KPC_(table_entry), KPC_(part_entry));
     }
@@ -694,7 +715,8 @@ inline bool ObServerRoute::set_table_entry_dirty()
 inline bool ObServerRoute::set_dirty_all(bool is_need_force_flush /*false*/)
 {
   bool bret = false;
-  // only normal table locaton need force flush
+  // 只有普通 table location 才需要强制刷新
+  // all_dummy 拉回来的一定是正确的
   if (set_target_dirty(is_need_force_flush)) {
     bret = true;
   }

@@ -55,6 +55,7 @@ static inline void *mmap_aligned(const uint64_t size, const uint64_t align)
       ret = NULL;
     } else {
       uint64_t aligned_addr = up2align(reinterpret_cast<uint64_t>(ret), align);
+      // Fix Coverity issue:
       // Compute the header/trailer size to avoid using ret after munmap.
       uint64_t header_size = aligned_addr - reinterpret_cast<uint64_t>(ret);
       uint64_t trailer_size = reinterpret_cast<uint64_t>(ret) + align - aligned_addr;

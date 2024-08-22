@@ -583,6 +583,13 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
              K(idc_url_buf_len), K(ret));
   } else {
     const char *pos = strcasestr(rs_url_buf, RS_URL_KEY_STRING);
+    /*
+     * rs url
+     * http://x.x.x.x:xxxx/services?Action=ObRootServiceInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+     *
+     * idc url
+     * http://x.x.x.x:xxxx/services?Action=ObIDCRegionInfo&User_ID=xxx&UID=xxx&ObRegion=xxx
+     * */
     if (NULL != pos) {
       const int64_t url_head_len = static_cast<int64_t>(pos - rs_url_buf);
       const int64_t url_key_len = static_cast<int64_t>(strlen(RS_URL_KEY_STRING));
@@ -594,6 +601,13 @@ int ObConfigServerProcessor::get_idc_url(const char *rs_url_buf, const int64_t r
              url_tailer_len);
       idc_url_buf[url_head_len + IDC_URL_KEY_STRING.length() + url_tailer_len] = '\0';
     } else {
+      /*
+       * rs url
+       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
+       *
+       * idc url
+       * http://x.x.x.x:xxxx/oceanbase_obconfig/${cluster_name}
+       * */
       MEMCPY(idc_url_buf, rs_url_buf, rs_url_buf_len);
       MEMCPY(idc_url_buf + rs_url_buf_len,
              IDC_URL_TAILER_STRING.ptr(),
@@ -1932,7 +1946,7 @@ int ObConfigServerProcessor::parse_json_config_info(const ObString &json, const 
     bool is_metadb_changed = false;
     if (OB_ISNULL(json_info = op_alloc(ObProxyJsonConfigInfo))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_EDIAG("fail to alloc mem fot json config info", K(ret));
+      LOG_EDIAG("fail to alloc mem for json config info", K(ret));
     } else if (OB_FAIL(json_info->parse(root))) {
       LOG_WDIAG("fail to parse json info", K(ret));
     } else if (!json_info->is_valid()) {

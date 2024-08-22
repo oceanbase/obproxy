@@ -342,7 +342,7 @@ int ObDbConfigTenantCont::handle_fetch_db_complete(void *data)
       } else {
         result_.fetch_result_ = result.fetch_result_ || result_.fetch_result_;
         if (OB_FAIL(ret)) {
-          // allow some logic db success, some fail. failed logic db will no save to config file
+          // 运行时支持部分 db 配置变更成功，部分变更失败，失败的 db 不会持久化本地配置文件
           ret = OB_SUCCESS;
         }
       }
@@ -359,8 +359,10 @@ int ObDbConfigTenantCont::handle_fetch_db_complete(void *data)
   return ret;
 }
 
-// no need acquire lock when dump config file
-// here need use db info of cache to dump
+// dump 配置文件过程不会修改cr的内容，不需要加锁:
+// dump 成功会修改child cr 的need_dump_config_ 属性，
+// need_dump_config_ 不会有并发读写操作，不需要加锁
+// 由于临时db info中的链表已经被拆开，这里需要使用cache中的db info来dump database
 int ObDbConfigTenantCont::dump_config_to_file()
 {
   int ret = OB_SUCCESS;

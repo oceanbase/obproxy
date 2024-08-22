@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.3.1.0],
+            [4.3.2.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.3.1.0"
+    obapi_version="4.3.2.0"
     AC_SUBST(obapi_version)
 
     AC_DISABLE_STATIC
@@ -114,6 +114,10 @@
     echo "now gcc is: $GCC_VERSION"
 
     AM_CXXFLAGS="${AM_CXXFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
+    AM_CXXFLAGS="${AM_CXXFLAGS} -DBUILD_OPENSOURCE"
+    AM_CONDITIONAL([BUILD_OPENSOURCE], [true])
+    AM_CONDITIONAL([HAVE_BEYONDTRUST], [false])
+    AM_CONDITIONAL([HAVE_MINIDUMP], [false])
 
     OSVER=`cat /etc/issue|head -1|awk -F. '{print $1}' | awk '{print $NF}'`
     if test $OSVER -le 6; then

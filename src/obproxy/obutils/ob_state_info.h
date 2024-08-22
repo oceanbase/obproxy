@@ -111,9 +111,9 @@ public:
   common::ObZoneType zone_type_;
   bool is_merging_;
   bool is_force_congested_;
-  // The number of SQLs currently being executed by the server
+  // 当前server正在执行的SQL数
   int64_t request_sql_cnt_;
-  // The last time the request was sent
+  // 最新一次发送请求时间
   int64_t last_response_time_;
   int64_t detect_fail_cnt_;
 private:

@@ -66,12 +66,12 @@ void FooServer::init()
 {
   epfd_ = epoll_create(MAX_EP_FD);
   listenfd_ = socket(AF_INET, SOCK_STREAM, 0);
-  set_nonblocking(listenfd_); // Set the socket used for monitoring to non-blocking mode
+  set_nonblocking(listenfd_); //把用于监听的socket设置为非阻塞方式  
 
   struct epoll_event ev;
-  ev.data.fd = listenfd_; // Set the file descriptor associated with the event to be processed
-  ev.events = EPOLLIN | EPOLLET; // Set the type of event to be processed
-  epoll_ctl(epfd_, EPOLL_CTL_ADD, listenfd_, &ev); // Register epoll event
+  ev.data.fd = listenfd_; //设置与要处理的事件相关的文件描述符  
+  ev.events = EPOLLIN | EPOLLET; //设置要处理的事件类型  
+  epoll_ctl(epfd_, EPOLL_CTL_ADD, listenfd_, &ev); //注册epoll事件 
 
   struct sockaddr_in serveraddr;
   bzero(&serveraddr, sizeof(serveraddr));
@@ -142,11 +142,8 @@ void FooServer::run()
         }
         memset(line, 0, MAX_LINE);
         total_size = 0;
-        while ((read_size = read(sock_fd, line + total_size, MAX_LINE - total_size)) > 0) {
+        while ((read_size = read(sock_fd, line + total_size, MAX_LINE)) > 0) {
           total_size += read_size;
-          if (total_size >= MAX_LINE) {
-            break;
-          }
         }
 
         if (total_size == 0) {

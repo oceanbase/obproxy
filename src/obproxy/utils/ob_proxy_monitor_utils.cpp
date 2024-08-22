@@ -82,11 +82,14 @@ int ObProxyMonitorUtils::sql_escape(const char *sql, const int32_t sql_len,
 
 int64_t ObProxyMonitorUtils::get_next_schedule_time(int64_t interval_us)
 {
-  // every schedule on Integer multiple of interval
-  // minus 500ms to monitor static.
+  //每次调度到 interval 的整数倍上
+  //减掉 500ms, 便于监控统计
+  //这里是按照一定间隔输出, 同一次输出的不同项可能分布在两边, 比如 00:00:59.999998, 00:01:00:000028
+  //监控都是直接截断到秒或者分钟, 会统计到不同的两分钟里, 但他们是同一次的输出, 理应统计到一起
   const int64_t current_time = ObTimeUtility::current_time();
   int64_t next_time = (current_time / interval_us + 1) * interval_us - msec_to_usec(500) - current_time;
-  // because Timer is not accurate, so if next_time < 100, goto next interval_us
+  // 因为定时任务的时间不精确, 比如期望在 11:23:20.500 执行, 但是实际在 11:23:20.480 执行了, 在计算下次执行时间时, 又会期望在 11:23:20.500 执行
+  // 误差在 100ms 内就调到下一次去执行
   while (next_time <= msec_to_usec(100)) {
     next_time += interval_us;
   }

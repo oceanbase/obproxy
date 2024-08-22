@@ -947,7 +947,7 @@ int ObProxyGroupUnit::aggregate(const ObProxyGroupUnit &group_unit, const ObIArr
     }
 
     if (OB_SUCC(ret)) {
-      // Process the first row of data
+      // 处理第一行数据
       if (OB_FAIL(do_aggregate(row_))) {
         LOG_WDIAG("fail to do aggregate", K(ret));
       }
@@ -955,7 +955,7 @@ int ObProxyGroupUnit::aggregate(const ObProxyGroupUnit &group_unit, const ObIArr
   }
 
   if (OB_SUCC(ret)) {
-    // Aggregate subsequent data
+    // 聚合后续数据
     if (OB_FAIL(do_aggregate(group_unit.get_row()))) {
       LOG_WDIAG("fail to do aggregate", K(ret));
     }

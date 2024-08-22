@@ -91,6 +91,7 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_SELECT_TX_RO,
   OBPROXY_T_PING_PROXY,
   OBPROXY_T_SELECT_ROUTE_ADDR,
+  OBPROXY_T_SELECT_GLOBAL_PORT,
   OBPROXY_T_SET_ROUTE_ADDR,
   OBPROXY_T_SELECT_PROXY_VERSION,
 
@@ -118,15 +119,16 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_LOAD_DATA_INFILE,
   OBPROXY_T_OTHERS,
 
+  // 公有云账户判断set类型
   OBPROXY_T_SET_OB_READ_CONSISTENCY,
   OBPROXY_T_SET_TX_READ_ONLY,
 
-  // text ps
+  // 文本ps
   OBPROXY_T_TEXT_PS_PREPARE,
   OBPROXY_T_TEXT_PS_EXECUTE,
   OBPROXY_T_TEXT_PS_DROP,
 
-  // only for print obproxy_stat log
+  // 仅仅用于打印 obproxy_stat 日志
   OBPROXY_T_LOGIN,
 
   // binglog related
@@ -441,6 +443,7 @@ typedef struct _ObProxyParseResult
   bool has_last_insert_id_;
   bool has_found_rows_;
   bool has_row_count_;
+  bool has_last_trace_id_;
   bool has_explain_;
   bool has_explain_route_;
   bool has_simple_route_info_;

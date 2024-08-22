@@ -384,8 +384,8 @@ int ObProxyOperator::handle_result(void *data, bool &is_final, ObProxyResultResp
         LOG_WDIAG("failed to handle resultset_resp", K(ret));
       }
     } else if (pres->is_error_resp() || pres->is_ok_resp()) {
-      // The ok/error package only needs to be processed in the table_scan operator
-      // In the non-table_scan operator, if the ok/error packet is received, it must be complete, just pass it through
+      // ok/error 包只需要在 table_scan 算子中处理
+      // 非 table_scan 算子中, 收到 ok/error 包, 一定是 complete 了, 透传即可
       result = pres;
     }
     LOG_DEBUG("handle_result success", K(ret), K(pres));

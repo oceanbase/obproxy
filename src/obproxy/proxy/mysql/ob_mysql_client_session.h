@@ -210,6 +210,8 @@ public:
 
   common::ObString &get_login_packet();
 
+  ObProxyProtocol get_server_protocol() const;
+
   struct ObSessionStats
   {
     ObSessionStats() : modified_time_(0), reported_time_(0), is_first_register_(true)
@@ -342,8 +344,7 @@ public:
   void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
   // treat disable_trans_internal_routeing where shard_conn change for sharding
   bool is_proxy_enable_trans_internal_routing() const { return is_proxy_enable_trans_internal_routing_
-                                                               && (OB_ISNULL(this->get_session_info().get_txn_shard_connector())
-                                                                   || this->get_session_info().is_allow_use_last_session()); }
+                                                               && !this->get_session_info().is_sharding_user(); }
   void set_proxy_enable_cross_shard_txn(bool is_proxy_enable_cross_shard_txn) { is_proxy_enable_cross_shard_txn_ = is_proxy_enable_cross_shard_txn; }
   bool is_proxy_enable_cross_shard_txn() const { return is_proxy_enable_cross_shard_txn_; }
   bool enable_analyze_internal_cmd() const { return session_info_.enable_analyze_internal_cmd(); }
@@ -408,7 +409,6 @@ public:
   bool is_cs_id_v2() const { return cs_id_version_ == CLIENT_SESSION_ID_V2; }
   void set_connected_time(const int64_t connected_time) { connected_time_ = connected_time; }
   int64_t  get_connected_time() const { return  connected_time_; }
-
 private:
   static uint32_t get_next_ps_stmt_id();
 

@@ -37,6 +37,7 @@ namespace proxy
 static const int64_t OK_PKT_MAX_LEN = 20;
 static const int64_t RESP_PKT_MEMORY_BUFFER_SIZE = 32;
 static const int64_t DEFAULT_PKT_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
+static const int64_t ANALYZE_FIRST_OB20_RESP_MAX_LEN = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_1K);
 
 class ObCompressedPktAnalyzer;
 class ObRespAnalyzer
@@ -92,6 +93,7 @@ public:
   OB_INLINE void reset();
   OB_INLINE void reset_for_mysql_tunnel();
 public: // getter and setter
+  bool is_last_pkt(const ObAnalyzeHeaderResult &result);
   OB_INLINE bool is_inited() const { return is_inited_; }
   OB_INLINE bool is_stream_end();
   OB_INLINE event::ObIOBufferReader* alloc_mysql_pkt_reader() { return mysql_pkt_buf_ == NULL ? NULL : mysql_pkt_buf_->alloc_reader(); }
@@ -137,7 +139,6 @@ private:
   int analyze_prepare_ok_pkt();
   int update_ending_type();
   void handle_last_eof(const char *pkt_end, uint32_t pkt_len);
-  bool is_last_pkt(const ObAnalyzeHeaderResult &result);
   OB_INLINE bool need_copy_ok_pkt();
   OB_INLINE bool need_reserve_pkt();
   OB_INLINE bool need_analyze_mysql_pkt_type();

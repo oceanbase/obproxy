@@ -90,7 +90,7 @@ public:
   TO_STRING_KV(K_(conn_backup_status));
 
 private:
-  bool conn_backup_status_;   // false: backup failed; true: backup successful
+  bool conn_backup_status_;   // false: backup失败; true: backup成功
 
   common::DRWLock rwlock_;
   ObVipTenantConnCache vt_conn_cache_;

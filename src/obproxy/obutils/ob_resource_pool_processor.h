@@ -25,6 +25,7 @@
 #include "lib/lock/ob_drw_lock.h"
 #include "lib/hash/ob_hashset.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
+#include "obutils/ob_single_leaders_follower.h"
 
 namespace oceanbase
 {
@@ -230,22 +231,35 @@ public:
   LINK(ObLocationTenantInfo, cr_link_);
 };
 
-class ObTenantSingleLeaderInfo
+class ObTenantSingleLeaderInfo : public ObSharedRefCount
 {
 public:
+  static inline int alloc(ObTenantSingleLeaderInfo *&info)
+  {
+    int ret = OB_SUCCESS;
+    if (OB_ISNULL(info = op_alloc(ObTenantSingleLeaderInfo))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+    } else {
+      info->inc_ref();
+    }
+    return ret;
+  }
+  virtual void free() { op_free(this); }
   void set_tenant_name(const common::ObString &tenant_name);
   inline void set_leader_addr(const net::ObIpEndpoint &leader_addr) { leader_addr_ = leader_addr; }
+  inline int set_followers(const common::ObIArray<ObSingleLeadersFollower> &followers) { return followers_.assign(followers); }
   int64_t to_string(char *buf, const int64_t buf_len) const
   {
     int64_t pos = 0;
     J_OBJ_START();
-    J_KV(K_(tenant_name), K_(leader_addr));
+    J_KV(K_(tenant_name), K_(leader_addr), K_(followers));
     J_OBJ_END();
     return pos;
   }
 public:
   common::ObString tenant_name_;
   net::ObIpEndpoint leader_addr_;
+  common::ObSEArray<ObSingleLeadersFollower, 2> followers_;
   LINK(ObTenantSingleLeaderInfo, single_leader_);
 private:
   char tenant_name_str_[OB_MAX_TENANT_NAME_LENGTH];
@@ -346,10 +360,13 @@ public:
   uint64_t get_location_tenant_version(const ObString& tenant_name);
   int get_location_tenant_info(const ObString &tenant_name, ObLocationTenantInfo *&info_out);
   void destroy_location_tenant_info();
+
+  // single leader related
   int update_single_leader_info(const common::ObString &tenant_name,
-                                const net::ObIpEndpoint &leader_addr);
+                                const net::ObIpEndpoint &leader_addr,
+                                const common::ObIArray<ObSingleLeadersFollower> &followers);
   int remove_single_leader_info(const common::ObString &tenant_name);
-  int get_single_leader_info(const common::ObString &tenant_name, net::ObIpEndpoint &addr);
+  int get_single_leader_info(const common::ObString &tenant_name, ObTenantSingleLeaderInfo *&info);
   OB_INLINE int64_t get_single_leader_map_version() { return single_leader_map_version_; };
   bool tenant_has_single_leader(const common::ObString &tenant_name);
   void destory_single_leader_info_map();

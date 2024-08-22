@@ -74,17 +74,16 @@ class ObProxyQosCondStmtType : public ObProxyQosCond
 {
 public:
   ObProxyQosCondStmtType() :
-    stmt_type_(OBPROXY_T_INVALID), stmt_kind_(OB_PROXY_QOS_COND_STMT_KIND_INVALID) {}
-  void set_stmt_type(const ObProxyBasicStmtType stmt_type) { stmt_type_ = stmt_type; }
-  ObProxyBasicStmtType get_stmt_type() const { return stmt_type_; }
+    stmt_kind_(OB_PROXY_QOS_COND_STMT_KIND_INVALID) {}
+  int add_stmt_type(const ObProxyBasicStmtType stmt_type);
 
   void set_stmt_kind(const ObProxyQosCondStmtKind stmt_kind) { stmt_kind_ = stmt_kind; }
 
   virtual int calc(proxy::ObProxyMysqlRequest &client_request, common::ObIAllocator *allocator, bool &is_match);
 
 private:
-  ObProxyBasicStmtType stmt_type_;
   ObProxyQosCondStmtKind stmt_kind_;
+  common::ObSEArray<ObProxyBasicStmtType, 10> stmt_type_array_; // use for ODP sql firewall V2
 };
 
 class ObProxyQosCondTableName : public ObProxyQosCond

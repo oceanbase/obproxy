@@ -38,7 +38,7 @@ namespace proxy
 enum
 {
   CLIENT_MAGIC_ALIVE = 0xAABBCCDD,
-  CLIENT_MAGIC_DEAD  = 0xDDCCBBAA
+  CLIENT_MAGIC_DEAD = 0xDDCCBBAA
 };
 
 static int64_t const RESCHEDULE_GET_NETHANDLER_LOCK_INTERVAL = HRTIME_MSECONDS(1); // 1ms
@@ -755,7 +755,9 @@ int ObMysqlClient::handle_client_vc_disconnect()
   client_vc_ = NULL;
 
   if (OB_SUCC(ret)) {
-    if (NULL != mysql_resp_) {
+    // in detect server mysql_resp_ need to be reserved util the caller processed
+    // and mysql_resp_ will be freed when ObMysqlClient::kill_this()
+    if (NULL != mysql_resp_ && ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT != info_.get_request_param().client_vc_type_) {
       op_free(mysql_resp_);
       mysql_resp_ = NULL;
     }
@@ -860,13 +862,20 @@ int ObMysqlClient::do_next_action(void *data)
         break;
       }
       case CLIENT_ACTION_READ_LOGIN_RESP: {
+        // 对于探活，只要OBServer返回COM_HANDSHAK就可以认为探测成功，
+        // 因为OBProxy对COM_HANDKSHAKE有特殊处理，所以client_vc要发送了
+        // LOGIN才能够接收到数据
         if (ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT == info_.get_request_param().client_vc_type_) {
           is_request_complete_ = true;
-        } else if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN))) {
+        }
+
+        // resp is error for detect_user
+        if (OB_FAIL(transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN))) {
           LOG_WDIAG("fail to transfer and analyze resposne", K(ret));
         } else if (!mysql_resp_->is_resp_completed()) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("mysql resp must be received complete", K(ret));
+        // proxy sm will be notified and will be deallocated, client_vc_ will be freed and set to NULL for detect_user
         } else if (OB_FAIL(notify_transfer_completed())) {
           LOG_WDIAG("fail to notify transfer completed", K(ret));
         } else if (NULL != client_vc_) { // NULL means client_vc has closed
@@ -1206,7 +1215,12 @@ void ObMysqlClient::release(bool is_need_check_reentry)
     } else {
       // for defense, make sure client vc's mutex is common mutex when release to client pool;
       // Never free client vc in mysql client, it will be free by mysql_sm
-      if ((ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT != info_.get_request_param().client_vc_type_) && NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
+      if (NULL != client_vc_ && client_vc_->mutex_ != common_mutex_) {
+        if (OB_UNLIKELY(ObMysqlRequestParam::CLIENT_VC_TYPE_DETECT == info_.get_request_param().client_vc_type_)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_EDIAG("client_vc_ of detect_user client is supposed to be freed when transfer_and_analyze_response(vio, OB_MYSQL_COM_LOGIN) was called",
+                    K(ret), K(info_), KP(client_vc_), KP(this));
+        }
         client_vc_->handle_event(CLIENT_VC_SWAP_MUTEX_EVENT, common_mutex_.ptr_);
         if (NULL != client_vc_) {
           client_vc_->mutex_ = common_mutex_;
@@ -1229,9 +1243,7 @@ void ObMysqlClient::release(bool is_need_check_reentry)
 
 void ObMysqlClient::kill_this()
 {
-  LOG_INFO("mysql client will kill self",
-           K(this), K(is_inited_), K(in_use_), K(info_), K(server_addr_),
-           K(retry_times_), K(magic_), "thread", this_ethread());
+  LOG_INFO("mysql client will kill self", K(this));
   int ret = OB_SUCCESS;
   // ignore ret, continue
   if (OB_FAIL(cancel_active_timeout())) {

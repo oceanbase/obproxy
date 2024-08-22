@@ -52,9 +52,10 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
   int64_t write_size = 0;
   ObMysqlAnalyzeResult result;
 
-  // why use two reader?
-  // local_analyze_reader for analyze. after analyze one mysql packet, will move to next mysql packet
-  // local_reader for output data to tunnel, need from start pos
+  // 这里为什么要 clone 两个 reader，是因为:
+  // local_analyze_reader 用于分析, 当分析完一个 mysql 包，就要往前移动到下一个 mysql 包;
+  // local_reader 用于把数据输出给tunnel，这里需要从开始的位置输出;
+  // 这里也可以clone一个reader，使用start_pos_ 来移动
   if (NULL == local_reader_) {
     local_reader_ = reader->clone();
     local_analyze_reader_ = local_reader_->clone();

@@ -1,5 +1,10 @@
-EXTRA_DIST=build.sh svn_dist_version script/deploy unittest/Makefile.in unittest/obproxy/Makefile.in deps/easy hotfuncs.txt
+EXTRA_DIST=build.sh  svn_dist_version script/deploy unittest/Makefile.in unittest/obproxy/Makefile.in deps/easy hotfuncs.txt
 bin_SCRIPTS=script/deploy/obproxyd.sh
+
+if BUILD_OPENSOURCE
+else
+EXTRA_DIST += docker/start_obproxy.sh
+endif
 
 if WITH_TEST_CASE
 TEST_DIR:=unittest

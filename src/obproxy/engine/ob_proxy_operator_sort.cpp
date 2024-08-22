@@ -503,7 +503,7 @@ int ObProxyMemMergeSortUnit::calc_order_values()
   return ret;
 }
 
-// Return true to come first
+// 返回 true 排在前面
 bool ObProxyMemMergeSortUnit::compare(const ObProxyMemMergeSortUnit* sort_unit) const
 {
   bool bret = true;
@@ -598,9 +598,8 @@ int ObProxyStreamSortOp::handle_response_result(void *data, bool &is_final, ObPr
     }
 
     while (OB_SUCC(ret) && !sort_units_.empty()) {
-      // sort
-      // Flashback according to expectations, such as positive order,
-      // put the minimum value at the end, which is convenient for pop_back
+      // 排序
+      // 按照期望倒叙, 比如正序, 就把最小值放到最后, 方便 pop_back
       std::sort(sort_units_.begin(), sort_units_.end(), ObProxySortUnitCompare<ObProxyStreamSortUnit>());
       ObProxyStreamSortUnit *sort_unit = sort_units_.at(sort_units_.count() - 1);
 
@@ -661,7 +660,7 @@ int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, ResultFields *res
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("result fields should not NULL", K(ret));
   } else if (OB_FAIL(next())) {
-    // The first time, there must be a result, so it must not be OB_ITER_END
+    // 第一次, 一定有结果, 所以一定不会是 OB_ITER_END
     LOG_WDIAG("fail to exec next", K(ret));
   }
   return ret;
@@ -694,17 +693,7 @@ ObBaseSort::ObBaseSort(SortColumnArray &sort_columns, common::ObIAllocator &allo
   *err_ = common::OB_SUCCESS;
   *sort_err_ = common::OB_SUCCESS;
 }
-ObBaseSort::~ObBaseSort()
-{
-  if (err_ != NULL) {
-    delete err_;
-    err_ = NULL;
-  }
-  if (sort_err_ != NULL) {
-    delete sort_err_;
-    sort_err_ = NULL;
-  }
-}
+
 bool ObBaseSort::compare_row(ResultRow &row1, ResultRow &row2, int &ret) //row1 <= row2 true, row1 > row2 false
 {
   *err_ = common::OB_SUCCESS;
