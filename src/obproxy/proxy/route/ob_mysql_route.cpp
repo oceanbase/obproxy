@@ -663,7 +663,8 @@ inline void ObMysqlRoute::handle_table_entry_lookup_done()
     // table entry lookup succ
     if (NULL != table_entry_
         && table_entry_->is_partition_table()
-        && param_.is_partition_table_route_supported_) {
+        && param_.is_partition_table_route_supported_
+        && src_type_ != OB_RPOXY_ROUTE_FOR_RPC_GET_PARTITION) {
       next_action_ = ROUTE_ACTION_PARTITION_ID_CALC_START;
     } else {
       next_action_ = ROUTE_ACTION_NOTIFY_OUT;

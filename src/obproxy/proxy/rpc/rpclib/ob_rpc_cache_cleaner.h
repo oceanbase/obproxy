@@ -24,7 +24,7 @@ namespace obproxy
 namespace obutils
 {
 class ObClusterResource;
-class ObResourceDeleteActor;
+struct ObResourceDeleteActor;
 }
 namespace proxy
 {

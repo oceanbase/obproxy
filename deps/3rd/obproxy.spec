@@ -38,7 +38,7 @@ mkdir -p lib
 cp ${TOOLS_DIR}/lib64/libstdc++.so.6.0.28 lib/libstdc++.so.6
 cp -r %{rpm_path}/deps/3rd deps
 
-#./configure CXX=${CXX} CC=${CC} --with-gcc-version=9.3.0 --with-so --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
+#./configure --with-so --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 CPU_CORES=`grep -c ^processor /proc/cpuinfo`
 MAKE_ARGS="-j $CPU_CORES"
 #make $MAKE_ARGS
@@ -48,7 +48,7 @@ MAKE_ARGS="-j $CPU_CORES"
 #find . -path ./tools/codestyle/astyle/build -prune -o -path ./doc -prune -o -name Makefile -exec rm -f {} \;
 #find . -name .deps -prune -exec rm -rf {} \;
 
-./configure CXX=${CXX} CC=${CC} --with-gcc-version=9.3.0 RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
+./configure RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 mkdir -p unittest
 make $MAKE_ARGS
 

@@ -16,8 +16,10 @@
 #include "ob_rpc_req_parallel_execute_cont.h"
 #include "obutils/ob_proxy_config.h"
 #include "iocore/eventsystem/ob_vconnection.h" //VC_EVENT_READ_READY && VC_EVENT_READ_COMPLETE && VC_EVENT_ACTIVE_TIMEOUT && VC_EVENT_ERROR
+#include "iocore/eventsystem/ob_kv_task.h"
 
 using namespace oceanbase::common;
+using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::event;
 
@@ -160,10 +162,38 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
       LOG_WDIAG("fail to alloc parallel execute cont", K(ret));
     } else if (OB_FAIL(execute_cont->init(parallel_param.at(i), i, allocator, timeout_ms_))) {
       LOG_WDIAG("fail to init execute cont", K(ret));
-    } else if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
     } else {
+      int64_t sub_req_iso_mode = get_global_proxy_config().rpc_sub_request_isolation_mode;
+      int64_t async_thread_count = g_event_processor.thread_count_for_type_[ET_OBKV];
+      int64_t async_thread_iso_range = ObRpcReqThreadQpsStat::get_sub_req_async_thread_iso_range();
+      if (sub_req_iso_mode == NOT_ISOLAEION || async_thread_count == 0) {
+        LOG_DEBUG("obkv event processor handle sub request");
+        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
+        }
+      } else if (sub_req_iso_mode == ISOLATE_TO_ALL_ASYNC_THREAD || async_thread_iso_range <= 0) {
+        LOG_DEBUG("obkv task processor handle sub request");
+        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_OBKV))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
+        }
+      } else if (sub_req_iso_mode == ISOLATE_TO_PART_ASYNC_THREAD) {
+        LOG_DEBUG("obkv task processor handle sub request", K(async_thread_iso_range));
+        if (OB_ISNULL(g_event_processor.schedule_imm_with_range(execute_cont, async_thread_iso_range, ET_OBKV))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
+        }
+      } else {
+        LOG_INFO("invalid rpc_sub_req_siolation_mode", K(sub_req_iso_mode));
+        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
+        }
+      }
+    }
+
+    if (OB_SUCC(ret)) {
       ++target_task_count_;
       parallel_action_array_[i] = &execute_cont->get_action();
       if (handle_stream_rpc_request_) {

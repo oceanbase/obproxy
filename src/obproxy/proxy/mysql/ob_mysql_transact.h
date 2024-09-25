@@ -882,7 +882,7 @@ enum ObServerRespErrorType
   static void handle_ps_close_reset(ObTransState &s);
   static void handle_fetch_request(ObTransState &s);
   static void handle_target_db_not_allow(ObTransState &s);
-  static void handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type);
+  static void handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type, const ObRoutePolicyEnum &policy);
   static void handle_explain_route(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,

@@ -564,6 +564,10 @@ int ObProxyPartMgr::build_sub_hash_part_with_non_template(const bool is_oracle_m
         } else {//treat too long name string as empty string
           name_len_buf[index] = 0;
         }
+        // LOG_DEBUG("build hash part without template", "first part index", i, "sub part index", j,
+        //           K(first_part_id), K(sub_part_id), "tablet_id", desc_hash->tablet_id_array_[j],
+        //           "ls_id", desc_hash->ls_id_array_[j]);
+
         ++index;
       }
     }
@@ -927,6 +931,7 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
 
   // build desc_range
   ObString tmp_str;
+  ObString high_bound_val;
   int64_t pos = 0;
   for (int64_t i = 0; i < part_num && OB_SUCC(ret); ++i) {
     if (OB_FAIL(rs_fetcher.next())) {
@@ -984,6 +989,19 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
       } else {
         // do nothing
         LOG_DEBUG("get high bound val rowkey", "high_bound_val", part_array[i].high_bound_val_);
+
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "high_bound_val", high_bound_val);
+        LOG_DEBUG("get high bound val", K(high_bound_val));
+        char *buf;
+        if (OB_FAIL(ret)) {
+          LOG_WDIAG("fail to fetch result", K(ret));
+        } else if (OB_ISNULL(buf = static_cast<char *>(allocator_.alloc(high_bound_val.length())))) {
+          LOG_WDIAG("fail to alloc buf", K(high_bound_val), K(ret));
+        } else {
+          memcpy(buf, high_bound_val.ptr(), high_bound_val.length());
+          high_bound_val.assign_ptr(buf, high_bound_val.length());
+          part_array[i].high_bound_val_str_ = high_bound_val;
+        }
       }
     }
   } // end of for
@@ -1064,6 +1082,7 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
   }
   // build desc_range
   ObString tmp_str;
+  ObString high_bound_val;
   int64_t index = 0;
   int64_t pos = 0;
   ObPartDescRange *desc_range = NULL;
@@ -1120,6 +1139,20 @@ int ObProxyPartMgr::build_sub_range_part_with_non_template(const ObPartitionFunc
           LOG_WDIAG("fail to deserialize", K(tmp_str), K(ret));
         } else {
           // do nothing
+          // LOG_DEBUG("get high bound val rowkey", "high_bound_val", part_array[j].high_bound_val_);
+
+          PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "high_bound_val", high_bound_val);
+          LOG_DEBUG("get high bound val", K(high_bound_val));
+          char *buf;
+          if (OB_FAIL(ret)) {
+            LOG_WDIAG("fail to fetch result", K(ret));
+          } else if (OB_ISNULL(buf = static_cast<char *>(allocator_.alloc(high_bound_val.length())))) {
+            LOG_WDIAG("fail to alloc buf", K(high_bound_val), K(ret));
+          } else {
+            memcpy(buf, high_bound_val.ptr(), high_bound_val.length());
+            high_bound_val.assign_ptr(buf, high_bound_val.length());
+            part_array[j].high_bound_val_str_ = high_bound_val;
+          }
         }
       }
     }

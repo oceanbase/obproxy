@@ -69,8 +69,8 @@ int ObRoutePrometheus::handle_prometheus(const ObString &cluster_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_HIT, route_hit ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_RESULT, result ? LABEL_TRUE : LABEL_FALSE, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(ENTRY_TOTAL, ENTRY_TOTAL_HELP, label_vector))) {
-      LOG_WDIAG("fail to handle counter with ENTRY_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(ENTRY_TOTAL, ENTRY_TOTAL_HELP, label_vector))) {
+      LOG_WDIAG("fail to accumulate counter with ENTRY_TOTAL", K(ret));
     }
     break;
   }

@@ -22,7 +22,7 @@ namespace oceanbase
 {
 namespace common
 {
-class ObModItem;
+struct ObModItem;
 } // end of namespace common
 
 namespace lib
@@ -70,13 +70,14 @@ public:
   int64_t get_tenant_hold(uint64_t tenant_id) const;
   void get_tenant_mod_usage(uint64_t tenant_id, int mod_id, common::ObModItem &item) const;
   int64_t get_mod_dist(int mod_id, ObTenantMemory tenant_memory[], int64_t count);
+  void add_tenant_mod_usage(uint64_t tenant_id, int mod_id, common::ObModItem &item);
 
   void print_tenant_memory_usage(uint64_t tenant_id) const;
 
+  ObTenantAllocator *get_tenant_allocator(uint64_t tenant_id) const;
+
 private:
   DISALLOW_COPY_AND_ASSIGN(ObMallocAllocator);
-
-  ObTenantAllocator *get_tenant_allocator(uint64_t tenant_id) const;
 
 private:
   obsys::CRWLock locks_[PRESERVED_TENANT_COUNT];

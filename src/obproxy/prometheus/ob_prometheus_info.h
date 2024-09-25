@@ -54,6 +54,8 @@ enum ObPrometheusMetrics
   PROMETHEUS_ENTRY_LOOKUP_COUNT,
   PROMETHEUS_REQUEST_BYTE,
   PROMETHEUS_RPC_REQUEST_BYTE,
+  PROMETHEUS_MEMORY_HOLD,
+  PROMETHEUS_MEMORY_USED,
   PROMETHEUS_METRIC_COUNT
 };
 
@@ -158,6 +160,7 @@ public:
 
   int64_t atomic_get_and_reset_value();
   void atomic_add(const int64_t value) { ATOMIC_AAF(&value_, value); }
+  void atomic_set(const int64_t value) { ATOMIC_STORE(&value_, value);}
   virtual bool is_active() const { return ATOMIC_LOAD(&value_); }
 
   int64_t get_value() { return value_; }
@@ -358,11 +361,11 @@ int ObPrometheusFamily::get_or_create_metric(const common::ObVector<ObPrometheus
                                              TA& args, T *&metric, bool allow_delete)
 {
   int ret = common::OB_SUCCESS;
-
+  UNUSED(allow_delete);
   metric = NULL;
   uint64_t hash = 0;
   ObPrometheusMetricHashKey key;
-  key.labels_ = &label_array;
+  key.labels_ = const_cast<common::ObVector<ObPrometheusLabel> *>(&label_array);
 
   for (int64_t i = 0; i < label_array.size() && OB_SUCC(ret); ++i) {
     ObPrometheusLabel &label = label_array.at(i);

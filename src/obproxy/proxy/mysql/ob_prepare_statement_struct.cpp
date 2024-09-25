@@ -400,7 +400,6 @@ void ObBasePsEntryThreadCache::destroy()
 
 void ObBasePsEntryGlobalCache::delete_base_ps_entry(ObBasePsEntry *base_ps_entry)
 {
-  common::DRWLock::WRLockGuard guard(lock_);
   ps_entry_global_map_.remove(base_ps_entry);
 }
 
@@ -428,17 +427,6 @@ int init_ps_entry_cache_for_thread()
   return ret;
 }
 
-int init_text_ps_entry_cache_for_thread()
-{
-  int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
-  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
-    if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(i))) {
-      PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
-    }
-  }
-  return ret;
-}
 
 int init_ps_entry_cache_for_one_thread(int64_t index)
 {
@@ -451,6 +439,31 @@ int init_ps_entry_cache_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_ps_entry_cache_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(thread->ps_entry_cache_ = new (std::nothrow) ObBasePsEntryThreadCache())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(thread), K(ret));
+  }
+  return ret;
+}
+
+int init_text_ps_entry_cache_for_thread()
+{
+  int ret = OB_SUCCESS;
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
+    if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(i))) {
+      PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
+    }
+  }
+  return ret;
+}
+
 int init_text_ps_entry_cache_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
@@ -458,6 +471,19 @@ int init_text_ps_entry_cache_for_one_thread(int64_t index)
     = new (std::nothrow) ObBasePsEntryThreadCache())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
+  }
+  return ret;
+}
+
+int init_text_ps_entry_cache_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(thread->text_ps_entry_cache_ = new (std::nothrow) ObBasePsEntryThreadCache())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(ret));
   }
   return ret;
 }

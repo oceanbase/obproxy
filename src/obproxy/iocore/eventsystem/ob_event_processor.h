@@ -181,6 +181,12 @@ public:
                         const int callback_event = EVENT_IMMEDIATE,
                         void *cookie = NULL);
 
+  ObEvent *schedule_imm_with_range(ObContinuation *c,
+                                   int64_t thread_border,
+                                   const ObEventThreadType event_type = ET_CALL,
+                                   const int callback_event = EVENT_IMMEDIATE,
+                                   void *cookie = NULL);
+
   // provides the same functionality as schedule_imm and also signals the
   // thread immediately
   ObEvent *schedule_imm_signal(ObContinuation *cont,
@@ -307,8 +313,10 @@ public:
   int64_t allocate(const int64_t size);
 
   virtual ObEvent *schedule(ObEvent *e, const ObEventThreadType etype, const bool fast_signal = false);
+  virtual ObEvent *schedule_with_range(ObEvent *e, const ObEventThreadType etype, int64_t thread_border, const bool fast_signal = false);
 
   ObEThread *assign_thread(const ObEventThreadType etype);
+  ObEThread *assign_thread_with_range(const ObEventThreadType etype, int64_t thread_border);
 
 private:
   /**
@@ -420,10 +428,37 @@ inline ObEThread *ObEventProcessor::assign_thread(const ObEventThreadType etype)
   return (event_thread_[etype][next]);
 }
 
+inline ObEThread *ObEventProcessor::assign_thread_with_range(const ObEventThreadType etype, int64_t thread_border)
+{
+  int64_t next = 0;
+  int64_t schedule_range = thread_border <= thread_count_for_type_[etype] ? thread_border : thread_count_for_type_[etype];
+
+  if (OB_LIKELY(thread_count_for_type_[etype] > 1)) {
+    next = static_cast<int64_t>(next_thread_for_type_[etype]++) % schedule_range;
+  } else {
+    next = 0;
+  }
+  return (event_thread_[etype][next]);
+}
+
 ObEvent *ObEventProcessor::schedule(
     ObEvent *event, const ObEventThreadType etype, const bool fast_signal)
 {
   event->ethread_ = assign_thread(etype);
+  if (NULL != event->continuation_->mutex_) {
+    event->mutex_ = event->continuation_->mutex_;
+  } else {
+    event->continuation_->mutex_ = event->ethread_->mutex_;
+    event->mutex_ = event->continuation_->mutex_;
+  }
+  event->ethread_->event_queue_external_.enqueue(event, fast_signal);
+  return event;
+}
+
+ObEvent *ObEventProcessor::schedule_with_range(
+    ObEvent *event, const ObEventThreadType etype, int64_t thread_border, const bool fast_signal)
+{
+  event->ethread_ = assign_thread_with_range(etype, thread_border);
   if (NULL != event->continuation_->mutex_) {
     event->mutex_ = event->continuation_->mutex_;
   } else {
@@ -489,7 +524,7 @@ inline ObEvent *ObEventProcessor::schedule_imm(
   ObEvent *event = NULL;
   int ret = common::OB_SUCCESS;
   if (OB_FAIL(check_schedule_input(cont, etype))) {
-    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret));
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret), K(etype));
   } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_imm", K(ret));
@@ -502,6 +537,35 @@ inline ObEvent *ObEventProcessor::schedule_imm(
     event->callback_event_ = callback_event;
     event->cookie_ = cookie;
     event = schedule(event, etype);
+  }
+
+  if (OB_FAIL(ret) && NULL != event) {
+    op_reclaim_free(event);
+    event = NULL;
+  }
+  return event;
+}
+
+inline ObEvent *ObEventProcessor::schedule_imm_with_range(
+    ObContinuation *cont, int64_t thread_border, const ObEventThreadType etype,
+    const int callback_event, void *cookie)
+{
+  ObEvent *event = NULL;
+  int ret = common::OB_SUCCESS;
+  if (OB_FAIL(check_schedule_input(cont, etype))) {
+    PROXY_EVENT_LOG(EDIAG, "fail to check_schedule_input", K(ret), K(etype));
+  } else if (OB_ISNULL(event = op_reclaim_alloc(ObEvent))) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_imm", K(ret));
+  } else if (OB_FAIL(event->init(*cont, 0, 0))) {
+    PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
+  } else {
+#ifdef ENABLE_TIME_TRACE
+    event->start_time_ = get_hrtime();
+#endif
+    event->callback_event_ = callback_event;
+    event->cookie_ = cookie;
+    event = schedule_with_range(event, etype, thread_border);
   }
 
   if (OB_FAIL(ret) && NULL != event) {

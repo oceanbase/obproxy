@@ -696,6 +696,26 @@ int init_table_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_table_map_for_one_thread(ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->table_map_ = new (std::nothrow) ObTableRefHashMap(ObModIds::OB_PROXY_TABLE_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObTableRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->table_map_->init())) {
+      LOG_WDIAG("fail to init table_map", K(ret));
+    } else {
+      LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void *>(thread), "table_map",
+                reinterpret_cast<const void *>(thread->table_map_), K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObTableRefHashMap::clean_hash_map()
 {
   int ret = OB_SUCCESS;

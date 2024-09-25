@@ -31,6 +31,7 @@
 #include "stat/ob_processor_stats.h"
 #include "stat/ob_resource_pool_stats.h"
 #include "stat/ob_net_stats.h"
+#include "stat/ob_rpc_req_stats.h"
 #include "obutils/ob_config_server_processor.h"
 #include "obutils/ob_resource_pool_processor.h"
 #include "obutils/ob_vip_tenant_processor.h"
@@ -85,6 +86,7 @@
 #include "cmd/ob_sequence_info_handler.h"
 #include "cmd/ob_show_global_session_handler.h"
 #include "cmd/ob_kill_global_session_handler.h"
+#include "cmd/ob_show_kv_handler.h"
 #include "obutils/ob_session_pool_processor.h"
 #include "obutils/ob_config_processor.h"
 #include "iocore/net/ob_ssl_processor.h"
@@ -255,6 +257,8 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
           LOG_WDIAG("fail to init lock_stats", K(ret));
         } else if (OB_FAIL(init_warning_stats())) {
           LOG_WDIAG("fail to init warning_stats", K(ret));
+        } else if (OB_FAIL(init_rpc_req_stats())) {
+          LOG_WDIAG("fail to init rpc req stats", K(ret));
         }
       }
     }
@@ -906,6 +910,8 @@ int ObProxy::init_inner_request_env()
     LOG_EDIAG("fail to init show_global_session_info_cmd_init", K(ret));
   } else if (OB_FAIL(kill_global_session_info_cmd_init())){
     LOG_EDIAG("fail to init kill_global_session_info_cmd_init", K(ret));
+  } else if (OB_FAIL(show_kv_cmd_init())) {
+    LOG_EDIAG("fail to init show_kv_cmd", K(ret));
   } else {
     // do nothing
   }

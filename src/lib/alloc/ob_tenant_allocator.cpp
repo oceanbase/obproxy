@@ -145,3 +145,17 @@ void ObTenantAllocator::print_usage() const
   }
 }
 
+
+int64_t ObTenantAllocator::get_used() const
+{
+  int64_t total_used = 0;
+
+  for (int32_t idx = 0; idx < ObModSet::MOD_COUNT_LIMIT; idx++) {
+    if (!is_allocator_mod(idx)) {
+      const ObModItem& item = obj_mgr_.get_mod_usage(idx);;
+      total_used += item.used_;
+    }
+  }
+
+  return total_used;
+}

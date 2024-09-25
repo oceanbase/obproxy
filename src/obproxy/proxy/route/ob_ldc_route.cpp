@@ -778,6 +778,12 @@ const ObLDCItem *ObLDCRoute::get_next_weight_item()
         finish = (-1 == weight_zone_index_);
       }
       LOG_DEBUG("random weight zone index", K_(weight_zone_index), K(finish));
+      if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
+        if (-1 != weight_zone_index_) {
+          const ObConfigVariableString &zone_name = weight_zone_array.at(weight_zone_index_)->zone_name_;
+          LOG_DEBUG("weight zone name is ", K(zone_name));
+        }
+      }
       if (!finish && NULL == ret_item && -1 != weight_zone_index_) {
         ObWeightZoneItems* weight = weight_zone_array.at(weight_zone_index_);
         if (OB_NOT_NULL(weight)) {

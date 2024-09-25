@@ -168,12 +168,16 @@ _DESERIALIZATION_SPEC(double);
 template <class _archive>
 int serialization(_archive &ar, const HashNullObj &value)
 {
+  UNUSED(ar);
+  UNUSED(value);
   return OB_SUCCESS;
 }
 
 template <class _archive>
 int deserialization(_archive &ar, HashNullObj &value)
 {
+  UNUSED(ar);
+  UNUSED(value);
   return OB_SUCCESS;
 }
 

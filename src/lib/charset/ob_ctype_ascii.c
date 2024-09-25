@@ -15,6 +15,7 @@
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/charset/ob_ctype_ascii_tab.h"
 
+#define UNUSED(v) ((void)(v))
 int ob_wc_mb_8bit(const ObCharsetInfo *cs, ob_wc_t wc, uchar *str, uchar *end) {
   const OB_UNI_IDX *idx;
 
@@ -42,6 +43,8 @@ size_t ob_well_formed_len_ascii(const ObCharsetInfo *cs,
                                 size_t nchars,
                                 int *error)
 {
+  UNUSED(cs);
+  UNUSED(nchars);
   const char *oldstart = start;
   *error = 0;
   while (start < end) {

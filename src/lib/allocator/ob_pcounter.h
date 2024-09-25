@@ -150,14 +150,14 @@ public:
     pos_ = 0;
     *buf_ = 0;
   }
-  char *get_str() { return NULL != buf_ && limit_ > 0 ? buf_ : NULL; }
+  char *get_str() { return buf_; }
   char *append(const char *format, ...)
   {
     char *src = NULL;
     int64_t count = 0;
     va_list ap;
     va_start(ap, format);
-    if (NULL != buf_ && limit_ > 0 && pos_ < limit_
+    if (limit_ > 0 && pos_ < limit_
         && pos_ + (count = vsnprintf(buf_ + pos_, limit_ - pos_, format, ap)) < limit_) {
       src = buf_ + pos_;
       pos_ += count;
@@ -171,7 +171,7 @@ public:
     int64_t count = 0;
     va_list ap;
     va_start(ap, format);
-    if (NULL != buf_ && limit_ > 0 && pos_ < limit_
+    if (limit_ > 0 && pos_ < limit_
         && pos_ + (count = vsnprintf(buf_ + pos_, limit_ - pos_, format, ap)) + 1 < limit_) {
       src = buf_ + pos_;
       pos_ += count + 1;

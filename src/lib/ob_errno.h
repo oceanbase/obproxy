@@ -361,6 +361,7 @@ namespace common
   static const int OB_CLUSTER_NOT_EXIST = -4669;
   static const int OB_STANDBY_WEAK_READ_ONLY = -4688;
   static const int OB_LS_NOT_EXIST = -4719;
+  static const int OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST = -4723;
   static const int OB_TABLET_EXIST = -4724;
   static const int OB_TABLET_NOT_EXIST = -4725;
   static const int OB_SERVICE_NAME_NOT_FOUND = -4780;
@@ -851,6 +852,7 @@ namespace common
   static const int OB_ERR_KV_ODP_TIMEOUT = -10650;
   static const int OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST = -10651;
   static const int OB_ERR_KV_ROWKEY_MISMATCH = -10652;
+  static const int OB_ERR_KV_ROUTE_ENTRY_EXPIRE = -10653;
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -1612,7 +1614,6 @@ namespace common
 #define OB_ERR_KV_ODP_TIMEOUT__USER_ERROR_MSG "ODP-OBKV execution timeout"
 #define OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST__USER_ERROR_MSG "ODP-OBKV key partition prohibits shard requests"
 #define OB_ERR_KV_ROWKEY_MISMATCH__USER_ERROR_MSG "ODP-OBKV the partition key cannot be parsed from rowkey"
-
   const char* ob_strerror(int oberr);
   const char* ob_sqlstate(int oberr);
   const char* ob_str_user_error(int oberr);

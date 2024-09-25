@@ -28,7 +28,7 @@ class ObIOBufferReader;
 }
 namespace net
 {
-class ObIpAddr;
+struct ObIpAddr;
 union ObIpEndpoint;
 }
 namespace proxy

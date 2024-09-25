@@ -123,6 +123,68 @@ ObMemLeakChecker &get_global_mem_leak_checker();
 ObMemLeakChecker &get_global_objpool_leak_checker();
 
 
+class ObRefMemLeakChecker
+{
+  static const int64_t MAX_BACKTRACE_SIZE = 16;
+  static const int64_t MEM_INFO_MAP_NUM = common::OB_MAX_CPU_NUM;
+  static const int64_t DEFAULT_MAP_SIZE = 3079;
+  static const int64_t MAX_PRINT_RECORD = 10;
+public:
+  static const int64_t MOD_ID_FOR_CHECK = ObModIds::OB_PROXY_MEM_LEAK_CHECK;
+  struct StackInfo
+  {
+    StackInfo() {
+      MEMSET(bt_, 0, sizeof(bt_));
+    }
+    uint64_t hash() const
+    {
+      return murmurhash(bt_, sizeof(bt_), 0);
+    }
+    bool operator==(const StackInfo &other) const
+    {
+      return (0 == STRNCMP((const char*)bt_, (const char*)other.bt_, sizeof(bt_)));
+    }
+    void* bt_[common::ObRefMemLeakChecker::MAX_BACKTRACE_SIZE];
+  };
+
+  struct RefInfoHelper
+  {
+    RefInfoHelper() : ref_times_(0) {}
+    bool operator<(const RefInfoHelper& other) {
+      bool b_ret = false;
+      if (ref_times_ < other.ref_times_) {
+        b_ret = true;
+      }
+      return b_ret;
+    }
+
+    DECLARE_TO_STRING;
+    int64_t ref_times_;
+    const StackInfo* info_;
+  };
+
+  DECLARE_TO_STRING;
+  typedef hash::ObHashMap<StackInfo, int64_t, common::hash::NoPthreadDefendMode> ref_info_map_t; // StackInfo ->  (alloc_times)
+
+public:
+  int on_inc();
+  int on_dec();
+  int load_ref_inc_backtrace(char *const buf, int64_t buf_len, int64_t& ret_len);
+  int load_ref_dec_backtrace(char *const buf, int64_t buf_len, int64_t& ret_len);
+
+private:
+  int get_inc_info_map_for_cur_thread(ref_info_map_t*& ret_ptr, int64_t& id);
+  int get_dec_info_map_for_cur_thread(ref_info_map_t*& ret_ptr, int64_t& id);
+  int record_stack_in_map(const StackInfo& info, ref_info_map_t& malloc_info, int64_t tid);
+  int load_ref_inc_info_map(ref_info_map_t& dec_info_map);
+  int load_ref_dec_info_map(ref_info_map_t& dec_info_map);
+  ref_info_map_t* inc_info_maps_[MEM_INFO_MAP_NUM];
+  ref_info_map_t* dec_info_maps_[MEM_INFO_MAP_NUM];
+  lib::ObMutex locks_[MEM_INFO_MAP_NUM];
+};
+
+common::ObRefMemLeakChecker &get_global_ref_leak_checker();
+
 }; // end namespace common
 }; // end namespace oceanbase
 

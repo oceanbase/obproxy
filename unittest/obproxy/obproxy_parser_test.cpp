@@ -32,7 +32,6 @@ using namespace oceanbase::obproxy::opsql;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::proxy;
 
-const int buffer_size = 4096;
 void do_expr_parser_test(std::string query_str, std::string extra_str, bool is_select);
 int parse_sql_fileds(ObProxyMysqlRequest &client_request, ObString expr_sql);
 void extract_local_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &client_request);

@@ -835,7 +835,7 @@ struct ObLogPrintPointerCnt
   {
     int64_t pos = 0;
     if (NULL == v_) {
-      pos = snprintf(buf, len, "NULL");
+      pos = snprintf(buf, static_cast<size_t>(len), "NULL");
       if (pos <= 0) {
         pos = 0;
       } else if (pos >= len) {

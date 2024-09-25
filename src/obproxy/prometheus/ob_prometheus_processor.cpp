@@ -180,18 +180,21 @@ int ObPrometheusProcessor::sync_to_exporter(ObPrometheusFamilyHashTable::iterato
       case PROMETHEUS_TYPE_COUNTER:
       {
         ObPrometheusCounter *counter = (ObPrometheusGauge *)metric_iter.value_;
-        ret = ObProxyPrometheusConvert::handle_counter(exporter_metric,
+        ret = ObProxyPrometheusConvert::accumulate_counter(exporter_metric,
                                                        counter->atomic_get_and_reset_value());
         break;
       }
       case PROMETHEUS_TYPE_GAUGE:
       {
         ObPrometheusGauge *gauge = (ObPrometheusGauge *)metric_iter.value_;
-        if (get_global_proxy_config().prometheus_cost_ms_unit && family_iter->get_name() == COST_TOTAL) {
-          ret = ObProxyPrometheusConvert::handle_gauge(exporter_metric,
+        if (OB_UNLIKELY(family_iter->get_name() == ODP_MEMORY)) {
+          ret = ObProxyPrometheusConvert::set_gauge(exporter_metric,
+                                                    static_cast<double>(gauge->atomic_get_and_reset_value()));
+        } else if (get_global_proxy_config().prometheus_cost_ms_unit && family_iter->get_name() == COST_TOTAL) {
+          ret = ObProxyPrometheusConvert::accumulate_gauge(exporter_metric,
                                                        static_cast<double>(gauge->atomic_get_and_reset_value()) / 1000);
         } else {
-          ret = ObProxyPrometheusConvert::handle_gauge(exporter_metric,
+          ret = ObProxyPrometheusConvert::accumulate_gauge(exporter_metric,
                                                        gauge->atomic_get_and_reset_value());
         }
         break;
@@ -229,16 +232,22 @@ int ObPrometheusProcessor::do_prometheus_sync_task()
   DRWLock::RDLockGuard lock(lock_);
   ObPrometheusFamilyHashTable::iterator family_iter = family_hash_.begin();
   ObPrometheusFamilyHashTable::iterator family_last = family_hash_.end();
-  for (; family_iter != family_last; ++family_iter) {
+  for (; OB_SUCC(ret) && family_iter != family_last; ++family_iter) {
     DRWLock::WRLockGuard lock(family_iter->lock_);
     ObPrometheusMetricHashTable::iterator metric_iter = family_iter->get_metrics().begin();
     ObPrometheusMetricHashTable::iterator metric_last = family_iter->get_metrics().end();
 
-    for (; metric_iter != metric_last; ) {
+    for (; OB_SUCC(ret) && metric_iter != metric_last; ) {
       if (metric_iter->is_active()) {
-        sync_to_exporter(family_iter, metric_iter);
-        metric_iter->reset_idle_period_count();
-        ++metric_iter;
+        try {
+          sync_to_exporter(family_iter, metric_iter);
+          metric_iter->reset_idle_period_count();
+          ++metric_iter;
+        } catch (const std::exception& e) {
+          ret = OB_ERR_UNEXPECTED;
+          is_inited_ = false; // disable promtheus
+          LOG_EDIAG("get std::exception", "exception", e.what(), K(ret));
+        }
       } else if (metric_iter->is_allow_delete()
                  && metric_iter->inc_and_fetch_idle_period_count() > max_idle_period
                  && need_expire_metric) {
@@ -267,7 +276,7 @@ int ObPrometheusProcessor::do_prometheus_sync_task()
   return ret;
 }
 
-int ObPrometheusProcessor::handle_counter(const char *name_ptr, const char *help_ptr,
+int ObPrometheusProcessor::accumulate_counter(const char *name_ptr, const char *help_ptr,
                                           ObVector<ObPrometheusLabel> &label_array,
                                           int64_t value)
 {
@@ -295,7 +304,7 @@ int ObPrometheusProcessor::handle_counter(const char *name_ptr, const char *help
   return ret;
 }
 
-int ObPrometheusProcessor::handle_gauge(const char *name_ptr, const char *help_ptr,
+int ObPrometheusProcessor::accumulate_gauge(const char *name_ptr, const char *help_ptr,
                                         ObVector<ObPrometheusLabel> &label_array,
                                         int64_t value, bool allow_delete)
 {
@@ -316,6 +325,63 @@ int ObPrometheusProcessor::handle_gauge(const char *name_ptr, const char *help_p
     }
   } else {
     gauge->atomic_add(value);
+    family->dec_ref();
+    gauge->dec_ref();
+  }
+
+  return ret;
+}
+
+int ObPrometheusProcessor::set_counter(const char *name_ptr, const char *help_ptr,
+                                       ObVector<ObPrometheusLabel> &label_array,
+                                       int64_t value)
+{
+  int ret = OB_SUCCESS;
+
+  ObPrometheusFamily *family = NULL;
+  ObPrometheusCounter *counter = NULL;
+  void* args = NULL;
+
+  if (OB_FAIL(get_or_create_family(name_ptr, help_ptr, PROMETHEUS_TYPE_COUNTER,
+                                   default_constant_labels_, family))) {
+    LOG_WDIAG("fail to get or create family", K(name_ptr), K(ret));
+  } else if (OB_FAIL(get_or_create_metric(family, label_array, args, counter))) {
+    if (OB_EXCEED_MEM_LIMIT == ret) {
+      ret = OB_SUCCESS;
+    } else {
+      LOG_WDIAG("fail to get or create metric", K(label_array), K(ret));
+    }
+  } else {
+    LOG_DEBUG("set counter", K(value));
+    counter->atomic_set(value);
+    family->dec_ref();
+    counter->dec_ref();
+  }
+
+  return ret;
+}
+
+int ObPrometheusProcessor::set_gauge(const char *name_ptr, const char *help_ptr,
+                                     ObVector<ObPrometheusLabel> &label_array,
+                                     int64_t value, bool allow_delete)
+{
+  int ret = OB_SUCCESS;
+
+  ObPrometheusFamily *family = NULL;
+  ObPrometheusGauge *gauge = NULL;
+  void* args = NULL;
+
+  if (OB_FAIL(get_or_create_family(name_ptr, help_ptr, PROMETHEUS_TYPE_GAUGE,
+                                   default_constant_labels_, family))) {
+    LOG_WDIAG("fail to get or create family", K(name_ptr), K(ret));
+  } else if (OB_FAIL(get_or_create_metric(family, label_array, args, gauge, allow_delete))) {
+    if (OB_EXCEED_MEM_LIMIT == ret) {
+      ret = OB_SUCCESS;
+    } else {
+      LOG_WDIAG("fail to get or create metric", K(label_array), K(ret));
+    }
+  } else {
+    gauge->atomic_set(value);
     family->dec_ref();
     gauge->dec_ref();
   }

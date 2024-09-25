@@ -270,6 +270,10 @@ static const char *get_retry_type_name(const ObRetryType type) {
       name = "NOT_RETRY";
       break;
 
+    case TRANS_INTERNAL_ROUTING:
+      name = "TRANS_INTERNAL_ROUTING";
+      break;
+
     default:
       name = "unknown retry type";
   }
@@ -415,10 +419,12 @@ int64_t ObDiagnosisBase::to_string(char *buf, const int64_t buf_len) const
   return 0;
 }
 
+// All ObDiagnosisXx are used through the ObDiagnosisPoint Union when they are used.
+// ObDiagnosisXx share memory areas within the Union, so MEMSET is required to ensure clean memory.
+// Therefore, vptr may be overwritten, so do not call the parent virtual function on the ObDiagnosisXx
+// or implement virtual functions in ObDiagnosisXx classes.
 void ObDiagnosisBase::reset() {
-  ret_ = 0;
-  type_ = BASE_ROUTE_DIAGNOSIS_TYPE;
-  alloc_ = NULL;
+  MEMSET(this, 0, sizeof(ObDiagnosisBase));
 }
 
 int64_t ObDiagnosisSqlParse::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -441,10 +447,7 @@ int64_t ObDiagnosisSqlParse::to_string(char *buf, const int64_t buf_len) const
 }
 
 void ObDiagnosisSqlParse::reset() {
-  this->ObDiagnosisBase::reset();
-  sql_.reset();
-  table_.reset();
-  sql_cmd_ = obmysql::OB_MYSQL_COM_SLEEP;
+  MEMSET(this, 0, sizeof(ObDiagnosisSqlParse));
 }
 int64_t ObDiagnosisLocationCacheLookup::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
 {
@@ -466,9 +469,7 @@ int64_t ObDiagnosisLocationCacheLookup::to_string(char *buf, const int64_t buf_l
 }
 
 void ObDiagnosisLocationCacheLookup::reset() {
-  this->ObDiagnosisBase::reset();
-  mode_ = obutils::OB_STANDARD_ROUTING_MODE;
-  need_partition_location_lookup_ = false;
+  MEMSET(this, 0, sizeof(ObDiagnosisLocationCacheLookup));
 }
 
 int64_t ObDiagnosisRoutineEntryLookupDone::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -502,11 +503,7 @@ int64_t ObDiagnosisRoutineEntryLookupDone::to_string(char *buf, const int64_t bu
 }
 
 void ObDiagnosisRoutineEntryLookupDone::reset() {
-  this->ObDiagnosisBase::reset();
-  routine_sql_.reset();
-  entry_from_remote_ = false;
-  is_lookup_succ_ = false;
-  entry_state_ = ObRouteEntry::BORN;
+  MEMSET(this, 0, sizeof(ObDiagnosisRoutineEntryLookupDone));
 }
 int64_t ObDiagnosisTableEntryLookupDone::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
 {
@@ -559,13 +556,8 @@ int64_t ObDiagnosisTableEntryLookupDone::to_string(char *buf, const int64_t buf_
 }
 
 void ObDiagnosisTableEntryLookupDone::reset() {
-  this->ObDiagnosisBase::reset();
-  entry_from_remote_ = false;
-  is_lookup_succ_ = false;
-  if (OB_NOT_NULL(table_entry_)) {
-    table_entry_->dec_ref();
-    table_entry_ = NULL;
-  }
+  DEC_SHARED_REF(table_entry_);
+  MEMSET(this, 0, sizeof(ObDiagnosisTableEntryLookupDone));
 }
 int64_t ObDiagnosisPartIDCalcDone::to_string(char *buf, const int64_t buf_len) const
 {
@@ -614,13 +606,7 @@ int64_t ObDiagnosisPartIDCalcDone::diagnose(char *buf, const int64_t buf_len, in
 }
 
 void ObDiagnosisPartIDCalcDone::reset() {
-  this->ObDiagnosisBase::reset();
-  parse_sql_.reset();
-  part_name_.reset();
-  part_idx_ = 0;
-  sub_part_idx_ = 0;
-  partition_id_ = 0;
-  level_ = share::schema::PARTITION_LEVEL_ZERO;
+  MEMSET(this, 0, sizeof(ObDiagnosisPartIDCalcDone));
 }
 
 int64_t ObDiagnosisPartEntryLookupDone::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -660,12 +646,7 @@ int64_t ObDiagnosisPartEntryLookupDone::to_string(char *buf, const int64_t buf_l
 }
 
 void ObDiagnosisPartEntryLookupDone::reset() {
-  this->ObDiagnosisBase::reset();
-  entry_from_remote_ = false;
-  is_lookup_succ_ = false;
-  has_dup_replica_ = false;
-  entry_state_ = ObRouteEntry::BORN;
-  leader_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisPartEntryLookupDone));
 }
 int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
 {
@@ -721,7 +702,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
       } else if (ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_) {
         DIAGNOSE_INFO("Will route to tenant's single leader node(%s)", svr_buf);
       } else if (ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_) {
-        DIAGNOSE_INFO("Will route to tenant's single leader's follower node(%s) with the SAME_IDC and FULL replica first priority", svr_buf);
+        ObString policy = get_route_policy_enum_string(route_policy_);
+        DIAGNOSE_INFO("Will route to tenant's single leader's follower node(%s) with the SAME_IDC, route_policy = %.*s", svr_buf, policy.length(), policy.ptr());
       }
     }
   )
@@ -749,16 +731,16 @@ int64_t ObDiagnosisRouteInfo::to_string(char *buf, const int64_t buf_len) const
       J_COMMA();
       J_KV(K_(trans_specified));
     }
+    if (MAX_ROUTE_POLICY_COUNT != route_policy_) {
+      ObString route_policy = get_route_policy_enum_string(route_policy_);
+      J_COMMA();
+      J_KV(K(route_policy));
+    }
   );
 }
 
 void ObDiagnosisRouteInfo::reset() {
-  this->ObDiagnosisBase::reset();
-  route_info_type_ = ObRouteInfoType::INVALID;
-  svr_addr_.reset();
-  in_transaction_ = false;
-  depent_func_ = false;
-  trans_specified_ = false;
+  MEMSET(this, 0, sizeof(ObDiagnosisRouteInfo));
 }
 
 int64_t ObDiagnosisRoutePolicy::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -882,23 +864,7 @@ int64_t ObDiagnosisRoutePolicy::to_string(char *buf, const int64_t buf_len) cons
 }
 
 void ObDiagnosisRoutePolicy::reset() {
-  this->ObDiagnosisBase::reset();
-  need_use_dup_replica_ = false;
-  need_check_merge_status_ = false;
-  readonly_zone_exsits_ = false;
-  request_support_readonly_zone_ = false;
-  proxy_idc_name_.reset();
-  tenant_primary_zone_.reset();
-  proxy_primary_zone_.reset();
-  session_consistency_level_ = INVALID_CONSISTENCY;
-  trans_consistency_level_ = INVALID_CONSISTENCY;
-  proxy_route_policy_ = MAX_ROUTE_POLICY_COUNT;
-  session_route_policy_ = MAX_ROUTE_POLICY_COUNT;
-  route_policy_ = MAX_ROUTE_POLICY_COUNT;
-  opt_route_policy_ = MAX_ROUTE_POLICY_COUNT;
-  chosen_server_.reset();
-  chosen_route_type_ = ROUTE_TYPE_MAX;
-  replica_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisRoutePolicy));
 }
 
 int64_t ObDiagnosisCongestionControl::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -969,15 +935,7 @@ int64_t ObDiagnosisCongestionControl::to_string(char *buf, const int64_t buf_len
 }
 
 void ObDiagnosisCongestionControl::reset() {
-  this->ObDiagnosisBase::reset();
-  alive_congested_ = false;
-  dead_congested_ = false;
-  detect_congested_ = false;
-  force_retry_congested_ = false;
-  need_congestion_lookup_ = false;
-  lookup_success_ = false;
-  entry_exist_ = false;
-  svr_addr_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisCongestionControl));
 }
 
 int64_t ObDiagnosisHandleResponse::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1004,11 +962,7 @@ int64_t ObDiagnosisHandleResponse::to_string(char *buf, const int64_t buf_len) c
 }
 
 void ObDiagnosisHandleResponse::reset() {
-  this->ObDiagnosisBase::reset();
-  is_partition_hit_ = false;
-  send_action_ = ObMysqlTransact::SERVER_SEND_NONE;
-  state_ = ObMysqlTransact::STATE_UNDEFINED;
-  error_ = ObMysqlTransact::MIN_RESP_ERROR;
+  MEMSET(this, 0, sizeof(ObDiagnosisHandleResponse));
 }
 
 int64_t ObDiagnosisRetry::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1040,11 +994,7 @@ int64_t ObDiagnosisRetry::to_string(char *buf, const int64_t buf_len) const
 
 void ObDiagnosisRetry::reset()
 {
-  this->ObDiagnosisBase::reset();
-  attempts_ = 0;
-  retry_status_ = ObMysqlTransact::NO_NEED_RETRY;
-  retry_type_ = INVALID;
-  retry_addr_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisRetry));
 }
 
 int64_t ObDiagnosisFetchTableRelatedData::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1139,13 +1089,8 @@ int64_t ObDiagnosisFetchTableRelatedData::to_string(char *buf, const int64_t buf
 
 void ObDiagnosisFetchTableRelatedData::reset()
 {
-  this->ObDiagnosisBase::reset();
-  fail_at_ = LookupState::LOOKUP_TABLE_ENTRY_STATE;
-  if (OB_NOT_NULL(table_entry_)) {
-    table_entry_->dec_ref();
-    table_entry_ = NULL;
-  }
-  resp_error_= 0;
+  DEC_SHARED_REF(table_entry_);
+  MEMSET(this, 0, sizeof(ObDiagnosisFetchTableRelatedData));
 }
 
 int64_t ObDiagnosisExprParse::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1365,9 +1310,7 @@ int64_t ObDiagnosisCalcPartitionId::to_string(char *buf, const int64_t buf_len) 
 
 void ObDiagnosisCalcPartitionId::reset()
 {
-  this->ObDiagnosisBase::reset();
-  part_desc_ = NULL;
-  sub_part_desc_ = NULL;
+  MEMSET(this, 0, sizeof(ObDiagnosisCalcPartitionId));
 }
 
 // WARNING: overwrite the vptr of the members

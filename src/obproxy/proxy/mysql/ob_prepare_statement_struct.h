@@ -24,6 +24,7 @@
 #include "obproxy/iocore/eventsystem/ob_buf_allocator.h"
 #include "lib/lock/ob_drw_lock.h"
 #include "obutils/ob_proxy_sql_parser.h"
+#include "lib/hash/ob_dynamic_build_in_hashmap.h"
 
 #define PARAM_TYPE_BLOCK_SIZE  1 << 9 // 512
 
@@ -83,7 +84,7 @@ struct ObPsIdAddrsHashing
   static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
 };
 
-typedef common::hash::ObBuildInHashMap<ObPsIdAddrsHashing> ObPsIdAddrsMap;
+typedef common::hash::ObDynamicBuildInHashMap<ObPsIdAddrsHashing> ObPsIdAddrsMap;
 
 class ObBasePsEntryCache;
 
@@ -111,7 +112,8 @@ public:
 
   const common::ObString &get_base_ps_sql() { return base_ps_sql_; }
 
-  virtual void free() {}
+
+  virtual void free() override {}
   virtual void destroy();
 
 public:
@@ -545,12 +547,12 @@ int ObBasePsEntryThreadCache::acquire_or_create_ps_entry(const ObString &sql,
 class ObBasePsEntryGlobalCache : public ObBasePsEntryCache
 {
 public:
-  ObBasePsEntryGlobalCache() : ObBasePsEntryCache(), lock_(), ps_entry_global_map_() {}
+  ObBasePsEntryGlobalCache() : ObBasePsEntryCache(), ps_entry_global_map_() {}
   ~ObBasePsEntryGlobalCache() { destroy(); }
   void destroy();
 
 public:
-  static const int64_t HASH_BUCKET_SIZE = 64;
+  static const int64_t HASH_BUCKET_SIZE = 1024;
   struct ObBasePsEntryHashing
   {
     typedef const common::ObString &Key;
@@ -584,7 +586,6 @@ public:
   void delete_base_ps_entry(ObBasePsEntry *base_ps_entry);
 
 private:
-  common::DRWLock lock_;
   ObBasePsEntryGlobalMap ps_entry_global_map_;
   DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryGlobalCache);
 };
@@ -593,7 +594,6 @@ template <typename T>
 int ObBasePsEntryGlobalCache::acquire_ps_entry(const ObString &sql, T *&ps_entry)
 {
   int ret = OB_SUCCESS;
-  common::DRWLock::RDLockGuard guard(lock_);
   ObBasePsEntry *tmp_entry = NULL;
   if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_entry))) {
     //do nothing
@@ -609,7 +609,6 @@ int ObBasePsEntryGlobalCache::create_ps_entry(const common::ObString &sql,
                                         T *&ps_entry)
 {
   int ret = OB_SUCCESS;
-  DRWLock::WRLockGuard guard(lock_);
   ObBasePsEntry* tmp_ps_entry = NULL;
   if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_ps_entry))) {
     if (OB_HASH_NOT_EXIST == ret) {
@@ -620,6 +619,12 @@ int ObBasePsEntryGlobalCache::create_ps_entry(const common::ObString &sql,
         if (OB_LIKELY(NULL != ps_entry)) {
           ps_entry->destroy();
           ps_entry = NULL;
+        }
+        ret = OB_SUCCESS;
+        if (OB_FAIL(ps_entry_global_map_.get_refactored(sql, tmp_ps_entry))) {
+          PROXY_SM_LOG(WDIAG, "fail to get exist ps entry in cache", K(ret));
+        } else {
+          ps_entry = static_cast<T*>(tmp_ps_entry);
         }
       } else {
         ObBasePsEntry *tmp_entry = static_cast<ObBasePsEntry*>(ps_entry);
@@ -654,8 +659,10 @@ int ObBasePsEntryGlobalCache::acquire_or_create_ps_entry(const ObString &sql,
 
 int init_ps_entry_cache_for_thread();
 int init_ps_entry_cache_for_one_thread(int64_t index);
+int init_ps_entry_cache_for_one_thread(event::ObEThread *thread);
 int init_text_ps_entry_cache_for_thread();
 int init_text_ps_entry_cache_for_one_thread(int64_t index);
+int init_text_ps_entry_cache_for_one_thread(event::ObEThread *thread);
 ObBasePsEntryGlobalCache &get_global_ps_entry_cache();
 ObBasePsEntryGlobalCache &get_global_text_ps_entry_cache();
 

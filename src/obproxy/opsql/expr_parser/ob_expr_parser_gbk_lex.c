@@ -741,6 +741,8 @@ extern void ob_expr_gbk_parser_fatal_error(yyconst char *msg, yyscan_t yyscanner
 void store_expr_str(char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 void store_pos_place_holder(char* str, void *yyscanner);
 
+#define UNUSED(v) ((void)(v))
+
 #define YY_FATAL_ERROR(msg) ob_expr_gbk_parser_fatal_error(msg, yyscanner)
 
 #define PUSH_STATE(state) \
@@ -798,7 +800,7 @@ do {\
 
 /*following character status will be rewrite by gen_parse.sh according to connection character*/
 /* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
-#line 803 "ob_expr_parser_gbk_lex.c"
+#line 805 "ob_expr_parser_gbk_lex.c"
 
 #define INITIAL 0
 #define in_c_comment 1
@@ -1046,9 +1048,9 @@ YY_DECL
 	register int yy_act;
     struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
 
-#line 123 "ob_expr_parser_gbk.l"
+#line 125 "ob_expr_parser_gbk.l"
 
-#line 1054 "ob_expr_parser_gbk_lex.c"
+#line 1056 "ob_expr_parser_gbk_lex.c"
 
     yylval = yylval_param;
 
@@ -1137,282 +1139,282 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 124 "ob_expr_parser_gbk.l"
+#line 126 "ob_expr_parser_gbk.l"
 { return WHERE; }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 125 "ob_expr_parser_gbk.l"
+#line 127 "ob_expr_parser_gbk.l"
 { return AS; }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 126 "ob_expr_parser_gbk.l"
+#line 128 "ob_expr_parser_gbk.l"
 { return VALUES; }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 127 "ob_expr_parser_gbk.l"
+#line 129 "ob_expr_parser_gbk.l"
 { return VALUES; }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 128 "ob_expr_parser_gbk.l"
+#line 130 "ob_expr_parser_gbk.l"
 { return SET; }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 129 "ob_expr_parser_gbk.l"
+#line 131 "ob_expr_parser_gbk.l"
 { return END_WHERE; }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 130 "ob_expr_parser_gbk.l"
+#line 132 "ob_expr_parser_gbk.l"
 { return END_WHERE; }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 131 "ob_expr_parser_gbk.l"
+#line 133 "ob_expr_parser_gbk.l"
 { return END_WHERE; }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 132 "ob_expr_parser_gbk.l"
+#line 134 "ob_expr_parser_gbk.l"
 { return END_WHERE; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 133 "ob_expr_parser_gbk.l"
+#line 135 "ob_expr_parser_gbk.l"
 { RETURN_ROW_ID(); }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 135 "ob_expr_parser_gbk.l"
+#line 137 "ob_expr_parser_gbk.l"
 { return JOIN; }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 136 "ob_expr_parser_gbk.l"
+#line 138 "ob_expr_parser_gbk.l"
 { return ON; }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 137 "ob_expr_parser_gbk.l"
+#line 139 "ob_expr_parser_gbk.l"
 { return BETWEEN; }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 138 "ob_expr_parser_gbk.l"
+#line 140 "ob_expr_parser_gbk.l"
 { return AND_OP; }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 139 "ob_expr_parser_gbk.l"
+#line 141 "ob_expr_parser_gbk.l"
 { return AND_OP; }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 140 "ob_expr_parser_gbk.l"
+#line 142 "ob_expr_parser_gbk.l"
 { return OR_OP; }
 	YY_BREAK
 case 17:
 YY_RULE_SETUP
-#line 141 "ob_expr_parser_gbk.l"
+#line 143 "ob_expr_parser_gbk.l"
 { return OR_OP; }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 142 "ob_expr_parser_gbk.l"
+#line 144 "ob_expr_parser_gbk.l"
 { return IN; }
 	YY_BREAK
 case 19:
 YY_RULE_SETUP
-#line 143 "ob_expr_parser_gbk.l"
+#line 145 "ob_expr_parser_gbk.l"
 { return IS; }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 144 "ob_expr_parser_gbk.l"
+#line 146 "ob_expr_parser_gbk.l"
 { return NOT; }
 	YY_BREAK
 case 21:
 YY_RULE_SETUP
-#line 145 "ob_expr_parser_gbk.l"
+#line 147 "ob_expr_parser_gbk.l"
 { return NULL_VAL; }
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 146 "ob_expr_parser_gbk.l"
+#line 148 "ob_expr_parser_gbk.l"
 { return COMP_EQ; }
 	YY_BREAK
 case 23:
 YY_RULE_SETUP
-#line 147 "ob_expr_parser_gbk.l"
+#line 149 "ob_expr_parser_gbk.l"
 { return COMP_NSEQ; }
 	YY_BREAK
 case 24:
 YY_RULE_SETUP
-#line 148 "ob_expr_parser_gbk.l"
+#line 150 "ob_expr_parser_gbk.l"
 { return COMP_GE; }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 149 "ob_expr_parser_gbk.l"
+#line 151 "ob_expr_parser_gbk.l"
 { return COMP_GT; }
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 150 "ob_expr_parser_gbk.l"
+#line 152 "ob_expr_parser_gbk.l"
 { return COMP_LE; }
 	YY_BREAK
 case 27:
 YY_RULE_SETUP
-#line 151 "ob_expr_parser_gbk.l"
+#line 153 "ob_expr_parser_gbk.l"
 { return COMP_LT; }
 	YY_BREAK
 case 28:
 YY_RULE_SETUP
-#line 152 "ob_expr_parser_gbk.l"
+#line 154 "ob_expr_parser_gbk.l"
 { return COMP_NE; }
 	YY_BREAK
 case 29:
 YY_RULE_SETUP
-#line 153 "ob_expr_parser_gbk.l"
+#line 155 "ob_expr_parser_gbk.l"
 { return PLACE_HOLDER; }
 	YY_BREAK
 case 30:
 YY_RULE_SETUP
-#line 154 "ob_expr_parser_gbk.l"
+#line 156 "ob_expr_parser_gbk.l"
 { store_pos_place_holder(yytext + 1, yyscanner); return POS_PLACE_HOLDER; }
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 155 "ob_expr_parser_gbk.l"
+#line 157 "ob_expr_parser_gbk.l"
 { RETURN_NONE_PARAM_FUNC();}
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 156 "ob_expr_parser_gbk.l"
+#line 158 "ob_expr_parser_gbk.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 33:
 YY_RULE_SETUP
-#line 157 "ob_expr_parser_gbk.l"
+#line 159 "ob_expr_parser_gbk.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 34:
 YY_RULE_SETUP
-#line 158 "ob_expr_parser_gbk.l"
+#line 160 "ob_expr_parser_gbk.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 35:
 YY_RULE_SETUP
-#line 159 "ob_expr_parser_gbk.l"
+#line 161 "ob_expr_parser_gbk.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 160 "ob_expr_parser_gbk.l"
+#line 162 "ob_expr_parser_gbk.l"
 { RETURN_TRIM();}
 	YY_BREAK
 case 37:
 YY_RULE_SETUP
-#line 161 "ob_expr_parser_gbk.l"
+#line 163 "ob_expr_parser_gbk.l"
 { RETURN_FROM();}
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 162 "ob_expr_parser_gbk.l"
+#line 164 "ob_expr_parser_gbk.l"
 { RETURN_BOTH();}
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 163 "ob_expr_parser_gbk.l"
+#line 165 "ob_expr_parser_gbk.l"
 { RETURN_LEADING();}
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 164 "ob_expr_parser_gbk.l"
+#line 166 "ob_expr_parser_gbk.l"
 { RETURN_TRAILING();}
 	YY_BREAK
 case 41:
 YY_RULE_SETUP
-#line 166 "ob_expr_parser_gbk.l"
+#line 168 "ob_expr_parser_gbk.l"
 { RETURN_INT_VAL(); }
 	YY_BREAK
 case 42:
 YY_RULE_SETUP
-#line 167 "ob_expr_parser_gbk.l"
+#line 169 "ob_expr_parser_gbk.l"
 { RETURN_NUMBER_VAL(); }
 	YY_BREAK
 case 43:
 YY_RULE_SETUP
-#line 168 "ob_expr_parser_gbk.l"
+#line 170 "ob_expr_parser_gbk.l"
 { RETURN_HEX_VAL(); }
 	YY_BREAK
 case 44:
 /* rule 44 can match eol */
 YY_RULE_SETUP
-#line 169 "ob_expr_parser_gbk.l"
+#line 171 "ob_expr_parser_gbk.l"
 { RETURN_STR_VAL(); }
 	YY_BREAK
 case 45:
 YY_RULE_SETUP
-#line 170 "ob_expr_parser_gbk.l"
+#line 172 "ob_expr_parser_gbk.l"
 { RETURN_NAME_OB(); }
 	YY_BREAK
 case 46:
 /* rule 46 can match eol */
 YY_RULE_SETUP
-#line 171 "ob_expr_parser_gbk.l"
+#line 173 "ob_expr_parser_gbk.l"
 { }
 	YY_BREAK
 case 47:
 YY_RULE_SETUP
-#line 172 "ob_expr_parser_gbk.l"
+#line 174 "ob_expr_parser_gbk.l"
 { return ','; }
 	YY_BREAK
 case 48:
 YY_RULE_SETUP
-#line 173 "ob_expr_parser_gbk.l"
+#line 175 "ob_expr_parser_gbk.l"
 { return '('; }
 	YY_BREAK
 case 49:
 YY_RULE_SETUP
-#line 174 "ob_expr_parser_gbk.l"
+#line 176 "ob_expr_parser_gbk.l"
 { return ')'; }
 	YY_BREAK
 case 50:
 YY_RULE_SETUP
-#line 175 "ob_expr_parser_gbk.l"
+#line 177 "ob_expr_parser_gbk.l"
 { return yytext[0]; }
 	YY_BREAK
 /* comment */
 case 51:
 YY_RULE_SETUP
-#line 178 "ob_expr_parser_gbk.l"
+#line 180 "ob_expr_parser_gbk.l"
 { PUSH_STATE(in_c_comment); }
 	YY_BREAK
 case 52:
 YY_RULE_SETUP
-#line 179 "ob_expr_parser_gbk.l"
+#line 181 "ob_expr_parser_gbk.l"
 { POP_STATE(); }
 	YY_BREAK
 case 53:
 /* rule 53 can match eol */
 YY_RULE_SETUP
-#line 180 "ob_expr_parser_gbk.l"
+#line 182 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case 54:
 YY_RULE_SETUP
-#line 181 "ob_expr_parser_gbk.l"
+#line 183 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 /* quote */
 case 55:
 YY_RULE_SETUP
-#line 184 "ob_expr_parser_gbk.l"
+#line 186 "ob_expr_parser_gbk.l"
 {
   PUSH_STATE(sq);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1426,7 +1428,7 @@ YY_RULE_SETUP
 case 56:
 /* rule 56 can match eol */
 YY_RULE_SETUP
-#line 194 "ob_expr_parser_gbk.l"
+#line 196 "ob_expr_parser_gbk.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1436,7 +1438,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 57:
 YY_RULE_SETUP
-#line 201 "ob_expr_parser_gbk.l"
+#line 203 "ob_expr_parser_gbk.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1452,13 +1454,13 @@ YY_RULE_SETUP
   */
 case 58:
 YY_RULE_SETUP
-#line 214 "ob_expr_parser_gbk.l"
+#line 216 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case 59:
 /* rule 59 can match eol */
 YY_RULE_SETUP
-#line 216 "ob_expr_parser_gbk.l"
+#line 218 "ob_expr_parser_gbk.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1469,17 +1471,17 @@ YY_RULE_SETUP
 case 60:
 /* rule 60 can match eol */
 YY_RULE_SETUP
-#line 222 "ob_expr_parser_gbk.l"
+#line 224 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(sq):
-#line 223 "ob_expr_parser_gbk.l"
+#line 225 "ob_expr_parser_gbk.l"
 { return ERROR; }
 	YY_BREAK
 /* dquote */
 case 61:
 YY_RULE_SETUP
-#line 227 "ob_expr_parser_gbk.l"
+#line 229 "ob_expr_parser_gbk.l"
 {
   PUSH_STATE(dq);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1493,7 +1495,7 @@ YY_RULE_SETUP
 case 62:
 /* rule 62 can match eol */
 YY_RULE_SETUP
-#line 237 "ob_expr_parser_gbk.l"
+#line 239 "ob_expr_parser_gbk.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1503,7 +1505,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 63:
 YY_RULE_SETUP
-#line 244 "ob_expr_parser_gbk.l"
+#line 246 "ob_expr_parser_gbk.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1518,29 +1520,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 64:
 YY_RULE_SETUP
-#line 256 "ob_expr_parser_gbk.l"
+#line 258 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case 65:
 /* rule 65 can match eol */
 YY_RULE_SETUP
-#line 257 "ob_expr_parser_gbk.l"
+#line 259 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case 66:
 /* rule 66 can match eol */
 YY_RULE_SETUP
-#line 258 "ob_expr_parser_gbk.l"
+#line 260 "ob_expr_parser_gbk.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(dq):
-#line 259 "ob_expr_parser_gbk.l"
+#line 261 "ob_expr_parser_gbk.l"
 { return ERROR; }
 	YY_BREAK
 /* backtick */
 case 67:
 YY_RULE_SETUP
-#line 263 "ob_expr_parser_gbk.l"
+#line 265 "ob_expr_parser_gbk.l"
 {
   PUSH_STATE(bt);
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1554,7 +1556,7 @@ YY_RULE_SETUP
 /* to handle excape character */
 case 68:
 YY_RULE_SETUP
-#line 274 "ob_expr_parser_gbk.l"
+#line 276 "ob_expr_parser_gbk.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + 1 < OBPROXY_MAX_NAME_LENGTH) {
@@ -1566,7 +1568,7 @@ YY_RULE_SETUP
 case 69:
 /* rule 69 can match eol */
 YY_RULE_SETUP
-#line 282 "ob_expr_parser_gbk.l"
+#line 284 "ob_expr_parser_gbk.l"
 {
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + yyleng < OBPROXY_MAX_NAME_LENGTH) {
@@ -1577,7 +1579,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 70:
 YY_RULE_SETUP
-#line 290 "ob_expr_parser_gbk.l"
+#line 292 "ob_expr_parser_gbk.l"
 {
   POP_STATE();
   ObExprParseResult *p = (ObExprParseResult *)yyextra;
@@ -1590,27 +1592,27 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(bt):
-#line 301 "ob_expr_parser_gbk.l"
+#line 303 "ob_expr_parser_gbk.l"
 {
   return ERROR;
 }
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(in_c_comment):
-#line 305 "ob_expr_parser_gbk.l"
+#line 307 "ob_expr_parser_gbk.l"
 { return END_P; }
 	YY_BREAK
 case 71:
 YY_RULE_SETUP
-#line 306 "ob_expr_parser_gbk.l"
+#line 308 "ob_expr_parser_gbk.l"
 { return IGNORED_WORD; }
 	YY_BREAK
 case 72:
 YY_RULE_SETUP
-#line 307 "ob_expr_parser_gbk.l"
+#line 309 "ob_expr_parser_gbk.l"
 ECHO;
 	YY_BREAK
-#line 1616 "ob_expr_parser_gbk_lex.c"
+#line 1618 "ob_expr_parser_gbk_lex.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2760,7 +2762,7 @@ static int yy_flex_strlen (yyconst char * s , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 307 "ob_expr_parser_gbk.l"
+#line 309 "ob_expr_parser_gbk.l"
 
 
 
@@ -2791,6 +2793,7 @@ inline void *ob_expr_parser_gbk_yyrealloc(void *ptr,size_t bytes,void *yyscanner
 
 inline void ob_expr_parser_gbk_yyfree(void *ptr,void *yyscanner)
 {
+  UNUSED(yyscanner);
   // Do nothing -- we leave it to the garbage collector.
   obproxy_parse_free(ptr);
 }

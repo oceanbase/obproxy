@@ -12,6 +12,7 @@
 
 #include "lib/charset/ob_ctype.h"
 
+#define UNUSED(v) ((void)(v))
 static void __attribute__ ((noinline)) pad_max_char_help(char *str, char *end, char *buf, char buf_len)
 {
   do {
@@ -405,21 +406,30 @@ size_t ob_caseup_mb(const ObCharsetInfo *cs, char *src, size_t src_len,
 
 const ObContractions *ob_charset_get_contractions(const ObCharsetInfo *cs, int level)
 {
+  UNUSED(cs);
+  UNUSED(level);
   return NULL;
 }
 
 bool ob_uca_can_be_contraction_head(const ObContractions *c, ob_wc_t wc)
 {
+  UNUSED(c);
+  UNUSED(wc);
   return false;
 }
 
 bool ob_uca_can_be_contraction_tail(const ObContractions *c, ob_wc_t wc)
 {
+  UNUSED(c);
+  UNUSED(wc);
   return false;
 }
 
 uint16_t *ob_uca_contraction2_weight(const ObContractions *list, ob_wc_t wc1, ob_wc_t wc2)
 {
+  UNUSED(list);
+  UNUSED(wc1);
+  UNUSED(wc2);
   return NULL;
 }
 

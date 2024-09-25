@@ -59,6 +59,7 @@ public:
   virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
                                        ObIArray<int64_t> &tablet_ids,
                                        ObIArray<int64_t> &ls_ids) override;
+  virtual int build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const;
   void set_default_part_array_idx(int64_t idx) { default_part_array_idx_ = idx; }
   int64_t get_default_part_array_idx() const { return default_part_array_idx_; }
   ListPartition *get_part_array() { return part_array_; }

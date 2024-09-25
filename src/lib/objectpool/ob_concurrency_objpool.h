@@ -21,6 +21,7 @@
 #include "lib/lock/ob_mutex.h"
 #include "lib/container/ob_vector.h"
 #include "lib/allocator/ob_mem_leak_checker.h"
+#include <type_traits>
 
 DEFINE_HAS_MEMBER(OP_LOCAL_NUM);
 
@@ -188,10 +189,11 @@ private:
   ObThreadCache *init_thread_cache(ObChunkInfo *&chunk_info);
 
   void update_used();
+public:
+  SLINK(ObObjFreeList, link_);
 
 private:
   ObAtomicList obj_free_list_;
-  SLINK(ObObjFreeList, link_);
   ObAtomicSLL<ObObjFreeList> *freelists_; // global free list list
 
   ObFixedMemAllocator *tc_allocator_;
@@ -318,46 +320,6 @@ protected:
   DISALLOW_COPY_AND_ASSIGN(ObFixedMemAllocator);
 };
 
-#if defined(GCC_52)
-template <class T = void> struct __is_default_constructible__;
-
-template <> struct __is_default_constructible__<void>
-{
-protected:
-    // Put base typedefs here to avoid pollution
-    struct twoc { char a, b; };
-    template <bool> struct test { typedef char type; };
-public:
-    static bool const value = false;
-};
-
-template <> struct __is_default_constructible__<>::test<true> { typedef twoc type; };
-
-template <class T> struct __is_default_constructible__ : __is_default_constructible__<>
-{
-private:
-    template <class U> static typename test<!!sizeof(::new U())>::type sfinae(U*);
-    template <class U> static char sfinae(...);
-public:
-    static bool const value = sizeof(sfinae<T>(0)) > 1;
-};
-#else
-template <typename T>
-struct __is_default_constructible__
-{
-  typedef char yes[1];
-  typedef char no [2];
-
-  template <typename Type>
-  static yes &chk(__typeof__(&Type()));
-
-  template <typename>
-  static no &chk(...);
-
-  static bool const value = sizeof(chk<T>(0)) == sizeof(yes);
-};
-#endif
-
 template <class T>
 struct ObClassConstructor
 {
@@ -381,7 +343,7 @@ struct ObClassConstructor
 
   T *operator ()(void *ptr)
   {
-    Constructor<T, __is_default_constructible__<T>::value> construct;
+    Constructor<T, std::is_default_constructible<T>::value> construct;
     return construct(ptr);
   }
 };

@@ -685,9 +685,16 @@ inline common::ObMysqlRandom &get_random_seed(const event::ObEThread &t)
 }
 
 int init_cs_map_for_thread();
+int init_cs_map_for_one_thread(int64_t index);
+int init_cs_map_for_one_thread(event::ObEThread *thread);
+
 int init_cs_id_list_for_thread();
+int init_cs_id_list_for_one_thread(int64_t index);
+int init_cs_id_list_for_one_thread(event::ObEThread *thread);
+
 int init_random_seed_for_thread();
 int init_random_seed_for_one_thread(int64_t index);
+int init_random_seed_for_one_thread(event::ObEThread *thread);
 
 bool is_proxy_conn_id_avail(const uint64_t conn_id);
 bool is_server_conn_id_avail(const uint64_t conn_id);
@@ -697,7 +704,6 @@ int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id);
 int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id);
 void extract_proxy_id_v2(const uint32_t cs_id, int64_t &proxy_id);
 
-int init_cs_map_for_one_thread(int64_t index);
 
 class ObClientSessionIDList
 {

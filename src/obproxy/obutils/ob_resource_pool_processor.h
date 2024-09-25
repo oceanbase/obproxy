@@ -266,7 +266,7 @@ private:
 };
 
 class ObProxyConfig;
-class ObResourcePoolConfig;
+struct ObResourcePoolConfig;
 class ObClusterResource : public common::ObSharedRefCount
 {
 public:
@@ -366,7 +366,7 @@ public:
                                 const net::ObIpEndpoint &leader_addr,
                                 const common::ObIArray<ObSingleLeadersFollower> &followers);
   int remove_single_leader_info(const common::ObString &tenant_name);
-  int get_single_leader_info(const common::ObString &tenant_name, ObTenantSingleLeaderInfo *&info);
+  int get_and_update_single_leader_info(const common::ObString &tenant_name, ObTenantSingleLeaderInfo *&info);
   OB_INLINE int64_t get_single_leader_map_version() { return single_leader_map_version_; };
   bool tenant_has_single_leader(const common::ObString &tenant_name);
   void destory_single_leader_info_map();
@@ -447,7 +447,7 @@ private:
 };
 
 // used to delete cluster resource
-struct ObResourceDeleteActor
+class ObResourceDeleteActor
 {
 public:
   ObResourceDeleteActor() : cr_(NULL), retry_count_(0) {}

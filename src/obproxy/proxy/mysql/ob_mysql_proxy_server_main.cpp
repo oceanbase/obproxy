@@ -23,6 +23,7 @@
 #include "iocore/eventsystem/ob_grpc_task.h"
 #include "iocore/eventsystem/ob_shard_watch_task.h"
 #include "iocore/eventsystem/ob_shard_scan_all_task.h"
+#include "iocore/eventsystem/ob_kv_task.h"
 #include "obutils/ob_congestion_manager.h"
 #include "obutils/ob_proxy_config.h"
 #include "dbconfig/ob_proxy_db_config_processor.h"
@@ -203,6 +204,7 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   int64_t stack_size = config_params.stack_size_;
   int64_t event_threads = config_params.work_thread_num_;
   int64_t shard_scan_threads = config_params.shard_scan_thread_num_;
+  int64_t obkv_task_threads = config_params.rpc_async_task_thread_num_;
   int64_t task_threads = config_params.task_thread_num_;
   bool enable_cpu_topology = config_params.enable_cpu_topology_;
   bool automatic_match_work_thread = config_params.automatic_match_work_thread_;
@@ -232,6 +234,11 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (get_global_proxy_config().enable_sharding
       && OB_FAIL(g_shard_scan_all_task_processor.start(shard_scan_threads > 0 ? shard_scan_threads
+                                                       : g_event_processor.thread_count_for_type_[ET_CALL] / 2,
+                                                       stack_size))) {
+    LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
+  } else if (get_global_proxy_config().enable_obproxy_rpc_service
+      && OB_FAIL(g_obkv_task_processor.start(obkv_task_threads > 0 ? obkv_task_threads
                                                        : g_event_processor.thread_count_for_type_[ET_CALL] / 2,
                                                        stack_size))) {
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
@@ -528,6 +535,48 @@ int ObMysqlProxyServerMain::close_listen_fd(const int32_t listen_fd)
         }
       }
     }
+  }
+  return ret;
+}
+
+int init_cache_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("unexpected thread", K(ret));
+  } if (OB_FAIL(proxy::init_cs_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init cs map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_rpc_net_cs_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init rpc net cs map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_rpc_net_ss_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init rpc net ss map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_cs_id_list_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init cs id list for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_table_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init table map for one thread", K(ret));
+  } else if (OB_FAIL(obutils::init_congestion_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init congestion map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_partition_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init partition map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_index_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init index map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_tablegroup_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init tablegroup map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_table_query_async_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init table query async map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_rpc_req_ctx_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init rpc req ctx map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_routine_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init routine map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_sql_table_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init sql table map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_ps_entry_cache_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init ps entry cache for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_text_ps_entry_cache_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init text ps entry cache for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_random_seed_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init random seed for one thread", K(ret));
   }
   return ret;
 }

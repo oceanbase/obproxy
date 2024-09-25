@@ -141,6 +141,7 @@ lib/hash/mprotect.h\
 lib/hash/ob_array_index_hash_set.h\
 lib/hash/ob_hashset.h\
 lib/hash/ob_build_in_hashmap.h\
+lib/hash/ob_dynamic_build_in_hashmap.h\
 lib/hash/ob_hash.h\
 lib/hash/ob_fixed_hash.h\
 lib/hash/ob_concurrent_hash_map.h\

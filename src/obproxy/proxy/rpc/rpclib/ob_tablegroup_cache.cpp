@@ -560,21 +560,39 @@ int init_tablegroup_map_for_thread()
   return ret;
 }
 
-int init_tablegroup_map_for_one_thread(int64_t tablegroup)
+int init_tablegroup_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
   if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
-  } else if (OB_ISNULL(ethreads[tablegroup])) {
+  } else if (OB_ISNULL(ethreads[index])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else {
-    if (OB_ISNULL(ethreads[tablegroup]->tablegroup_map_ = new (std::nothrow) ObTableGroupRefHashMap(ObModIds::OB_PROXY_TABLEGROUP_ENTRY_MAP))) {
+    if (OB_ISNULL(ethreads[index]->tablegroup_map_ = new (std::nothrow) ObTableGroupRefHashMap(ObModIds::OB_PROXY_TABLEGROUP_ENTRY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WDIAG("fail to new ObTableGroupRefHashMap", K(tablegroup), K(ethreads[tablegroup]), K(ret));
-    } else if (OB_FAIL(ethreads[tablegroup]->tablegroup_map_->init())) {
+      LOG_WDIAG("fail to new ObTableGroupRefHashMap", K(index), K(ethreads[index]), K(ret));
+    } else if (OB_FAIL(ethreads[index]->tablegroup_map_->init())) {
+      LOG_WDIAG("fail to init tablegroup_map", K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_tablegroup_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->tablegroup_map_
+                  = new (std::nothrow) ObTableGroupRefHashMap(ObModIds::OB_PROXY_TABLEGROUP_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObTableGroupRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->tablegroup_map_->init())) {
       LOG_WDIAG("fail to init tablegroup_map", K(ret));
     }
   }

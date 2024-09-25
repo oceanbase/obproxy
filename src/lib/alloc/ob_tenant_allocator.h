@@ -79,6 +79,7 @@ public:
   }
 
   void print_memory_usage() const { print_usage(); }
+  int64_t get_used() const;
 
 private:
   void print_usage() const;

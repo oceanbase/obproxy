@@ -81,7 +81,7 @@ struct ObRpcMilestones
     MEMSET(this, 0, sizeof(ObRpcMilestones));
   }
 
-  TO_STRING_KV(K_(analyze_request_begin), K_(analyze_request_end), K_(ctx_lookup_begin), K_(ctx_lookup_end),
+  TO_STRING_KV(K_(analyze_request_begin), K_(analyze_request_end), K_(analyze_response_begin), K_(analyze_response_end), K_(ctx_lookup_begin), K_(ctx_lookup_end),
                K_(query_async_lookup_begin), K_(query_async_lookup_end), K_(index_entry_lookup_begin), K_(index_entry_lookup_end),
                K_(table_group_lookup_begin), K_(table_group_lookup_end), K_(pl_lookup_begin), K_(pl_lookup_end));
 
@@ -90,6 +90,8 @@ struct ObRpcMilestones
   //analyzer
   ObHRTime analyze_request_begin_;
   ObHRTime analyze_request_end_;
+  ObHRTime analyze_response_begin_;
+  ObHRTime analyze_response_end_;
 
   // ObRpcReqCtx lookup
   ObHRTime ctx_lookup_begin_;

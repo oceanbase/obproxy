@@ -25,6 +25,7 @@
 #include "utils/ob_layout.h"
 #include "utils/ob_proxy_hot_upgrader.h"
 #include "obproxy/obutils/ob_hot_upgrade_processor.h"
+#include "obproxy/proxy/rpc/rpclib/ob_rpc_throttle.h"
 
 #include "stat/ob_proxy_warning_stats.h"
 
@@ -35,11 +36,16 @@
 #include "ob_proxy_init.h"
 #include "lib/charset/ob_charset.h"
 
+#include "obproxy/prometheus/ob_memory_prometheus.h"
+#include "obproxy/prometheus/ob_prometheus_info.h"
+
+
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::proxy;
+using namespace oceanbase::obproxy::prometheus;
 
 namespace oceanbase
 {
@@ -485,6 +491,8 @@ int ObProxyMain::start(const int argc, char *const argv[])
   if (OB_SUCC(ret)) {
     if (OB_FAIL(ObMemLeakChecker::init_all_mem_leak_checker())) {
       MPRINT("fail to init mem checker, ret=%d", ret);
+    } else if (OB_FAIL(obkv::get_global_rpc_throttle().init())) {
+      MPRINT("fail to init rpc throttle, ret=%d", ret);
     } else if (OB_FAIL(get_global_layout().init(argv[0]))) {
       MPRINT("fail to init global layout, ret=%d", ret);
     } else if (OB_FAIL(init_log())) {
@@ -497,6 +505,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
       LOG_EDIAG("fail to init partition calculation related", K(ret));
     } else {
       init_proc_map_info();
+      ObMemLeakChecker::init_all_mem_leak_checker();
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {
@@ -638,6 +647,10 @@ int ObProxyMain::init_signal()
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+  } else if (OB_FAIL(add_sig_direct_catched(action, SIGABRT))) {
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+  } else if (OB_FAIL(add_sig_direct_catched(action, SIGSEGV))) {
+    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR2))) {
@@ -668,7 +681,7 @@ int ObProxyMain::init_signal()
   return ret;
 }
 
-int ObProxyMain::add_sig_ignore_catched(struct sigaction &action, const int sig) const
+int ObProxyMain::add_sig_ignore_catched(struct sigaction &action, const int sig)
 {
   int ret = OB_SUCCESS;
   sigemptyset(&action.sa_mask);
@@ -681,7 +694,7 @@ int ObProxyMain::add_sig_ignore_catched(struct sigaction &action, const int sig)
   return ret;
 }
 
-int ObProxyMain::add_sig_default_catched(struct sigaction &action, const int sig) const
+int ObProxyMain::add_sig_default_catched(struct sigaction &action, const int sig)
 {
   int ret = OB_SUCCESS;
   sigemptyset(&action.sa_mask);
@@ -694,7 +707,7 @@ int ObProxyMain::add_sig_default_catched(struct sigaction &action, const int sig
   return ret;
 }
 
-int ObProxyMain::add_sig_direct_catched(struct sigaction &action, const int sig, const int flag/*0*/) const
+int ObProxyMain::add_sig_direct_catched(struct sigaction &action, const int sig, const int flag/*0*/)
 {
   int ret = OB_SUCCESS;
   sigemptyset(&action.sa_mask);
@@ -707,7 +720,7 @@ int ObProxyMain::add_sig_direct_catched(struct sigaction &action, const int sig,
   return ret;
 }
 
-int ObProxyMain::add_sig_async_catched(struct sigaction &action, const int sig, const int flag/*0*/) const
+int ObProxyMain::add_sig_async_catched(struct sigaction &action, const int sig, const int flag/*0*/)
 {
   int ret = OB_SUCCESS;
   sigemptyset(&action.sa_mask);
@@ -868,6 +881,7 @@ extern "C" {
 
 void ObProxyMain::sig_direct_handler(const int sig)
 {
+  struct sigaction action;
   switch (sig) {
     case SIGUSR1: {
       ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
@@ -921,6 +935,11 @@ void ObProxyMain::sig_direct_handler(const int sig)
       g_proxy_fatal_errcode = OB_GOT_SIGNAL_ABORTING;
       break;
     }
+    case SIGABRT:
+    case SIGSEGV:
+      add_sig_default_catched(action, SIGABRT);
+      add_sig_default_catched(action, SIGSEGV);
+      ob_abort();
     default: {
       break;
     }
@@ -1002,25 +1021,58 @@ void ObProxyMain::print_memory_usage(const int64_t hold, const int64_t used,
   LOG_INFO(buf);
 }
 
+int64_t ObProxyMain::get_memory_used()
+{
+  int64_t total = 0;
+  ObMallocAllocator *allocator = ObMallocAllocator::get_instance();
+  if (OB_NOT_NULL(allocator)) {
+    ObTenantAllocator *tenant_allocator = allocator->get_tenant_allocator(OB_SERVER_TENANT_ID);
+    if (OB_NOT_NULL(tenant_allocator)) {
+      total += tenant_allocator->get_used();
+    }
+  }
+
+  return total;
+}
+
 int ObProxyMain::do_monitor_mem()
 {
   int ret = OB_SUCCESS;
   ObProxyMain *proxy_main = ObProxyMain::get_instance();
   int64_t mem_hold = get_memory_hold();
+  int64_t rpc_req_mem_hold = get_rpc_mod_memory() + obkv::get_global_rpc_throttle().get_holding_resource();
   uint64_t cur_pos = proxy_main->pos_ % HISTORY_MEMORY_RECORD_COUNT;
-  LOG_DEBUG("MemoryMonitor", "current memory hold size", mem_hold, K(cur_pos));
+  LOG_DEBUG("MemoryMonitor", "current memory hold size", mem_hold, "current rpc memory hold size", rpc_req_mem_hold, K(cur_pos));
+  int64_t mem_used = get_memory_used();
+  MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_HOLD, mem_hold);
+  MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_USED, mem_used);
+  LOG_DEBUG("MemoryMonitor", "current memory hold size", mem_hold,
+            "current memory used size", mem_used, K(cur_pos));
   proxy_main->history_mem_size_[cur_pos] = mem_hold;
+  proxy_main->history_rpc_mem_size_[cur_pos] = rpc_req_mem_hold;
   ++proxy_main->pos_;
 
   const int64_t mem_limited = get_global_proxy_config().proxy_mem_limited;
   const int64_t mem_warn_limited = mem_limited * 8 / 10;
   const int64_t mem_error_limited = mem_limited * 9 / 10;
+  const int64_t rpc_req_mem_warn_limited = mem_limited * 7 / 10;
+  const int64_t rpc_throttle_trigger_mem_limited = mem_limited * get_global_proxy_config().rpc_throttle_trigger_percentage / 100;
   bool is_out_of_mem_limit = true;
   bool is_out_of_warn_mem_limit = true;
   bool is_out_of_error_mem_limit = true;
+  obkv::get_global_rpc_throttle().set_trigger_throttle(true);
+  obkv::get_global_rpc_throttle().set_freeze_request(true);
   int64_t cur_mem_size = 0;
+  int64_t cur_rpc_mem_size = 0;
   for (int64_t i = 0; i < HISTORY_MEMORY_RECORD_COUNT; ++i) {
     cur_mem_size = proxy_main->history_mem_size_[i] + OTHER_MEMORY_SIZE;
+    cur_rpc_mem_size = proxy_main->history_rpc_mem_size_[i];
+    if (cur_rpc_mem_size < rpc_throttle_trigger_mem_limited) {
+      obkv::get_global_rpc_throttle().set_trigger_throttle(false);
+    }
+    if (cur_rpc_mem_size < rpc_req_mem_warn_limited) {
+      obkv::get_global_rpc_throttle().set_freeze_request(false);
+    }
     if (cur_mem_size < mem_warn_limited) {
       is_out_of_warn_mem_limit = false;
     }
@@ -1081,11 +1133,22 @@ int ObProxyMain::do_monitor_mem()
     }
     ObProxyMain::unfreeze_mem_alloc();
     get_global_hot_upgrade_processor().do_hot_upgrade_internal();
+  } else if (obkv::get_global_rpc_throttle().is_freeze_request()) {
+    if (0 == cur_pos) {
+      LOG_WDIAG("rpc req reach max limit, stop rpc req read", K(rpc_req_mem_hold),K(rpc_req_mem_warn_limited));
+    }
+    ObProxyMain::unfreeze_mem_alloc();
+  } else if (obkv::get_global_rpc_throttle().is_trigger_throttle()) {
+    if (0 == cur_pos) {
+      LOG_WDIAG("obkv begin rpc req throttle", K(rpc_req_mem_hold), K(rpc_throttle_trigger_mem_limited));
+    }
+    ObProxyMain::unfreeze_mem_alloc();
   } else {
     ObProxyMain::unfreeze_mem_alloc();
   }
   return ret;
 }
+
 
 int ObProxyMain::do_detect_sqlaudit()
 {

@@ -959,6 +959,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
     handle_ps_close_reset(s);
   } else if (OB_LIKELY(s.is_need_pl_lookup())) {
     route_info_type = ObRouteInfoType::USE_PARTITION_LOCATION_LOOKUP;
+    ObRoutePolicyEnum policy = MAX_ROUTE_POLICY_COUNT;
     // if need pl lookup, we should extract pl info first
     if (OB_FAIL(extract_partition_info(s, &route_info_type))) {
       LOG_WDIAG("fail to extract partition info", K(ret));
@@ -1094,7 +1095,6 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           }
         } else { /* do nothing */ }
       }
-
       // find single leader
       if (OB_SUCC(ret)
           && !s.pll_info_.lookup_success_
@@ -1113,20 +1113,21 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
               s.server_info_.set_addr(*addr);
               LOG_DEBUG("succ to use single leader", "addr", s.server_info_.addr_);
             } else {
-              LOG_INFO("get single leader addr is NULL");
+              LOG_DEBUG("get single leader addr is NULL", K_(s.sm_->single_leader));
             }
           } else if (ObConsistencyLevel::WEAK == s.get_trans_consistency_level(cs_info)) {
             // not support read stale and unmerge_follower_first route policy
-            ObRoutePolicyEnum policy = s.get_route_policy(*s.sm_->client_session_, false, NULL);
+            policy = s.get_route_policy(*s.sm_->client_session_, false, NULL);
             if (OB_LIKELY(s.sm_->multi_level_config_->ob_max_read_stale_time_ == -1)
-                && OB_LIKELY(policy == ObRoutePolicyEnum::FOLLOWER_FIRST || policy == ObRoutePolicyEnum::FOLLOWER_ONLY)) {
-              if (OB_NOT_NULL(addr = s.sm_->get_single_leaders_follower())) {
+                && OB_LIKELY(is_target_replica_route(policy) || is_follower_only_route(policy)
+                            || is_weight_load_balance_route(policy))) {
+              if (OB_NOT_NULL(addr = s.sm_->get_single_leaders_replica(policy))) {
                 s.pll_info_.lookup_success_ = true;
                 route_info_type = ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER;
                 s.server_info_.set_addr(*addr);
                 LOG_DEBUG("succ to use single leader's follower", "addr", s.server_info_.addr_);
-              } else {
-                LOG_INFO("get single leader's follower addr is NULL");
+              } else if (!s.sm_->client_session_->is_proxy_mysql_client_) {
+                LOG_DEBUG("get single leader's follower addr is NULL", K_(s.sm_->single_leader), "route policy", get_route_policy_enum_string(policy));
               }
             }
           } else {
@@ -1169,7 +1170,8 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
                     s.server_info_.addr_,
                     in_trans,
                     has_dependent_func(s),
-                    is_trans_specified(s));
+                    is_trans_specified(s),
+                    policy);
   } else {
     route_info_type = ObRouteInfoType::INVALID;
     // !need_pl_lookup
@@ -1410,19 +1412,24 @@ void ObMysqlTransact::handle_target_db_not_allow(ObTransState &s)
   TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
 }
 
-void ObMysqlTransact::handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type)
+void ObMysqlTransact::handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type, const ObRoutePolicyEnum &policy)
 {
   int ret = OB_SUCCESS;
 
   int tmp_ret = OB_NO_REPLICA_VALID;
   s.mysql_errcode_ = OB_NO_REPLICA_VALID;
-  if (!target_replica_type.is_exist_readonly_replica()) {
-    s.mysql_errmsg_ = "Not exist Column Store Replicas, check route_target_replica_type and proxy_route_policy";
-  } else if (!target_replica_type.is_exist_column_store_replica()) {
-    s.mysql_errmsg_ = "Not exist ReadOnly replica, check route_target_replica_type and proxy_route_policy";
-  } else {
-    s.mysql_errmsg_ = "Not exist Column Store/ReadOnly replica, check route_target_replica_type and proxy_route_policy";
+  if (is_weight_load_balance_route(policy)) {
+    s.mysql_errmsg_ = "Unset weight zone, check config weakread_weight_zone/proxy_route_policy";
+  } else if (is_target_replica_route(policy)) {
+    if (!target_replica_type.is_exist_readonly_replica()) {
+      s.mysql_errmsg_ = "Not exist Column Store Replicas, check route_target_replica_type and proxy_route_policy";
+    } else if (!target_replica_type.is_exist_column_store_replica()) {
+      s.mysql_errmsg_ = "Not exist ReadOnly replica, check route_target_replica_type and proxy_route_policy";
+    } else {
+      s.mysql_errmsg_ = "Not exist Column Store/ReadOnly replica, check route_target_replica_type and proxy_route_policy";
+    }
   }
+
   if (OB_FAIL(ObMysqlTransact::encode_error_message(s))) {
     LOG_WDIAG("fail to build err packet", K(ret));
   }
@@ -2659,7 +2666,7 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
       int tmp_ret = ret;
       ObString &tenant_name = s.sm_->client_session_->get_session_info().get_priv_info().tenant_name_;
       if (OB_SUCCESS != (tmp_ret = s.sm_->sm_cluster_resource_->get_location_tenant_info(tenant_name, info))) {
-        LOG_WDIAG("fail to get primary zone", K(ret));
+        LOG_WDIAG("fail to get primary zone", K(tenant_name), K(tmp_ret));
       } else if (OB_NOT_NULL(info)) {
         pz_str = info->primary_zone_;
       }
@@ -2781,7 +2788,7 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
         ObSEArray<ObString, 5> zone_array;
         ObZoneWeakReadWeight *weight_zone = NULL;
         if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy) {
-          weight_zone = &s.sm_->multi_level_config_->weakread_weight_zone_;
+          weight_zone = GET_MULTI_CONFIG(s.sm_, weakread_weight_zone);
         }
         if (OB_FAIL(get_proxy_primary_zone_array(zone, zone_array))) {
           LOG_WDIAG("fail to fill proxy primary zone array", K(ret));
@@ -2850,12 +2857,14 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
           t1 = t2;
 #endif
           if (OB_ISNULL(replica)) {
-            // 对指定副本路由，没指定F副本下不断连接，返回err_msg便于排查问题
-            if (is_target_replica_route(route_policy)
-                && OB_NOT_NULL(GET_MULTI_CONFIG(s.sm_, route_target_replica_type))
-                && !GET_MULTI_CONFIG(s.sm_, route_target_replica_type)->is_exist_full_replica()) {
+            // 1. 对指定副本路由，没指定F副本下；2. 权重路由的zone为空；上述返回err_msg便于排查问题
+            if (OB_NOT_NULL(GET_MULTI_CONFIG(s.sm_, route_target_replica_type))
+                && ((is_target_replica_route(route_policy)
+                    && !GET_MULTI_CONFIG(s.sm_, route_target_replica_type)->is_exist_full_replica())
+                    || (is_weight_load_balance_route(route_policy)
+                        && !GET_MULTI_CONFIG(s.sm_, weakread_weight_zone)->is_valid()))) {
               const omt::ObTargetReplicaType &target_replica_type = *GET_MULTI_CONFIG(s.sm_, route_target_replica_type);
-              handle_not_exist_replica(s, target_replica_type);
+              handle_not_exist_replica(s, target_replica_type, route_policy);
               ret = OB_NO_REPLICA_VALID;
             } else {
               ObString route_policy_string = get_route_policy_enum_string(route_policy);
@@ -4852,15 +4861,27 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
     case SERVER_SEND_ALL_SESSION_VARS:
     case SERVER_SEND_SESSION_VARS:
     case SERVER_SEND_SESSION_USER_VARS:
-      s.current_.error_type_ = RESET_SESSION_VARS_COMMON_ERROR;
+      if (resp.is_tenant_not_in_server_error()) {
+        s.current_.error_type_ = REQUEST_TENANT_NOT_IN_SERVER_ERROR;
+      } else {
+        s.current_.error_type_ = RESET_SESSION_VARS_COMMON_ERROR;
+      }
       break;
 
     case SERVER_SEND_USE_DATABASE:
-      s.current_.error_type_ = SYNC_DATABASE_COMMON_ERROR;
+      if (resp.is_tenant_not_in_server_error()) {
+        s.current_.error_type_ = REQUEST_TENANT_NOT_IN_SERVER_ERROR;
+      } else {
+        s.current_.error_type_ = SYNC_DATABASE_COMMON_ERROR;
+      }
       break;
 
     case SERVER_SEND_START_TRANS:
-      s.current_.error_type_ = START_TRANS_COMMON_ERROR;
+      if (resp.is_tenant_not_in_server_error()) {
+        s.current_.error_type_ = REQUEST_TENANT_NOT_IN_SERVER_ERROR;
+      } else {
+        s.current_.error_type_ = START_TRANS_COMMON_ERROR;
+      }
       break;
 
     case SERVER_SEND_XA_START:
@@ -5633,7 +5654,8 @@ void ObMysqlTransact::handle_oceanbase_server_resp_error(ObTransState &s, ObMySQ
     case REQUEST_REROUTE_ERROR:
     case REQUEST_SERVER_STOPPING_ERROR:
     case TRANS_FREE_ROUTE_NOT_SUPPORTED_ERROR: {
-      if (OB_FAIL(handle_rewrite_request(s))) {
+      if (ObMysqlTransact::SERVER_SEND_REQUEST == s.current_.send_action_
+          && OB_FAIL(handle_rewrite_request(s))) {
         LOG_WDIAG("fail to rewrite request", K(ret));
       } else {
         if (REQUEST_TENANT_NOT_IN_SERVER_ERROR == s.current_.error_type_
@@ -5645,6 +5667,7 @@ void ObMysqlTransact::handle_oceanbase_server_resp_error(ObTransState &s, ObMySQ
         if (REQUEST_REROUTE_ERROR == s.current_.error_type_) {
           s.pll_info_.pl_update_for_reroute(s);
         }
+
         handle_retry_server_connection(s);
       }
       break;
@@ -7646,10 +7669,8 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
         } else if (OB_FAIL(sm_->target_db_server_->init(sm_->multi_level_config_->target_db_server_.ptr(), sm_->multi_level_config_->target_db_server_.size()))) {
           PROXY_LOG(WDIAG, "fail to load target db server from multi level config", K(ret));
         }
-  }
-
+      }
     }
-
   }
   if (OB_SUCC(ret)) {
     if (sync_conf_sys_var) {
@@ -7714,6 +7735,9 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
     if (OB_NOT_NULL(diagnosis_route_policy)) {
       diagnosis_route_policy->opt_route_policy_ = ret_policy;
     }
+  } else if (OB_NOT_NULL(GET_MULTI_CONFIG(sm_, proxy_primary_zone_name))
+            && !GET_MULTI_CONFIG(sm_, proxy_primary_zone_name)->is_empty()) {
+    ret_policy = ObRoutePolicyEnum::PROXY_PRIMARY_ZONE_NAME_ONLY;
   } else if (need_use_dup_replica) {
     //if dup_replica read, use DUP_REPLICA_FIRST, no need care about zone type
     ret_policy = DUP_REPLICA_FIRST;
@@ -7753,24 +7777,10 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
                  "policy", get_proxy_route_policy_enum_string(policy));
         get_route_policy(policy, proxy_route_policy);
       }
-      // 权重负载均衡路由要配合多级别配置生效
-      if (WEAKREAD_WEIGHT_LOAD_BALANCE == proxy_route_policy) {
-        if (OB_ISNULL(sm_->multi_level_config_)
-            || !sm_->multi_level_config_->weakread_weight_zone_.is_valid()
-            ) {
-          LOG_DEBUG("weadread weight zone is empty, weight load balance not valid");
-          proxy_route_policy = MAX_ROUTE_POLICY_COUNT;
-        }
-      }
+
       if (proxy_route_policy != MAX_ROUTE_POLICY_COUNT) {
         ret_policy = proxy_route_policy;
-      } else if (OB_NOT_NULL(sm_->multi_level_config_)
-                 && !sm_->multi_level_config_->proxy_primary_zone_name_.is_empty()) {
-        ret_policy = ObRoutePolicyEnum::PROXY_PRIMARY_ZONE_NAME_ONLY;
       }
-    } else if (OB_NOT_NULL(sm_->multi_level_config_)
-               && !sm_->multi_level_config_->proxy_primary_zone_name_.is_empty()) {
-      ret_policy = ObRoutePolicyEnum::PROXY_PRIMARY_ZONE_NAME_ONLY;
     } else if (get_global_proxy_config().enable_primary_zone
                && !mysql_config_params_->is_random_routing_mode()
                && common::STRONG == trans_consistency_level) {

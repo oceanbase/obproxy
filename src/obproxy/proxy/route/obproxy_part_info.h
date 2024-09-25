@@ -88,6 +88,16 @@ public:
   int64_t get_cluster_version() const { return cluster_version_; }
   void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
 
+  void set_part_expr(ObString part_expr) { part_expr_ = part_expr; }
+  ObString get_part_expr() const { return part_expr_; }
+  void set_sub_part_expr(ObString part_expr) { sub_part_expr_ = part_expr; }
+  ObString get_sub_part_expr() const { return sub_part_expr_; }
+
+  void set_part_range_type(ObString type) { part_range_type_ = type; }
+  ObString get_part_range_type() const { return part_range_type_; }
+  void set_sub_part_range_type(ObString type) { sub_part_range_type_ = type; }
+  ObString get_sub_part_range_type() const { return sub_part_range_type_; }
+
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:
@@ -100,6 +110,11 @@ private:
   bool is_primary_key_as_part_expr_;
   share::schema::ObPartitionLevel part_level_;
   common::ObCollationType table_cs_type_;
+
+  ObString part_expr_;
+  ObString sub_part_expr_;
+  ObString part_range_type_;
+  ObString sub_part_range_type_;
 
   common::ObSEArray<common::ObString, 2> part_columns_;
   common::ObSEArray<common::ObString, 2> sub_part_columns_;

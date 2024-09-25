@@ -320,8 +320,8 @@ inline int encode_with_len_vi64(char *buf, const int64_t buf_len, int64_t &pos, 
 {
   uint64_t __v = static_cast<uint64_t>(val);
   int ret = ((NULL != buf) &&
-             ((buf_len - pos) >= encoded_length_vi64(__v))) ?
-             ((len >= encoded_length_vi64(__v)) ? OB_SUCCESS : OB_SIZE_OVERFLOW) : OB_SIZE_OVERFLOW;
+             ((buf_len - pos) >= encoded_length_vi64(static_cast<int64_t>(__v)))) ?
+             ((len >= encoded_length_vi64(static_cast<int64_t>(__v))) ? OB_SUCCESS : OB_SIZE_OVERFLOW) : OB_SIZE_OVERFLOW;
 
   if (OB_SUCC(ret)) {
     // while (__v > OB_MAX_V1B || len > 0)
@@ -1117,7 +1117,7 @@ inline int encode_str(char *buf, const int64_t buf_len, int64_t &pos, const void
     }
 
     if (OB_SUCCESS == ret && (NULL != vbuf) & (len > 0)) {
-      MEMCPY(buf + pos, vbuf, len);
+      MEMCPY(buf + pos, vbuf, static_cast<size_t>(len));
       pos += len;
     }
   }

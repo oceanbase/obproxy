@@ -60,6 +60,7 @@ obproxy/obutils/ob_congestion_entry.h\
 obproxy/obutils/ob_congestion_manager.cpp\
 obproxy/obutils/ob_congestion_manager.h\
 obproxy/obutils/ob_safe_snapshot_entry.h\
+obproxy/obutils/ob_safe_snapshot_entry.cpp\
 obproxy/obutils/ob_safe_snapshot_manager.h\
 obproxy/obutils/ob_safe_snapshot_manager.cpp\
 obproxy/obutils/ob_mt_hashtable.h\

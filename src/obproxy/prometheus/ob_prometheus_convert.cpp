@@ -149,19 +149,24 @@ int ObProxyPrometheusConvert::remove_metric(void* family, void* metric,
   return ret;
 }
 
-int ObProxyPrometheusConvert::handle_counter(void *metric, const int64_t value)
+int ObProxyPrometheusConvert::accumulate_counter(void *metric, const int64_t value)
 {
-  return get_obproxy_prometheus_exporter().handle_counter(metric, static_cast<double>(value));
+  return get_obproxy_prometheus_exporter().accumulate_counter(metric, static_cast<double>(value));
 }
 
-int ObProxyPrometheusConvert::handle_gauge(void *metric, const double value)
+int ObProxyPrometheusConvert::accumulate_gauge(void *metric, const double value)
 {
-  return get_obproxy_prometheus_exporter().handle_gauge(metric, value);
+  return get_obproxy_prometheus_exporter().accumulate_gauge(metric, value);
 }
 
-int ObProxyPrometheusConvert::handle_gauge(void *metric, const int64_t value)
+int ObProxyPrometheusConvert::accumulate_gauge(void *metric, const int64_t value)
 {
-  return get_obproxy_prometheus_exporter().handle_gauge(metric, static_cast<double>(value));
+  return get_obproxy_prometheus_exporter().accumulate_gauge(metric, static_cast<double>(value));
+}
+
+int ObProxyPrometheusConvert::set_gauge(void *metric, const double value)
+{
+  return get_obproxy_prometheus_exporter().set_gauge(metric, value);
 }
 
 int ObProxyPrometheusConvert::handle_histogram(void *metric, const int64_t sum,

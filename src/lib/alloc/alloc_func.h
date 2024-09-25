@@ -19,7 +19,7 @@ namespace oceanbase
 {
 namespace common
 {
-class ObModItem;
+struct ObModItem;
 } // end of namespace common
 
 namespace lib
@@ -37,10 +37,9 @@ int64_t get_tenant_memory_limit(uint64_t tenant_id);
 int64_t get_tenant_memory_hold(uint64_t tenant_id);
 void get_tenant_mod_memory(
     uint64_t tenant_id, int mod_id, common::ObModItem &ObModItem);
-
 int64_t get_mod_memory_dist(
-    int mod_id, ObTenantMemory tenant_meomry[], int64_t count);
-
+    int mod_id, ObTenantMemory tenant_memory[], int64_t count);
+int get_rpc_mod_memory();
 void ob_set_reserved_memory(const int64_t bytes);
 void ob_set_urgent_memory(const int64_t bytes);
 int64_t ob_get_reserved_urgent_memory();

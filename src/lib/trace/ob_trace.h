@@ -76,7 +76,7 @@ extern void flush_trace();
 extern double get_random_percentage();
 
 #define UUID_PATTERN "%8.8lx-%4.4lx-%4.4lx-%4.4lx-%12.12lx"
-#define TRACE_PATTERN "{\"trace_id\":\""UUID_PATTERN"\",\"name\":\"%s\",\"id\":\""UUID_PATTERN"\",\"start_ts\":%ld,\"end_ts\":%ld,\"parent_id\":\""UUID_PATTERN"\",\"is_follow\":%s"
+#define TRACE_PATTERN "{\"trace_id\":\"" UUID_PATTERN "\",\"name\":\"%s\",\"id\":\"" UUID_PATTERN "\",\"start_ts\":%ld,\"end_ts\":%ld,\"parent_id\":\"" UUID_PATTERN "\",\"is_follow\":%s"
 #define UUID_TOSTRING(uuid) \
 ((uuid).high_ >> 32), ((uuid).high_ >> 16 & 0xffff), ((uuid).high_ & 0xffff), \
 ((uuid).low_ >> 48), ((uuid).low_ & 0xffffffffffff)

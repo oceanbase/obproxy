@@ -9,6 +9,7 @@
  * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
  * See the Mulan PubL v2 for more details.
  */
+#define USING_LOG_PREFIX PROXY
 #include "proxy/rpc/ob_rpc_req.h"
 #include "lib/profile/ob_trace_id.h"
 #include "lib/profile/ob_trace_id_new.h" //use NewTraceId
@@ -25,6 +26,9 @@
 #include "proxy/rpc/rpclib/ob_tablegroup_entry.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx.h"
 #include "proxy/rpc/ob_rpc_request_sm.h"
+#include "obkv/table/ob_table_rpc_request.h"
+#include "obkv/table/ob_table_rpc_response.h"
+#include "stat/ob_rpc_req_stats.h"
 
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::optimizer;
@@ -269,6 +273,10 @@ void ObRpcReq::destroy()
       get_global_optimizer_rpc_req_processor().free_allocator(plan->get_allocator());
       execute_plan_ = NULL;
     }
+    if (obkv_info_.is_rpc_req_stat_recorded_) {
+      ObRpcReqThreadQpsStat::dec_rpc_req_stat(obkv_info_.is_shard());
+    }
+    RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_RPC_REQ);
 
     free_rpc_request();
     free_rpc_response();
@@ -282,6 +290,7 @@ void ObRpcReq::destroy()
 
     magic_ = RPC_REQ_SM_MAGIC_DEAD;
     op_thread_free(ObRpcReq, this, event::get_rpc_req_allocator());
+    obkv::get_global_rpc_throttle().update_holding_resource(-sizeof(ObRpcReq));
   } else {
     PROXY_LOG(EDIAG, "ObRpcReq::destroy but magic is error", "rpc_req", *this, KP(this));
   }
@@ -342,6 +351,153 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
   } else {
     PROXY_LOG(EDIAG, "ObRpcReq::cleanup but magic is error", "rpc_req", *this, KP(this));
   }
+}
+
+int ObRpcReq::alloc_rpc_request()
+{
+  int ret = OB_SUCCESS;
+  ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
+  char *buf = NULL;
+  int64_t rpc_request_size = 0;
+
+  if (OB_FAIL(ObProxyRpcReqAnalyzer::get_rpc_request_size(obkv_info_.pcode_, rpc_request_size))) {
+    LOG_WDIAG("fail to get rpc request size", "pcode", obkv_info_.pcode_, K(rpc_request_size), K(ret), K(rpc_trace_id));
+  } else {
+    if (OB_FAIL(free_rpc_request())) {
+      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
+    } else if (OB_ISNULL(buf = (char *)op_fixed_mem_alloc(rpc_request_size))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("alloc_rpc_request alloc memory failed", K(ret), K(rpc_request_size), K(rpc_trace_id));
+    } else {
+      obkv::get_global_rpc_throttle().update_holding_resource(rpc_request_size);
+      rpc_request_len_ = rpc_request_size;
+      switch (obkv_info_.pcode_) {
+      case obrpc::OB_TABLE_API_LOGIN: {
+        rpc_request_ = new (buf) ObRpcTableLoginRequest;
+        obkv_info_.set_auth(true);
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE: {
+        rpc_request_ = new (buf) ObRpcTableOperationRequest;
+        break;
+      }
+      case obrpc::OB_TABLE_API_BATCH_EXECUTE: {
+        rpc_request_ = new (buf) ObRpcTableBatchOperationRequest;
+        obkv_info_.set_batch(true);
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE_QUERY: {
+        rpc_request_ = new (buf) ObRpcTableQueryRequest;
+        break;
+      }
+      case obrpc::OB_TABLE_API_QUERY_AND_MUTATE: {
+        rpc_request_ = new (buf) ObRpcTableQueryAndMutateRequest;
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC: {
+        rpc_request_ = new (buf) ObRpcTableQuerySyncRequest;
+        break;
+      }
+      case obrpc::OB_GET_PARTITIONS: {
+        rpc_request_ = new (buf) ObRpcTableGetRouteRequest();
+        break;
+      }
+      case obrpc::OB_TABLE_API_DIRECT_LOAD: {
+        rpc_request_ = new (buf) ObRpcTableDirectLoadRequest;
+        break;
+      }
+      case obrpc::OB_TABLE_API_LS_EXECUTE: {
+        rpc_request_ = new (buf) ObRpcTableLSOperationRequest;
+        break;
+      }
+      default:
+        rpc_request_ = NULL;
+        LOG_WDIAG("invalid rpc pcode", "pcode", obkv_info_.pcode_, K(ret), K(rpc_trace_id));
+        break;
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObRpcReq::alloc_rpc_response()
+{
+  int ret = OB_SUCCESS;
+  ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
+  char *buf = NULL;
+  int64_t rpc_response_size = 0;
+
+  if (OB_FAIL(ObProxyRpcReqAnalyzer::get_rpc_response_size(obkv_info_.pcode_, rpc_response_size))) {
+    LOG_WDIAG("fail to get rpc response size", "pcode", obkv_info_.pcode_, K(rpc_response_size), K(ret), K(rpc_trace_id));
+  } else {
+    if (OB_FAIL(free_rpc_response())) {
+      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
+    } else {
+      if (obkv_info_.is_inner_request_) {
+        if (OB_ISNULL(inner_request_allocator_)) {
+          PROXY_LOG(WDIAG, "inner request allocator is NULL", K(rpc_trace_id));
+        } else {
+          buf = (char *)inner_request_allocator_->alloc(rpc_response_size);
+        }
+      } else {
+        buf = (char*)op_fixed_mem_alloc(rpc_response_size);
+      }
+      if (OB_ISNULL(buf)) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("alloc_rpc_response alloc memory failed", K(ret), K(rpc_response_size), K(rpc_trace_id));
+      }
+    }
+    obkv::get_global_rpc_throttle().update_holding_resource(rpc_response_size);
+    if (OB_SUCC(ret)) {
+      rpc_response_len_ = rpc_response_size;
+      switch (obkv_info_.pcode_) {
+      case obrpc::OB_TABLE_API_LOGIN: {
+        rpc_response_ = new (buf) ObRpcTableLoginResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE: {
+        rpc_response_ = new (buf) ObRpcTableOperationResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_BATCH_EXECUTE: {
+        rpc_response_ = new (buf) ObRpcTableBatchOperationResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE_QUERY: {
+        rpc_response_ = new (buf) ObRpcTableQueryResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_QUERY_AND_MUTATE: {
+        rpc_response_ = new (buf) ObRpcTableQueryAndMutateResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC: {
+        rpc_response_ = new (buf) ObRpcTableQuerySyncResponse;
+        break;
+      }
+      case obrpc::OB_TABLE_API_MOVE : {
+        rpc_response_ = new (buf) ObRpcTableMoveResponse;
+        obkv_info_.set_resp_reroute_info(true); //handle the response
+        break;
+      }
+      case obrpc::OB_TABLE_API_LS_EXECUTE : {
+        rpc_response_ = new (buf) ObRpcTableLSOperationResponse;
+        break;
+      }
+      case obrpc::OB_GET_PARTITIONS: {
+        rpc_response_ = new (buf) ObRpcTableGetRouteResponse();
+        break;
+      }
+      default:
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("invalid rpc pcode", "pcode", obkv_info_.pcode_, K(ret), K(rpc_trace_id));
+        break;
+      }
+    }
+  }
+
+  return ret;
 }
 
 /**
@@ -482,7 +638,7 @@ void ObRpcOBKVInfo::set_route_entry_dirty()
     table_id_ = 0;
     data_table_id_ = 0;
     index_table_name_.reset();
-    need_add_into_cache_ = false;
+    need_add_index_entry_into_cache_ = false;
   }
   if (OB_NOT_NULL(tablegroup_entry_)) {
     tablegroup_entry_->cas_set_dirty_state();

@@ -450,6 +450,36 @@ public:
   ObTableLSOp ls_op_;
 };
 
+struct ObObkvGetRouteOperationType
+{
+  enum Type
+  {
+    GETROUTE = 0,
+    INVALID = 1
+  };
+};
+
+class ObObkvGetRouteRequest final
+{
+  OB_UNIS_VERSION(1);
+public:
+  /// the credential returned when login.
+  ObObkvGetRouteOperationType::Type type_;
+  ObString credential_;
+  /// table name.
+  ObString table_name_;
+  ObString cluster_name_;
+  ObString tenant_name_;
+  ObString database_name_;
+  bool force_renew_;
+
+  TO_STRING_KV(K_(type),
+               K_(credential),
+               K_(table_name),
+               K_(cluster_name),
+               K_(tenant_name),
+               K_(database_name));
+};
 
 } // end namespace obkv
 } // end namespace obproxy

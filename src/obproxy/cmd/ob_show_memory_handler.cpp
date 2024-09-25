@@ -125,6 +125,28 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
       }
     }
 
+    backtrace.reset();
+    if (OB_FAIL(get_global_ref_leak_checker().load_ref_inc_backtrace(backtrace_buf, max_backtrace_len, backtrace_len))) {
+      LOG_WDIAG("fail to load backtrace info", K(ret));
+    } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
+      // nothing
+    } else if (backtrace.empty()) {
+      // nothing
+    } else if (OB_FAIL(dump_mod_memory("ref inc stack", "user", 0, 0, 0, backtrace))) {
+      WARN_ICMD("fail to dump mod memory", K(ret));
+    }
+
+    backtrace.reset();
+    if (OB_FAIL(get_global_ref_leak_checker().load_ref_dec_backtrace(backtrace_buf, max_backtrace_len, backtrace_len))) {
+      LOG_WDIAG("fail to load backtrace info", K(ret));
+    } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
+      // nothing
+    } else if (backtrace.empty()) {
+      // nothing
+    } else if (OB_FAIL(dump_mod_memory("ref dec stack", "user", 0, 0, 0, backtrace))) {
+      WARN_ICMD("fail to dump mod memory", K(ret));
+    }
+
     if (OB_NOT_NULL(backtrace_buf)) {
       ob_free(backtrace_buf);
     }

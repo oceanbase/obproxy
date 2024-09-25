@@ -46,6 +46,7 @@ template <ObTableObjType T>
 int64_t ObTableObjFunc<T>::get_serialize_size(const ObObj &obj)
 {
   int ret = OB_NOT_IMPLEMENT;
+  UNUSED(obj);
   LOG_WDIAG("the table object type is not supported", K(ret), K(T));
   LOG_USER_ERROR(OB_NOT_IMPLEMENT, "table object type");
   return ret;

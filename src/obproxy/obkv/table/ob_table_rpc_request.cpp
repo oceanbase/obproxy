@@ -1177,3 +1177,75 @@ int ObRpcTableLSOperationRequest::init_tablet_ops(const ObRpcTableLSOperationReq
   }
   return ret;
 }
+
+int ObRpcTableGetRouteRequest::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  int64_t meta_size = rpc_packet_meta_.get_serialize_size();
+  int64_t origin_pos = pos;
+  int64_t check_sum_pos;
+
+  pos += meta_size;      // 将pos设置为meta之后
+  check_sum_pos = pos;   // 后续做checksum需要从这个pos开始
+
+  if (pos > buf_len) {
+    ret = OB_SIZE_OVERFLOW;
+    LOG_WDIAG("fail to encode ObRpcTableGetRouteRequest", K(ret), KP(buf), K(buf_len), K(pos), K(meta_size));
+  } else {
+    OB_UNIS_ENCODE(get_route_request_);
+
+    if (OB_SUCC(ret)) {
+      // 首先计算checksum
+      int64_t login_request_size = pos - check_sum_pos;
+      uint64_t check_sum = ob_crc64(static_cast<void *>(buf + check_sum_pos), login_request_size);
+      int64_t ez_payload_size = rpc_packet_meta_.rpc_header_.get_encoded_size() + login_request_size;
+
+      rpc_packet_meta_.ez_header_.ez_payload_size_ = static_cast<uint32_t>(ez_payload_size);
+      rpc_packet_meta_.rpc_header_.checksum_ = check_sum;
+
+      // 这里传入原始的pos, 序列化meta信息
+      if (OB_FAIL(rpc_packet_meta_.serialize(buf, buf_len, origin_pos))) {
+        LOG_WDIAG("fail to encode meta", K_(rpc_packet_meta), K(ret));
+      } else if (origin_pos != check_sum_pos) {
+        // double check
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("origin pos is not equal to check sum pos, unexpected", K(ret), K(origin_pos), K(check_sum_pos));
+      } else {
+        // success
+      }
+    }
+  }
+
+  return ret;
+}
+
+int64_t ObRpcTableGetRouteRequest::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcRequest::get_encode_size();
+  len += get_route_request_.get_serialize_size();
+  return len;
+}
+
+int ObRpcTableGetRouteRequest::analyze_request(const char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(get_route_request_.deserialize(buf, buf_len, pos))) {
+    LOG_WDIAG("deserialize login request wrong", KP(buf), K(buf_len), K(pos), K(ret));
+  }
+
+  return ret;
+}
+
+int ObRpcTableGetRouteRequest::calc_partition_id(common::ObArenaAllocator &allocator,
+                                                 proxy::ObRpcReq &ob_rpc_req,
+                                                 proxy::ObProxyPartInfo &part_info,
+                                                 int64_t &partition_id)
+{
+  UNUSED(allocator);
+  UNUSED(ob_rpc_req);
+  UNUSED(part_info);
+  UNUSED(partition_id);
+  return OB_NOT_IMPLEMENT;
+}

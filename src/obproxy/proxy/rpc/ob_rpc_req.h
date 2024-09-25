@@ -20,12 +20,14 @@
 #include "obkv/table/ob_rpc_struct.h"
 #include "proxy/rpc/ob_rpc_req_trace.h"
 #include "proxy/rpc/rpclib/ob_rpc_time_stat.h"
+#include "proxy/rpc/rpclib/ob_rpc_throttle.h"
 #include "proxy/route/ob_ldc_struct.h"
 #include "proxy/route/ob_ldc_location.h"
 #include "proxy/mysql/ob_mysql_sm_time_stat.h"
 #include "utils/ob_proxy_lib.h"
 #include "lib/list/ob_list.h"
 #include "obkv/table/ob_table.h"
+#include "stat/ob_rpc_req_stats.h"
 
 namespace oceanbase
 {
@@ -310,8 +312,8 @@ public:
                    is_read_consistency_set_(false), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY), pcode_(obrpc::OB_INVALID_RPC_CODE),
                    flags_(0), rpc_origin_error_code_(0), rpc_request_retry_last_begin_(0), rpc_request_retry_times_(0),
                    rpc_request_reroute_moved_times_(0), query_async_entry_(NULL), rpc_ctx_(NULL), data_table_id_(OB_INVALID_ID),
-                   index_name_(), index_entry_(NULL), index_table_name_(), need_add_into_cache_(false), tablegroup_entry_(NULL), dummy_ldc_(), dummy_entry_(NULL),
-                   is_set_rpc_trace_id_(false), rpc_trace_id_(), credential_(), inner_req_retries_(0)
+                   index_name_(), index_entry_(NULL), index_table_name_(), need_add_index_entry_into_cache_(false), tablegroup_entry_(NULL), dummy_ldc_(), dummy_entry_(NULL),
+                   is_set_rpc_trace_id_(false), rpc_trace_id_(), credential_(), inner_req_retries_(0), is_rpc_req_stat_recorded_(false)
                    { index_table_name_buf_[0] = '\0'; }
   ~ObRpcOBKVInfo() {}
 
@@ -335,8 +337,8 @@ public:
   }
 
   // common::ObString get_req_trace_id(); //打印trace id使用
-  const ObRpcReqTraceId &get_req_trace_id() { return rpc_trace_id_; }
-  ObRpcReqTraceId &get_req_trace_id_no_const() { return rpc_trace_id_; }
+  const ObRpcReqTraceId &get_req_trace_id() const { return rpc_trace_id_; }
+  ObRpcReqTraceId &get_req_trace_id() { return rpc_trace_id_; }
   // get_rowkey_info();
   void set_partition_id(int64_t partition_id) { partition_id_ = partition_id; }
   void set_table_id(int64_t table_id) { table_id_ = table_id; }
@@ -414,6 +416,7 @@ public:
   bool is_query_with_index() const { return get_flag(static_cast<int>(OBKVInfoFlags::QUERY_WITH_INDEX)); }
   bool is_async_query_request() const { return obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == pcode_; }
   bool is_inner_req_retrying() const { return is_inner_request_ && inner_req_retries_ > 0; }
+  bool is_internal_get_partition_request() const { return obrpc::OB_GET_PARTITIONS == pcode_; }
 
   int32_t get_error_code() const { return rpc_origin_error_code_; }
   obrpc::ObRpcPacketCode get_pcode() const { return pcode_; }
@@ -454,7 +457,9 @@ public:
   uint32_t server_request_id_;          //init by pkt header, trace request
 
   bool is_first_direct_load_request_; //direct load request need
-  bool is_inner_request_;
+  bool is_inner_request_;             // 内部拆分的子请求
+  bool is_internal_rpc_request_;       // obproxy收到的rpc request，该flag表示obproxy内部执行完返回
+  bool is_rpc_request_with_partition_id_;
 
   common::ObString cluster_name_;
   common::ObString tenant_name_;
@@ -498,7 +503,7 @@ public:
   ObIndexEntry *index_entry_;
   ObString index_table_name_;
   char index_table_name_buf_[OB_MAX_INDEX_TABLE_NAME_LENGTH];
-  bool need_add_into_cache_;
+  bool need_add_index_entry_into_cache_;
 
   // used by hbase tablegroup
   ObTableGroupEntry *tablegroup_entry_;
@@ -513,6 +518,7 @@ public:
   obkv::ObTableApiCredential credential_;
 
   uint32_t inner_req_retries_;
+  bool is_rpc_req_stat_recorded_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObRpcOBKVInfo);
 };
@@ -693,6 +699,8 @@ public:
   void  set_client_channel_id(uint32_t channel_id) { c_channel_id_ = channel_id; }
   void  set_server_channel_id(uint32_t channel_id) { s_channel_id_ = channel_id; }
   void  set_inner_request(bool flag) { obkv_info_.is_inner_request_ = flag; }
+  void  set_internal_rpc_request(bool flag) { obkv_info_.is_internal_rpc_request_ = flag; }
+  void  set_rpc_request_with_partition_id(bool flag) { obkv_info_.is_rpc_request_with_partition_id_ = flag; }
   void  set_use_request_inner_buf(bool flag) { is_use_request_inner_buf_ = flag; }
   void  set_use_response_inner_buf(bool flag) { is_use_response_inner_buf_ = flag; }
   void  set_rpc_req_error_code(int error_code) { obkv_info_.rpc_origin_error_code_ = error_code; }
@@ -728,6 +736,10 @@ public:
   common::ObIAllocator *get_inner_request_allocator() { return inner_request_allocator_; }
 
   bool canceled() const { return is_canceled_; }
+  // obproxy侧执行的请求、不用发到observer
+  bool is_internal_rpc_request() const { return obkv_info_.is_internal_rpc_request_; }
+  bool is_rpc_request_with_partition_id() const { return obkv_info_.is_rpc_request_with_partition_id_; }
+  // 内部子请求
   bool is_inner_request() const { return obkv_info_.is_inner_request_; }
   bool could_release_request();
   bool could_cleanup_inner_request();
@@ -758,7 +770,8 @@ public:
   int64_t get_cluster_version() { return cluster_version_; }
   obkv::ObRpcRequest *get_rpc_request() { return rpc_request_; }
   obkv::ObRpcResponse *get_rpc_response() { return rpc_response_; }
-  char* alloc_rpc_response(int64_t buf_size);
+  int alloc_rpc_request();
+  int alloc_rpc_response();
   int free_rpc_request();
   int free_rpc_response();
   void set_rpc_request(obkv::ObRpcRequest *rpc_request) { rpc_request_ = rpc_request; }
@@ -767,7 +780,8 @@ public:
   void set_rpc_response_len(int64_t len) { rpc_response_len_ = len; }
   int32_t get_error_code()  { return obkv_info_.get_error_code(); }
 
-  const ObRpcReqTraceId &get_trace_id() { return obkv_info_.get_req_trace_id(); }
+  const ObRpcReqTraceId &get_trace_id() const { return obkv_info_.get_req_trace_id(); }
+  ObRpcReqTraceId &get_trace_id() { return obkv_info_.get_req_trace_id(); }
 
   void set_client_net_timeout_us(int64_t timeout_us) { client_net_timeout_us_ = timeout_us; }
   int64_t get_client_net_timeout_us() const { return client_net_timeout_us_; }
@@ -872,6 +886,9 @@ typedef common::ObList<ObRpcReq*> ObRpcReqList;
 inline ObRpcReq* ObRpcReq::allocate()
 {
   ObRpcReq *rpc_req = op_thread_alloc_init(ObRpcReq, event::get_rpc_req_allocator(), ObRpcReq::instantiate_func);
+  obkv::get_global_rpc_throttle().push_index();
+  obkv::get_global_rpc_throttle().update_holding_resource(sizeof(ObRpcReq));
+  RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_RPC_REQ);
   PROXY_LOG(DEBUG, "ObRpcReq::allocate", KP(rpc_req));
   return rpc_req;
 }
@@ -892,6 +909,7 @@ inline int ObRpcReq::alloc_sub_rpc_req_array(int64_t sub_rpc_req_array_size)
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     PROXY_LOG(EDIAG, "fail to alloc mem", K(alloc_size), K(ret));
   } else {
+    obkv::get_global_rpc_throttle().update_holding_resource(alloc_size);
     sub_rpc_req_array_ = reinterpret_cast<ObRpcReq **>(buf);
     sub_rpc_req_array_size_ = sub_rpc_req_array_size;
   }
@@ -910,6 +928,7 @@ inline int ObRpcReq::free_sub_rpc_req_array()
     } else {
       int64_t free_size = sizeof(ObRpcReq *) * sub_rpc_req_array_size_;
       op_fixed_mem_free(sub_rpc_req_array_, free_size);
+      obkv::get_global_rpc_throttle().update_holding_resource(-free_size);
       sub_rpc_req_array_ = NULL;
       sub_rpc_req_array_size_ = 0;
     }
@@ -952,6 +971,7 @@ inline int ObRpcReq::alloc_inner_request_allocator()
     ret = common::OB_ALLOCATE_MEMORY_FAILED;
     PROXY_LOG(EDIAG, "fail to alloc mem", K(alloc_size), K(ret));
   } else {
+    obkv::get_global_rpc_throttle().update_holding_resource(alloc_size);
     inner_request_allocator_ = new (buf) common::ObArenaAllocator;
     inner_request_allocator_len_ = alloc_size;
   }
@@ -968,6 +988,7 @@ inline int ObRpcReq::free_inner_request_allocator()
       ret = common::OB_ERR_UNEXPECTED;
       PROXY_LOG(EDIAG, "inner_request_allocator_len_ must > 0", K_(inner_request_allocator_len), K_(inner_request_allocator), K(ret));
     } else {
+      obkv::get_global_rpc_throttle().update_holding_resource(-(inner_request_allocator_len_ + inner_request_allocator_->total()));
       inner_request_allocator_->~ObIAllocator();  // free all memory
       op_fixed_mem_free(inner_request_allocator_, inner_request_allocator_len_);
       inner_request_allocator_ = NULL;
@@ -976,20 +997,6 @@ inline int ObRpcReq::free_inner_request_allocator()
   }
 
   return ret;
-}
-
-inline char* ObRpcReq::alloc_rpc_response(int64_t buf_size)
-{
-  char* buf = NULL;
-  ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
-  if (obkv_info_.is_inner_request_ && OB_ISNULL(inner_request_allocator_)) {
-    PROXY_LOG(WDIAG, "inner request allocator is NULL", K(rpc_trace_id));
-  } else if (obkv_info_.is_inner_request_ && OB_NOT_NULL(inner_request_allocator_)) {
-    buf = (char*)inner_request_allocator_->alloc(buf_size);
-  } else {
-    buf = (char*)op_fixed_mem_alloc(buf_size);
-  }
-  return buf;
 }
 
 inline int ObRpcReq::free_rpc_request()
@@ -1003,6 +1010,7 @@ inline int ObRpcReq::free_rpc_request()
     } else {
       rpc_request_->~ObRpcRequest();  // free all memory
       op_fixed_mem_free(rpc_request_, rpc_request_len_);
+      obkv::get_global_rpc_throttle().update_holding_resource(-rpc_response_len_);
       rpc_request_ = NULL;
       rpc_request_len_ = 0;
     }
@@ -1025,6 +1033,7 @@ inline int ObRpcReq::free_rpc_response()
         // do nothing, just reset inner_request_allocator_
       } else {
         op_fixed_mem_free(rpc_response_, rpc_response_len_);
+        obkv::get_global_rpc_throttle().update_holding_resource(-rpc_response_len_);
       }
       rpc_response_ = NULL;
       rpc_response_len_ = 0;
@@ -1049,6 +1058,7 @@ inline int ObRpcReq::alloc_request_buf(uint64_t len)
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
     } else {
+      obkv::get_global_rpc_throttle().update_holding_resource(len);
       request_buf_ = buf;
       request_buf_len_ = len;
     }
@@ -1065,6 +1075,7 @@ inline int ObRpcReq::free_request_buf()
       PROXY_LOG(EDIAG, "request_buf_len_ must > 0", K_(request_buf_len), K_(request_buf), K(ret));
     } else {
       op_fixed_mem_free(request_buf_, request_buf_len_);
+      obkv::get_global_rpc_throttle().update_holding_resource(-request_buf_len_);
       request_buf_ = NULL;
       request_buf_len_ = 0;
     }
@@ -1087,6 +1098,7 @@ inline int ObRpcReq::alloc_request_inner_buf(uint64_t len)
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
     } else {
+      obkv::get_global_rpc_throttle().update_holding_resource(len);
       request_inner_buf_ = buf;
       request_inner_buf_len_ = len;
     }
@@ -1109,6 +1121,7 @@ inline int ObRpcReq::alloc_response_inner_buf(uint64_t len)
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
     } else {
+      obkv::get_global_rpc_throttle().update_holding_resource(len);
       response_inner_buf_ = buf;
       response_inner_buf_len_ = len;
     }
@@ -1125,6 +1138,7 @@ inline int ObRpcReq::free_request_inner_buf()
       PROXY_LOG(EDIAG, "request_buf_len_ must > 0", K_(request_inner_buf_len), K_(request_inner_buf), K(ret));
     } else {
       op_fixed_mem_free(request_inner_buf_, request_inner_buf_len_);
+      obkv::get_global_rpc_throttle().update_holding_resource(-request_inner_buf_len_);
       request_inner_buf_ = NULL;
       request_inner_buf_len_ = 0;
     }
@@ -1141,6 +1155,7 @@ inline int ObRpcReq::free_response_inner_buf()
       PROXY_LOG(EDIAG, "response_inner_buf_len_ must > 0", K_(response_inner_buf_len), K_(response_inner_buf), K(ret));
     } else {
       op_fixed_mem_free(response_inner_buf_, response_inner_buf_len_);
+      obkv::get_global_rpc_throttle().update_holding_resource(-response_inner_buf_len_);
       response_inner_buf_ = NULL;
       response_inner_buf_len_ = 0;
     }
@@ -1177,6 +1192,7 @@ inline int ObRpcReq::alloc_response_buf(uint64_t len)
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
         PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
       } else {
+        obkv::get_global_rpc_throttle().update_holding_resource(len);
         response_buf_ = buf;
         response_buf_len_ = len;
       }
@@ -1197,6 +1213,7 @@ inline int ObRpcReq::free_response_buf()
         // do nothing, just reset inner_request_allocator_
       } else {
         op_fixed_mem_free(response_buf_, response_buf_len_);
+        obkv::get_global_rpc_throttle().update_holding_resource(-response_buf_len_);
       }
       response_buf_ = NULL;
       response_buf_len_ = 0;

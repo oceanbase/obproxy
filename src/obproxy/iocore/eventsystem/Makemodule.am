@@ -36,4 +36,6 @@ obproxy/iocore/eventsystem/ob_shard_watch_task.h\
 obproxy/iocore/eventsystem/ob_shard_watch_task.cpp\
 obproxy/iocore/eventsystem/ob_shard_scan_all_task.h\
 obproxy/iocore/eventsystem/ob_shard_scan_all_task.cpp\
+obproxy/iocore/eventsystem/ob_kv_task.h\
+obproxy/iocore/eventsystem/ob_kv_task.cpp\
 obproxy/iocore/eventsystem/ob_thread_impl.h

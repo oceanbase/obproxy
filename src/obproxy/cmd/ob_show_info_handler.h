@@ -27,7 +27,7 @@ namespace obproxy
 namespace obutils
 {
 class ObClusterResource;
-class ObServerStateSimpleInfo;
+struct ObServerStateSimpleInfo;
 }
 namespace proxy
 {

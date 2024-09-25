@@ -16,6 +16,7 @@
 #define CUTOFF  (UINT64_MAX / 10)
 #define CUTLIM  (UINT64_MAX % 10)
 #define DIGITS_IN_ULONGLONG 20
+#define UNUSED(v) ((void)(v))
 
 static ulonglong d10[DIGITS_IN_ULONGLONG]=
 {
@@ -894,6 +895,7 @@ static int ob_strnncollsp_simple(const ObCharsetInfo *cs
 static size_t ob_strnxfrm_simple(const ObCharsetInfo* cs __attribute__((unused)), unsigned char* dst, size_t dstlen,
     uint nweights, const unsigned char* src, size_t srclen, unsigned int flags, ob_bool* is_valid_unicode)
 {
+  UNUSED(is_valid_unicode);
   uchar *dst0 = dst;
   const uchar *end;
   const uchar *remainder;

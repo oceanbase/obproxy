@@ -1191,23 +1191,8 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
     LOG_DEBUG("will set oracle mode ", K(is_oracle_mode));
     client_info.set_oracle_mode(is_oracle_mode);
   }
-  // 2. save db name
-  if (ok_pkt.is_schema_changed()) {
-    const ObString &db_name = ok_pkt.get_changed_schema();
-    if (!db_name.empty()) {
-      bool is_string_to_lower_case = client_info.is_oracle_mode() ? false : client_info.need_use_lower_case_names();
-      if (OB_FAIL(client_info.set_database_name(db_name))) {
-        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
-      } else if (OB_FAIL(server_info.set_database_name(db_name, is_string_to_lower_case))) {
-        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
-      }
-    } else {
-      resp_result.is_server_db_reset_ = true;
-      LOG_DEBUG("db has been reset");
-    }
-  }
 
-  // 3. save sys var
+  // 2. save sys var
   resp_result.has_new_sys_var_ = false;
   const ObIArray<ObStringKV> &sys_var = ok_pkt.get_system_vars();
   if (!sys_var.empty()) {
@@ -1224,6 +1209,23 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
           LOG_WDIAG("fail to nessary handle sys var", K(sys_var.at(i)), K(is_auth_request), K(ret));
         }
       }
+    }
+  }
+
+  // 3. save db name
+  // sys var 'lower_case_table_names' may changed
+  if (ok_pkt.is_schema_changed()) {
+    const ObString &db_name = ok_pkt.get_changed_schema();
+    if (!db_name.empty()) {
+      bool is_string_to_lower_case = client_info.is_oracle_mode() ? false : client_info.need_use_lower_case_names();
+      if (OB_FAIL(client_info.set_database_name(db_name))) {
+        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
+      } else if (OB_FAIL(server_info.set_database_name(db_name, is_string_to_lower_case))) {
+        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
+      }
+    } else {
+      resp_result.is_server_db_reset_ = true;
+      LOG_DEBUG("db has been reset");
     }
   }
 

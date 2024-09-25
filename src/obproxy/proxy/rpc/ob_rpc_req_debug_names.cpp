@@ -92,10 +92,6 @@ const char *ObRpcReqDebugNames::get_action_name(enum ObRpcRequestSMActionType ev
       ret = "RPC_REQ_PROCESS_RESPONSE";
       break;
     }
-    case RPC_REQ_RESPONSE_REWRITE: {
-      ret = "RPC_REQ_RESPONSE_REWRITE";
-      break;
-    }
     case RPC_REQ_RESPONSE_CLIENT_SENDING: {
       ret = "RPC_REQ_RESPONSE_CLIENT_SENDING";
       break;
@@ -351,6 +347,11 @@ const char *ObRpcReqDebugNames::get_event_name(const int event)
       break;
     case RPC_REQ_CTX_LOOKUP_CACHE_EVENT:
       ret = "RPC_REQ_CTX_LOOKUP_CACHE_EVENT";
+      break;
+
+    // analyze
+    case RPC_REQUEST_SM_ANALYZE_DONE:
+      ret = "RPC_REQUEST_SM_ANALYZE_DONE";
       break;
  
     default:

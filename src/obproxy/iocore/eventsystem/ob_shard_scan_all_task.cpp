@@ -28,8 +28,14 @@ ObShardScanAllTaskProcessor g_shard_scan_all_task_processor;
 
 // Note that if the number of task_threads is 0, all continuations scheduled for
 // ET_SHARD_SCAN_ALL ends up running on ET_CALL (which is the net-threads).
-int ObShardScanAllTaskProcessor::start(const int64_t shard_scan_all_threads, const int64_t stacksize)
+int ObShardScanAllTaskProcessor::start(
+    const int64_t shard_scan_all_threads, const int64_t stacksize,
+    const bool enable_cpu_topology, const bool automatic_match_work_thread,
+    const bool enable_cpu_isolate)
 {
+  UNUSED(enable_cpu_topology);
+  UNUSED(automatic_match_work_thread);
+  UNUSED(enable_cpu_isolate);
   int ret = OB_SUCCESS;
   if (OB_ISNULL(thread_pool_event_queue_ = new (std::nothrow) ObProtectedQueueThreadPool())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;

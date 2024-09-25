@@ -117,8 +117,8 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   case PROMETHEUS_TRANSACTION_COUNT:
   {
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(TRANSACTION_TOTAL, TRANSACTION_TOTAL_HELP, label_vector))) {
-      LOG_WDIAG("fail to handle counter with TRANSACTION_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(TRANSACTION_TOTAL, TRANSACTION_TOTAL_HELP, label_vector))) {
+      LOG_WDIAG("fail to accumulate counter with TRANSACTION_TOTAL", K(ret));
     }
     break;
   }
@@ -134,8 +134,8 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_HINT, is_partition_hit ? LABEL_TRUE : LABEL_FALSE, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with REQUEST_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate counter with REQUEST_TOTAL", K(ret));
     }
     break;
   }
@@ -143,14 +143,20 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   case PROMETHEUS_SERVER_PROCESS_REQUEST_TIME:
   case PROMETHEUS_REQUEST_TOTAL_TIME:
   {
+    bool is_slow = (bool)va_arg(args, int);
+    bool is_error = (bool)va_arg(args, int);
+    bool is_partition_hit = (bool)va_arg(args, int);
     int64_t value = va_arg(args, int64_t);
 
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_TYPE, get_print_stmt_name(stmt_type), false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_HINT, is_partition_hit ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TIME_TYPE, ObProxyPrometheusUtils::get_metric_lable(metric), false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(COST_TOTAL, COST_TOTAL_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle gauge with COST_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(COST_TOTAL, COST_TOTAL_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate gauge with COST_TOTAL", K(ret));
     }
 
     /*
@@ -159,7 +165,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     buckets.push_back(get_global_proxy_config().monitor_stat_middle_threshold);
     buckets.push_back(get_global_proxy_config().monitor_stat_high_threshold);
     if (OB_FAIL(g_ob_prometheus_processor.handle_histogram(COST_TOTAL, COST_TOTAL_HELP, label_vector, value, buckets))) {
-      LOG_WDIAG("fail to handle counter with COST_TOTAL", K(ret));
+      LOG_WDIAG("fail to accumulate counter with COST_TOTAL", K(ret));
     }
     */
     break;
@@ -172,9 +178,9 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, is_client ? vip_addr_name : "", true);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(CURRENT_SESSION, CURRENT_SESSION_HELP,
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(CURRENT_SESSION, CURRENT_SESSION_HELP,
                                                        label_vector, value, false))) {
-      LOG_WDIAG("fail to handle counter with CURRENT_SESSION", K(ret));
+      LOG_WDIAG("fail to accumulate gauge with CURRENT_SESSION", K(ret));
     }
     break;
   }
@@ -186,9 +192,9 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, true);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_CONNECT_RESULT, is_success ? LABEL_SUCC : LABEL_FAIL, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(NEW_CLIENT_CONNECTIONS, NEW_CLIENT_CONNECTIONS_HELP,
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(NEW_CLIENT_CONNECTIONS, NEW_CLIENT_CONNECTIONS_HELP,
                                                          label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with NEW_CLIENT_CONNECTIONS", K(ret));
+      LOG_WDIAG("fail to accumulate counter with NEW_CLIENT_CONNECTIONS", K(ret));
     }
     break;
   }
@@ -198,6 +204,7 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
   return ret;
 }
+
 
 } // end of namespace prometheus
 } // end of namespace obproxy

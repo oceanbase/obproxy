@@ -42,10 +42,9 @@ include obproxy/packet/Makemodule.am
 include obproxy/obkv/Makemodule.am
 include obproxy/dbconfig/Makemodule.am
 include obproxy/engine/Makemodule.am
-if BUILD_OPENSOURCE
-else
-    include obproxy/driver/java/Makemodule.am
-endif
+#RANGE_IF_BUSINESS
+include obproxy/driver/java/Makemodule.am
+#RANGE_END
 include obproxy/driver/c/Makemodule.am
 include obproxy/optimizer/Makemodule.am
 include obproxy/executor/Makemodule.am

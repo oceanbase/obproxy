@@ -156,7 +156,8 @@ private:
 };
 
 int init_tablegroup_map_for_thread();
-int init_tablegroup_map_for_one_thread(int64_t tablegroup);
+int init_tablegroup_map_for_one_thread(int64_t index);
+int init_tablegroup_map_for_one_thread(event::ObEThread *thread);
 
 } // end of namespace proxy
 } // end of namespace obproxy

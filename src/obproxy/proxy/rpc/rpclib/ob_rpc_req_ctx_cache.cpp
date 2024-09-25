@@ -608,8 +608,26 @@ int init_rpc_req_ctx_map_for_one_thread(int64_t index)
   } else {
     if (OB_ISNULL(ethreads[index]->rpc_req_ctx_map_ = new (std::nothrow) ObRpcReqCtxRefHashMap(ObModIds::OB_PROXY_RPC_REQ_CTX_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WDIAG("fail to new ObIndexRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObRpcReqCtxRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->rpc_req_ctx_map_->init())) {
+      LOG_WDIAG("fail to init rpc ctx map", K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_rpc_req_ctx_map_for_one_thread(ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->rpc_req_ctx_map_
+                  = new (std::nothrow) ObRpcReqCtxRefHashMap(ObModIds::OB_PROXY_RPC_REQ_CTX_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObRpcReqCtxRefHashMap", K(thread), K(ret));
+    } else if (OB_FAIL(thread->rpc_req_ctx_map_->init())) {
       LOG_WDIAG("fail to init rpc ctx map", K(ret));
     }
   }

@@ -1078,7 +1078,7 @@ private:
 };
 
 template <class T, long unsigned int NODE_NUM>
-class SimpleAllocerBlock;
+struct SimpleAllocerBlock;
 
 template <class T, long unsigned int NODE_NUM>
 struct SimpleAllocerNode

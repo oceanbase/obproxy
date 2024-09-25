@@ -22,6 +22,7 @@
 
 #include "lib/ob_define.h"
 #include "lib/atomic/ob_atomic.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
 
 namespace oceanbase
 {
@@ -120,6 +121,61 @@ inline int64_t ObRefCountObj::refcount_dec()
 inline int64_t ObRefCountObj::refcount() const
 {
   return refcount_;
+}
+
+// ObSharedRefCountHelper and ObRefCountObjHelper is used to find obj reference leak
+// useage:
+// - if class A is found with reference leak
+// - set class A derived from ObSharedRefCountHelper ( or ObRefCountObjHelper)
+// - use show proxymemory to get all inf_ref() stack and dec_ref() stack
+// - checkout the difference betwen inc_ref() stack and dec_ref() stack, it`s probably the memory leak position
+// example:
+// 1. class A : public ObSharedRefCountHelper
+// 2. reproduce use cases
+// 3. show proxymemory
+class ObSharedRefCountHelper : public ObSharedRefCount
+{
+public:
+  ObSharedRefCountHelper() : ObSharedRefCount() {}
+  virtual ~ObSharedRefCountHelper() {}
+
+  inline void inc_ref()
+  {
+    get_global_ref_leak_checker().on_inc();
+    ATOMIC_FAA(&ref_count_, 1);
+  }
+
+  inline void dec_ref()
+  {
+    get_global_ref_leak_checker().on_dec();
+    if (1 == ATOMIC_FAA(&ref_count_, -1)) {
+      free();
+    }
+  }
+};
+
+class ObRefCountObjHelper : public ObRefCountObj
+{
+public:
+  ObRefCountObjHelper() : ObRefCountObj() { }
+  virtual ~ObRefCountObjHelper() { }
+
+  virtual int64_t refcount_inc();
+  virtual int64_t refcount_dec();
+};
+
+// Increment the reference count, returning the new count.
+inline int64_t ObRefCountObjHelper::refcount_inc()
+{
+  get_global_ref_leak_checker().on_inc();
+  return ATOMIC_FAA(&refcount_, 1) + 1;
+}
+
+// Decrement the reference count, returning the new count.
+inline int64_t ObRefCountObjHelper::refcount_dec()
+{
+  get_global_ref_leak_checker().on_dec();
+  return ATOMIC_FAA(&refcount_, -1) - 1;
 }
 
 // class ObPtr

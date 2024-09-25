@@ -121,8 +121,6 @@ struct ObCurTraceId
   }
 };
 
-uint64_t ObCurTraceId::SeqGenerator::seq_generator_ = 0;
-
 int32_t LogExtraHeaderCallback(char *buf, int32_t buf_size,
                                int level, const char *file,
                                int line, const char *function, pthread_t tid);

@@ -18,7 +18,6 @@ namespace common
 {
 volatile int64_t ObObjFreeListList::once_ = 0;
 const int64_t ObObjFreeListList::MAX_NUM_FREELIST = 1024;
-static const uint8_t ITEM_MAGIC = 0xFF;
 
 #define POOL_LOG(tag, f, thread_cache) \
   f->show_info(__FILE__, __LINE__, tag, thread_cache)

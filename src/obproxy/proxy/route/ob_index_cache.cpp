@@ -579,6 +579,23 @@ int init_index_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_index_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->index_map_ = new (std::nothrow) ObIndexRefHashMap(ObModIds::OB_PROXY_INDEX_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObIndexRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->index_map_->init())) {
+      LOG_WDIAG("fail to init index_map", K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObIndexRefHashMap::clean_hash_map()
 {
   int ret = OB_SUCCESS;

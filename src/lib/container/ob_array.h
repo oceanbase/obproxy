@@ -148,8 +148,8 @@ public:
   inline int reserve(int64_t capacity)
   {
     int ret = OB_SUCCESS;
-    if (capacity > data_size_ / (int64_t)sizeof(T)) {
-      int64_t new_size = capacity * sizeof(T);
+    if (capacity > data_size_ / static_cast<int64_t>(sizeof(T))) {
+      int64_t new_size = capacity * static_cast<int64_t>(sizeof(T));
       int64_t plus = new_size % block_size_;
       new_size += (0 == plus) ? 0 : (block_size_ - plus);
       ret = extend_buf(new_size);
@@ -467,7 +467,7 @@ int ObArray<T, BlockAllocatorT, CallBack, ItemEncode>::assign(const ObIArray<T> 
     this->reset();
     int64_t N = other.count();
     (void)this->reserve(other.count());
-    if (OB_UNLIKELY(static_cast<uint64_t>(data_size_) < (sizeof(T)*N))) {
+    if (OB_UNLIKELY(static_cast<uint64_t>(data_size_) < (sizeof(T) * static_cast<uint64_t>(N)))) {
       _OB_LOG(WDIAG, "no memory");
       ret = OB_ALLOCATE_MEMORY_FAILED;
     } else {

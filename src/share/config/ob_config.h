@@ -262,7 +262,7 @@ public:
                       CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigIntListItem() {}
   virtual void free() override;
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   const int64_t &operator[](int idx) const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.int_list_[idx] : value_.int_list_[idx]); }
@@ -276,11 +276,11 @@ public:
   }
   int size() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.size_ : value_.size_); }
   bool valid() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.valid_ : value_.valid_); }
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true; }
 
 protected:
   //use current value to do input operation
-  bool set(const char *str);
+  bool set(const char *str) override;
 
   static const int64_t MAX_INDEX_SIZE = 64;
   struct ObInnerConfigIntListItem
@@ -299,8 +299,7 @@ protected:
 
   struct ObInnerConfigIntListItem value_;
   struct ObInnerConfigIntListItem initial_value_;
-
-private:
+protected:
   DISALLOW_COPY_AND_ASSIGN(ObConfigIntListItem);
 };
 
@@ -315,7 +314,7 @@ public:
                       const char *info,
                       CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigStrListItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
 
   int tryget(const int64_t idx, char *buf, const int64_t buf_len) const;
@@ -332,7 +331,7 @@ public:
   //need reboot value need set it once startup, otherwise it will output current value
   int64_t size() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.size_ : value_.size_); }
   bool valid() const { return value_.valid_; }
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true;}
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true;}
 
 public:
   static const int64_t MAX_INDEX_SIZE = 64;
@@ -389,9 +388,8 @@ public:
 
 protected:
   //use current value to do input operation
-  bool set(const char *str);
+  bool set(const char *str) override;
 
-private:
   DISALLOW_COPY_AND_ASSIGN(ObConfigStrListItem);
 };
 
@@ -403,14 +401,14 @@ public:
   virtual ~ObConfigIntegralItem() {}
   virtual void free() override;
 
-  virtual ObConfigItem *clone() { return NULL; }
-  bool operator >(const char *str) const
+  virtual ObConfigItem *clone() override { return NULL; }
+  bool operator >(const char *str) const override
   { bool valid = true; return get_value() > parse(str, valid) && valid; }
-  bool operator >=(const char *str) const
+  bool operator >=(const char *str) const override
   { bool valid = true; return get_value() >= parse(str, valid) && valid; }
-  bool operator <(const char *str) const
+  bool operator <(const char *str) const override
   { bool valid = true; return get_value() < parse(str, valid) && valid; }
-  bool operator <=(const char *str) const
+  bool operator <=(const char *str) const override
   { bool valid = true; return get_value() <= parse(str, valid) && valid; }
 
   // get_value() return the real-time value
@@ -419,18 +417,18 @@ public:
   int64_t get() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
   operator const int64_t &() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
 
-  virtual bool parse_range(const char *range);
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  virtual bool parse_range(const char *range) override;
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true; }
 
 public:
   //use current value to do input operation
-  bool set(const char *str);
-  virtual int64_t parse(const char *str, bool &valid) const = 0;
+  bool set(const char *str) override;
+  virtual int64_t parse(const char *str, bool &valid) const = 0 ;
 
+  DISALLOW_COPY_AND_ASSIGN(ObConfigIntegralItem);
 private:
   int64_t value_;
   int64_t initial_value_;
-  DISALLOW_COPY_AND_ASSIGN(ObConfigIntegralItem);
 };
 inline bool ObConfigIntegralItem::set(const char *str)
 {
@@ -460,15 +458,15 @@ public:
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigDoubleItem() {}
   virtual void free() override;
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
 
-  bool operator >(const char *str) const
+  bool operator >(const char *str) const override
   { bool valid = true; return get_value() > parse(str, valid) && valid; }
-  bool operator >=(const char *str) const
+  bool operator >=(const char *str) const override
   { bool valid = true; return get_value() >= parse(str, valid) && valid; }
-  bool operator <(const char *str) const
+  bool operator <(const char *str) const override
   { bool valid = true; return get_value() < parse(str, valid) && valid; }
-  bool operator <=(const char *str) const
+  bool operator <=(const char *str) const override
   { bool valid = true; return get_value() <= parse(str, valid) && valid; }
 
   double get_value() const { return value_; }
@@ -478,18 +476,18 @@ public:
   operator const double &() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
 
   ObConfigDoubleItem &operator = (double value);
-  virtual bool parse_range(const char *range);
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  virtual bool parse_range(const char *range) override ;
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true; }
 
 protected:
   //use current value to do input operation
-  bool set(const char *str);
+  bool set(const char *str) override;
   double parse(const char *str, bool &valid) const;
 
+  DISALLOW_COPY_AND_ASSIGN(ObConfigDoubleItem);
 private:
   double value_;
   double initial_value_;
-  DISALLOW_COPY_AND_ASSIGN(ObConfigDoubleItem);
 };
 inline ObConfigDoubleItem &ObConfigDoubleItem::operator = (double value)
 {
@@ -528,15 +526,14 @@ public:
                        const char *info,
                        CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigCapacityItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
 
   ObConfigCapacityItem &operator = (int64_t value);
 
 protected:
-  int64_t parse(const char *str, bool &valid) const;
+  int64_t parse(const char *str, bool &valid) const override;
 
-private:
   DISALLOW_COPY_AND_ASSIGN(ObConfigCapacityItem);
 };
 inline ObConfigCapacityItem &ObConfigCapacityItem::operator = (int64_t value)
@@ -566,13 +563,14 @@ public:
                    const char *info,
                    CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigTimeItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
 
   ObConfigTimeItem &operator = (int64_t value);
 
 protected:
-  int64_t parse(const char *str, bool &valid) const;
+  int64_t parse(const char *str, bool &valid) const override;
+  DISALLOW_COPY_AND_ASSIGN(ObConfigTimeItem);
 
 private:
   const static int64_t TIME_MICROSECOND = 1UL;
@@ -581,7 +579,6 @@ private:
   const static int64_t TIME_MINUTE = 60 * 1000 * 1000UL;
   const static int64_t TIME_HOUR = 60 * 60 * 1000 * 1000UL;
   const static int64_t TIME_DAY = 24 * 60 * 60 * 1000 * 1000UL;
-  DISALLOW_COPY_AND_ASSIGN(ObConfigTimeItem);
 };
 inline ObConfigTimeItem &ObConfigTimeItem::operator = (int64_t value){
   char buf[OB_MAX_CONFIG_VALUE_LEN];
@@ -609,14 +606,13 @@ public:
                   const char *info,
                   CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigIntItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
   ObConfigIntItem &operator = (int64_t value);
 
 protected:
-  int64_t parse(const char *str, bool &valid) const;
+  int64_t parse(const char *str, bool &valid) const override;
 
-private:
   DISALLOW_COPY_AND_ASSIGN(ObConfigIntItem);
 };
 inline ObConfigIntItem &ObConfigIntItem::operator = (int64_t value)
@@ -640,16 +636,16 @@ public:
                      const char *info,
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigMomentItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
   //use current value to do input operation
-  bool set(const char *str);
+  bool set(const char *str) override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   bool disable() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.disable_ : value_.disable_); }
   int hour() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.hour_ : value_.hour_); }
   int minute() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_.minute_ : value_.minute_); }
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true; }
 
 public:
   static const int64_t MAX_INDEX_SIZE = 64;
@@ -662,11 +658,12 @@ public:
     int hour_;
     int minute_;
   };
+protected:
 
+  DISALLOW_COPY_AND_ASSIGN(ObConfigMomentItem);
 private:
   struct ObInnerConfigMomentItem value_;
   struct ObInnerConfigMomentItem initial_value_;
-  DISALLOW_COPY_AND_ASSIGN(ObConfigMomentItem);
 };
 
 class ObConfigBoolItem
@@ -680,24 +677,24 @@ public:
                    const char *info,
                    CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigBoolItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   operator const bool &() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_ : value_); }
   ObConfigBoolItem &operator = (const bool value) { set_value(value ? "True" : "False"); return *this; }
-  virtual void set_initial_value() { initial_value_ = value_; is_initial_value_set_ = true; }
+  virtual void set_initial_value() override { initial_value_ = value_; is_initial_value_set_ = true; }
   const bool get_value() { return value_; }
-  bool set(const char *str);
+  bool set(const char *str) override;
 
 protected:
   //use current value to do input operation
   bool parse(const char *str, bool &valid) const;
 
+  DISALLOW_COPY_AND_ASSIGN(ObConfigBoolItem);
 private:
   bool value_;
   bool initial_value_;
-  DISALLOW_COPY_AND_ASSIGN(ObConfigBoolItem);
 };
 
 class ObConfigStringItem
@@ -714,14 +711,14 @@ public:
                      const char *info,
                      CFG_EXTRA_INFO_DECLARE);
   virtual ~ObConfigStringItem() {}
-  virtual ObConfigItem *clone();
+  virtual ObConfigItem *clone() override;
   virtual void free() override;
 
   //need reboot value need set it once startup, otherwise it will output current value
   operator const char *() const { return ((need_reboot_ && is_initial_value_set_) ? initial_value_str_ : value_str_); } // not safe, value maybe changed
   int copy(char *buf, const int64_t buf_len); // '\0' will be added
   const char *initial_value() const { return initial_value_str_; }
-  virtual void set_initial_value()
+  virtual void set_initial_value() override
   {
     int32_t length = snprintf(initial_value_str_, sizeof(initial_value_str_), "%s", value_str_);
     if (length < 0 || length > static_cast<int32_t>(sizeof(initial_value_str_))) {
@@ -734,11 +731,11 @@ public:
 
 protected:
   //use current value to do input operation
-  bool set(const char *str) { UNUSED(str); return true; }
+  bool set(const char *str) override { UNUSED(str); return true; }
 
+  DISALLOW_COPY_AND_ASSIGN(ObConfigStringItem);
 private:
   char initial_value_str_[OB_MAX_CONFIG_VALUE_LEN];
-  DISALLOW_COPY_AND_ASSIGN(ObConfigStringItem);
 };
 
 } // namespace common

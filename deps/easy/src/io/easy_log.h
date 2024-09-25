@@ -31,7 +31,7 @@ typedef enum {
       if (easy_log_level>=level) {                                                           \
         static uint64_t hash_val = 0;                                                        \
         if (0 == hash_val) {                                                                 \
-          hash_val = easy_fnv_hash(__FILE__":"EASY_STRINGIZE(__LINE__));                     \
+          hash_val = easy_fnv_hash(__FILE__":" EASY_STRINGIZE(__LINE__));                     \
         }                                                                                    \
         easy_log_format(level, __FILE__, __LINE__, __FUNCTION__, hash_val, format, ## args); \
       }                                                                                      \

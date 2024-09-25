@@ -46,10 +46,10 @@ namespace obproxy
 namespace net
 {
 
-struct ObNetAccept;
+class ObNetAccept;
 class ObUnixNetVConnection;
 class ObNetProcessor;
-struct ObEventIO;
+class ObEventIO;
 
 typedef int (AcceptFunction)(ObNetAccept *na, void *e, const bool blockable);
 typedef AcceptFunction *AcceptFunctionPtr;
@@ -140,7 +140,6 @@ public:
 private:
   bool is_inited_;
   ObHRTime period_;
-  ObUnixNetVConnection *epoll_vc_; //only storage for epoll events, !!not used
   ObEventIO *ep_;
 };
 

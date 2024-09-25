@@ -143,6 +143,7 @@ private:
 
 int init_table_query_async_map_for_thread();
 int init_table_query_async_map_for_one_thread(int64_t index);
+int init_table_query_async_map_for_one_thread(event::ObEThread *thread);
 
 } // end of namespace proxy
 } // end of namespace obproxy

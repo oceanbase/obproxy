@@ -112,6 +112,7 @@ inline const char *get_xflush_error_name(const int error)
 #define XFH_LOCK_STATE              "LOCK_STATE"
 #define XFH_WARNING_STATE           "WARNING_STATE"
 #define XFH_RPC_STATE               "RPC_STATE"
+#define XFH_RPC_REQ_STATE           "RPC_REQ_STATE"
 
 } // end of namespace obproxy
 } // end of namespace oceanbase

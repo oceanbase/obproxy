@@ -159,41 +159,39 @@ function do_config()
   set -x
   get_os_release
 
-  if test ${OS_RELEASE} -eq 8 -a "${OS_ARCH}x" = "aarch64x" ; then
-      sed -i "/The path to search for executables/{N;N;N;d;}" configure.ac
-      sed -i "/set gcc executable path/{N;N;N;d;}" configure.ac
-      sed -i "/set g++ executable path/{N;N;N;d;}" configure.ac
-  fi
-
   case "x$1" in
     xdebug)
       # configure for developers
-      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build debug version=== \033[0m"
       ;;
     xgcov)
       # configure for gcov
-      ./configure --with-gcc-version=9.3.0 --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
       echo -e "\033[31m ===build gcov version=== \033[0m"
       ;;
     xasan)
       # configure for asan
-     ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
+     ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
       echo -e "\033[31m ===build asan version=== \033[0m"
       ;;
     xso)
       # configure for obproxy_so
-      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so
       echo -e "\033[31m ===build so version=== \033[0m"
       ;;
     xerrsim)
      # configure for error injection
-      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-errsim=yes
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-errsim=yes
       echo -e "\033[31m ===build errsim version=== \033[0m"
        ;;
+    xopt)
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-opt
+      echo -e "\033[31m ===build release version with compile optimization(BOLT & AutoFDO) === \033[0m"
+      ;;
     *)
       # configure for release
-      ./configure --with-gcc-version=9.3.0 --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release
       echo -e "\033[31m ===build release version=== \033[0m"
       ;;
   esac
@@ -250,13 +248,13 @@ xmake)
 xrpm)
   parse_args
   do_dep_init
-  do_config
+  do_config opt
   do_rpm
   ;;
 *)
   parse_args
   do_dep_init
-  do_config
+  do_config opt
   do_make
   ;;
 esac

@@ -34,7 +34,7 @@ namespace obutils
 {
 class ObClusterResource;
 class ObCachedVariables;
-class SqlFieldResult;
+struct SqlFieldResult;
 }
 namespace event
 {

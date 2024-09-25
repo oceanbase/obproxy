@@ -29,7 +29,7 @@ namespace obutils
 {
 class ObClusterResource;
 class ObCachedVariables;
-class SqlFieldResult;
+struct SqlFieldResult;
 }
 namespace obkv
 {
@@ -43,6 +43,7 @@ namespace proxy
 {
 class ObRpcReq;
 class ObRpcReqCtx;
+class ObTableEntry;
 
 enum ObRpcReqAnalyzeNewStatus
 {
@@ -58,17 +59,57 @@ struct ObProxyRpcReqAnalyzeCtx
 {
   ObProxyRpcReqAnalyzeCtx() { reset(); }
   ~ObProxyRpcReqAnalyzeCtx() { }
+  ObProxyRpcReqAnalyzeCtx(const ObProxyRpcReqAnalyzeCtx &other) {
+    if (&other != this) {
+      status_ = other.status_;
+      analyze_pos_ = other.analyze_pos_;
+      cluster_version_ = other.cluster_version_;
+
+      vip_tenant_name_ = other.vip_tenant_name_;
+      vip_cluster_name_ = other.vip_cluster_name_;
+      has_tenant_username_ = other.has_tenant_username_;
+      has_cluster_username_ = other.has_cluster_username_;
+
+      is_response_ = other.is_response_;
+      need_retry_ = other.need_retry_;
+      need_rewrite_ = other.need_rewrite_;
+      need_reroute_ = other.need_reroute_;
+      dirty_table_entry_ = other.dirty_table_entry_;
+      dirty_partition_entry_ = other.dirty_partition_entry_;
+
+      is_inner_request_ = other.is_inner_request_;
+    }
+  }
+
   void reset() { memset(this, 0, sizeof(ObProxyRpcReqAnalyzeCtx)); }
 
-  bool is_response_;
-  bool is_inner_request_;
+  TO_STRING_KV(K_(status), K_(analyze_pos), K_(cluster_version),
+               K_(vip_tenant_name), K_(vip_cluster_name),
+               K_(is_response), K_(need_retry), K_(need_rewrite),
+               K_(need_reroute), K_(dirty_table_entry), K_(dirty_partition_entry),
+               K_(is_inner_request));
+
+  // common
+  ObRpcReqAnalyzeNewStatus status_;
+  int64_t analyze_pos_;
   int64_t cluster_version_;
+
+  // for request
   common::ObString vip_tenant_name_;
   common::ObString vip_cluster_name_;
   bool has_tenant_username_;
   bool has_cluster_username_;
 
-  int64_t analyze_pos_;
+  // for response
+  bool is_response_;
+  bool need_retry_;
+  bool need_rewrite_;
+  bool need_reroute_;
+  bool dirty_table_entry_;
+  bool dirty_partition_entry_;
+
+  // inner request && response
+  bool is_inner_request_;
 };
 
 class ObProxyRpcReqAnalyzer
@@ -78,6 +119,7 @@ static const int64_t RPC_NET_HEADER = 16;
 static const int64_t OB_RPC_ANALYZE_MORE_BUFF_LEN = 32;
 static const int64_t OB_RPD_AUTH_REQEUST_BUF_LEN = 128;
 static const int64_t OB_RPC_HEADER_PCODE_AND_HLEN_LEN = 8;
+static const uint32_t OB_RPC_BIG_PACKET_LEN = 1048576;  // equal to (1024 * 1024) aka 1M
 static const char FORMAL_USER_TENANT_SEPARATOR = '@';
 static const char FORMAL_TENANT_CLUSTER_SEPARATOR = '#';
 static const char CLUSTER_ID_SEPARATOR = ':';
@@ -91,27 +133,14 @@ static const int64_t PARTITION_ID_MAX_LEN = 10;
 static const int64_t TABLE_ID_MAX_LEN = 10;
 static const int64_t TABLET_ID_LEN = 8;
 public:
-  static int analyze_rpc_req(ObProxyRpcReqAnalyzeCtx &ctx,
-                             ObRpcReqAnalyzeNewStatus &status,
-                             ObRpcReq &ob_rpc_req);
-
-  static int handle_req_header(ObProxyRpcReqAnalyzeCtx &ctx,
-                               ObRpcReqAnalyzeNewStatus &status,
-                               ObRpcReq &ob_rpc_req);
-
-  static int analyze_obkv_req(ObProxyRpcReqAnalyzeCtx &ctx,
-                              ObRpcReqAnalyzeNewStatus &status,
-                              ObRpcReq &ob_rpc_req);
-
-  static int analyze_obkv_req_request(ObProxyRpcReqAnalyzeCtx &ctx,
-                                      ObRpcReqAnalyzeNewStatus &status,
-                                      ObRpcReq &ob_rpc_req,
-                                      obkv::ObRpcPacketMeta &meta);
-
-  static int analyze_obkv_req_response(ObProxyRpcReqAnalyzeCtx &ctx,
-                                       ObRpcReqAnalyzeNewStatus &status,
-                                       ObRpcReq &ob_rpc_req,
-                                       obkv::ObRpcPacketMeta &meta);
+  static int  analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  analyze_rpc_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  analyze_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  handle_query_async_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static int  handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
+  static bool required_async_analyze(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req);
 
   static int get_parse_allocator(common::ObArenaAllocator *&allocator);
 
@@ -130,16 +159,10 @@ public:
                                   const common::ObString &cluster_id_str);
 
   static int handle_obkv_request_rewrite(ObRpcReq &ob_rpc_req);
-
   static int handle_obkv_response_rewrite(ObRpcReq &ob_rpc_req);
-
   static int handle_obkv_login_rewrite(ObRpcReq &ob_rpc_req);
-
   static int handle_obkv_execute_rewrite(ObRpcReq &ob_rpc_req);
-
   static bool obkv_execute_could_rewrite(int64_t partition_id_len, int64_t table_id_len, int64_t cluster_version);
-
-  static int handle_obkv_batch_execute_rewrite(ObRpcReq &ob_rpc_req);
 
   static int handle_obkv_serialize_request(ObRpcReq &ob_rpc_req);
 
@@ -150,6 +173,8 @@ public:
   static int build_error_response(ObRpcReq &ob_rpc_req, int err_code);
   static int get_rpc_request_size(const obrpc::ObRpcPacketCode pcode, int64_t &size);
   static int get_rpc_response_size(const obrpc::ObRpcPacketCode pcode, int64_t &size);
+
+  static int build_get_partition_response(ObRpcReq &ob_rpc_req, ObTableEntry &table_entry);
 
   static int build_empty_query_response(ObRpcReq &ob_rpc_req);
 };

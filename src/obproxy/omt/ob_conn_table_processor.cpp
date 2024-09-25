@@ -42,7 +42,6 @@ namespace omt
 
 static const char* JSON_OBPROXY_VIP       = "vip";
 static const char* JSON_OBPROXY_VALUE     = "value";
-static const uint32_t column_num          = 4;
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obutils;

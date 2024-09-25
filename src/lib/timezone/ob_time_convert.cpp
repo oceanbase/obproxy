@@ -41,7 +41,6 @@ const int64_t DT_PART_MIN[DATETIME_PART_CNT]  = {   0,  1,  1,  0,  0,  0, 0};
 const int64_t DT_PART_MAX[DATETIME_PART_CNT]  = {9999, 12, 31, 23, 59, 59, 1000000};
 // 1000000 for usecond, because sometimes we round .9999999 to  .1000000
 
-const int64_t TZ_PART_BASE[DATETIME_PART_CNT] = {100, 12, -1, 24, 60, 60, 1000000000};
 const int64_t TZ_PART_MIN[DATETIME_PART_CNT] = {1, 1, 1, 0, 0, 0, 0};
 const int64_t TZ_PART_MAX[DATETIME_PART_CNT] = {9999, 12, 31, 23, 59, 59, 1000000000};
 
@@ -256,7 +255,6 @@ static const ObTimeConstStr MON_NAMES[12 + 1] = {
 };
 
 static const int32_t MAX_MON_NAME_LENGTH = ObTimeConverter::calc_max_name_length(MON_NAMES, 12);
-static const int32_t MAX_MON_NAME_LENGTH_ORACLE = 36;
 
 static const ObTimeConstStr MON_ABBR_NAMES[12 + 1] = {
   ObTimeConstStr("null", 4),
@@ -281,7 +279,6 @@ static const ObTimeConstStr MON_ABBR_NAMES[12 + 1] = {
 const int64_t SECS_PER_HOUR = (SECS_PER_MIN * MINS_PER_HOUR);
 const int64_t SECS_PER_DAY = (SECS_PER_HOUR * HOURS_PER_DAY);
 const int64_t USECS_PER_DAY = (USECS_PER_SEC * SECS_PER_DAY);
-const int64_t NSECS_PER_DAY = (NSECS_PER_SEC * SECS_PER_DAY);
 const int64_t USECS_PER_MIN = (USECS_PER_SEC * SECS_PER_MIN);
 
 const ObString ObTimeConverter::DEFAULT_NLS_DATE_FORMAT("DD-MON-RR");
@@ -4830,42 +4827,18 @@ int ObTimeConverter::validate_datetime(ObTime &ob_time, const ObDateSqlMode date
 {
   const int32_t *parts = ob_time.parts_;
   int ret = OB_SUCCESS;
-  if (!HAS_TYPE_ORACLE(ob_time.mode_) && date_sql_mode.no_zero_date_
-      && 0 == parts[DT_YEAR] && 0 == parts[DT_MON] && 0 == parts[DT_MDAY] && 0 == parts[DT_HOUR]
-      && 0 == parts[DT_MIN] && 0 == parts[DT_SEC] && 0 == parts[DT_USEC]) {
-    ret = OB_INVALID_DATE_VALUE;
-  } else if (!HAS_TYPE_ORACLE(ob_time.mode_)
+
+  if (!HAS_TYPE_ORACLE(ob_time.mode_)
       && !date_sql_mode.allow_zero_in_date(IS_MYSQL_COMPAT_DATES(ob_time.mode_))
       && OB_UNLIKELY(0 == parts[DT_MON] && 0 == parts[DT_MDAY])) {
     if (!(0 == parts[DT_YEAR] && 0 == parts[DT_HOUR] && 0 == parts[DT_MIN]
         && 0 == parts[DT_SEC] && 0 == parts[DT_USEC])) {
-      ret = OB_INVALID_DATE_VALUE;
+      // nothing
     } else {
       ob_time.parts_[DT_DATE] = ZERO_DATE;
     }
-  } else {
-    const int64_t *part_min = (HAS_TYPE_ORACLE(ob_time.mode_) ? TZ_PART_MIN : DT_PART_MIN);
-    const int64_t *part_max = (HAS_TYPE_ORACLE(ob_time.mode_) ? TZ_PART_MAX : DT_PART_MAX);
-    for (int i = 0; OB_SUCC(ret) && i < DATETIME_PART_CNT; ++i) {
-      if (date_sql_mode.allow_zero_in_date(IS_MYSQL_COMPAT_DATES(ob_time.mode_)) &&
-            (DT_MON == i || DT_MDAY == i) && 0 == parts[i]) {
-        /* do nothing */
-      } else if (!(part_min[i] <= parts[i] && parts[i] <= part_max[i])) {
-        ret = OB_INVALID_DATE_VALUE;
-      }
-    }
-    if (OB_SUCC(ret)) {
-      int is_leap = IS_LEAP_YEAR(parts[DT_YEAR]);
-      if (date_sql_mode.allow_zero_in_date(IS_MYSQL_COMPAT_DATES(ob_time.mode_)) &&
-            (0 == parts[DT_MDAY] || (0 == parts[DT_MON] && parts[DT_MDAY] <= 31))) {
-        /* do nothing */
-      } else if (parts[DT_MDAY] > 31
-           || (!date_sql_mode.allow_invalid_dates_
-               && parts[DT_MDAY] > DAYS_PER_MON[is_leap][parts[DT_MON]])) {
-        ret = OB_INVALID_DATE_VALUE;
-      }
-    }
   }
+
   return ret;
 }
 

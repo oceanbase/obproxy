@@ -112,7 +112,7 @@ enum ObDiagnosisLevel {
 
 #define VALID_DIAGNOSIS_TYPE_NUM RETRY
 enum ObDiagnosisType {
-  BASE_ROUTE_DIAGNOSIS_TYPE,                           // for mark empty
+  BASE_ROUTE_DIAGNOSIS_TYPE,      // for mark empty
   SQL_PARSE,                      // level 1
   ROUTE_INFO,                     // level 1
   LOCATION_CACHE_LOOKUP,          // level 1
@@ -162,9 +162,9 @@ public:
     int ret,
     ObIAllocator *alloc = NULL) : type_(type), ret_(ret), alloc_(alloc) {}
   ~ObDiagnosisBase() { reset(); }
-  virtual int64_t diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const;
-  virtual int64_t to_string(char *buf, const int64_t buf_len) const;
-  virtual void reset();
+  int64_t diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const;
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  void reset();
   ObDiagnosisType type_;
   // ret value around the diagnosis point logged place
   int ret_;
@@ -220,7 +220,7 @@ class ObDiagnosisRouteInfo : public ObDiagnosisBase {
 public:
   ObDiagnosisRouteInfo() :
       ObDiagnosisBase(), route_info_type_(ObRouteInfoType::INVALID), svr_addr_(),
-      in_transaction_(false), depent_func_(false), trans_specified_(false) {};
+      in_transaction_(false), depent_func_(false), trans_specified_(false), route_policy_(MAX_ROUTE_POLICY_COUNT) {};
   explicit ObDiagnosisRouteInfo(
     int ret,
     ObIAllocator *alloc,
@@ -228,26 +228,30 @@ public:
     net::ObIpEndpoint &svr_addr,
     bool in_trans,
     bool depent_func,
-    bool trans_specified)
+    bool trans_specified,
+    ObRoutePolicyEnum policy = MAX_ROUTE_POLICY_COUNT)
     : ObDiagnosisBase(ROUTE_INFO, ret, alloc),
       route_info_type_(type), svr_addr_(svr_addr),
-      in_transaction_(in_trans), depent_func_(depent_func), trans_specified_(trans_specified) {};
+      in_transaction_(in_trans), depent_func_(depent_func),
+      trans_specified_(trans_specified), route_policy_(policy) {};
   ~ObDiagnosisRouteInfo() {
     route_info_type_ = ObRouteInfoType::INVALID;
     svr_addr_.reset();
     in_transaction_ = false;
     depent_func_ = false;
     trans_specified_ = false;
+    route_policy_ = MAX_ROUTE_POLICY_COUNT;
   }
 public:
   int64_t diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
   void reset();
-  ObRouteInfoType     route_info_type_;
+  ObRouteInfoType   route_info_type_;
   net::ObIpEndpoint svr_addr_;
   bool              in_transaction_;
   bool              depent_func_;
   bool              trans_specified_;
+  ObRoutePolicyEnum   route_policy_;
 };
 class ObDiagnosisLocationCacheLookup : public ObDiagnosisBase {
 public:
@@ -828,6 +832,7 @@ public:
   ObPartDesc *sub_part_desc_;
 };
 
+
 union ObDiagnosisPoint {
 public:
   ObDiagnosisPoint();
@@ -945,7 +950,8 @@ public:
     net::ObIpEndpoint &svr_addr,
     bool in_trans,
     bool depent_func,
-    bool trans_specified);
+    bool trans_specified,
+    ObRoutePolicyEnum policy = MAX_ROUTE_POLICY_COUNT);
   void diagnosis_location_cache_lookup(
     int ret,
     obutils::ObServerRoutingMode mode,
@@ -1071,9 +1077,10 @@ inline void ObRouteDiagnosis::diagnosis_route_info(
   net::ObIpEndpoint &svr_addr,
   bool in_trans,
   bool depent_func,
-  bool trans_specified)
+  bool trans_specified,
+  ObRoutePolicyEnum policy)
 {
-  _ROUTE_DIAGNOSIS_POINT(ObDiagnosisRouteInfo, ROUTE_INFO, ret, type, svr_addr, in_trans, depent_func, trans_specified);
+  _ROUTE_DIAGNOSIS_POINT(ObDiagnosisRouteInfo, ROUTE_INFO, ret, type, svr_addr, in_trans, depent_func, trans_specified, policy);
 }
 inline void ObRouteDiagnosis::diagnosis_location_cache_lookup(
   int ret,

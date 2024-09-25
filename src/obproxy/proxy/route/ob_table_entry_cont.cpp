@@ -217,7 +217,6 @@ void ObTableEntryCont::kill_this()
   submit_thread_ = NULL;
   magic_ = OB_TABLE_ENTRY_CONT_MAGIC_DEAD;
   mutex_.release();
-  LOG_INFO("debug checking free ObTableEntryCont", K(lbt()));
   op_free(this);
 }
 

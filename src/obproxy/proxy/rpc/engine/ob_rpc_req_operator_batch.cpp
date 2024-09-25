@@ -101,25 +101,20 @@ int ObProxyRpcReqBatchOp::handle_response_result(void *data, bool &is_final,
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("invalid shard request has set in", K(request), K(ret), K_(rpc_trace_id));
     } else {
-      char *buf = NULL;
       obkv::ObRpcTableBatchOperationResponse *rpc_response = NULL;
       int64_t all_operation_count = request->get_table_operation().count();
       int64_t sub_request_count = request->get_partition_id_map().size();
       bool is_return_one_result = request->return_one_result();
       proxy::ObRpcOBKVInfo &obkv_info = rpc_req->get_obkv_info();
 
-      LOG_DEBUG("need alloc memory", K(&allocator_), "size", sizeof(obkv::ObRpcTableBatchOperationResponse), K(buf),
-                K_(rpc_trace_id));
+      LOG_DEBUG("need alloc memory", K(&allocator_), "size", sizeof(obkv::ObRpcTableBatchOperationResponse), K_(rpc_trace_id));
 
       if (OB_SUCC(ret)) {
-        if (OB_ISNULL(buf = rpc_req->alloc_rpc_response(sizeof(obkv::ObRpcTableBatchOperationResponse)))) {
+        if (OB_FAIL(rpc_req->alloc_rpc_response())
+           || OB_ISNULL(rpc_response = dynamic_cast<obkv::ObRpcTableBatchOperationResponse *>(rpc_req->get_rpc_response()))) {
           ret = common::OB_ALLOCATE_MEMORY_FAILED;
           LOG_WDIAG("not enougth alloc memory", K_(rpc_trace_id));
         } else {
-          rpc_response = new (buf) obkv::ObRpcTableBatchOperationResponse();
-          //rpc_response->get_batch_result().set_entity_factory(&(rpc_response->get_table_entity_factory()));
-          rpc_req->set_rpc_response_len(sizeof(obkv::ObRpcTableBatchOperationResponse));
-
           LOG_DEBUG("result is", K(result), K(all_operation_count), K(sub_request_count), K_(rpc_trace_id));
 
           if (error_resp_count_ > 0) {
@@ -162,7 +157,6 @@ int ObProxyRpcReqBatchOp::handle_response_result(void *data, bool &is_final,
         }
         rpc_response->get_packet_meta().ez_header_.ez_payload_size_ = (uint32_t)(rpc_response->get_encode_size() - 16); //EZ_HEADER_LEN
         obkv_info.set_resp(true);
-        rpc_req->set_rpc_response(rpc_response);
         result_ = rpc_req;
         result = rpc_req;
         LOG_DEBUG("rpc response", K(rpc_response), K(*rpc_response), K(result), K_(rpc_trace_id));

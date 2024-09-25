@@ -42,7 +42,7 @@ class ObTableEntry : public ObRouteEntry
 {
 public:
   ObTableEntry()
-    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(NULL), is_entry_from_rslist_(false),
+    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_entry_from_rslist_(false),
       is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), table_id_(common::OB_INVALID_ID),
       table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
       buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),

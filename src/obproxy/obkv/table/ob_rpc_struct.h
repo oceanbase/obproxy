@@ -18,6 +18,7 @@
 #include "proxy/route/obproxy_part_info.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "rpc/obrpc/ob_rpc_result_code.h"
+#include "common/ob_common_types.h"
 
 namespace oceanbase
 {
@@ -107,38 +108,6 @@ public:
   NEED_SERIALIZE_AND_DESERIALIZE;
 };
 
-// magic number
-const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
-
-ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
-{
-  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
-
-  if (OB_ISNULL(buffer)) {
-    // do nothing
-  } else if (buffer_len >= sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG)
-    && 0 == memcmp(buffer, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
-    rpc_type = OBPROXY_RPC_OBRPC;
-  } else {
-    // do nothing
-  }
-
-  return rpc_type;
-}
-
-ObProxyRpcType ObRpcEzHeader::get_rpc_magic_type()
-{
-  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
-
-  if (0 == memcmp(magic_header_flag_, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
-    rpc_type = OBPROXY_RPC_OBRPC;
-  } else {
-    // do nothing
-  }
-
-  return rpc_type;
-}
-
 class ObRpcPacketMeta
 {
 public:
@@ -191,7 +160,7 @@ public:
         partition_id_position_(0), partition_id_len_(0), ls_id_postition_(0), ls_id_len_(0),
         request_buf_has_changed_(0), is_aggregate_query_(false), request_info_inited_(false), sub_request_count_(0), sub_request_buf_arr_(NULL),
         sub_request_rowkey_val_arr_(NULL), sub_request_rowkey_range_arr_(NULL), sub_request_columns_arr_(NULL),
-        allocator_(), pcode_(OB_INVALID_RPC_CODE), all_rowkey_names_(NULL), index_name_(), batch_size_(-1),
+        allocator_(), pcode_(OB_INVALID_RPC_CODE), all_rowkey_names_(NULL), index_name_(), batch_size_(-1), scan_order_(common::ObQueryFlag::Forward),
         rpc_packet_meta_(), cluster_version_(0)
   {
   }
@@ -287,11 +256,15 @@ public:
                                       ObIArray<int64_t> &partition_id,
                                       ObIArray<int64_t> &ls_id);
 
+  void reverse_partition_ids(ObIArray<int64_t> &partition_ids_);
+
   void set_all_rowkey_names(common::ObIArray<common::ObString> *all_rowkey_names) { all_rowkey_names_ = all_rowkey_names; }
   ObString &get_index_name() { return index_name_; }
   int32_t get_batch_size() const { return batch_size_; }
+  bool is_reverse_scan() { return scan_order_ == common::ObQueryFlag::Reverse;}
   void set_index_name(ObString index_name) { index_name_ = index_name; }
   void set_batch_size(int32_t batch_size) { batch_size_ = batch_size; }
+  void set_scan_order(common::ObQueryFlag::ScanOrder scan_order) { scan_order_ = scan_order; }
   VIRTUAL_TO_STRING_KV(K_(rpc_packet_meta),
                        KPC_(sub_request_buf_arr),
                        KPC_(sub_request_columns_arr),
@@ -337,7 +310,7 @@ public:
   ObIArray<ObString> *all_rowkey_names_;
   ObString index_name_;
   int32_t batch_size_; 
-
+  common::ObQueryFlag::ScanOrder scan_order_;
 protected:
   ObRpcPacketMeta rpc_packet_meta_;
   int64_t cluster_version_;

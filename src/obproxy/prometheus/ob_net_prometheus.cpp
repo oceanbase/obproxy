@@ -76,8 +76,8 @@ int ObNetPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TRANS_TYPE, is_request ? LABEL_TRANS_REQUEST : LABEL_TRANS_RESPONSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_BYTE, REQUEST_BYTE_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with REQUEST_BYTE", K(value), K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_BYTE, REQUEST_BYTE_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate counter with REQUEST_BYTE", K(value), K(ret));
     }
     break;
   }
@@ -90,8 +90,8 @@ int ObNetPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TRANS_TYPE, is_request ? LABEL_TRANS_REQUEST : LABEL_TRANS_RESPONSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_RPC_BYTE, REQUEST_RPC_BYTE_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with REQUEST_BYTE", K(value), K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_RPC_BYTE, REQUEST_RPC_BYTE_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate counter with REQUEST_BYTE", K(value), K(ret));
     }
     break;
 

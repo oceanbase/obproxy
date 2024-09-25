@@ -44,9 +44,10 @@ public:
   static int remove_metric(void* family, void* metric,
                            const ObPrometheusMetricType metric_type);
 
-  static int handle_counter(void *metric, const int64_t value);
-  static int handle_gauge(void *metric, const int64_t value);
-  static int handle_gauge(void *metric, const double value);
+  static int accumulate_counter(void *metric, const int64_t value);
+  static int accumulate_gauge(void *metric, const int64_t value);
+  static int accumulate_gauge(void *metric, const double value);
+  static int set_gauge(void *metric, const double value);
   static int handle_histogram(void *metric, const int64_t sum,
                               const common::ObVector<int64_t> &ob_bucket_counts);
 private:

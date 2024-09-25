@@ -27,7 +27,7 @@ class ObProxyRpcReqParallelExecuteCont : public obutils::ObAsyncCommonTask
 public:
   ObProxyRpcReqParallelExecuteCont(event::ObProxyMutex *m, event::ObContinuation *cb_cont, event::ObEThread *submit_thread)
       : ObAsyncCommonTask(m, "rpc parallel execute cont", cb_cont, submit_thread),
-        is_save_session_mode_(false), use_last_rpc_proxy_(false), rpc_request_(NULL),
+        rpc_request_(NULL),
         cont_index_(-1), allocator_(NULL) {}
   ~ObProxyRpcReqParallelExecuteCont() {}
 
@@ -41,8 +41,6 @@ public:
   };
 
 private:
-  bool is_save_session_mode_;
-  bool use_last_rpc_proxy_;
   proxy::ObRpcReq *rpc_request_;
   int64_t cont_index_;
   common::ObIAllocator *allocator_;

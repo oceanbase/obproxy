@@ -26,7 +26,7 @@ namespace obproxy
 namespace obutils
 {
 class ObClusterResource;
-class ObProxyCallInfo;
+struct ObProxyCallInfo;
 }
 namespace proxy
 {
@@ -41,7 +41,8 @@ class ObRouteDiagnosis;
 typedef int (ObMysqlRoute::*MysqlRouteHandler)(int event, void *data);
 enum ObRouteSource {
   OB_PROXY_ROUTE_FOR_SQL = 0,
-  OB_RPOXY_ROUTE_FOR_RPC
+  OB_RPOXY_ROUTE_FOR_RPC,
+  OB_RPOXY_ROUTE_FOR_RPC_GET_PARTITION,
 };
 
 class ObMysqlRouteResult

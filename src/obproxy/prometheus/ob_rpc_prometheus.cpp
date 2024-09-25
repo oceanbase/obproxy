@@ -120,8 +120,8 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   // case PROMETHEUS_TRANSACTION_COUNT:
   // {
   //   ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
-  //   if (OB_FAIL(g_ob_prometheus_processor.handle_counter(TRANSACTION_TOTAL, REQUEST_RPC_TOTAL_HELP, label_vector))) {
-  //     LOG_WDIAG("fail to handle counter with TRANSACTION_TOTAL", K(ret));
+  //   if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(TRANSACTION_TOTAL, REQUEST_RPC_TOTAL_HELP, label_vector))) {
+  //     LOG_WDIAG("fail to accumulate counter with TRANSACTION_TOTAL", K(ret));
   //   }
   //   break;
   // }
@@ -137,8 +137,8 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_SHARD, is_shard ? LABEL_TRUE : LABEL_FALSE, false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(REQUEST_RPC_TOTAL, REQUEST_RPC_TOTAL_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with REQUEST_RPC_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_RPC_TOTAL, REQUEST_RPC_TOTAL_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate counter with REQUEST_RPC_TOTAL", K(ret));
     }
     break;
   }
@@ -152,8 +152,8 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_TYPE, ObRpcPacketSet::name_of_pcode(pcode), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TIME_TYPE, ObProxyPrometheusUtils::get_metric_lable(metric), false);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(COST_RPC_TOTAL, COST_RPC_TOTAL_HELP, label_vector, value))) {
-      LOG_WDIAG("fail to handle gauge with COST_RPC_TOTAL", K(ret));
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(COST_RPC_TOTAL, COST_RPC_TOTAL_HELP, label_vector, value))) {
+      LOG_WDIAG("fail to accumulate gauge with COST_RPC_TOTAL", K(ret));
     }
 
     /*
@@ -162,7 +162,7 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     buckets.push_back(get_global_proxy_config().monitor_stat_middle_threshold);
     buckets.push_back(get_global_proxy_config().monitor_stat_high_threshold);
     if (OB_FAIL(g_ob_prometheus_processor.handle_histogram(COST_TOTAL, COST_TOTAL_HELP, label_vector, value, buckets))) {
-      LOG_WDIAG("fail to handle counter with COST_TOTAL", K(ret));
+      LOG_WDIAG("fail to accumulate counter with COST_TOTAL", K(ret));
     }
     */
     break;
@@ -175,9 +175,9 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SESSION_TYPE, is_client ? LABEL_SESSION_CLIENT : LABEL_SESSION_SERVER, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, true);
     
-    if (OB_FAIL(g_ob_prometheus_processor.handle_gauge(CURRENT_RPC_SESSION, CURRENT_RPC_SESSION_HELP,
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(CURRENT_RPC_SESSION, CURRENT_RPC_SESSION_HELP,
                                                        label_vector, value, false))) {
-      LOG_WDIAG("fail to handle counter with CURRENT_RPC_SESSION", K(ret));
+      LOG_WDIAG("fail to accumulate counter with CURRENT_RPC_SESSION", K(ret));
     }
     break;
   }
@@ -187,9 +187,9 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
 
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_VIP, vip_addr_name, true);
 
-    if (OB_FAIL(g_ob_prometheus_processor.handle_counter(NEW_RPC_CLIENT_CONNECTIONS, NEW_RPC_CLIENT_CONNECTIONS_HELP,
+    if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(NEW_RPC_CLIENT_CONNECTIONS, NEW_RPC_CLIENT_CONNECTIONS_HELP,
                                                          label_vector, value))) {
-      LOG_WDIAG("fail to handle counter with NEW_RPC_CLIENT_CONNECTIONS", K(ret));
+      LOG_WDIAG("fail to accumulate counter with NEW_RPC_CLIENT_CONNECTIONS", K(ret));
     }
     break;
   }

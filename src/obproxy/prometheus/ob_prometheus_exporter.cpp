@@ -98,7 +98,7 @@ GET_OR_CREATE_FAMILY_FUNC(counter, Counter)
 GET_OR_CREATE_FAMILY_FUNC(gauge, Gauge)
 GET_OR_CREATE_FAMILY_FUNC(histogram, Histogram)
 
-int ObProxyPrometheusExporter::handle_counter(void *metric, const double value)
+int ObProxyPrometheusExporter::accumulate_counter(void *metric, const double value)
 {
   int ret = OB_SUCCESS;
 
@@ -108,7 +108,7 @@ int ObProxyPrometheusExporter::handle_counter(void *metric, const double value)
   return ret;
 }
 
-int ObProxyPrometheusExporter::handle_gauge(void *metric, const double value)
+int ObProxyPrometheusExporter::accumulate_gauge(void *metric, const double value)
 {
   int ret = OB_SUCCESS;
 
@@ -118,6 +118,16 @@ int ObProxyPrometheusExporter::handle_gauge(void *metric, const double value)
   } else {
       gauge->Decrement(-1.0 * value);
   }
+
+  return ret;
+}
+
+int ObProxyPrometheusExporter::set_gauge(void *metric, const double value)
+{
+  int ret = OB_SUCCESS;
+
+  Gauge* gauge = static_cast<Gauge*>(metric);
+  gauge->Set(value);
 
   return ret;
 }

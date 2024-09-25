@@ -39,7 +39,7 @@ class ObMIOBuffer;
 namespace proxy
 {
 class ObProxyMysqlRequest;
-class ObMysqlAnalyzeResult;
+struct ObMysqlAnalyzeResult;
 class ObClientSessionInfo;
 class ObServerSessionInfo;
 class ObRespAnalyzeResult;

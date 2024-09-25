@@ -103,6 +103,8 @@ private:
   /* END RPC Service */
 };
 
+int init_cache_map_for_one_thread(event::ObEThread *thread);
+
 } // end of namespace proxy
 } // end of namespace obproxy
 } // end of namespace oceanbase

@@ -237,6 +237,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_TIME_ASSIGN(read_stale_retry_interval);
   CONFIG_ITEM_ASSIGN(ob_max_read_stale_time);
   CONFIG_ITEM_ASSIGN(rpc_request_max_retries);
+  CONFIG_ITEM_ASSIGN(rpc_async_task_thread_num);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);

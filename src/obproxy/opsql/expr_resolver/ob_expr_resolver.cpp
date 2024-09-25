@@ -1075,9 +1075,7 @@ int ObExprResolver::get_obj_with_param(ObObj &target_obj,
       } else {
         ObProxyTextPsParam* param = execute_info.params_.at(execute_param_index);
         ObString user_variable_name = param->str_value_.config_string_;
-        if (client_info->need_use_lower_case_names()) {
-          string_to_lower_case(user_variable_name.ptr(), user_variable_name.length());
-        }
+        string_to_lower_case(user_variable_name.ptr(), user_variable_name.length());
         if (OB_FAIL(static_cast<const ObClientSessionInfo&>(*client_info).get_user_variable_value(user_variable_name, target_obj))) {
           LOG_WDIAG("get user variable failed", K(ret), K(user_variable_name));
         } else {

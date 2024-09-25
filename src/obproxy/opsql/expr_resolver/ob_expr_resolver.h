@@ -21,7 +21,7 @@ namespace oceanbase
 namespace common
 {
 class ObIAllocator;
-class ObNewRange;
+struct ObNewRange;
 }
 namespace obproxy
 {

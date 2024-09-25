@@ -28,7 +28,7 @@ namespace obproxy
 {
 namespace proxy
 {
-const char* DEFAULT_LOGIC_TENANT_NAME = "DEFAULT";
+extern const char* DEFAULT_LOGIC_TENANT_NAME;
 class ObMysqlClientSession;
 
 /*

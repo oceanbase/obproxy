@@ -390,9 +390,9 @@ public:
   DEF_INT(location_expire_period, "0", "[0,36000000]", "just for test, not recommended, the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_STR(proxy_route_policy, "", "proxy route policy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
-  DEF_STR(route_target_replica_type, "Full;Readonly", "proxy will choose target replica type for route, and case-insensitivity. Format: Full;Readonly;ColumnStore", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
-  DEF_STR(weakread_weight_zone, "", "proxy will choose zones to route for weak read, based on weight value(limit to 0~100 int number) to distribute traffic. Format 'zone_1:10;zone_2:20;zone_3:30'", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(proxy_route_policy, "", "proxy route policy for weakread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(route_target_replica_type, "Full;Readonly", "proxy will choose target replica type for route. Must set proxy_route_policy to a specific value for effect and case-insensitivity. Choosing other replica types is not permitted when select ColumnStore. Format: Full;Readonly;ColumnStore", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(weakread_weight_zone, "", "proxy will choose zones to route for weak read, and must set proxy_route_policy to a specific value for effect. Based on weight value(limit to 0~100 int number) to distribute traffic. Format 'zone_1:10;zone_2:20;zone_3:30'", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
@@ -554,6 +554,14 @@ public:
   DEF_INT(rpc_async_pull_batch_max_times, "0", "[0,)", "max batch fetch times for single entry cont", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_async_pull_batch_wait_interval, "10ms", "[1ms, 1s]", "wait interval for async batch pull, [1ms, 1s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_sub_req_max_retries, "10", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_rpc_throttle, "false", "if enabled, will be able to limit rpc req", CFG_NO_NEED_REBOOT,  CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_throttle_trigger_percentage, "50", "[0, 100)", "begin throttle when reach the percentage of mem occupied by rpc req", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_throttle_limit_qps_qa, "0", "[0,)", "rpc req limit qps when throttle trigger", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_request_throttle_waiting_time, "1ms", "[0ms,10s]", "rpc request throttle waiting time, [0ms, 10s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_async_task_thread_num, "8", "[0,128]", "proxy rpc task thread num, default is 8, if 0, use (real work thread num/2), [0, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_async_analyze, "true", "if enabled, will async analyze large packet", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_request_isolation_mode, "2", "[0,2]", "rpc sub req handle mode, 0: not isolate sub request, 1: isolate all sub req to async thread, 2: isolate sub req to part of async thread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_request_weight, "10", "[0,]", "rpc sub request weight, recommended range [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   // 以下是废弃、无用的配置，统一放在下面
   DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

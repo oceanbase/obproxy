@@ -592,6 +592,24 @@ int init_partition_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_partition_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->partition_map_
+                  = new (std::nothrow) ObPartitionRefHashMap(ObModIds::OB_PROXY_PARTITION_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObPartitionRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->partition_map_->init())) {
+      LOG_WDIAG("fail to init partition_map", K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObPartitionRefHashMap::clean_hash_map()
 {
   int ret = OB_SUCCESS;

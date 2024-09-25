@@ -33,6 +33,8 @@ int decimalint_decimalint_cmp_func(const ObDecimalInt *lhs, const ObDecimalInt *
 template<int32_t L, int tc>
 int decimalint_tc_cmp_func(const ObObj &lhs, const ObObj &obj)
 {
+  UNUSED(lhs);
+  UNUSED(obj);
   int ret = 0;
   return ret;
 }

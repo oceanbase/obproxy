@@ -1083,25 +1083,19 @@ int ObSessionFieldMgr::is_equal_with_snapshot(const ObString &sys_var_name,
   } else {
     ObObj &default_obj = field->value_;
 
-    //FIXME readonly and only global scope var no need to reset session variable
-    if (field->is_readonly() || (!field->is_session_scope())) {
+    ObFieldObjCaster caster;
+    const ObObj *res_cell = NULL;
+
+    if (OB_FAIL(caster.obj_cast(value, *field, res_cell))) {
+      LOG_WDIAG("fail to cast obj", K(value), K(field), K(ret));
+    } else if (OB_ISNULL(res_cell)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("res_call is null , which is unexpected", K(ret));
+    } else if (0 == res_cell->compare(default_obj, CS_TYPE_UTF8MB4_GENERAL_CI)) {
+      //FIXME consider the character set no need to reset session variable
       is_equal = true;
-
     } else {
-      ObFieldObjCaster caster;
-      const ObObj *res_cell = NULL;
-
-      if (OB_FAIL(caster.obj_cast(value, *field, res_cell))) {
-        LOG_WDIAG("fail to cast obj", K(value), K(field), K(ret));
-      } else if (OB_ISNULL(res_cell)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("res_call is null , which is unexpected", K(ret));
-      } else if (0 == res_cell->compare(default_obj, CS_TYPE_UTF8MB4_GENERAL_CI)) {
-        //FIXME consider the character set no need to reset session variable
-        is_equal = true;
-      } else {
-        is_equal = false;
-      }
+      is_equal = false;
     }
   }
   return ret;

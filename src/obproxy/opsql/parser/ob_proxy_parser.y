@@ -9,6 +9,8 @@
 #include "opsql/ob_proxy_parse_define.h"
 #include "opsql/parser/ob_proxy_parse_result.h"
 
+#define UNUSED(v) ((void)(v))
+
 #define HANDLE_ACCEPT() \
 do {\
   if (result->stmt_count_ > 1) {\
@@ -312,6 +314,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROCESSLIST SHOW_PROXYSESSION SHOW_GLOBALSESSION ATTRIBUTE VARIABLES ALL STAT READ_STALE
 %token<str> SHOW_PROXYCONFIG DIFF USER LIKE
 %token<str> SHOW_PROXYSM
+%token<str> SHOW_PROXYKV
 %token<str> SHOW_PROXYCLUSTER
 %token<str> SHOW_PROXYRESOURCE
 %token<str> SHOW_PROXYCONGESTION
@@ -991,6 +994,7 @@ icmd_stmt: show_proxynet
          | show_proxystat
          | show_proxytrace
          | show_proxyinfo
+         | show_proxykv
          | alter_proxyconfig
          | alter_proxyresource
          | ping_proxy
@@ -1044,6 +1048,11 @@ opt_like:
 opt_large_like:
  /*empty*/              {}
 | LIKE NAME_OB          { result->cmd_info_.string_[1] = $2;}
+
+ /*show proxykv grammer*/
+ show_proxykv: SHOW_PROXYKV opt_show_kv
+ opt_show_kv:
+  THREAD { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_KV_THREAD); }
 
  /*show proxynet grammer*/
 show_proxynet: SHOW_PROXYNET opt_show_net
@@ -1324,6 +1333,9 @@ var_name: NAME_OB
 void yyerror(YYLTYPE* yylloc, ObProxyParseResult* p, char* s, ...)
 {
   // do nothing
+  UNUSED(yylloc);
+  UNUSED(p);
+  UNUSED(s);
 }
 
 void ob_proxy_parser_fatal_error(yyconst char *msg, yyscan_t yyscanner)

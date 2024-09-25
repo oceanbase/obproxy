@@ -288,6 +288,24 @@ int init_sql_table_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_sql_table_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected therad", K(ret));
+  } else {
+    if (OB_ISNULL(thread->sql_table_map_
+                  = new (std::nothrow) ObSqlTableRefHashMap(ObModIds::OB_PROXY_SQL_TABLE_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObSqlTableRefHashMap",  K(ret));
+    } else if (OB_FAIL(thread->sql_table_map_->init())) {
+      LOG_WDIAG("fail to init sql_table_map", K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObSqlTableRefHashMap::clean_hash_map()
 {
   int ret = OB_SUCCESS;

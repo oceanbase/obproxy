@@ -53,6 +53,18 @@ const char* ObProxyPrometheusUtils::get_type_lable(ObPrometheusEntryType type)
   }
 }
 
+const char* ObProxyPrometheusUtils::get_mem_type_lable(ObPrometheusMetrics metric)
+{
+  switch(metric) {
+    case PROMETHEUS_MEMORY_HOLD:
+      return "HOLD";
+    case PROMETHEUS_MEMORY_USED:
+      return "USED";
+    default:
+      return "UNKNOWN";
+  }
+}
+
 int ObProxyPrometheusUtils::calc_buf_size(ObVector<ObPrometheusLabel> *labels, uint32_t &buf_size)
 {
   int ret = OB_SUCCESS;
@@ -107,7 +119,7 @@ int ObProxyPrometheusUtils::copy_label_hash(ObVector<ObPrometheusLabel> *labels,
 
 ObVector<ObPrometheusLabel>& ObProxyPrometheusUtils::get_thread_label_vector()
 {
-  static __thread ObVector<ObPrometheusLabel> prometheus_thread_labels(10);
+  static thread_local ObVector<ObPrometheusLabel> prometheus_thread_labels(10);
   return prometheus_thread_labels;
 }
 

@@ -375,6 +375,13 @@ void ObTargetReplicaType::parse_target_replica_type(const ObConfigItem& item)
 
 }
 
+void ObTargetReplicaType::set_all_weakread_replica()
+{
+  set_full_replica();
+  set_readonly_replica();
+  set_column_store_replica();
+}
+
 ObZoneWeakReadWeight& ObZoneWeakReadWeight::operator=(const ObZoneWeakReadWeight& other)
 {
   if (this != &other) {
@@ -656,6 +663,105 @@ int ObProxyConfigTableProcessor::backup_hashmap_with_lock()
   return ret;
 }
 
+int ObProxyConfigTableProcessor::is_replica_type_config_valid(const ObProxyConfigItem &item)
+{
+  int ret = OB_SUCCESS;
+  ObString config_value(item.config_item_.str());
+  bool replica_finish = false;
+  ObTargetReplicaType replica_type;
+  // route_target_replica_type校验
+  while (OB_SUCC(ret) && !config_value.empty() && !replica_finish) {
+    ObString replica_str = config_value.split_on(';');
+    if (replica_str.empty()) {
+      replica_str = config_value;
+      replica_finish = true;
+    }
+    int found_index = ObTargetReplicaType::find_replica_index(replica_str);
+    switch (found_index) {
+    case ObTargetReplicaType::ObReplicaType::Full:
+      replica_type.set_full_replica();
+      break;
+    case ObTargetReplicaType::ObReplicaType::ReadOnly:
+      replica_type.set_readonly_replica();
+      break;
+    case ObTargetReplicaType::ObReplicaType::ColumnStore:
+      replica_type.set_column_store_replica();
+      break;
+    default:
+      ret = OB_INVALID_CONFIG;
+      LOG_WDIAG("route_target_replica_type value is invalid", K(found_index),
+                K(replica_str), K(ret));
+      break;
+    }
+  } // end of while
+
+  if (OB_SUCC(ret) && replica_type.is_exist_column_store_replica() &&
+      !replica_type.is_column_store_replica_only()) {
+    ret = OB_INVALID_CONFIG;
+    LOG_WDIAG("can't set F/R replica whern set column store", K(ret));
+  }
+
+  return ret;
+}
+
+int ObProxyConfigTableProcessor::is_weigth_zone_config_valid(const ObProxyConfigItem &item)
+{
+  int ret = OB_SUCCESS;
+  // weakread_weight_zone仅支持tenant/vip级别配置: z1:value1;z2:value2;
+  if (0 == strcasecmp("LEVEL_GLOBAL", item.config_level_.ptr())) {
+    if ('\0' != *item.config_item_.str()) {
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("can't modify global weakread_weight_zone config", K(ret));
+    }
+  } else if ((0 == strcasecmp("LEVEL_TENANT", item.config_level_.ptr()))
+            || (0 == strcasecmp("LEVEL_VIP", item.config_level_.ptr()))) {
+    if ('\0' == *item.config_item_.str()) {
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("weakread_weight_zone can't is empty str", K(ret));
+    }
+    ObString config_value(item.config_item_.str());
+    ObSEArray<ObString, 4> zones;
+    bool zone_finish = false;
+    while (OB_SUCC(ret) && !config_value.empty() && !zone_finish) {
+      ObString zone_and_value = config_value.split_on(';');
+      if (zone_and_value.empty()) {
+        zone_and_value = config_value;
+        zone_finish = true;
+      }
+      ObString zone_name = zone_and_value.split_on(':');
+      int64_t value = 0;
+
+      if (zone_name.empty()) {
+        ret = OB_INVALID_CONFIG;
+        LOG_WDIAG("zone name is empty, config value is invalid", K(zone_and_value), K(ret));
+      } else if (OB_FAIL(get_int_value(zone_and_value, value))) { // 这里的zone_and_value已经是value了
+        LOG_WDIAG("weight value is invalid", K(zone_name), K(value), K(ret));
+      } else if (value < 0 || value > 100) {
+        ret = OB_INVALID_CONFIG;
+        LOG_WDIAG("weight value need limit [0, 100]", K(zone_name), K(value), K(ret));
+      } else {
+        bool found = false;
+        for (int64_t i = 0; !found && i < zones.count(); ++i) {
+          if (zones.at(i) == zone_name) {
+            found = true;
+          }
+        }
+        if (found) {
+          ret = OB_INVALID_CONFIG;
+          LOG_WDIAG("weight zone name can't duplicated", K(zone_name), K(value), K(ret));
+        } else if (zones.push_back(zone_name)) {
+          LOG_WDIAG("fail to push back zone name", K(zone_name), K(value), K(ret));
+        }
+      }
+    }
+  } else {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("weakread_weight_zone only supported LEVEL_TENANT/LEVEL_VIP config", K(ret));
+  }
+
+  return ret;
+}
+
 int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backup, int64_t row_index)
 {
   int ret = OB_SUCCESS;
@@ -794,70 +900,21 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             ret = OB_NOT_SUPPORTED;
           }
         }
+
         // weakread_weight_zone仅支持tenant/vip级别配置: z1:value1;z2:value2;
         if (OB_SUCC(ret) && 0 == strcasecmp("weakread_weight_zone", item->config_item_.name())
-            && NULL != item->config_item_.str()
-            && '\0' != *item->config_item_.str()) {
-          if ((0 != strcasecmp("LEVEL_TENANT",item->config_level_.ptr()))
-              && (0 != strcasecmp("LEVEL_VIP",item->config_level_.ptr()))) {
-            ret = OB_NOT_SUPPORTED;
-            LOG_WDIAG("weakread_weight_zone only supported LEVEL_TENANT/LEVEL_VIP config", K(ret));
-          } else {
-            ObString config_value(item->config_item_.str());
-            ObSEArray<ObString, 4> zones;
-            bool zone_finish = false;
-            while (OB_SUCC(ret) && !config_value.empty() && !zone_finish) {
-              ObString zone_and_value = config_value.split_on(';');
-              if (zone_and_value.empty()) {
-                zone_and_value = config_value;
-                zone_finish = true;
-              }
-              ObString zone_name = zone_and_value.split_on(':');
-              int64_t value = 0;
-
-              if (zone_name.empty()) {
-                ret = OB_INVALID_CONFIG;
-                LOG_WDIAG("zone name is empty, config value is invalid", K(zone_and_value), K(ret));
-              } else if (OB_FAIL(get_int_value(zone_and_value, value))) { // 这里的zone_and_value已经是value了
-                LOG_WDIAG("weight value is invalid", K(zone_name), K(value), K(ret));
-              } else if (value < 0 || value > 100) {
-                ret = OB_INVALID_CONFIG;
-                LOG_WDIAG("weight value need limit [0, 100]", K(zone_name), K(value), K(ret));
-              } else {
-                bool found = false;
-                for (int64_t i = 0; !found && i < zones.count(); ++i) {
-                  if (zones.at(i) == zone_name) {
-                    found = true;
-                  }
-                }
-                if (found) {
-                  ret = OB_INVALID_CONFIG;
-                  LOG_WDIAG("weight zone name can't duplicated", K(zone_name), K(value), K(ret));
-                } else if (zones.push_back(zone_name)) {
-                  LOG_WDIAG("fail to push back zone name", K(zone_name), K(value), K(ret));
-                }
-              }
-            }
+            && NULL != item->config_item_.str()) {
+          if (OB_FAIL(is_weigth_zone_config_valid(*item))) {
+            LOG_WDIAG("weigth zone config is not valid", K(item), K(ret));
           }
         }
         // route_target_replica_type校验
         if (OB_SUCC(ret) && 0 == strcasecmp("route_target_replica_type", item->config_item_.name())
             && NULL != item->config_item_.str()
             && '\0' != *item->config_item_.str()) {
-          ObString config_value(item->config_item_.str());
-          bool replica_finish = false;
-          while (OB_SUCC(ret) && !config_value.empty() && !replica_finish) {
-            ObString replica_str = config_value.split_on(';');
-            if (replica_str.empty()) {
-              replica_str = config_value;
-              replica_finish = true;
-            }
-            int found_index = ObTargetReplicaType::find_replica_index(replica_str);
-            if (-1 == found_index) {
-              ret = OB_INVALID_CONFIG;
-              LOG_WDIAG("route_target_replica_type value is invalid", K(replica_str), K(ret));
-            }
-          }// end of while
+          if (OB_FAIL(is_replica_type_config_valid(*item))) {
+            LOG_WDIAG("route_target_replica_type config is not valid", K(item), K(ret));
+          }
         }
 
         if (OB_SUCC(ret) && 0 == strcasecmp("init_sql", item->config_item_.name())

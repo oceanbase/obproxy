@@ -441,7 +441,7 @@ public:
       err = -EINVAL;
     } else if (1 == ref && (NULL == get(0) || level_ <= 1)) {
       err = -EINVAL;
-    } else if (!ATOMIC_BCAS(root, this, get(0))) {
+    } else if (!ATOMIC_BCAS(root, this, static_cast<ArrayHead *>(get(0)))) {
       err = -EAGAIN;
     } else {
       need_unlock = false;

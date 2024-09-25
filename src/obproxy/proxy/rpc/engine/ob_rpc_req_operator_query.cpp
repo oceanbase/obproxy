@@ -83,7 +83,6 @@ int ObProxyRpcReqQueryOp::handle_response_result(void *data, bool &is_final,
   if (OB_SUCC(ret) && is_final) {
     /* has received all response from server */
     int64_t count = resp_array_.count();
-    char *buf = NULL;
     bool has_inited_meta = false;
     int64_t i = 0;
     ObRpcReq *rpc_req = get_input();
@@ -91,14 +90,12 @@ int ObProxyRpcReqQueryOp::handle_response_result(void *data, bool &is_final,
     obkv::ObRpcTableQueryResponse *rpc_response = NULL;
     ObRpcOBKVInfo &obkv_info = rpc_req->get_obkv_info();
 
-    if (OB_ISNULL(buf = rpc_req->alloc_rpc_response(sizeof(obkv::ObRpcTableQueryResponse)))) {
+    if (OB_FAIL(rpc_req->alloc_rpc_response())
+       || OB_ISNULL(rpc_response = dynamic_cast<obkv::ObRpcTableQueryResponse *>(rpc_req->get_rpc_response()))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("invalid alloc memory", K(ret));
     } else {
       result = rpc_req;
-      rpc_response = new (buf) obkv::ObRpcTableQueryResponse();
-      rpc_req->set_rpc_response(rpc_response);
-      rpc_req->set_rpc_response_len(sizeof(obkv::ObRpcTableQueryResponse));
     }
     for (i = 0; i < count && OB_SUCC(ret); i++) {
       obkv::ObRpcTableQueryResponse *res_imp = NULL;

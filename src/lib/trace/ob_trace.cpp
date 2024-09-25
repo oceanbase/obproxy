@@ -70,7 +70,7 @@ void flush_trace()
   if (trace.is_inited() && !current_span.is_empty()) {
     auto* span = current_span.get_first();
     if (!trace.is_auto_flush()) {
-      _LIB_LOG(INFO, "FLT flush trace, trace_id="UUID_PATTERN", root_span_id="UUID_PATTERN", buffer_size=%ld, offset=%ld, current_span size=%d, freed_span size=%d, policy=0x%x",
+      _LIB_LOG(INFO, "FLT flush trace, trace_id=" UUID_PATTERN ", root_span_id=" UUID_PATTERN ", buffer_size=%ld, offset=%ld, current_span size=%d, freed_span size=%d, policy=0x%x",
                  UUID_TOSTRING(trace.get_trace_id()),
                  UUID_TOSTRING(trace.get_root_span_id()),
                  trace.buffer_size_,

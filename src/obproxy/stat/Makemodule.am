@@ -20,4 +20,6 @@ obproxy/stat/ob_api_stat.h\
 obproxy/stat/ob_proxy_trace_stats.cpp\
 obproxy/stat/ob_proxy_trace_stats.h\
 obproxy/stat/ob_net_stats.cpp\
-obproxy/stat/ob_net_stats.h
+obproxy/stat/ob_net_stats.h\
+obproxy/stat/ob_rpc_req_stats.cpp\
+obproxy/stat/ob_rpc_req_stats.h

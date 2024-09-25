@@ -120,13 +120,12 @@ int ObShardDDLStatus::to_json(ObSqlString &buf)
 
   if (OB_SUCC(ret)) {
     int64_t count = ddl_task_id_list_.count();
-    for (int64_t j = 0; OB_SUCC(ret) && j < count; j++) {
+    for (int64_t j = 0; OB_SUCC(ret) && j < count; j +=2) {
       if (OB_FAIL(buf.append_fmt("%ld", ddl_task_id_list_.at(j)))) {
         LOG_WDIAG("fail to append config", K(ret));
       } else if (j < count - 1) {
         ret = buf.append(",");
       }
-      j++;
     }
 
     if (OB_SUCC(ret)) {

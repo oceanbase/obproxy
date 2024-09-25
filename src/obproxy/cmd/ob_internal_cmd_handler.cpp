@@ -590,6 +590,7 @@ int ObInternalCmdHandler::handle_callback(int event, void *data)
         }
         delete this;
       } else {
+        SET_HANDLER(&ObInternalCmdHandler::handle_callback);
         DEBUG_ICMD("lock failed, reschedule it", "this_thread", this_ethread()->id_,
                   "submit_thread", submit_thread_->id_);
         if (OB_ISNULL(submit_thread_->schedule_in(this, MYSQL_LIST_RETRY))) {

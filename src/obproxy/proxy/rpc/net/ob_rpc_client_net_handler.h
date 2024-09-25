@@ -16,6 +16,7 @@
 #include "proxy/rpc/net/ob_rpc_net_handler.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_analyzer.h"
 #include "proxy/rpc/net/ob_proxy_rpc_session_info.h"
+#include "rpc/proxy_protocol/proxy_protocol_v2.h"
 
 namespace oceanbase
 {
@@ -29,6 +30,7 @@ class ObRpcClientNetHandlerMap;
 
 #define RPC_CLIENT_NET_PERIOD_TASK RPC_CLIENT_NET_EVENT_EVENTS_START + 1
 #define RPC_CLIENT_NET_SEND_RESPONSE RPC_CLIENT_NET_EVENT_EVENTS_START + 2
+#define RPC_CLIENT_NET_READ_REQUEST RPC_CLIENT_NET_EVENT_EVENTS_START + 3
 
 static const uint32_t LOCAL_IPV4_ADDR = 0x100007F;
 
@@ -144,6 +146,7 @@ public:
   int setup_client_request_read();
   int state_client_request_read(int event, void *data);
 
+  int handle_request_read_throttle();
   int calc_response_need_send(int64_t &count);
   int store_rpc_req_into_response_buffer(int64_t need_send_resp_count, int64_t &send_response, int64_t &total_response_len);
   int setup_client_response_send();
@@ -162,6 +165,19 @@ public:
   void set_has_cluster_username(bool flag) { session_info_.has_cluster_username_ = flag; }
   bool has_tenant_username() const { return session_info_.has_tenant_username_; }
   bool has_cluster_username() const { return session_info_.has_cluster_username_; }
+
+  int handle_rpc_request(ObRpcRequestSM *&request_sm,
+                         ObRpcReq *&rpc_req,
+                         int64_t &request_len,
+                         ObRpcReqReadStatus &status);
+
+  //ppv2
+  bool is_proxy_protocol_v2_request() const { return is_proxy_protocol_v2_request_; }
+  void set_proxy_protocol_v2_request(bool is_proxy_protocol_v2_request) {
+    is_proxy_protocol_v2_request_ = is_proxy_protocol_v2_request;
+  }
+  int handle_proxy_protocol_v2_request(proxy_protocol_v2::ProxyProtocolV2 &v2, ObRpcReqReadStatus &status);
+  int fill_tenant_info_with_ppv2( proxy_protocol_v2::ProxyProtocolV2 &v2);
 
   enum ObInListStat
   {
@@ -236,6 +252,10 @@ private:
 
   ObRpcClientNetSessionInfo session_info_; //use client session info first
   char net_head_buf_[ObProxyRpcReqAnalyzer::RPC_NET_HEADER];
+
+  // ppv2
+  bool is_proxy_protocol_v2_request_;
+  proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObRpcClientNetHandler);
 };
@@ -312,7 +332,12 @@ inline common::ObMysqlRandom &get_rpc_net_random_seed(const event::ObEThread &t)
 }
 
 int init_rpc_net_cs_map_for_thread();
+int init_rpc_net_cs_map_for_one_thread(int64_t index);
+int init_rpc_net_cs_map_for_one_thread(event::ObEThread *thread);
+
 int init_rpc_net_random_seed_for_thread();
+int init_rpc_net_random_seed_for_one_thread(int64_t index);
+int init_rpc_net_random_seed_for_one_thread(event::ObEThread *thread);
 
 // bool is_rpc_proxy_conn_id_avail(const uint64_t conn_id);
 // bool is_rpc_server_conn_id_avail(const uint64_t conn_id);

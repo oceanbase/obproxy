@@ -332,7 +332,7 @@ loop:
 
 void ob_hash_sort_bin(const ObCharsetInfo *cs __attribute__((unused)),
 		      const unsigned char *key, size_t len, unsigned long int *nr1, unsigned long int *nr2,
-          const char calc_end_space,
+          const char calc_end_space __attribute__((unused)),
           hash_algo hash_algo)
 {
   const unsigned char *pos = key;

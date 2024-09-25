@@ -43,7 +43,7 @@ namespace obproxy
 namespace net
 {
 
-struct ObNetVCOptions;
+class ObNetVCOptions;
 
 #define NON_BLOCKING             true
 #define BLOCKING                 false

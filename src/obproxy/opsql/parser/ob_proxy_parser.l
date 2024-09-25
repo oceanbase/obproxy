@@ -16,6 +16,8 @@ void update_stmt_type(ObProxyBasicStmtType type, void *yyscanner);
 void store_str(char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 void store_str_with_quote(ObProxyParseQuoteType type, char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 
+#define UNUSED(v) ((void)(v))
+
 #define YY_FATAL_ERROR(msg) ob_proxy_parser_fatal_error(msg, yyscanner)
 
 #define SET_DML_STMT(stmt_type) \
@@ -389,6 +391,7 @@ comma         ,
 leftbracket   \(
 rightbracket  \)
 explain_route             (explain{space}+route)
+show_proxykv              (show{space}+proxykv)
 show_proxynet             (show{space}+proxynet)
 show_proxyconfig          (show{space}+proxyconfig)
 show_proxysession         (show{space}+proxysession)
@@ -578,7 +581,8 @@ TENANT           { RETURN_NON_RESERVED_KEYWORD(TENANT); }
 
  /*internal cmd*/
 {explain_route} { SET_HAS_EXPLAIN_ROUTE(); return EXPLAIN_ROUTE; }
-
+ /*show proxykv*/
+{show_proxykv}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_KV); return SHOW_PROXYKV; }
  /*show net*/
 {show_proxynet}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_NET); return SHOW_PROXYNET; }
 THREAD           { RETURN_NON_RESERVED_KEYWORD(THREAD); }
@@ -1339,6 +1343,7 @@ inline void *yyrealloc (void *ptr, size_t bytes, void *yyscanner)
 
 inline void yyfree(void *ptr, void *yyscanner)
 {
+  UNUSED(yyscanner);
   // Do nothing -- we leave it to the garbage collector.
   obproxy_parse_free(ptr);
 }

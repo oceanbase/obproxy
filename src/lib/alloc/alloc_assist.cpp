@@ -17,6 +17,12 @@
 
 using namespace oceanbase::lib;
 
+void ob_abort (void) __THROW
+{
+  fprintf(stderr, "CRASH ERROR !!! OB_ABORT, tid: %ld, lbt: %s\n", GETTID(), oceanbase::common::lbt());
+  abort();
+}
+
 #if MEMCHK_LEVEL >= 1
 
 static const int64_t CHECK_RETRY_COUNT = 3;

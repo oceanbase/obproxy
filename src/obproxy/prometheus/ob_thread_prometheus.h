@@ -36,8 +36,11 @@
 #include "obutils/ob_async_common_task.h"
 #include "iocore/eventsystem/ob_continuation.h"
 #include "iocore/eventsystem/ob_ethread.h"
+#include "obproxy/opsql/parser/ob_proxy_parse_result.h"
+#include "rpc/obrpc/ob_rpc_packet.h"
+#include "share/config/ob_config_helper.h"
 
-#define SQL_MONITOR_INFO_ARRAY_SIZE 4
+#define SQL_MONITOR_INFO_ARRAY_SIZE 10
 
 namespace oceanbase
 {
@@ -53,158 +56,126 @@ enum ObProxyRequestType
   OBPROXY_MAX_REQUEST
 };
 
-struct RpcStatInfo {
+class SQLMonitorInfo {
 public:
-  RpcStatInfo () : obkv_login_count_(0), obkv_execute_count_(0), obkv_batch_execute_count_(0),
-    obkv_batch_execute_shard_count_(0), obkv_execute_query_count_(0), obkv_execute_query_shard_count_(0),
-    obkv_query_and_mutate_count_(0), obkv_query_and_mutate_shard_count_(0), obkv_execute_query_sync_count_(0),
-    obkv_execute_query_sync_shard_count_(0), obkv_table_ttl_count_(0), obkv_tll_request_count_(0), obkv_direct_load_count_(0),
-    obkv_ls_execute_count_(0), obkv_ls_execute_shard_count_(0), obkv_other_count_(0), obkv_other_shard_count_(0) {}
-  int64_t obkv_login_count_;
-  int64_t obkv_execute_count_;
-  int64_t obkv_batch_execute_count_;
-  int64_t obkv_batch_execute_shard_count_;
-  int64_t obkv_execute_query_count_;
-  int64_t obkv_execute_query_shard_count_;
-  int64_t obkv_query_and_mutate_count_;
-  int64_t obkv_query_and_mutate_shard_count_;
-  int64_t obkv_execute_query_sync_count_;
-  int64_t obkv_execute_query_sync_shard_count_;
-  int64_t obkv_table_ttl_count_;
-  int64_t obkv_tll_request_count_;
-  int64_t obkv_direct_load_count_;
-  int64_t obkv_ls_execute_count_;
-  int64_t obkv_ls_execute_shard_count_;
-  int64_t obkv_other_count_;       //pcode not support now
-  int64_t obkv_other_shard_count_; //pcode not support now
-public:
-   void add_count(const RpcStatInfo &stat) {
-    obkv_login_count_               += stat.obkv_login_count_;
-    obkv_execute_count_             += stat.obkv_execute_count_;
-    obkv_batch_execute_count_       += stat.obkv_batch_execute_count_;
-    obkv_batch_execute_shard_count_ += stat.obkv_batch_execute_shard_count_;
-    obkv_execute_query_count_       += stat.obkv_execute_query_count_;
-    obkv_execute_query_shard_count_ += stat.obkv_execute_query_shard_count_;
-    obkv_query_and_mutate_count_    += stat.obkv_query_and_mutate_count_;
-    obkv_query_and_mutate_shard_count_    += stat.obkv_query_and_mutate_shard_count_;
-    obkv_execute_query_sync_count_        += stat.obkv_execute_query_sync_count_;
-    obkv_execute_query_sync_shard_count_  += stat.obkv_execute_query_sync_shard_count_;
-    obkv_table_ttl_count_           += stat.obkv_table_ttl_count_;
-    obkv_tll_request_count_         += stat.obkv_tll_request_count_;
-    obkv_direct_load_count_         += stat.obkv_direct_load_count_;
-    obkv_ls_execute_count_          += stat.obkv_ls_execute_count_;
-    obkv_ls_execute_shard_count_    += stat.obkv_ls_execute_shard_count_;
-    obkv_other_count_               += stat.obkv_other_count_; //pcode not support now
-    obkv_other_shard_count_         += stat.obkv_other_shard_count_; //pcode not support now
-  }
-  // RpcStatInfo &operator=(const RpcStatInfo& other) {
-  //   MEMCPY(this, &other, sizeof(RpcStatInfo));
-  //   return *this;
-  // }
-};
-
-struct SQLstatInfo {
-public:
-  SQLstatInfo() : select_request_total_time_(0), update_request_total_time_(0), insert_request_total_time_(0),
-  delete_request_total_time_(0), other_request_total_time_(0), select_process_request_time_(0), update_process_request_time_(0),
-  insert_process_request_time_(0), delete_process_request_time_(0), other_process_request_time_(0),
-  select_prepare_send_request_to_server_time_(0), update_prepare_send_request_to_server_time_(0),
-  insert_prepare_send_request_to_server_time_(0), delete_prepare_send_request_to_server_time_(0),
-  other_prepare_send_request_to_server_time_(0) {}
-
-  void add_count(const SQLstatInfo& other) {
-    select_request_total_time_ += other.select_request_total_time_;
-    update_request_total_time_ += other.update_request_total_time_;
-    insert_request_total_time_ += other.insert_request_total_time_;
-    delete_request_total_time_ += other.delete_request_total_time_;
-    other_request_total_time_ += other.other_request_total_time_;
-
-    select_process_request_time_ += other.select_process_request_time_;
-    update_process_request_time_ += other.update_process_request_time_;
-    insert_process_request_time_ += other.insert_process_request_time_;
-    delete_process_request_time_ += other.delete_process_request_time_;
-    other_process_request_time_ += other.other_process_request_time_;
-
-    select_prepare_send_request_to_server_time_ += other.select_prepare_send_request_to_server_time_;
-    update_prepare_send_request_to_server_time_ += other.update_prepare_send_request_to_server_time_;
-    insert_prepare_send_request_to_server_time_ += other.insert_prepare_send_request_to_server_time_;
-    delete_prepare_send_request_to_server_time_ += other.delete_prepare_send_request_to_server_time_;
-    other_prepare_send_request_to_server_time_ += other.other_prepare_send_request_to_server_time_;
+  SQLMonitorInfo() : monitor_info_key_(), cluster_name_str_(), tenant_name_str_(), database_name_str_(),
+                        request_count_(0), request_total_time_(0),
+                        server_process_request_time_(0), prepare_send_request_to_server_time_(0),
+                        client_request_bytes_(0), server_request_bytes_(0), server_response_bytes_(0),
+                        client_response_bytes_(0) {
   }
 
-public:
-  int64_t select_request_total_time_;
-  int64_t update_request_total_time_;
-  int64_t insert_request_total_time_;
-  int64_t delete_request_total_time_;
-  int64_t other_request_total_time_;
-  int64_t select_process_request_time_;
-  int64_t update_process_request_time_;
-  int64_t insert_process_request_time_;
-  int64_t delete_process_request_time_;
-  int64_t other_process_request_time_;
-  int64_t select_prepare_send_request_to_server_time_;
-  int64_t update_prepare_send_request_to_server_time_;
-  int64_t insert_prepare_send_request_to_server_time_;
-  int64_t delete_prepare_send_request_to_server_time_;
-  int64_t other_prepare_send_request_to_server_time_;
-};
+  ~SQLMonitorInfo() {}
 
-struct SQLMonitorInfo {
-  SQLMonitorInfo() : request_type_(OBPROXY_SQL_REQUEST), request_count_(0), select_count_(0), update_count_(0), insert_count_(0),
-    delete_count_(0), other_count_(0), rpc_request_stat_count_(),
-    request_total_time_(0), server_process_request_time_(0),
-    prepare_send_request_to_server_time_(0), cluster_name_(0), tenant_name_(0),
-    cluster_name_str_(), tenant_name_str_() {}
+  inline void reuse() {
+    request_count_ = 0;
+    request_total_time_ = 0;
+    server_process_request_time_ = 0;
+    prepare_send_request_to_server_time_ = 0;
+    client_request_bytes_ = 0;
+    server_request_bytes_ = 0;
+    server_response_bytes_ = 0;
+    client_response_bytes_ = 0;
+  }
+
+  static ObProxyBasicStmtType inline get_prometheus_output_type(ObProxyBasicStmtType stmt_type) {
+
+    switch(stmt_type) {
+      case OBPROXY_T_SELECT:
+      case OBPROXY_T_UPDATE:
+      case OBPROXY_T_INSERT:
+      case OBPROXY_T_REPLACE:
+      case OBPROXY_T_DELETE:
+        return stmt_type;
+      default:
+        return OBPROXY_T_INVALID;
+    }
+  };
+  struct MonitorInfoKey {
+    MonitorInfoKey() : is_slow_query_(false), is_error_resp_(false), is_partition_hit_(false),
+                       is_shard_(false),
+                       request_type_(), stmt_type_(), rpc_pkt_code_(), cluster_name_(),
+                       tenant_name_(), database_name_() {}
+    ~MonitorInfoKey() {}
+    inline uint64_t hash() const {
+      return hash_;
+    }
+    void set_hash() {
+      // start from 2, to avoid being mutually influenced by request_type_
+      uint64_t seed = (static_cast<uint64_t>(is_slow_query_) << 2)
+                      | (static_cast<uint64_t>(is_error_resp_) << 3)
+                      | (static_cast<uint64_t>(is_partition_hit_) << 4)
+                      | (static_cast<uint64_t>(is_shard_) << 5);
+      seed ^= static_cast<uint64_t>(request_type_) & (static_cast<uint64_t>(stmt_type_) << 32);
+      seed ^= rpc_pkt_code_;
+      seed = cluster_name_.hash(seed);
+      seed = tenant_name_.hash(seed);
+      seed = database_name_.hash(seed);
+      hash_ = seed;
+    }
+
+    int64_t to_string(char *buf, const int64_t buf_len) const;
+
+  public:
+    bool is_slow_query_;
+    bool is_error_resp_;
+    bool is_partition_hit_;
+    bool is_shard_; // used by obkv
+    uint64_t hash_;
+    ObProxyRequestType request_type_;
+    ObProxyBasicStmtType stmt_type_;
+    obrpc::ObRpcPacketCode rpc_pkt_code_;
+    common::ObString cluster_name_;
+    common::ObString tenant_name_;
+    common::ObString database_name_;
+  };
 
   SQLMonitorInfo(const SQLMonitorInfo& other) {
-    *this = other;
+    if (OB_LIKELY(this != &other)) {
+      *this = other;
+    }
   }
 
   SQLMonitorInfo &operator=(const SQLMonitorInfo& other) {
     if (OB_LIKELY(this != &other)) {
-      this->request_count_ = other.request_type_;
-      this->request_count_ = other.request_count_;
-      this->select_count_ = other.select_count_;
-      this->update_count_ = other.update_count_;
-      this->insert_count_ = other.insert_count_;
-      this->delete_count_ = other.delete_count_;
-      this->other_count_ = other.other_count_;
-      this->rpc_request_stat_count_ = other.rpc_request_stat_count_; //default copy
-      this->sql_request_stat_count_ = other.sql_request_stat_count_; //default copy
-      this->request_total_time_ = other.request_total_time_;
-      this->server_process_request_time_ = other.server_process_request_time_;
-      this->prepare_send_request_to_server_time_ = other.prepare_send_request_to_server_time_;
-      MEMCPY(this->cluster_name_str_, other.cluster_name_str_, OB_PROXY_MAX_CLUSTER_NAME_LENGTH);
-      MEMCPY(this->tenant_name_str_, other.tenant_name_str_, oceanbase::common::OB_MAX_TENANT_NAME_LENGTH);
-      this->cluster_name_.assign_ptr(this->cluster_name_str_, other.cluster_name_.length());
-      this->tenant_name_.assign_ptr(this->tenant_name_str_, other.tenant_name_.length());
+      monitor_info_key_ = other.monitor_info_key_;
+      request_count_ = other.request_count_;
+      request_total_time_ = other.request_total_time_;
+      server_process_request_time_ = other.server_process_request_time_;
+      prepare_send_request_to_server_time_ = other.prepare_send_request_to_server_time_;
+      client_request_bytes_ = other.client_request_bytes_;
+      server_request_bytes_ = other.server_request_bytes_;
+      server_response_bytes_ = other.server_response_bytes_;
+      client_response_bytes_ = other.client_response_bytes_;
     }
     return *this;
   }
 
-  ObProxyRequestType request_type_;
+  inline const MonitorInfoKey& key() const {
+    return monitor_info_key_;
+  }
+
+  void set_key(const MonitorInfoKey& key);
+
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+
+private:
+  MonitorInfoKey monitor_info_key_;
+  common::ObConfigVariableString cluster_name_str_;
+  common::ObConfigVariableString  tenant_name_str_;
+  common::ObConfigVariableString database_name_str_;
+public:
   int64_t request_count_;
-  int64_t select_count_;
-  int64_t update_count_;
-  int64_t insert_count_;
-  int64_t delete_count_;
-  int64_t other_count_;
-  RpcStatInfo rpc_request_stat_count_; // sql has not so much item to use union, so each type use its count_ only, convert it to union if need TODO
-  SQLstatInfo sql_request_stat_count_;
   int64_t request_total_time_;
   int64_t server_process_request_time_;
   int64_t prepare_send_request_to_server_time_;
-  common::ObString cluster_name_;
-  common::ObString tenant_name_;
-
-  char cluster_name_str_[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
-  char tenant_name_str_[oceanbase::common::OB_MAX_TENANT_NAME_LENGTH];
-
-  int64_t to_string(char *buf, const int64_t buf_len) const;
+  int64_t client_request_bytes_;
+  int64_t server_request_bytes_;
+  int64_t server_response_bytes_;
+  int64_t client_response_bytes_;
+public:
+  LINK(SQLMonitorInfo, sql_monotor_info_v2_link_);
 };
-
-typedef common::hash::ObHashMap<common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH>, SQLMonitorInfo> MonitorInfoHashMap;
 
 class ObSQLMonitorInfoCont : public event::ObContinuation
 {
@@ -236,25 +207,51 @@ class ObThreadPrometheus
 {
 public:
   int init(event::ObEThread *thread);
-  ObThreadPrometheus() : monitor_info_used_(0), monitor_info_hash_map_(), rpc_monitor_info_used_(0), rpc_monitor_info_hash_map_(), sql_monitor_info_cont_(NULL), thread_(NULL) {}
+  ObThreadPrometheus() : monitor_info_used_(0), monitor_info_array_(), monitor_info_hashmap_(),
+                         sql_monitor_info_cont_(NULL), thread_(NULL) {}
   ~ObThreadPrometheus() {}
-  int set_sql_monitor_info(const common::ObString &tenant_name, const common::ObString &cluster_name, const SQLMonitorInfo &info, const ObProxyRequestType type = OBPROXY_SQL_REQUEST);
+
+  int set_sql_monitor_info(SQLMonitorInfo::MonitorInfoKey& tmp_info_key,
+                           const int64_t request_count,
+                           const int64_t request_total_time,
+                           const int64_t server_process_request_time,
+                           const int64_t prepare_send_request_to_server_time,
+                           const int64_t client_request_bytes,
+                           const int64_t server_request_bytes,
+                           const int64_t server_response_bytes,
+                           const int64_t client_response_bytes);
 
 private:
-  bool set_sql_monitor_info_using_array(const common::ObString &tenant_name, const common::ObString &cluster_name, const SQLMonitorInfo &info, SQLMonitorInfo (&monitor_info_array)[SQL_MONITOR_INFO_ARRAY_SIZE], int64_t &monitor_info_used);
-  int set_sql_monitor_info_using_hashmap(const common::ObString &tenant_name, const common::ObString &cluster_name, const SQLMonitorInfo &info, MonitorInfoHashMap &monitor_info_map);
+  struct SQLMonitorInfoV2Hashing
+  {
+    typedef const SQLMonitorInfo::MonitorInfoKey& Key;
+    typedef SQLMonitorInfo Value;
+    typedef ObDLList(SQLMonitorInfo, sql_monotor_info_v2_link_) ListHead;
+
+    static uint64_t hash(Key key) { return key.hash(); }
+    static Key key(Value *value) { return value->key(); }
+    static bool equal(Key lhs, Key rhs) {
+      return lhs.hash_ == rhs.hash_
+             && lhs.stmt_type_ == rhs.stmt_type_
+             && lhs.is_slow_query_ == rhs.is_slow_query_
+             && lhs.is_error_resp_ == rhs.is_error_resp_
+             && lhs.is_partition_hit_ == rhs.is_partition_hit_
+             && lhs.is_shard_ == rhs.is_shard_
+             && lhs.database_name_ == rhs.database_name_
+             && lhs.tenant_name_ == rhs.tenant_name_
+             && lhs.cluster_name_ == rhs.cluster_name_
+             && lhs.request_type_ == rhs.request_type_
+             && lhs.rpc_pkt_code_ == rhs.rpc_pkt_code_;
+    }
+  };
+  static const int64_t MONITOR_INFO_HASH_BUCKET_SIZE = 1024;
 
 public:
-  // 对于监控信息，通过数组+hashmap的方式存储，主要是因为hashmap的get和set操作性能影响较大，
-  // 约有3%的损耗，当数据填充满以后再使用hashmap
-  // 后面如果实现了CPU租户隔离，一个线程对应的tenant是固定的，只会使用到数组中一个位置
-  SQLMonitorInfo monitor_info_array_[SQL_MONITOR_INFO_ARRAY_SIZE];
+  typedef common::hash::ObBuildInHashMap<SQLMonitorInfoV2Hashing, MONITOR_INFO_HASH_BUCKET_SIZE> MonitorInfoBuiltinHashMap;
   int64_t monitor_info_used_;
-  MonitorInfoHashMap monitor_info_hash_map_;
+  SQLMonitorInfo monitor_info_array_[SQL_MONITOR_INFO_ARRAY_SIZE];
 
-  SQLMonitorInfo rpc_monitor_info_array_[SQL_MONITOR_INFO_ARRAY_SIZE]; //size of array must be same with monitor_info_array_, used by set_sql_monitor_info_using_array
-  int64_t rpc_monitor_info_used_;
-  MonitorInfoHashMap rpc_monitor_info_hash_map_;
+  MonitorInfoBuiltinHashMap monitor_info_hashmap_;
 private:
   ObSQLMonitorInfoCont *sql_monitor_info_cont_;
   event::ObEThread *thread_;

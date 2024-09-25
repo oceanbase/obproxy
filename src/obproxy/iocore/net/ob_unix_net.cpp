@@ -28,10 +28,10 @@
  * limitations under the License.
  *
  */
+#include "iocore/net/ob_unix_net.h"
 
 #include <pthread.h>
 #include "iocore/net/ob_net.h"
-#include "iocore/net/ob_unix_net.h"
 #include "iocore/net/ob_event_io.h"
 #include "iocore/net/ob_timerfd_manager.h"
 #include "obutils/ob_resource_pool_processor.h"
@@ -151,6 +151,7 @@ int update_cop_config(const int64_t default_inactivity_timeout, const int64_t ma
   return ret;
 }
 
+// can only initialize a thread spawned in g_event_processor
 int initialize_thread_for_net(ObEThread *thread)
 {
   int ret = OB_SUCCESS;

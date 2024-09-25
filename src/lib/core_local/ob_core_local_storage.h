@@ -185,7 +185,7 @@ int ObCoreLocalPtr::cas_value(const void * & old_val, const void * & new_val)
   } else if (NULL == val_array_ || array_idx < 0 || array_idx >= array_len_) {
     LIB_LOG(EDIAG, "cas_value failed", K_(val_array), K(array_idx), K_(array_len));
     ret = OB_ERR_UNEXPECTED;
-  } else if (!__sync_bool_compare_and_swap(&VAL_ARRAY_AT(void *, array_idx), old_val, new_val)) {
+  } else if (!__sync_bool_compare_and_swap(&VAL_ARRAY_AT(void *, array_idx), const_cast<void*>(old_val), const_cast<void*>(new_val))) {
     ret = OB_EAGAIN;
   }
   return ret;

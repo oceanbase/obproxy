@@ -448,6 +448,8 @@ inline ObRpcServerNetTableEntryPool &get_rpc_server_net_handler_map(const event:
 inline int check_and_clean_server_request_list(ObRpcReqList &req_list);
 
 int init_rpc_net_ss_map_for_thread();
+int init_rpc_net_ss_map_for_one_thread(int64_t index);
+int init_rpc_net_ss_map_for_one_thread(event::ObEThread *thread);
 
 } // end of namespace proxy
 } // end of namespace obproxy

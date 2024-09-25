@@ -387,6 +387,23 @@ int64_t ObMallocAllocator::get_mod_dist(
   return idx;
 }
 
+void ObMallocAllocator::add_tenant_mod_usage(uint64_t tenant_id, int mod_id, ObModItem &item)
+{
+  if (OB_UNLIKELY(tenant_id >= PRESERVED_TENANT_COUNT)) {
+    const int64_t slot = tenant_id % PRESERVED_TENANT_COUNT;
+    obsys::CRLockGuard guard(locks_[slot]);
+    ObTenantAllocator *allocator = get_tenant_allocator(tenant_id);
+    if (!OB_ISNULL(allocator)) {
+      item += allocator->get_mod_usage(mod_id);
+    }
+  } else {
+    ObTenantAllocator *allocator = allocators_[tenant_id];
+    if (!OB_ISNULL(allocator)) {
+      item += allocator->get_mod_usage(mod_id);
+    }
+  }
+}
+
 void ObMallocAllocator::set_urgent(int64_t bytes)
 {
   CHUNK_MGR.set_urgent(bytes);

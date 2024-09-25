@@ -1449,3 +1449,12 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableLSOpRequest)
   }
   return ret;
 }
+
+OB_SERIALIZE_MEMBER(ObObkvGetRouteRequest,
+                    type_,
+                    credential_,
+                    table_name_,
+                    cluster_name_,
+                    tenant_name_,
+                    database_name_,
+                    force_renew_);

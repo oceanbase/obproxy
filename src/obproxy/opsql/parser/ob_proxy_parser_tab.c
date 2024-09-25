@@ -82,6 +82,7 @@
 #include "opsql/ob_proxy_parse_define.h"
 #include "opsql/parser/ob_proxy_parse_result.h"
 
+#define UNUSED(v) ((void)(v))
 #define HANDLE_ACCEPT() \
 do {\
   if (result->stmt_count_ > 1) {\
@@ -4352,6 +4353,8 @@ yyreturn:
 
 void yyerror(YYLTYPE* yylloc, ObProxyParseResult* p, char* s, ...)
 {
+  UNUSED(yylloc);
+  UNUSED(s);
   // do nothing
 }
 

@@ -65,9 +65,9 @@ namespace net
 #endif
 #define EVENTIO_ERROR (EPOLLERR|EPOLLPRI|EPOLLHUP)
 
-struct ObPollDescriptor;
+class ObPollDescriptor;
 class ObUnixNetVConnection;
-struct ObNetAccept;
+class ObNetAccept;
 
 class ObEventIO
 {

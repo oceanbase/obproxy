@@ -42,7 +42,7 @@ namespace obproxy
 namespace net
 {
 
-struct ObNetVCOptions;
+class ObNetVCOptions;
 class ObNetVConnection;
 
 /**
@@ -238,6 +238,7 @@ public:
    * @return
    */
   virtual int start() = 0;
+  using ObProcessor::start;
 
   virtual ObNetVConnection *allocate_vc() = 0;
 

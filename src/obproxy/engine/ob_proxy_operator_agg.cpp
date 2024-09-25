@@ -1016,7 +1016,7 @@ int ObProxyAggUnit::create_agg_unit(ObIAllocator &allocator,
 void ObProxyAggUnit::destroy_agg_unit(ObIAllocator &allocator,
                                       ObProxyAggUnit *agg_unit)
 {
-  agg_unit->~ObProxyAggUnit();
+  agg_unit->ObProxyAggUnit::~ObProxyAggUnit();
   allocator.free(agg_unit);
 }
 

@@ -76,7 +76,7 @@ public:
   void set_header_len(const int64_t len) { header_pos_ = len;}
   int64_t get_buf_size() const
   {
-    return MAX_LOG_ITEM_TYPE == item_type_ ? 0 : (LOG_ITEM_SIZE[item_type_] - sizeof(ObLogItem));
+    return MAX_LOG_ITEM_TYPE == item_type_ ? 0 : (static_cast<unsigned long>(LOG_ITEM_SIZE[item_type_]) - sizeof(ObLogItem));
   }
   int get_log_level() const { return header_.log_level_; }
   int64_t get_timestamp() const { return header_.timestamp_; }

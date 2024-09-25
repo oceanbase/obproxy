@@ -20,7 +20,7 @@ namespace oceanbase
 {
 namespace lib
 {
-class ObMemAttr;
+struct ObMemAttr;
 } // end of namespace lib
 
 namespace common

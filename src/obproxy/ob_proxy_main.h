@@ -57,10 +57,10 @@ private:
   static void sig_async_handler(const int sig);
   static void freeze_mem_alloc();
   static void unfreeze_mem_alloc();
-  int add_sig_ignore_catched(struct sigaction &action, const int sig) const;
-  int add_sig_default_catched(struct sigaction &action, const int sig) const;
-  int add_sig_direct_catched(struct sigaction &action, const int sig, const int flag = 0) const;
-  int add_sig_async_catched(struct sigaction &action, const int sig, const int flag = 0) const;
+  static int add_sig_ignore_catched(struct sigaction &action, const int sig);
+  static int add_sig_default_catched(struct sigaction &action, const int sig);
+  static int add_sig_direct_catched(struct sigaction &action, const int sig, const int flag = 0);
+  static int add_sig_async_catched(struct sigaction &action, const int sig, const int flag = 0);
 
   int do_start_work(ObProxyOptions &opts);
 
@@ -71,6 +71,7 @@ private:
   static void print_sqlaudit_memory_usage();
   static void print_memory_usage(const int64_t hold, const int64_t used,
                                  const int64_t count, const char *name);
+  static int64_t get_memory_used();
   void print_version() const;
   void print_releaseid() const;
   int print_args(const int argc, char *const argv[]) const;
@@ -118,6 +119,8 @@ private:
   obutils::ObAsyncCommonTask *sqlaudit_detect_cont_;
   uint64_t pos_;
   int64_t history_mem_size_[HISTORY_MEMORY_RECORD_COUNT];
+
+  int64_t history_rpc_mem_size_[HISTORY_MEMORY_RECORD_COUNT];
 
   DISALLOW_COPY_AND_ASSIGN(ObProxyMain);
 };

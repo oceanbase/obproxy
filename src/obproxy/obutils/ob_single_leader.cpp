@@ -13,6 +13,8 @@
 #define USING_LOG_PREFIX PROXY
 #include "obutils/ob_single_leader.h"
 #include "obutils/ob_resource_pool_processor.h"
+#include "proxy/mysql/ob_mysql_sm.h"
+#include "proxy/route/ob_ldc_location.h"
 namespace oceanbase
 {
 namespace obproxy
@@ -20,39 +22,63 @@ namespace obproxy
 using namespace proxy;
 namespace obutils
 {
-const net::ObIpEndpoint *ObSingleLeader::get_follower()
+/*
+  1. 获取单机模式下的副本，以idc优先级依次获取：same_idc > same_region > others
+  2. 对权重路由和TARGET_REPLICA_TYPE_WITH_LEADER可以选取leader副本
+     2.1 权重路由先根据权重随机一个zone，再判断副本是否在对应的zone内；
+     2.2 WITH_LEADER的leader优先级=follower;
+     2.3 当route_leader=true时，表示此时选择leader副本
+*/
+const net::ObIpEndpoint *ObSingleLeader::get_replica(const ObRoutePolicyEnum& policy,
+                                                      ObMysqlSM& sm)
 {
-  const net::ObIpEndpoint *ret = NULL;
+  const net::ObIpEndpoint *ret_ip = NULL;
+  // 对follower优先的路由策略，只获取follower副本，如果获取不到，会在handle_pl_lookup中获取其leader
+  // 对leader、follower优先级相同的路由，在random % (total_cnt) == (total_cnt - 1)，一定路由到leader
   if (OB_NOT_NULL(single_leader_info_)) {
     LOG_DEBUG("single leaders all followers", K(single_leader_info_->followers_));
-    const static ObReplicaType replica_type_priority[2] { REPLICA_TYPE_FULL, REPLICA_TYPE_READONLY };
     const static ObIDCType idc_type_priority[3] { SAME_IDC, SAME_REGION, OTHER_REGION };
     int64_t follower_cnt = single_leader_info_->followers_.count();
     bool found = false;
     int64_t random = 0;
+    int ret = OB_SUCCESS;
     ObRandomNumUtils::get_random_num(0, 100, random);
-    for (int64_t idc_idx = 0; idc_idx < sizeof(idc_type_priority) && !found; idc_idx++) {
-      for (int64_t replica_type_idx = 0; replica_type_idx < sizeof(replica_type_priority) && !found; replica_type_idx++) {
-        for (int64_t check_cnt = 0; check_cnt < follower_cnt && !found; random++, check_cnt++) {
-          int64_t follower_idx = random % follower_cnt;
-          const ObSingleLeadersFollower &follower = single_leader_info_->followers_.at(follower_idx);
-          LOG_DEBUG("check single leader's follower", K(follower), "idc_type", get_idc_type_string(idc_type_priority[idc_idx]),
-                    "replica_type", ObProxyReplicaLocation::get_replica_type_string(replica_type_priority[replica_type_idx]));
-          if (single_leader_followers_idc_[follower_idx] == idc_type_priority[idc_idx]
-              && follower.replica_type_ == replica_type_priority[replica_type_idx]) {
-            if ((found = follower.addr_.is_valid())) {
-              ret = &follower.addr_;
-              LOG_DEBUG("succ to found leader's best follower", K(follower));
-            } else {
-              LOG_DEBUG("idc_type and replica_type matched but not an valid addr", K(follower.addr_));
-            }
+    ObString zone;
+    ObSEArray<ObServerStateSimpleInfo, ObServerStateRefreshCont::DEFAULT_SERVER_COUNT> simple_servers_info(ObServerStateRefreshCont::DEFAULT_SERVER_COUNT);
+    omt::ObTargetReplicaType target_replica_type;
+    if (OB_FAIL(ObLDCLocation::get_route_info(policy, sm, target_replica_type, zone, simple_servers_info))) {
+      LOG_WDIAG("fail to get route info", K(ret));
+    } else {
+      const bool follower_only = is_follower_only_route(policy) || (is_target_replica_route(policy) && target_replica_type.is_exist_column_store_replica());
+      const int64_t total_cnt = follower_only ? follower_cnt : follower_cnt + 1;
+      for (int64_t idc_idx = 0; OB_SUCC(ret) && idc_idx < ARRAYSIZEOF(idc_type_priority) && !found; idc_idx++) {
+        for (int64_t check_cnt = 0; check_cnt < total_cnt && !found; random++, check_cnt++) {
+          // 允许发leader时，random%total_cnt == total_cnt - 1时发往leader
+          bool route_leader = !follower_only && (random % total_cnt == (total_cnt - 1));
+          int64_t follower_idx = random % total_cnt;
+          const net::ObIpEndpoint &addr = route_leader ? single_leader_info_->leader_addr_ : single_leader_info_->followers_.at(follower_idx).addr_;
+          const ObIDCType idc_type = route_leader ? single_leader_idc_ : single_leader_followers_idc_[follower_idx];
+          const ObReplicaType replica_type = route_leader ? REPLICA_TYPE_FULL : single_leader_info_->followers_.at(follower_idx).replica_type_;
+          LOG_DEBUG("check single leader's follower", K(addr), "idc_type", get_idc_type_string(idc_type_priority[idc_idx]),
+                    "route policy", get_route_policy_enum_string(policy), "target_replica_type", target_replica_type.replica_type_, K(random), K(follower_cnt), K(route_leader));
+          if (idc_type != idc_type_priority[idc_idx]) {
+            LOG_DEBUG("not match idc type", "replica idc", get_idc_type_string(idc_type), "excepted idc_type", get_idc_type_string(idc_type_priority[idc_idx]));
+          } else if (!route_leader && !ObLDCLocation::is_target_replica_type(target_replica_type, replica_type)) {
+            LOG_DEBUG("not match replica type", "replica type", ObProxyReplicaLocation::get_replica_type_string(replica_type));
+          } else if (is_weight_load_balance_route(policy) && !ObLDCLocation::is_in_same_zone(addr, simple_servers_info, zone)) {
+            LOG_DEBUG("follower not in weight zone ", K(zone), K(route_leader), K(addr));
+          } else if ((found = addr.is_valid())) {
+            ret_ip = &addr;
+            LOG_DEBUG("succ to found leader's best follower", K(route_leader), K(addr), K(idc_type));
+          } else {
+            LOG_DEBUG("idc_type and replica_type matched but not an valid addr", K(route_leader), K(addr));
           }
         } // end of check_cnt
-      } // end of replica_type
-    } // end of idc_type
+      } // end of idc_type
+    }
   }
 
-  return ret;
+  return ret_ip;
 }
 
 int ObSingleLeader::refresh(
@@ -65,7 +91,7 @@ int ObSingleLeader::refresh(
   // 1. version changed
   if (OB_UNLIKELY(version != single_leader_version_)) {
     single_leader_version_ = version;
-    if (OB_FAIL(cluster_resource.get_single_leader_info(tenant_name, single_leader_info_))) {
+    if (OB_FAIL(cluster_resource.get_and_update_single_leader_info(tenant_name, single_leader_info_))) {
       LOG_DEBUG("fail to get single leader", K(tenant_name), K(ret));
     } else {
       int64_t item_count = dummy_ldc.get_item_count();
@@ -80,25 +106,24 @@ int ObSingleLeader::refresh(
         }
         single_leader_followers_count_ = 0;
       }
-
       if (OB_ISNULL(single_leader_followers_idc_)
           && OB_ISNULL(single_leader_followers_idc_
               = static_cast<ObIDCType*>(op_fixed_mem_alloc(sizeof(ObIDCType) * follower_count)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("fail to alloc memory for followers idc", K(ret));
       } else {
+        // idc赋值
+        ObAddr leader_addr;
+        leader_addr.set_ip_from_ip_addr(net::ObIpAddr(single_leader_info_->leader_addr_));
+        leader_addr.port_ = single_leader_info_->leader_addr_.get_port_host_order();
+        single_leader_idc_ = ObLDCLocation::get_idc_type(leader_addr, dummy_ldc);
         single_leader_followers_count_ = follower_count;
         for (int64_t follower_idx = 0; follower_idx < follower_count; follower_idx++) {
           net::ObIpAddr follower(single_leader_info_->followers_.at(follower_idx).addr_);
           ObAddr follower_addr;
           follower_addr.set_ip_from_ip_addr(follower);
-          for (int64_t item_idx = 0; item_idx < item_count; item_idx++) {
-            const ObLDCItem *item = dummy_ldc.get_item(item_idx);
-            if (OB_NOT_NULL(item) && OB_NOT_NULL(item->replica_) && item->replica_->server_ == follower_addr) {
-              single_leader_followers_idc_[follower_idx] = item->idc_type_;
-              break;
-            } // end if
-          } // end for
+          follower_addr.port_ = single_leader_info_->followers_.at(follower_idx).addr_.get_port_host_order();
+          single_leader_followers_idc_[follower_idx] = ObLDCLocation::get_idc_type(follower_addr, dummy_ldc);
         } // end for
       } // end else
     }
@@ -117,6 +142,9 @@ int64_t ObSingleLeader::to_string(char *buf, const int64_t buf_len) const
          "followers", single_leader_info_->followers_);
   } else {
     J_KV(K(single_leader_info_));
+    J_COMMA();
+    const ObString idc = get_idc_type_string(single_leader_idc_);
+    BUF_PRINTF("leader.idc_type=%.*s", idc.length(), idc.ptr());
   }
   J_COMMA();
   if (OB_NOT_NULL(single_leader_followers_idc_)) {

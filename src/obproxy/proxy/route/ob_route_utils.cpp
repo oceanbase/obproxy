@@ -134,7 +134,7 @@ static const char *PROXY_PART_INFO_SQL_V4 =
     "WHERE table_id = %lu and tenant_name = '%.*s' order by part_key_idx LIMIT %d;";
 
 static const char *PROXY_FIRST_PART_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, high_bound_val_bin, sub_part_num "
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, part_name, high_bound_val_bin, high_bound_val, sub_part_num "
     "FROM oceanbase.%s "
     "WHERE table_id = %lu LIMIT %ld;";
 
@@ -150,16 +150,16 @@ static const char *PROXY_FIRST_PART_SQL_V4 =
     "IFNULL((SELECT B.ls_id FROM oceanbase.%s B "
     "WHERE A.tablet_id = B.tablet_id AND B.table_id = %lu AND B.tenant_id = "
     "(SELECT tenant_id FROM oceanbase.%s WHERE tenant_name = '%.*s' LIMIT 1) LIMIT 1), %ld) as ls_id, "
-    "A.part_id as part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin, A.sub_part_num AS sub_part_num "
+    "A.part_id as part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin, A.high_bound_val as high_bound_val, A.sub_part_num AS sub_part_num "
     "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
 static const char *PROXY_SUB_PART_SQL =
-  "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin "
+  "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin, high_bound_val "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu and part_id = %ld LIMIT %ld;";
 
 static const char *PROXY_NON_TEMPLATE_SUB_PART_SQL =
-  "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin "
+  "SELECT /*+READ_CONSISTENCY(WEAK)*/ part_id, sub_part_id, part_name, high_bound_val_bin , high_bound_val "
   "FROM oceanbase.%s "
   "WHERE table_id = %lu LIMIT %ld;";
 
@@ -169,7 +169,7 @@ static const char *PROXY_SUB_PART_SQL_V4 =
     "IFNULL((SELECT B.ls_id FROM oceanbase.%s B "
     "WHERE A.tablet_id = B.tablet_id AND B.table_id = %lu AND B.tenant_id = "
     "(SELECT tenant_id FROM oceanbase.%s WHERE tenant_name = '%.*s' LIMIT 1) LIMIT 1), %ld) as ls_id, "
-    "A.part_id as part_id, A.sub_part_id as sub_part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin "
+    "A.part_id as part_id, A.sub_part_id as sub_part_id, A.part_name as part_name, A.high_bound_val_bin as high_bound_val_bin, A.high_bound_val as high_bound_val "
     "FROM oceanbase.%s A WHERE A.table_id = %lu AND A.tenant_name = '%.*s'LIMIT %ld;";
 
 static const char *PROXY_ROUTINE_SCHEMA_SQL =
@@ -710,6 +710,8 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
   ObPartitionLevel part_level = PARTITION_LEVEL_ONE;
   int64_t part_key_num = 1;
   int64_t template_num = 1;
+  ObString part_range_type;
+  ObString sub_part_range_type;
   ObString part_expr;
   ObString sub_part_expr;
 
@@ -747,9 +749,35 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
           part_key_num = OBPROXY_MAX_PART_KEY_NUM;
         }
 
+        // get part range type
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_range_type", part_range_type);
+        char *buf = NULL;
+        if (part_range_type.empty()) {
+          LOG_DEBUG("part expression is empty");
+        } else if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(part_range_type.length())))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WDIAG("fail to allc part range type", K(buf), K(part_range_type.length()), K(ret));
+        } else {
+          memcpy(buf, part_range_type.ptr(), part_range_type.length());
+          part_expr.assign_ptr(buf, part_range_type.length());
+          part_info.set_part_range_type(part_range_type);
+        }
+
+        PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "sub_part_range_type", sub_part_range_type);
+        buf = NULL;
+        if (sub_part_range_type.empty()) {
+          LOG_DEBUG("part expression is empty");
+        } else if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(sub_part_range_type.length())))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          LOG_WDIAG("fail to allc part range type", K(buf), K(sub_part_range_type.length()), K(ret));
+        } else {
+          memcpy(buf, sub_part_range_type.ptr(), sub_part_range_type.length());
+          part_expr.assign_ptr(buf, sub_part_range_type.length());
+          part_info.set_sub_part_range_type(sub_part_range_type);
+        }
         // get part expr
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_expr", part_expr);
-        char *buf = NULL;
+        buf = NULL;
         if (part_expr.empty()) {
           LOG_DEBUG("part expression is empty");
         } else if (OB_ISNULL(buf = static_cast<char *>(part_info.get_allocator().alloc(part_expr.length())))) {
@@ -758,6 +786,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         } else {
           memcpy(buf, part_expr.ptr(), part_expr.length());
           part_expr.assign_ptr(buf, part_expr.length());
+          part_info.set_part_expr(part_expr);
         }
 
         // get sub part expr
@@ -770,6 +799,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         } else {
           memcpy(buf, sub_part_expr.ptr(), sub_part_expr.length());
           sub_part_expr.assign_ptr(buf, sub_part_expr.length());
+          part_info.set_sub_part_expr(sub_part_expr);
         }
         // split part expression
         if (part_info.get_part_level() >= PARTITION_LEVEL_ONE
@@ -1025,6 +1055,18 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
       LOG_WDIAG("fail to allc part key name", K(buf), K(part_key_name.length()), K(ret));
     } else {
       memcpy(buf, part_key_name.ptr(), part_key_name.length());
+    }
+
+    if (OB_SUCC(ret) && 0 != part_key_extra.length()) {
+      char *extra_buf = NULL;
+      if (OB_ISNULL(extra_buf = static_cast<char *>(allocator.alloc(part_key_extra.length())))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("fail to allc part key extra", K(extra_buf), K(part_key_extra.length()), K(ret));
+      } else {
+        memcpy(extra_buf, part_key_extra.ptr(), part_key_extra.length());
+        part_key->part_key_extra_.str_ = extra_buf;
+        part_key->part_key_extra_.str_len_ = part_key_extra.length();
+      }
     }
 
     if (OB_SUCC(ret)) {

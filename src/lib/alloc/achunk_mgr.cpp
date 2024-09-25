@@ -29,8 +29,11 @@ AChunkMgr &AChunkMgr::instance()
 }
 
 AChunkMgr::AChunkMgr()
-    : disable_mem_alloc_(false), chunk_bitmap_(NULL),
-      limit_(DEFAULT_LIMIT), urgent_(0), hold_bytes_(0)
+    : disable_mem_alloc_(false),
+#if MEMCHK_LEVEL >= 1
+    chunk_bitmap_(NULL),
+#endif
+     limit_(DEFAULT_LIMIT), urgent_(0), hold_bytes_(0)
 {
 #if MEMCHK_LEVEL >= 1
   uint64_t bmsize = sizeof (ChunkBitMap);

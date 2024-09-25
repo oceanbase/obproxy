@@ -921,7 +921,6 @@ ObNetAccept::ObNetAccept()
       etype_(ET_CALL),
       is_inited_(false),
       period_(0),
-      epoll_vc_(NULL),
       ep_(NULL)
 {
 }

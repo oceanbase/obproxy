@@ -296,7 +296,12 @@ inline void ObEThread::process_event(ObEvent *e, const int calling_code)
         // set stack start;
         stack_start_ = reinterpret_cast<int64_t>(&c_temp);
         // handle event
-        e->continuation_->handle_event(calling_code, e);
+        try {
+          e->continuation_->handle_event(calling_code, e);
+        } catch (const std::exception& e) {
+          LOG_EDIAG("get std::exception, continue", "exception", e.what());
+        }
+
 
         if (OB_UNLIKELY(e->in_the_priority_queue_)) {
           LOG_WDIAG("event should not in in_the_priority_queue here", K(*e));

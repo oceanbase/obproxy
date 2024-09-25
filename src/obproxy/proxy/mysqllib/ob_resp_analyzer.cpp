@@ -870,13 +870,11 @@ int ObRespAnalyzer::analyze_one_packet_header(
 
           if (read_avail < ANALYZE_FIRST_OB20_RESP_MAX_LEN) {
             result.status_ = ANALYZE_CONT; // continue to read from net
-            resp_result.is_resultset_resp_ = false;
             LOG_DEBUG("continue to read from net", K(read_avail), K(ANALYZE_FIRST_OB20_RESP_MAX_LEN));
           }
 
           if (read_avail > first_pkt_len) {
             analyze_mode_ = DECOMPRESS_MODE; // received more than one ob20 pkt
-            resp_result.is_resultset_resp_ = false;
             LOG_DEBUG("received more than the first ob20 pkt, can decompress now", K(read_avail), K(first_pkt_len));
           }
         }
@@ -897,7 +895,8 @@ int ObRespAnalyzer::analyze_one_packet_header(
         } else {
           if (MYSQL_OK_PACKET_TYPE == result.mysql_header_.pkt_type_
               && OB_MYSQL_COM_STMT_PREPARE != req_cmd_
-              && OB_MYSQL_COM_STMT_PREPARE_EXECUTE != req_cmd_) {
+              && OB_MYSQL_COM_STMT_PREPARE_EXECUTE != req_cmd_
+              && OB_MYSQL_COM_STMT_FETCH != req_cmd_) {
             ObMysqlPacketReader pkt_reader;
             if (OB_FAIL(pkt_reader.get_ok_packet_server_status(reader, server_status))) {
               LOG_WDIAG("fail to get server status flags", K(server_status.flags_), K(ret));

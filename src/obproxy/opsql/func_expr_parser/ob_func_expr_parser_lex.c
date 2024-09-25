@@ -579,6 +579,8 @@ extern void ob_func_expr_parser_fatal_error(yyconst char *msg, yyscan_t yyscanne
 void store_func_expr_str(char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 void store_func_expr_str_with_quote(ObProxyParseQuoteType type, char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 
+#define UNUSED(v) ((void)(v))
+
 #define YY_FATAL_ERROR(msg) ob_func_expr_parser_fatal_error(msg, yyscanner)
 
 #define PUSH_STATE(state) \
@@ -609,6 +611,7 @@ do {\
 #define RETURN_NONE_PARAM_FUNC() \
   { store_func_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NONE_PARAM_FUNC; }
 
+// todo : we should return STR_VAL in GENERATE_FUNC_PARSE_MODE
 #define RETURN_NAME_OB_WITH_QUOTE(quote_type) \
 { \
   store_func_expr_str_with_quote(quote_type, yytext + 1, yyleng - 2, yytext + yyleng, yyscanner); \
@@ -626,7 +629,7 @@ do {\
 
 
 /* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
-#line 631 "ob_func_expr_parser_lex.c"
+#line 634 "ob_func_expr_parser_lex.c"
 
 #define INITIAL 0
 #define in_c_comment 1
@@ -874,9 +877,9 @@ YY_DECL
 	register int yy_act;
     struct yyguts_t * yyg = (struct yyguts_t*)yyscanner;
 
-#line 105 "ob_func_expr_parser.l"
+#line 108 "ob_func_expr_parser.l"
 
-#line 882 "ob_func_expr_parser_lex.c"
+#line 885 "ob_func_expr_parser_lex.c"
 
     yylval = yylval_param;
 
@@ -965,121 +968,121 @@ do_action:	/* This label is used only to access EOF actions. */
 
 case 1:
 YY_RULE_SETUP
-#line 106 "ob_func_expr_parser.l"
+#line 109 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 2:
 YY_RULE_SETUP
-#line 107 "ob_func_expr_parser.l"
+#line 110 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 3:
 YY_RULE_SETUP
-#line 108 "ob_func_expr_parser.l"
+#line 111 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 4:
 YY_RULE_SETUP
-#line 109 "ob_func_expr_parser.l"
+#line 112 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 5:
 YY_RULE_SETUP
-#line 110 "ob_func_expr_parser.l"
+#line 113 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 6:
 YY_RULE_SETUP
-#line 111 "ob_func_expr_parser.l"
+#line 114 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 7:
 YY_RULE_SETUP
-#line 112 "ob_func_expr_parser.l"
+#line 115 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 8:
 YY_RULE_SETUP
-#line 113 "ob_func_expr_parser.l"
+#line 116 "ob_func_expr_parser.l"
 { RETURN_NONE_PARAM_FUNC(); }
 	YY_BREAK
 case 9:
 YY_RULE_SETUP
-#line 114 "ob_func_expr_parser.l"
+#line 117 "ob_func_expr_parser.l"
 { return NULL_VAL; }
 	YY_BREAK
 case 10:
 YY_RULE_SETUP
-#line 117 "ob_func_expr_parser.l"
+#line 120 "ob_func_expr_parser.l"
 { return TOKEN_SPECIAL; }
 	YY_BREAK
 case 11:
 YY_RULE_SETUP
-#line 119 "ob_func_expr_parser.l"
+#line 122 "ob_func_expr_parser.l"
 { RETURN_INT_VAL(); }
 	YY_BREAK
 case 12:
 YY_RULE_SETUP
-#line 120 "ob_func_expr_parser.l"
+#line 123 "ob_func_expr_parser.l"
 { RETURN_NUMBER_VAL(); }
 	YY_BREAK
 case 13:
 YY_RULE_SETUP
-#line 121 "ob_func_expr_parser.l"
+#line 124 "ob_func_expr_parser.l"
 { RETURN_NAME_OB(); }
 	YY_BREAK
 case 14:
 YY_RULE_SETUP
-#line 122 "ob_func_expr_parser.l"
+#line 125 "ob_func_expr_parser.l"
 { RETURN_NAME_OB_WITH_QUOTE(OBPROXY_QUOTE_T_SINGLE); }
 	YY_BREAK
 case 15:
 YY_RULE_SETUP
-#line 123 "ob_func_expr_parser.l"
+#line 126 "ob_func_expr_parser.l"
 { RETURN_NAME_OB_WITH_QUOTE(OBPROXY_QUOTE_T_DOUBLE); }
 	YY_BREAK
 case 16:
 YY_RULE_SETUP
-#line 124 "ob_func_expr_parser.l"
+#line 127 "ob_func_expr_parser.l"
 { RETURN_NAME_OB_WITH_QUOTE(OBPROXY_QUOTE_T_BACK); }
 	YY_BREAK
 case 17:
 /* rule 17 can match eol */
 YY_RULE_SETUP
-#line 125 "ob_func_expr_parser.l"
+#line 128 "ob_func_expr_parser.l"
 { }
 	YY_BREAK
 case 18:
 YY_RULE_SETUP
-#line 126 "ob_func_expr_parser.l"
+#line 129 "ob_func_expr_parser.l"
 { return yytext[0]; }
 	YY_BREAK
 /* comment */
 case 19:
 YY_RULE_SETUP
-#line 129 "ob_func_expr_parser.l"
+#line 132 "ob_func_expr_parser.l"
 { PUSH_STATE(in_c_comment); }
 	YY_BREAK
 case 20:
 YY_RULE_SETUP
-#line 130 "ob_func_expr_parser.l"
+#line 133 "ob_func_expr_parser.l"
 { POP_STATE(); }
 	YY_BREAK
 case 21:
 /* rule 21 can match eol */
 YY_RULE_SETUP
-#line 131 "ob_func_expr_parser.l"
+#line 134 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case 22:
 YY_RULE_SETUP
-#line 132 "ob_func_expr_parser.l"
+#line 135 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 /* quote */
 case 23:
 YY_RULE_SETUP
-#line 135 "ob_func_expr_parser.l"
+#line 138 "ob_func_expr_parser.l"
 {
   PUSH_STATE(sq);
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1093,7 +1096,7 @@ YY_RULE_SETUP
 case 24:
 /* rule 24 can match eol */
 YY_RULE_SETUP
-#line 145 "ob_func_expr_parser.l"
+#line 148 "ob_func_expr_parser.l"
 {
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1103,7 +1106,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
-#line 152 "ob_func_expr_parser.l"
+#line 155 "ob_func_expr_parser.l"
 {
   POP_STATE();
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1115,29 +1118,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 26:
 YY_RULE_SETUP
-#line 161 "ob_func_expr_parser.l"
+#line 164 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case 27:
 /* rule 27 can match eol */
 YY_RULE_SETUP
-#line 162 "ob_func_expr_parser.l"
+#line 165 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case 28:
 /* rule 28 can match eol */
 YY_RULE_SETUP
-#line 163 "ob_func_expr_parser.l"
+#line 166 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(sq):
-#line 164 "ob_func_expr_parser.l"
+#line 167 "ob_func_expr_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* dquote */
 case 29:
 YY_RULE_SETUP
-#line 168 "ob_func_expr_parser.l"
+#line 171 "ob_func_expr_parser.l"
 {
   PUSH_STATE(dq);
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1151,7 +1154,7 @@ YY_RULE_SETUP
 case 30:
 /* rule 30 can match eol */
 YY_RULE_SETUP
-#line 178 "ob_func_expr_parser.l"
+#line 181 "ob_func_expr_parser.l"
 {
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -1161,7 +1164,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 31:
 YY_RULE_SETUP
-#line 185 "ob_func_expr_parser.l"
+#line 188 "ob_func_expr_parser.l"
 {
   POP_STATE();
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1173,29 +1176,29 @@ YY_RULE_SETUP
 	YY_BREAK
 case 32:
 YY_RULE_SETUP
-#line 194 "ob_func_expr_parser.l"
+#line 197 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case 33:
 /* rule 33 can match eol */
 YY_RULE_SETUP
-#line 195 "ob_func_expr_parser.l"
+#line 198 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case 34:
 /* rule 34 can match eol */
 YY_RULE_SETUP
-#line 196 "ob_func_expr_parser.l"
+#line 199 "ob_func_expr_parser.l"
 {}
 	YY_BREAK
 case YY_STATE_EOF(dq):
-#line 197 "ob_func_expr_parser.l"
+#line 200 "ob_func_expr_parser.l"
 { return ERROR; }
 	YY_BREAK
 /* backtick */
 case 35:
 YY_RULE_SETUP
-#line 201 "ob_func_expr_parser.l"
+#line 204 "ob_func_expr_parser.l"
 {
   PUSH_STATE(bt);
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1208,7 +1211,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 36:
 YY_RULE_SETUP
-#line 211 "ob_func_expr_parser.l"
+#line 214 "ob_func_expr_parser.l"
 {
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + 1 < OBPROXY_MAX_NAME_LENGTH) {
@@ -1219,7 +1222,7 @@ YY_RULE_SETUP
 case 37:
 /* rule 37 can match eol */
 YY_RULE_SETUP
-#line 218 "ob_func_expr_parser.l"
+#line 221 "ob_func_expr_parser.l"
 {
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
   if (NULL != p && NULL != p->tmp_buf_ && p->tmp_len_ + yyleng < OBPROXY_MAX_NAME_LENGTH) {
@@ -1230,7 +1233,7 @@ YY_RULE_SETUP
 	YY_BREAK
 case 38:
 YY_RULE_SETUP
-#line 226 "ob_func_expr_parser.l"
+#line 229 "ob_func_expr_parser.l"
 {
   POP_STATE();
   ObFuncExprParseResult *p = (ObFuncExprParseResult *)yyextra;
@@ -1243,27 +1246,27 @@ YY_RULE_SETUP
 }
 	YY_BREAK
 case YY_STATE_EOF(bt):
-#line 237 "ob_func_expr_parser.l"
+#line 240 "ob_func_expr_parser.l"
 {
   return ERROR;
 }
 	YY_BREAK
 case YY_STATE_EOF(INITIAL):
 case YY_STATE_EOF(in_c_comment):
-#line 241 "ob_func_expr_parser.l"
+#line 244 "ob_func_expr_parser.l"
 { return END_P; }
 	YY_BREAK
 case 39:
 YY_RULE_SETUP
-#line 242 "ob_func_expr_parser.l"
+#line 245 "ob_func_expr_parser.l"
 { return IGNORED_WORD; }
 	YY_BREAK
 case 40:
 YY_RULE_SETUP
-#line 243 "ob_func_expr_parser.l"
+#line 246 "ob_func_expr_parser.l"
 ECHO;
 	YY_BREAK
-#line 1269 "ob_func_expr_parser_lex.c"
+#line 1272 "ob_func_expr_parser_lex.c"
 
 	case YY_END_OF_BUFFER:
 		{
@@ -2069,8 +2072,9 @@ YY_BUFFER_STATE obfuncexpr_scan_bytes  (yyconst char * yybytes, int  _yybytes_le
 
 static void yy_fatal_error (yyconst char* msg , yyscan_t yyscanner)
 {
-    	(void) fprintf( stderr, "%s\n", msg );
-	exit( YY_EXIT_FAILURE );
+  ((void)(yyscanner));
+  (void) fprintf( stderr, "%s\n", msg );
+  exit( YY_EXIT_FAILURE );
 }
 
 /* Redefine yyless() so it works in section 3 code. */
@@ -2413,7 +2417,7 @@ static int yy_flex_strlen (yyconst char * s , yyscan_t yyscanner)
 
 #define YYTABLES_NAME "yytables"
 
-#line 243 "ob_func_expr_parser.l"
+#line 246 "ob_func_expr_parser.l"
 
 
 
@@ -2444,6 +2448,7 @@ inline void *obfuncexprrealloc(void *ptr,size_t bytes,void *yyscanner)
 
 inline void obfuncexprfree(void *ptr,void *yyscanner)
 {
+  UNUSED(yyscanner);
   // Do nothing -- we leave it to the garbage collector.
   obproxy_parse_free(ptr);
 }

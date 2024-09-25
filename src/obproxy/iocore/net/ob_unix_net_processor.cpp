@@ -308,6 +308,7 @@ inline int ObUnixNetProcessor::connect_internal(
       } else if (OB_UNLIKELY(!ethread->is_event_thread_type(opt->etype_))) {
         //we need use ET_CALL thread for connect_up.
         //we will never arrive here now, here it's just for defense
+        PROXY_NET_LOG(DEBUG, "connect to different thread", K(ethread->event_types_), K(opt->etype_));
         if (OB_ISNULL(g_event_processor.schedule_imm(vc, opt->etype_))) {
           ret = OB_ERR_UNEXPECTED;
           PROXY_NET_LOG(WDIAG, "fail to schedule switch thread", "type", opt->etype_, K(ret));

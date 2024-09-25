@@ -747,7 +747,9 @@ int ObServerStateRefreshCont::refresh_single_leaders_follower()
     hash::ObHashMap<int64_t, LeaderFollowerPair>::iterator end = leader_followers_map_.end();
 
     for (; OB_SUCC(ret) && it != end; it++) {
-      databuff_printf(tenant_ids_str, OB_3K_SQL_LENGTH, pos, "%ld,", it->first);
+      if (OB_FAIL(databuff_printf(tenant_ids_str, OB_3K_SQL_LENGTH, pos, "%ld,", it->first))) {
+        LOG_WDIAG("fail to append tenant id", K(it->first), K(ret));
+      }
     }
 
     // write the last ',' to '\0'
@@ -842,6 +844,7 @@ int ObServerStateRefreshCont::handle_single_leader(void *data)
              && leader_followers_map_.create(4, ObModIds::OB_HASH_BUCKET_PROXY_MAP)) {
     LOG_WDIAG("fail to create leader_followers_map_", K(ret));
   } else {
+    leader_followers_map_.reuse();
     ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
     ObMysqlResultHandler result_handler;
     result_handler.set_resp(resp);
@@ -857,7 +860,7 @@ int ObServerStateRefreshCont::handle_single_leader(void *data)
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "leader_addr", leader_addr, sizeof(leader_addr), tmp_real_str_len);
       PROXY_EXTRACT_BOOL_FIELD_MYSQL(result_handler, "is_single_leader", is_single_leader);
       if (is_single_leader) {
-        LOG_DEBUG("update single leader", K(tenant_name), K(leader_addr));
+        LOG_DEBUG("update single leader", K(tenant_name), K(tenant_id), K(leader_addr));
         LeaderFollowerPair pair;
         if (OB_FAIL(ops_ip_pton(leader_addr, pair.leader_addr_))) {
           LOG_WDIAG("fail to ops_ip_pton", K(leader_addr), K(ret));
@@ -918,17 +921,30 @@ int ObServerStateRefreshCont::handle_single_leaders_follower(void *data)
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "tenant_name", tenant_name);
       PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "follower_addr", follower_addr, sizeof(follower_addr), tmp_real_str_len);
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "replica_type", replica_type);
-      if (replica_type.case_compare("FULL") || replica_type.case_compare("READONLY")) {
+      if (replica_type.case_compare("FULL") || replica_type.case_compare("READONLY")
+          || replica_type.case_compare("COLUMNSTORE")) {
         LeaderFollowerPair *pair = const_cast<LeaderFollowerPair *>(leader_followers_map_.get(tenant_id));
         if (OB_NOT_NULL(pair)) {
-          ObSingleLeadersFollower tmp;
-          if (OB_FAIL(ops_ip_pton(follower_addr, tmp.addr_))) {
+          ObSingleLeadersFollower follower;
+          if (OB_FAIL(ops_ip_pton(follower_addr, follower.addr_))) {
             LOG_WDIAG("fail to ops_ip_pton", K(follower_addr), K(ret));
+          // 租户从random-->单primary zone时，可能会出现返回的follower中有leader的地址，需要拦截一下
+          } else if (OB_UNLIKELY(follower.addr_ == pair->leader_addr_)) {
+            LOG_INFO("single follower addr is equal leader addr, maybe tenant change",
+                    K(tenant_name), K(follower_addr), K_(pair->leader_addr));
           } else {
-            tmp.replica_type_ = replica_type.case_compare("FULL") == 0 ?
-                ObReplicaType::REPLICA_TYPE_FULL : ObReplicaType::REPLICA_TYPE_READONLY;
-            pair->followers_.push_back(tmp);
-            pair->tenant_name_ = tenant_name;
+            if (0 == replica_type.case_compare("FULL")) {
+              follower.replica_type_ = ObReplicaType::REPLICA_TYPE_FULL;
+            } else if (0 == replica_type.case_compare("READONLY")) {
+              follower.replica_type_ = ObReplicaType::REPLICA_TYPE_READONLY;
+            } else if (0 == replica_type.case_compare("COLUMNSTORE")) {
+              follower.replica_type_ = ObReplicaType::REPLICA_TYPE_COLUMNSTORE;
+            }
+            if (OB_FAIL(pair->followers_.push_back(follower))) {
+              LOG_WDIAG("fail to push back follower", K(follower), K(ret));
+            } else {
+              pair->tenant_name_ = tenant_name;
+            }
           }
         }
       }
@@ -962,7 +978,6 @@ int ObServerStateRefreshCont::handle_single_leaders_follower(void *data)
     }
   }
 
-  leader_followers_map_.reuse();
   return ret;
 }
 
@@ -2567,7 +2582,8 @@ int ObDetectOneServerStateCont::handle_client_resp(void *data)
     ObIpEndpoint ip(info.addr_.get_sockaddr());
     ObCongestionEntry::ObServerState state = ObCongestionEntry::ObServerState::ACTIVE;
     if (addr_ == info.addr_) {
-      if (NULL != data) {
+      ObClientMysqlResp *mysql_resp = reinterpret_cast<ObClientMysqlResp *>(data);
+      if (mysql_resp != NULL && mysql_resp->get_response_reader()->read_avail() > 0) {
         (void)ATOMIC_SET(&info.detect_fail_cnt_, 0);
         state = ObCongestionEntry::ObServerState::DETECT_ALIVE;
         cluster_resource_->alive_addr_set_.erase_refactored(ip);

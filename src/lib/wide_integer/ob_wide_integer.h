@@ -31,7 +31,7 @@ namespace lib
 } // end namespace lib
 namespace common
 {
-struct ObObj;
+class ObObj;
 // decimal int
 namespace wide {
 enum
@@ -1229,7 +1229,7 @@ struct ObWideInteger
 };
 private:
   template <unsigned Bits2, typename Signed2>
-  friend class ObWideInteger;
+  friend struct ObWideInteger;
 };
 }
 using int128_t  = wide::ObWideInteger<128u, signed>;

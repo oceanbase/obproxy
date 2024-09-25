@@ -55,7 +55,7 @@ public:
   void set_database_id(uint64_t database_id) {login_res_.database_id_ = database_id;}
 
   int deep_copy(common::ObIAllocator &allocator, const ObRpcTableLoginResponse &other);
-  virtual int deep_copy(common::ObIAllocator &allocator,  ObRpcResponse *other);
+  virtual int deep_copy(common::ObIAllocator &allocator, const ObRpcResponse *other);
 
   TO_STRING_KV(K_(rpc_packet_meta), K_(login_res));
 
@@ -253,6 +253,25 @@ private:
   ObTableLSOpResult ls_res_;
   // ObTableEntityFactory<ObTableSingleOpEntity> res_entity_factory_;
   //common::ObArenaAllocator allocator_;
+};
+
+class ObRpcTableGetRouteResponse : public ObRpcResponse
+{
+public:
+  ObRpcTableGetRouteResponse() : route_res_() {}
+  ~ObRpcTableGetRouteResponse() {}
+
+  const ObObkvRouteResult &get_route_result() const {return route_res_;}
+  ObObkvRouteResult &get_route_result() {return route_res_;}
+
+  TO_STRING_KV(K_(route_res));
+
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const;
+  virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
+
+private:
+  ObObkvRouteResult route_res_;
 };
 
 

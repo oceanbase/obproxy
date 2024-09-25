@@ -188,8 +188,8 @@ int ObTableEntry::alloc_and_init_table_entry(
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to alloc mem", K(alloc_size), K(ret));
     } else {
-      LOG_DEBUG("alloc entry succ", K(alloc_size), K(obj_size), K(name_size), K(name));
       entry = new (buf) ObTableEntry();
+      LOG_DEBUG("alloc entry succ", K(alloc_size), K(obj_size), K(name_size), K(name), K(entry));
       if (OB_FAIL(entry->init(buf + obj_size, name_size))) {
         LOG_WDIAG("fail to init entry", K(alloc_size), K(ret));
       } else if (OB_FAIL(entry->set_names(name))) {

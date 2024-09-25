@@ -36,7 +36,6 @@ namespace obproxy
 {
 namespace proxy
 {
-const int64_t SESSION_ITEM_NUM = 256;
 ObServerSessionInfo::ObServerSessionInfo() :
     cap_(0), compatible_capability_(0), checksum_switch_(CHECKSUM_ON), is_inited_(false),
     is_sharding_txn_session_(false), is_lock_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),

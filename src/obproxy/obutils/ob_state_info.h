@@ -81,8 +81,9 @@ struct ObServerStateInfo
   ObZoneStateInfo *zone_state_; // must be at the end
 };
 
-struct ObServerStateSimpleInfo
+class ObServerStateSimpleInfo
 {
+public:
   ObServerStateSimpleInfo() { reset(); }
   ObServerStateSimpleInfo(const ObServerStateSimpleInfo &other) { *this = other; }
   ~ObServerStateSimpleInfo() {}

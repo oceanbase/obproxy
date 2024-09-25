@@ -425,7 +425,7 @@ bool ObjectSet::build_free_lists()
   attr.mod_id_ = common::ObModIds::OB_OBJ_FREELISTS;
   ABlock *new_block = alloc_block(sizeof (FreeLists) + sizeof (BitMap), attr);
 
-  OB_LOG(INFO, "build free lists");
+  // OB_LOG(INFO, "build free lists");
 
   if (NULL != new_block) {
     free_lists_ = new (new_block->data_) FreeLists[0];

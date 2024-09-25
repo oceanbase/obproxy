@@ -35,7 +35,7 @@ namespace obproxy
 namespace obutils
 {
 class ObProxyConfigString;
-class ObServerStateSimpleInfo;
+struct ObServerStateSimpleInfo;
 class ObCongestionEntry;
 }
 namespace proxy
@@ -47,6 +47,7 @@ struct ObProxyRpcReqAnalyzeCtx;
 #define RPC_REQUEST_SM_DONE RPC_REQUEST_SM_EVENT_EVENTS_START + 1
 #define RPC_REQUEST_SM_CALL_NEXT RPC_REQUEST_SM_EVENT_EVENTS_START + 2
 #define RPC_REQUEST_SM_CLEANUP RPC_REQUEST_SM_EVENT_EVENTS_START + 3
+#define RPC_REQUEST_SM_ANALYZE_DONE RPC_REQUEST_SM_EVENT_EVENTS_START + 4
 
 enum ObRpcRequestSMMagic
 {
@@ -86,6 +87,7 @@ enum ObRpcRequestSMActionType
   RPC_REQ_REQUEST_SERVER_SENDING,
   RPC_REQ_PROCESS_RESPONSE,
   RPC_REQ_RESPONSE_REWRITE,
+  RPC_REQ_INTERNAL_EXECUTE_REQUEST,
   RPC_REQ_INTERNAL_BUILD_RESPONSE,
   RPC_REQ_RESPONSE_CLIENT_SENDING,
   RPC_REQ_RESPONSE_SERVER_REROUTING,
@@ -323,7 +325,7 @@ public:
   void refresh_mysql_config();
   ObHRTime get_based_hrtime();
   static ObHRTime static_get_based_hrtime();
-  int init_rpc_request_content(ObProxyRpcReqAnalyzeCtx &ctx);
+  int init_rpc_analyze_ctx(ObProxyRpcReqAnalyzeCtx &ctx);
 
   void set_rpc_req(ObRpcReq *req) { rpc_req_ = req;}
   ObRpcReq *get_rpc_req() { return rpc_req_; }
@@ -371,25 +373,25 @@ public:
   int setup_rpc_send_response_to_client();
   int setup_rpc_request_retry();
   int setup_rpc_return_error();
+  int setup_rpc_internal_execute_request();
+  int setup_rpc_internal_get_partition();
   int setup_rpc_internal_build_response();
 
   int state_rpc_get_cluster(int event, void *data);
+  int state_rpc_analyze_request(int event, void *data);
   int state_table_query_async_info_get(int event, void *data);
   int state_rpc_partition_lookup(int event, void *data);
+  int state_rpc_internal_get_partition(int event, void *data);
   int state_rpc_req_ctx_lookup(int event, void *data);
   int state_rpc_index_lookup(int event, void *data);
   int state_rpc_tablegroup_lookup(int event, void *data);
   int state_rpc_handle_shard_request(int event, void *data);
   int state_congestion_control_lookup(int event, void *data);
-  int state_rpc_get_cluster_done();
-  int state_rpc_index_lookup_done();
   int state_rpc_partition_lookup_done();
   int state_congestion_control_lookup_done();
   int state_rpc_server_addr_searched();
   int state_rpc_server_request_rewrite();
-  int state_rpc_client_response_rewrite();
-  int state_req_inner_info_getted();
-  int state_rpc_send_request_done();
+  int state_rpc_analyze_response(int event, void *data);
   int state_rpc_req_done();
   int state_rpc_req_cleanup();
   int state_rpc_req_inner_request_cleanup();

@@ -80,6 +80,12 @@ int ObPartDesc::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
   return OB_NOT_IMPLEMENT;
 }
 
+int ObPartDesc::build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const
+{
+  UNUSED(single_parts);
+  return OB_NOT_IMPLEMENT;
+}
+
 /*
  * in order to build ObDataTypeCastParams, get sys var value from session, according to obj type
  */

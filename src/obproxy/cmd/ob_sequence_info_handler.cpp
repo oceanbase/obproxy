@@ -275,8 +275,10 @@ int ObSequenceInfoHandler::handle_sequence_done(int event, void *data)
   DEBUG_ICMD("Enter handle_sequence_done");
   if (event != SEQUENCE_ENTRY_CREATE_COMPLETE_EVENT) {
     WDIAG_ICMD("invalid event ", K(event));
+  } else {
+    event_ret = process_sequence_info(data);
   }
-  event_ret = process_sequence_info(data);
+
   return event_ret;
 }
 

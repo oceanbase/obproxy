@@ -252,6 +252,7 @@ private:
 
 int init_congestion_map_for_thread();
 int init_congestion_map_for_one_thread(int64_t index);
+int init_congestion_map_for_one_thread(event::ObEThread *thread);
 
 } // end of namespace obutils
 } // end of namespace obproxy

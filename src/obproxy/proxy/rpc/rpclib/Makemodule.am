@@ -1,6 +1,8 @@
 proxy_rpc_optimize_rpclib_sources:=\
 obproxy/proxy/rpc/rpclib/ob_rpc_req_analyzer.h\
 obproxy/proxy/rpc/rpclib/ob_rpc_req_analyzer.cpp\
+obproxy/proxy/rpc/rpclib/ob_rpc_req_analyzer_cont.h\
+obproxy/proxy/rpc/rpclib/ob_rpc_req_analyzer_cont.cpp\
 obproxy/proxy/rpc/rpclib/ob_rpc_cache_cleaner.h\
 obproxy/proxy/rpc/rpclib/ob_rpc_cache_cleaner.cpp\
 obproxy/proxy/rpc/rpclib/ob_table_query_async_cache.h\
@@ -22,4 +24,6 @@ obproxy/proxy/rpc/rpclib/ob_rpc_req_ctx.cpp\
 obproxy/proxy/rpc/rpclib/ob_rpc_req_ctx_processor.h\
 obproxy/proxy/rpc/rpclib/ob_rpc_req_ctx_processor.cpp\
 obproxy/proxy/rpc/rpclib/ob_rpc_time_stat.h\
-obproxy/proxy/rpc/rpclib/ob_rpc_time_stat.cpp
+obproxy/proxy/rpc/rpclib/ob_rpc_time_stat.cpp\
+obproxy/proxy/rpc/rpclib/ob_rpc_throttle.h\
+obproxy/proxy/rpc/rpclib/ob_rpc_throttle.cpp

@@ -323,6 +323,18 @@ public:
 
   bool is_event_thread_type(const ObEventThreadType et) { return !!(event_types_ & (1 << et)); }
   void set_event_thread_type(const ObEventThreadType et) { event_types_ |= (1 << et); }
+  int get_origin_etype(ObEventThreadType &origin_etype)
+  {
+    int ret = common::OB_SUCCESS;
+    if (OB_UNLIKELY(event_types_ == 0 || sizeof(event_types_) != sizeof(unsigned long long))) {
+      ret = common::OB_ERR_UNEXPECTED;
+    } else {
+      origin_etype = static_cast<ObEventThreadType>(
+          sizeof(unsigned long long) * 8 - __builtin_clzll(static_cast<unsigned long long>(event_types_)) - 1);
+    }
+    return ret;
+  }
+
   ObDedicateThreadType get_dedicate_type() { return dedicate_thread_type_; }
   void set_dedicate_type(const ObDedicateThreadType dedicate_thread_type) { dedicate_thread_type_ = dedicate_thread_type; }
 

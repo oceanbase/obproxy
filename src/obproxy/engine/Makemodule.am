@@ -1,5 +1,6 @@
 obproxy_engine_sources:=\
 obproxy/engine/ob_proxy_operator_result.h\
+obproxy/engine/ob_proxy_operator_result.cpp\
 obproxy/engine/ob_proxy_operator.h\
 obproxy/engine/ob_proxy_operator.cpp\
 obproxy/engine/ob_proxy_operator_projection.h\

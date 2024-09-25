@@ -36,6 +36,7 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "proxy/mysqllib/ob_proxy_ob20_request.h"
 #include "utils/ob_proxy_privilege_check.h"
+#include "lib/hash/ob_dynamic_build_in_hashmap.h"
 
 
 namespace oceanbase
@@ -190,7 +191,7 @@ public:
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
   };
 
-  typedef common::hash::ObBuildInHashMap<ObPsIdPairHashing, 64> ObPsIdPairMap;
+  typedef common::hash::ObDynamicBuildInHashMap<ObPsIdPairHashing> ObPsIdPairMap;
 
 public:
   int init();
@@ -473,7 +474,7 @@ public:
     static Key key(Value const *value) { return value->ps_id_; }
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
   }; 
-  typedef common::hash::ObBuildInHashMap<ObPsIdEntryHashing, 128> ObPsIdEntryMap;
+  typedef common::hash::ObDynamicBuildInHashMap<ObPsIdEntryHashing> ObPsIdEntryMap;
 
   // text_ps_name ----> ObTextPsNameEntry
   struct ObTextPsNameEntryHashing
@@ -487,7 +488,7 @@ public:
     static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
   };
 
-  typedef common::hash::ObBuildInHashMap<ObTextPsNameEntryHashing> ObTextPsNameEntryMap;
+  typedef common::hash::ObDynamicBuildInHashMap<ObTextPsNameEntryHashing> ObTextPsNameEntryMap;
 
 public:
   int init();

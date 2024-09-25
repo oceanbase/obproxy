@@ -35,7 +35,6 @@ namespace obproxy
 {
 namespace proxy
 {
-const int64_t SESSION_ITEM_NUM = 256;
 
 ObRpcClientNetSessionInfo::ObRpcClientNetSessionInfo()
     : field_mgr_(), is_session_pool_client_(true), full_name_(), user_tenant_name_(),

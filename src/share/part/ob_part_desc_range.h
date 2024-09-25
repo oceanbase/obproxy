@@ -24,6 +24,7 @@ namespace common
 struct RangePartition
 {
   ObRowkey high_bound_val_;
+  ObString high_bound_val_str_;   // obkv get partition
   bool is_max_value_;
   int64_t part_id_;
   int64_t first_part_id_; // sub partition will use this value
@@ -31,6 +32,7 @@ struct RangePartition
   RangePartition();
   static bool less_than(const RangePartition &a, const RangePartition &b);
   TO_STRING_KV(K_(high_bound_val),
+               K_(high_bound_val_str),
                K_(is_max_value),
                K_(part_id),
                K_(first_part_id));
@@ -57,6 +59,8 @@ public:
   virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
                                        ObIArray<int64_t> &tablet_ids,
                                        ObIArray<int64_t> &ls_ids) override;
+
+  virtual int build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const;
   RangePartition* get_part_array() { return part_array_; }
   int set_part_array(RangePartition *part_array, int64_t size) {
     part_array_ = part_array;

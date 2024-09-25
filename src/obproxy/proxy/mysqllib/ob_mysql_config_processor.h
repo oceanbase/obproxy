@@ -104,6 +104,7 @@ public:
   CfgInt block_thread_num_;
   CfgInt grpc_thread_num_;
   CfgInt shard_scan_thread_num_;
+  CfgInt rpc_async_task_thread_num_;
   CfgBool automatic_match_work_thread_;
   CfgBool enable_congestion_;
   CfgBool enable_bad_route_reject_;

@@ -18,6 +18,7 @@
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "omt/ob_conn_table_processor.h"
 #include "stat/ob_rpc_stats.h"
+#include "iocore/eventsystem/ob_kv_task.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -59,7 +60,6 @@ ObMutex g_debug_rpc_cs_list_mutex;
 #endif
 
 static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
-static int64_t const RPC_PKT_PAYLOAD_SIZE_POS = 4;
 
 ObRpcServerNetHandler::ObRpcServerNetHandler()
     : ObRpcNetHandler(),
@@ -235,6 +235,9 @@ int ObRpcServerNetHandler::handle_new_connection()
     // opt.ethread_ = client_session_->is_proxy_rpc_client_ ? this_ethread() : client_session_->get_create_thread();
     // opt.ethread_ = this_ethread();
     opt.ethread_ = &ethread;
+    if (OB_FAIL(ethread.get_origin_etype(opt.etype_))) {
+      PROXY_SS_LOG(WDIAG, "fail to get origin etype", K(ret));
+    }
 
     // Set the inactivity timeout to the connect timeout so that we
     // we fail this server if it doesn't start sending the response
@@ -243,7 +246,8 @@ int ObRpcServerNetHandler::handle_new_connection()
     int64_t connect_timeout = get_global_proxy_config().short_async_task_timeout; //set it to global config info
 
     // PROXY_SS_LOG(DEBUG, "calling g_net_processor.connect", K_(s_id), K_(trans_state_.server_info_.addr_));
-    PROXY_SS_LOG(DEBUG, "calling g_net_processor.connect", K_(server_addr), K_(ss_id), K_(server_ip), K_(local_ip), K(this));
+    PROXY_SS_LOG(DEBUG, "calling g_net_processor.connect", K_(server_addr), K_(ss_id), K_(server_ip), K_(local_ip),
+                 K(this), K(opt.etype_));
     ret = g_net_processor.connect(*this, server_ip_.sa_, connect_action_handle, connect_timeout, &opt);
     if (OB_FAIL(ret)) {
       PROXY_SS_LOG(WDIAG, "failed to connect observer", K_(ss_id), K_(server_ip), K_(local_ip), K(ret));
@@ -1165,6 +1169,10 @@ int ObRpcServerNetHandler::state_server_request_send(int event, void *data)
                   request->cleanup(cleanup_params);
                   ret = OB_SUCCESS;
               } else {
+                ObRpcOBKVInfo &obkv_info = request->get_obkv_info();
+                if (obkv_info.is_direct_load_req() && !obkv_info.is_first_direct_load_request()) {
+                  request->free_request_buf();
+                }
                 PROXY_SS_LOG(DEBUG, "ObRpcServerNetHandler::state_server_request_send put it to cid_ot_req_map",
                              K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(event), 
                              K(data), K(cid_to_req_map_.size()), K(request), K(key), K(rpc_trace_id));
@@ -2486,13 +2494,35 @@ int init_rpc_net_ss_map_for_thread()
  int ret = OB_SUCCESS;
  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
  for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
-   if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][i]->rpc_net_ss_map_ = 
-                  new (std::nothrow) ObRpcServerNetTableEntryPool())) {
-     ret = OB_ALLOCATE_MEMORY_FAILED;
-     PROXY_NET_LOG(WDIAG, "fail to new ObInactivityCop", K(i), K(ret));
-   }
+  if (OB_FAIL(init_rpc_net_ss_map_for_one_thread(i))) {
+    PROXY_NET_LOG(WDIAG, "fail to init rpc net ss map for one thread", K(i), K(ret));
+  }
  }
  return ret;
+}
+
+int init_rpc_net_ss_map_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->rpc_net_ss_map_
+                = new (std::nothrow) ObRpcServerNetTableEntryPool())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObRpcServerNetTableEntryPool", K(index), K(ret));
+  }
+  return ret;
+}
+
+int init_rpc_net_ss_map_for_one_thread(ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(thread->rpc_net_ss_map_ = new (std::nothrow) ObRpcServerNetTableEntryPool())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObRpcServerNetTableEntryPool", K(thread), K(ret));
+  }
+  return ret;
 }
 
 /* ObRpcServerNetTableEntryPool */

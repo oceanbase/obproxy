@@ -53,8 +53,9 @@ public:
   template <typename T>
   int remove_metric(void *family, void *metric);
 
-  int handle_counter(void *metric, const double value);
-  int handle_gauge(void *metric, const double value);
+  int accumulate_counter(void *metric, const double value);
+  int accumulate_gauge(void *metric, const double value);
+  int set_gauge(void *metric, const double value);
   int handle_histogram(void *metric, const double sum,
                        std::vector<double> &buckets_count);
 

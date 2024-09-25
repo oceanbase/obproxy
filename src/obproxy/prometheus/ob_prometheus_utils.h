@@ -46,6 +46,9 @@ namespace prometheus
 #define USED_RPC_CONNECTIONS "odp_used_rpc_connections"
 #define USED_RPC_CONNECTIONS_HELP "The num of used rpc connections"
 
+#define ODP_MEMORY "odp_memory"
+#define ODP_MEMORY_HELP "The num of odp memory count by char"
+
 #define REQUEST_BYTE "odp_request_byte"
 #define REQUEST_BYTE_HELP "The num of request byte"
 
@@ -84,6 +87,7 @@ namespace prometheus
 #define LABEL_FALSE "false"
 #define LABEL_TRUE "true"
 #define LABEL_VIP "vip"
+#define LABLE_MEMORY_TYPE "memType"
 
 class ObProxyPrometheusUtils
 {
@@ -93,6 +97,7 @@ public:
 
   static const char* get_metric_lable(ObPrometheusMetrics metric);
   static const char* get_type_lable(ObPrometheusEntryType type);
+  static const char* get_mem_type_lable(ObPrometheusMetrics metric);
 
   static int calc_buf_size(common::ObVector<ObPrometheusLabel> *labels, uint32_t &buf_size);
   static int copy_label_hash(common::ObVector<ObPrometheusLabel> *labels,

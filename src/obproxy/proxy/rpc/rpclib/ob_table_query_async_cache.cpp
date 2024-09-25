@@ -542,8 +542,26 @@ int init_table_query_async_map_for_one_thread(int64_t index)
   } else {
     if (OB_ISNULL(ethreads[index]->table_query_async_map_ = new (std::nothrow) ObTableQueryAsyncRefHashMap(ObModIds::OB_PROXY_RPC_TABLE_QUERY_MAP))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WDIAG("fail to new ObIndexRefHashMap", K(index), K(ethreads[index]), K(ret));
+      LOG_WDIAG("fail to new ObTableQueryAsyncRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->table_query_async_map_->init())) {
+      LOG_WDIAG("fail to init table query async map", K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_table_query_async_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->table_query_async_map_
+                  = new (std::nothrow) ObTableQueryAsyncRefHashMap(ObModIds::OB_PROXY_RPC_TABLE_QUERY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObTablQueryAsyncRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->table_query_async_map_->init())) {
       LOG_WDIAG("fail to init table query async map", K(ret));
     }
   }

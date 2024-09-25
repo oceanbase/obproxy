@@ -20,6 +20,8 @@ namespace oceanbase
 {
 namespace common
 {
+using obproxy::obkv::ObObkvSinglePart;
+
 ObPartDescKey::ObPartDescKey() : part_num_(0)
                                , part_space_(0)
                                , first_part_id_(0)
@@ -353,6 +355,26 @@ int64_t ObPartDescKey::to_plain_string(char* buf, const int64_t buf_len) const {
   BUF_PRINTF(")");
   BUF_PRINTF(" partitions %ld", part_num_);
   return pos;
+}
+
+int ObPartDescKey::build_obkv_part_array(ObIArray<ObObkvSinglePart> &single_parts) const
+{
+  int ret = OB_SUCCESS;
+
+  for (int i = 0; i < part_num_; ++i) {
+    ObObkvSinglePart single_part;
+    if (OB_NOT_NULL(ls_id_array_) && OB_NOT_NULL(tablet_id_array_)) {
+      single_part.ls_id_ = ls_id_array_[i];
+      single_part.tablet_id_ = tablet_id_array_[i];
+    }
+    if (OB_NOT_NULL(part_array_)) {
+      single_part.part_id_ = part_array_[i];
+    }
+    single_parts.push_back(single_part);
+    // TODO: sub part num
+  }
+
+  return ret;
 }
 
 } // end of common

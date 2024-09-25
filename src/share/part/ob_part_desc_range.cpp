@@ -19,6 +19,8 @@ namespace oceanbase
 {
 namespace common
 {
+using obproxy::obkv::ObObkvSinglePart;
+
 bool RangePartition::less_than(const RangePartition &a, const RangePartition &b)
 {
   bool ret = false;
@@ -353,6 +355,27 @@ int64_t ObPartDescRange::to_plain_string(char* buf, const int64_t buf_len) const
   }
   BUF_PRINTF(")");
   return pos;
+}
+
+int ObPartDescRange::build_obkv_part_array(ObIArray<ObObkvSinglePart> &single_parts) const
+{
+  int ret = OB_SUCCESS;
+
+  for (int i = 0; i < part_array_size_; ++i) {
+    ObObkvSinglePart single_part;
+    if (OB_NOT_NULL(ls_id_array_) && OB_NOT_NULL(tablet_id_array_)) {
+      single_part.ls_id_ = ls_id_array_[i];
+      single_part.tablet_id_ = tablet_id_array_[i];
+    }
+    if (OB_NOT_NULL(part_array_)) {
+      single_part.part_id_ = part_array_[i].part_id_;
+      single_part.high_bound_val_str_ = part_array_[i].high_bound_val_str_;
+    }
+    single_parts.push_back(single_part);
+    // TODO: sub part num
+  }
+
+  return ret;
 }
 
 } // end of common

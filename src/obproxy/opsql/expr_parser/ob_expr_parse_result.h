@@ -167,6 +167,9 @@ typedef struct _ObProxyPartKey
   int64_t cs_type_; // ObCollationType
   bool is_exist_in_sql_;  // is part key exist in sql
 
+  // obkv get partition
+  ObProxyParseString part_key_extra_;
+
   bool is_generated_;
   int64_t generated_col_idx_;
   int64_t param_num_;

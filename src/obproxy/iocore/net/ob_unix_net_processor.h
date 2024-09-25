@@ -64,9 +64,9 @@ public:
 
   ObNetAccept *create_net_accept();
 
-  virtual ObNetVConnection *allocate_vc();
+  virtual ObNetVConnection *allocate_vc() override;
 
-  virtual int start();
+  virtual int start() override;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObUnixNetProcessor);

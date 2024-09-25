@@ -15,6 +15,7 @@
 
 #include "lib/hash/ob_build_in_hashmap.h"
 #include "iocore/net/ob_inet.h"
+#include "lib/hash/ob_dynamic_build_in_hashmap.h"
 
 namespace oceanbase
 {
@@ -64,7 +65,7 @@ struct ObCursorIdAddrHashing
   static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
 };
 
-typedef common::hash::ObBuildInHashMap<ObCursorIdAddrHashing> ObCursorIdAddrMap;
+typedef common::hash::ObDynamicBuildInHashMap<ObCursorIdAddrHashing> ObCursorIdAddrMap;
 
 // stored in server session info
 class ObCursorIdPair
@@ -107,7 +108,7 @@ struct ObCursorIdPairHashing
   static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
 };
 
-typedef common::hash::ObBuildInHashMap<ObCursorIdPairHashing> ObCursorIdPairMap;
+typedef common::hash::ObDynamicBuildInHashMap<ObCursorIdPairHashing> ObCursorIdPairMap;
 
 } // end of namespace proxy
 } // end of namespace obproxy

@@ -32,7 +32,7 @@ public:
 public:
   bool is_full() const { return (end_ + 1) % size_ == start_; }
   bool is_empty() const { return end_ == start_; }
-  int push(const Type &elem, Type &old_elem, bool &overwrite = true);
+  int push(const Type &elem, Type &old_elem, bool &overwrite);
   int pop(Type &elem);
   void destroy();
 private:

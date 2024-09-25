@@ -557,7 +557,9 @@ int ObMysqlClientSession::acquire_client_session_id_v2()
   static __thread uint32_t next_cs_id = 0;
   static __thread uint32_t thread_init_cs_id = 0;
   static __thread uint32_t max_local_seq = 0;
-  static __thread uint32_t proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
+  static __thread uint32_t proxy_id = 0;
+
+  proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 == next_cs_id) || proxy_id != static_cast<uint32_t>(get_global_proxy_config().proxy_id)) {
@@ -1989,15 +1991,51 @@ int init_cs_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_cs_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(thread->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObMysqlClientSessionMap", K(ret));
+  }
+  return ret;
+}
+
 int init_cs_id_list_for_thread()
 {
   int ret = OB_SUCCESS;
   const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
-    if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][i]->cs_id_list_ = new (std::nothrow) ObClientSessionIDList())) {
-      ret = OB_ALLOCATE_MEMORY_FAILED;
+    if (OB_FAIL(init_cs_id_list_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(i), K(ret));
     }
+  }
+  return ret;
+}
+
+int init_cs_id_list_for_one_thread(int64_t index)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->cs_id_list_
+                = new (std::nothrow) ObClientSessionIDList())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(index), K(ret));
+  }
+  return ret;
+}
+
+int init_cs_id_list_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(thread->cs_id_list_ = new (std::nothrow) ObClientSessionIDList())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(ret));
   }
   return ret;
 }
@@ -2062,6 +2100,41 @@ int init_random_seed_for_one_thread(int64_t index)
       tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
                        tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_CALL][index]->tid_));
       g_event_processor.event_thread_[ET_CALL][index]->random_seed_ = tmp_random;
+    }
+  }
+
+  if (OB_LIKELY(NULL != init_seed)) {
+    delete init_seed;
+  }
+  return ret;
+}
+
+int init_random_seed_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  ObMysqlRandom *init_seed = new (std::nothrow) ObMysqlRandom();
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "unexpected thread", K(ret));
+  } else if (OB_ISNULL(init_seed)) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(ret));
+  } else {
+    const uint64_t current_time = static_cast<uint64_t>(get_hrtime_internal());
+    init_seed->init(current_time, current_time / 2);
+  }
+
+  // 2. create random seed of each ethread
+  if (OB_SUCC(ret)) {
+    ObMysqlRandom *tmp_random = NULL;
+    if (OB_ISNULL(tmp_random = new (std::nothrow) ObMysqlRandom())) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_NET_LOG(WDIAG, "fail to new ObMysqlRandom", K(ret));
+    } else {
+      const uint64_t tmp = init_seed->get_uint64();
+      tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
+                       tmp + static_cast<uint64_t>(thread->tid_));
+      thread->random_seed_ = tmp_random;
     }
   }
 

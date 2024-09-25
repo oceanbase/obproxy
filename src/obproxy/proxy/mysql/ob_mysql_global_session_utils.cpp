@@ -32,7 +32,7 @@ namespace obproxy
 namespace proxy
 {
 const int MAX_FAIL_COUNT = 3;
-
+const char* DEFAULT_LOGIC_TENANT_NAME = "DEFAULT";
 ObProxySchemaKey::ObProxySchemaKey(): shard_conn_(NULL)
 {
   reset();

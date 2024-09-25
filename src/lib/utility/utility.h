@@ -59,8 +59,8 @@ namespace common
 
 class ObScanner;
 class ObRowkey;
-class ObVersionRange;
-class ObNewRange;
+struct ObVersionRange;
+struct ObNewRange;
 class ObSqlString;
 
 void hex_dump(const void *data, const int32_t size,
@@ -403,12 +403,18 @@ inline int64_t get_phy_mem_size()
 
 inline bool is_cpu_support_sse42()
 {
+ #if defined (__x86_64__)
   uint32_t data;
   asm("cpuid"
       : "=c"(data)
       : "a"(1)
       :);
   return 0 != (data & CPUID_STD_SSE4_2);
+ #elif defined(__aarch64__)
+  return 0;
+ #else
+  #error arch unsupported
+ #endif
 }
 
 ///@brief Whether s1 is equal to s2, ignoring case and regarding space between words as one blank.
@@ -812,7 +818,6 @@ private:
   common::ObSpinLock lock_;
   int64_t start_time_;
   int64_t rate_;        // bandwidth limit kbps.
-  int64_t threshold_;   // raise limit stat. by reading exceed threshold_
   int64_t lamt_;        // read bytes in one period
   int64_t buf_len_;     // read buffer length every rpc.
   bool inited_;

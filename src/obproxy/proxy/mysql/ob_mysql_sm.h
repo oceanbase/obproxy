@@ -456,7 +456,7 @@ public:
   }
 
   inline const net::ObIpEndpoint *get_single_leader() { return OB_NOT_NULL(single_leader_) ? single_leader_->get_leader() : NULL; }
-  inline const net::ObIpEndpoint *get_single_leaders_follower() { return OB_NOT_NULL(single_leader_) ? single_leader_->get_follower() : NULL; }
+  inline const net::ObIpEndpoint *get_single_leaders_replica(const ObRoutePolicyEnum& policy) { return OB_NOT_NULL(single_leader_) ? single_leader_->get_replica(policy, *this) : NULL; }
   void refresh_single_leader();
 
 private:

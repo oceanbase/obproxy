@@ -30,7 +30,9 @@ class ObShardScanAllTaskProcessor : public ObEventProcessor
 public:
   ObShardScanAllTaskProcessor() : ObEventProcessor(), thread_pool_event_queue_(NULL) {}
   virtual ~ObShardScanAllTaskProcessor() {}
-  int start(const int64_t shard_scan_all_threads, const int64_t stacksize = DEFAULT_STACKSIZE);
+  virtual int start(const int64_t shard_scan_all_threads, const int64_t stacksize = DEFAULT_STACKSIZE,
+                    const bool enable_cpu_topology = false, const bool automatic_match_work_thread = true,
+                    const bool enable_cpu_isolate = false) override;
 
   virtual int init_thread(ObEThread *&t);
   virtual ObEvent *schedule(ObEvent *event, const ObEventThreadType etype, const bool fast_signal);

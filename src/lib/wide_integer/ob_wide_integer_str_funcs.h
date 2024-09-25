@@ -18,7 +18,7 @@ namespace oceanbase
 {
 namespace common
 {
-struct ObIAllocator;
+class ObIAllocator;
 namespace wide
 {
 struct str_helper

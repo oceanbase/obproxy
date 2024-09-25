@@ -69,6 +69,7 @@ public:
   void free();
 
   obkv::ObTableApiCredential get_credential() const { return credential_; }
+  void set_credential(const obkv::ObTableApiCredential &credential) { credential_ = credential; }
 
   int set_full_name(const ObString &full_name);
   void set_clustername_from_default(bool flag) { is_clustername_from_default_ = flag; }

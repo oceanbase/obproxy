@@ -270,7 +270,7 @@ bool is2n(int64_t input)
 
 int64_t next_pow2(const int64_t x)
 {
-  return x ? (1ULL << (8 * sizeof(int64_t) - __builtin_clzll(x - 1))) : 1;
+  return x > 1LL ? (1ULL << (8 * sizeof(int64_t) - __builtin_clzll(x - 1))) : 1LL;
 }
 
 bool all_zero(const char *buffer, const int64_t size)
@@ -1377,8 +1377,7 @@ int64_t ObTimeGuard::to_string(char *buf, const int64_t buf_len) const
 // BandwidthThrottle
 
 ObBandwidthThrottle::ObBandwidthThrottle()
-    : start_time_(0), rate_(0), threshold_(0),
-      lamt_(0), buf_len_(0), inited_(false)
+    : start_time_(0), rate_(0), lamt_(0), buf_len_(0), inited_(false)
 {
 }
 

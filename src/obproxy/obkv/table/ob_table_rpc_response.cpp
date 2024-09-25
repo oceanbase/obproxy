@@ -57,14 +57,14 @@ int ObRpcTableLoginResponse::deep_copy(common::ObIAllocator &allocator, const Ob
 
   return ret;
 }
-int ObRpcTableLoginResponse::deep_copy(common::ObIAllocator &allocator, ObRpcResponse *other)
+int ObRpcTableLoginResponse::deep_copy(common::ObIAllocator &allocator, const ObRpcResponse *other)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(other) || other->get_packet_meta().get_pcode() != obrpc::OB_TABLE_API_LOGIN) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid to copy ObRpcTableLoginResponse object", K(ret), K(other));
   } else {
-    ret = deep_copy(allocator, *(dynamic_cast<ObRpcTableLoginResponse *>(other)));
+    ret = deep_copy(allocator, *(dynamic_cast<const ObRpcTableLoginResponse *>(other)));
   }
   return ret;
 }
@@ -724,4 +724,66 @@ int ObRpcTableLSOperationResponse::encode(char *buf, int64_t &buf_len, int64_t &
   return ret;
 }
 
+int ObRpcTableGetRouteResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  int64_t meta_size = rpc_packet_meta_.get_serialize_size();
+  int64_t origin_pos = pos;
+  int64_t check_sum_pos;
+
+  pos += meta_size;      // 将pos设置为meta之后
+  check_sum_pos = pos;   // 后续做checksum需要从这个pos开始
+
+  if (pos > buf_len) {
+    ret = OB_SIZE_OVERFLOW;
+    LOG_WDIAG("fail to encode ObRpcTableLoginResponse", K(ret), KP(buf), K(buf_len), K(pos), K(meta_size));
+  } else {
+    // 序列化result_code
+    OB_UNIS_ENCODE(rpc_result_code_)
+    // 序列化login_result
+    OB_UNIS_ENCODE(route_res_);
+
+    if (OB_SUCC(ret)) {
+      // 首先计算checksum
+      int64_t response_size = pos - check_sum_pos;
+      uint64_t check_sum = ob_crc64(static_cast<void *>(buf + check_sum_pos), response_size);
+      int64_t ez_payload_size = rpc_packet_meta_.rpc_header_.get_encoded_size() + response_size;
+
+      rpc_packet_meta_.ez_header_.ez_payload_size_ = static_cast<uint32_t>(ez_payload_size);
+      rpc_packet_meta_.rpc_header_.checksum_ = check_sum;
+
+      // 这里传入原始的pos, 序列化meta信息
+      if (OB_FAIL(rpc_packet_meta_.serialize(buf, buf_len, origin_pos))) {
+        LOG_WDIAG("fail to encode meta", K_(rpc_packet_meta), K(ret));
+      } else if (origin_pos != check_sum_pos) {
+        // double check
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("origin pos is not equal to check sum pos, unexpected", K(ret), K(origin_pos), K(check_sum_pos));
+      } else {
+        // success
+      }
+    }
+  }
+
+  return ret;
+}
+
+int64_t ObRpcTableGetRouteResponse::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcResponse::get_encode_size();
+  len += route_res_.get_serialize_size();
+  return len;
+}
+
+int ObRpcTableGetRouteResponse::analyze_response(const char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(route_res_.deserialize(buf, buf_len, pos))) {
+    LOG_WDIAG("deserialize login response wrong", K(buf), K(buf_len), K(ret));
+  }
+
+  return ret;
+}
 

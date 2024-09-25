@@ -384,9 +384,22 @@ bool is_route_policy_enum_valid(const ObRoutePolicyEnum policy)
   return (MERGE_IDC_ORDER <= policy && policy < MAX_ROUTE_POLICY_COUNT);
 }
 
-bool is_target_replica_route(const ObRoutePolicyEnum policy)
+inline bool is_target_replica_route(const ObRoutePolicyEnum policy)
 {
   return TARGET_REPLICA_TYPE_WITH_LEADER == policy || TARGET_REPLICA_TYPE_FOLLOWER_FIRST == policy || TARGET_REPLICA_TYPE_FOLLOWER_ONLY == policy;
+}
+
+inline bool is_follower_only_route(const ObRoutePolicyEnum policy)
+{
+  return TARGET_REPLICA_TYPE_FOLLOWER_FIRST == policy
+         || TARGET_REPLICA_TYPE_FOLLOWER_ONLY == policy
+         || FOLLOWER_ONLY == policy
+         || FOLLOWER_FIRST == policy;
+}
+
+inline bool is_weight_load_balance_route(const ObRoutePolicyEnum policy)
+{
+  return WEAKREAD_WEIGHT_LOAD_BALANCE == policy;
 }
 
 common::ObString get_route_type_string(const ObRouteType type)

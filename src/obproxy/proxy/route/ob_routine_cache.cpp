@@ -14,6 +14,7 @@
 
 #include "proxy/route/ob_routine_cache.h"
 #include "stat/ob_processor_stats.h"
+#include "iocore/eventsystem/ob_kv_task.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -658,6 +659,23 @@ int init_routine_map_for_one_thread(int64_t index)
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to new ObRoutineRefHashMap", K(index), K(ethreads[index]), K(ret));
     } else if (OB_FAIL(ethreads[index]->routine_map_->init())) {
+      LOG_WDIAG("fail to init routine_map", K(ret));
+    }
+  }
+  return ret;
+}
+
+int init_routine_map_for_one_thread(ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->routine_map_ = new (std::nothrow) ObRoutineRefHashMap(ObModIds::OB_PROXY_ROUTINE_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObRoutineRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->routine_map_->init())) {
       LOG_WDIAG("fail to init routine_map", K(ret));
     }
   }

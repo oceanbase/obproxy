@@ -270,7 +270,8 @@ struct ObVersionRange
 
   inline void set_whole_range()
   {
-    memset(this, 0, sizeof(ObVersionRange));
+    start_version_.reset();
+    end_version_.reset();
     border_flag_.set_min_value();
     border_flag_.set_max_value();
   }

@@ -33,6 +33,8 @@ namespace obproxy
 {
 namespace obkv
 {
+  // magic number
+const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
 
 void inline shrink_copy_char_buf(char *dst, char *src, int64_t n)
 {
@@ -124,6 +126,35 @@ DEFINE_GET_SERIALIZE_SIZE(ObRpcPacketMeta)
   OB_UNIS_ADD_LEN(ez_header_);
   len += ObRpcPacketHeader::get_encoded_size();
   return len;
+}
+
+ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
+{
+  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+
+  if (OB_ISNULL(buffer)) {
+    // do nothing
+  } else if (buffer_len >= sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG)
+    && 0 == memcmp(buffer, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+    rpc_type = OBPROXY_RPC_OBRPC;
+  } else {
+    // do nothing
+  }
+
+  return rpc_type;
+}
+
+ObProxyRpcType ObRpcEzHeader::get_rpc_magic_type()
+{
+  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+
+  if (0 == memcmp(magic_header_flag_, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+    rpc_type = OBPROXY_RPC_OBRPC;
+  } else {
+    // do nothing
+  }
+
+  return rpc_type;
 }
 
 const ObRpcRequest &ObRpcRequest::operator =(const ObRpcRequest &other)
@@ -623,7 +654,35 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
     }
     // need remove duplicate
   }
+
+  // partition_ids mostly is sorted, O(n)
+  for (int i = 1; i < partition_ids.count(); ++i) {
+      int key = partition_ids.at(i);
+      int j = i - 1;
+      while (j >= 0 && partition_ids.at(j) > key) {
+          partition_ids.at(j+1) = partition_ids.at(j);
+          j = j - 1;
+      }
+      partition_ids.at(j+1) = key;
+  }
+
+  if (partition_ids.count() > 1 && is_hbase_request() && is_reverse_scan()) {
+    LOG_DEBUG("begin reverse partition ids for reverse scan", K(partition_ids), K(ret));
+    reverse_partition_ids(partition_ids);
+  }
   return ret;
+}
+
+void ObRpcRequest::reverse_partition_ids(ObIArray<int64_t> &partition_ids)
+{
+  // partition_ids.count() > 1
+  int start = 0;
+  int end = partition_ids.count() - 1;
+  while (start < end) {
+    std::swap(partition_ids.at(start), partition_ids.at(end));
+    start ++;
+    end --;
+  }
 }
 
 int ObRpcRequest::get_sub_req_buf_arr(common::ObIArray<ObRpcFieldBuf> &sub_reqs,

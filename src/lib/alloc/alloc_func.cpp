@@ -78,14 +78,32 @@ void get_tenant_mod_memory(
 }
 
 int64_t get_mod_memory_dist(
-    int mod_id, ObTenantMemory tenant_meomry[], int64_t count)
+    int mod_id, ObTenantMemory tenant_memory[], int64_t count)
 {
   int64_t retcount = 0;
   ObMallocAllocator *allocator = ObMallocAllocator::get_instance();
   if (!OB_ISNULL(allocator)) {
-    retcount = allocator->get_mod_dist(mod_id, tenant_meomry, count);
+    retcount = allocator->get_mod_dist(mod_id, tenant_memory, count);
   }
   return retcount;
+}
+
+int get_rpc_mod_memory()
+{
+  ObMallocAllocator *allocator = ObMallocAllocator::get_instance();
+  common::ObModItem item;
+  if (!OB_ISNULL(allocator)) {
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_PROXY_RPC_TABLE_QUERY_MAP, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_PROXY_RPC_REQ_CTX_MAP, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_PROXY_RPC_PARSE, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_PROCESSOR, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_PROC, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_CLIENT, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_BATCH_OPERATION, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_LS_OPERATION_RESULT, item);
+  }
+  return item.hold_;
 }
 
 void ob_set_reserved_memory(const int64_t bytes)

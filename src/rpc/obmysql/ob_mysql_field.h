@@ -115,7 +115,7 @@ inline int64_t ObMySQLField::to_string(char *buffer, int64_t len) const
   } else {
     common::databuff_printf(buffer, len, pos,
         "dname: %.*s, tname: %.*s, org_tname: %.*s, "
-        "cname: %.*s, org_cname, %.*s, type: %d, charset: %hu, decimal_scale: %hhu, flag: %x",
+        "cname: %.*s, org_cname, %.*s, type: %d, charset: %hu, decimal_scale: %hd, flag: %x",
         dname_.length(), dname_.ptr(), tname_.length(), tname_.ptr(), org_tname_.length(), org_tname_.ptr(),
         cname_.length(), cname_.ptr(), org_cname_.length(), org_cname_.ptr(),
         type_, charsetnr_, accuracy_.get_scale(), flags_);

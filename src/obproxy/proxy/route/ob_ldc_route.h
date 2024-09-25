@@ -72,6 +72,7 @@ inline void ObLDCRoute::reset_cursor()
 {
   curr_cursor_index_ = 0;
   next_index_in_site_ = 0;
+  weight_zone_index_ = -1;
   location_.reset_item_status();
 }
 

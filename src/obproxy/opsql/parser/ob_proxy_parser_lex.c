@@ -41,6 +41,8 @@
 #endif
 
 #include <inttypes.h>
+
+#define UNUSED(v) ((void)(v))
 typedef int8_t flex_int8_t;
 typedef uint8_t flex_uint8_t;
 typedef int16_t flex_int16_t;

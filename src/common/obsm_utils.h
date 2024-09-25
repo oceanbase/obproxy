@@ -27,7 +27,7 @@ namespace oceanbase
 {
 namespace common
 {
-class ObField;
+struct ObField;
 class ObSMUtils {
 public:
   /**

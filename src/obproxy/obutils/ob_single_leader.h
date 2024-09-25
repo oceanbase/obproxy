@@ -29,6 +29,7 @@ class ObSingleLeader
 public:
   ObSingleLeader() : single_leader_info_(NULL),
                      single_leader_followers_idc_(NULL),
+                     single_leader_idc_(SAME_IDC),
                      single_leader_followers_count_(0),
                      single_leader_version_(0) {}
   ~ObSingleLeader() {
@@ -44,7 +45,7 @@ public:
               const common::ObString &tenant_name,
               const ObLDCLocation &dummy_ldc);
 
-  const net::ObIpEndpoint *get_follower();
+  const net::ObIpEndpoint *get_replica(const ObRoutePolicyEnum& policy, ObMysqlSM& sm);
 
   inline const net::ObIpEndpoint *get_leader() { return OB_NOT_NULL(single_leader_info_) ? &single_leader_info_->leader_addr_ : NULL; }
   const bool need_refresh(int64_t new_version) { return single_leader_version_ != new_version; }
@@ -54,6 +55,7 @@ private:
   ObTenantSingleLeaderInfo *single_leader_info_;
   // followers' idc depends on proxy_idc_name which is an vip level config
   ObIDCType *single_leader_followers_idc_;
+  ObIDCType single_leader_idc_;
   int64_t single_leader_followers_count_;
   int64_t single_leader_version_;
 };

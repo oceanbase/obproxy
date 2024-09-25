@@ -41,8 +41,6 @@ enum
   CLIENT_MAGIC_DEAD = 0xDDCCBBAA
 };
 
-static int64_t const RESCHEDULE_GET_NETHANDLER_LOCK_INTERVAL = HRTIME_MSECONDS(1); // 1ms
-
 ObClientVC::ObClientVC(ObMysqlClient &client_core)
   : ObNetVConnection(), magic_(CLIENT_MAGIC_ALIVE), disconnect_by_client_(false),
     is_request_sent_(false), core_client_(&client_core),

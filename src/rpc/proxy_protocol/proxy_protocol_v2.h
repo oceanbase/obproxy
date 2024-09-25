@@ -38,8 +38,12 @@ public:
   inline int64_t get_len() const { return len_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
   bool is_finished() const { return is_finished_; }
+  static bool check_proxy_protocol_v2_valid(char header[4]) {
+   return header[0] == 0x0d && header[1] == 0x0a && header[2] == 0x0d && header[3] == 0x0a;
+  }
 public:
   static const int64_t PROXY_PROTOCOL_V2_HEADER_LEN = 16;
+  static const int64_t PROXY_PROTOCOL_V2_VALIDATE_LEN = 4;
 
   uint8_t sig_[12];
   uint8_t ver_cmd_;

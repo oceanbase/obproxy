@@ -26,7 +26,7 @@ namespace oceanbase
 namespace lib
 {
 
-class AChunk;
+struct AChunk;
 
 static const uint64_t MAXADDR           = (1L << 52);
 static const uint64_t CHUNK_BITMAP_SIZE = MAXADDR / MEMCHK_CHUNK_ALIGN;
@@ -74,7 +74,10 @@ private:
   int update_hold(int64_t bytes, bool high_prio);
 
   bool disable_mem_alloc_;
+
+#if MEMCHK_LEVEL >= 1
   ChunkBitMap *chunk_bitmap_;
+#endif
 
   int64_t limit_;
   int64_t urgent_;

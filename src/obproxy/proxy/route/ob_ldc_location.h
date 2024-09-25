@@ -29,7 +29,7 @@ namespace obproxy
 {
 namespace obutils
 {
-class ObServerStateSimpleInfo;
+struct ObServerStateSimpleInfo;
 class ObSafeSnapshotManager;
 class ObProxyNameString;
 class ObClusterResource;
@@ -45,6 +45,7 @@ namespace proxy
 {
 const int64_t OB_MAX_LDC_ITEM_COUNT = 16;
 const int64_t OB_MAX_ZONE_COUNT = 8;
+class ObMysqlSM;
 
 class ObLDCItem
 {
@@ -265,11 +266,11 @@ public:
                                        const common::ObIArray<common::ObString> &region_names,
                                        const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                        const common::ObString &tenant_name,
-                                       obutils::ObClusterResource *cluster_resource);
+                                       obutils::ObClusterResource *cluster_resource,
+                                       const ObRoutePolicyEnum &route_policy);
   static bool is_weak_read_avail_replica(const ObProxyReplicaLocation &replica,
                                 const ObRoutePolicyEnum &route_policy,
                                 const omt::ObTargetReplicaType *target_replica_type,
-                                const ObIArray<ObString> &proxy_primary_zone_name,
                                 const bool is_proxy_mysql_client);
   static int fill_weak_read_location(const ObProxyPartitionLocation *pl,
                                      ObLDCLocation &dummy_ldc,
@@ -298,6 +299,18 @@ public:
                                const common::ObIArray<obutils::ObServerStateSimpleInfo> &ss_info,
                                const omt::ObZoneWeakReadWeight &weight_zone,
                                int32_t &weight_index);
+  static bool is_in_same_zone(const net::ObIpEndpoint &addr,
+                              const common::ObIArray<obutils::ObServerStateSimpleInfo> &server_info,
+                              const ObString &zone);
+  static int get_weight_zone(omt::ObZoneWeakReadWeight &weight_zone, ObString &out_zone);
+  static int get_server_info(ObMysqlSM &sm, common::ObIArray<obutils::ObServerStateSimpleInfo> &servers_info);
+  static int get_route_info(const ObRoutePolicyEnum &policy, ObMysqlSM &sm,
+                            omt::ObTargetReplicaType &target_replica_type, ObString &zone,
+                            common::ObIArray<obutils::ObServerStateSimpleInfo> &server_info);
+  static ObIDCType get_idc_type(const ObAddr &ip, const ObLDCLocation &dummy_ldc);
+  static bool is_target_replica_type(const omt::ObTargetReplicaType &target_replica_type,
+                                     const ObReplicaType &replica_type);
+  static bool not_allowed_replica_type(const ObReplicaType &replica_type, const ObRoutePolicyEnum &route_policy);
   static int copy_dummy_ldc(ObLDCLocation &src_dummy_ldc, ObLDCLocation &dest_dummy_ldc);
   int set_weight_zone_array(const ObIArray<ObLDCItem> &tmp_weight_zone_item_array,
                             const omt::ObZoneWeakReadWeight &weight_zone);
@@ -358,7 +371,8 @@ private:
                                      ObLDCLocation &dummy_ldc,
                                      bool &entry_need_update,
                                      ObLDCItem &leader_item,
-                                     LdcItemArrayType &tmp_item_array);
+                                     LdcItemArrayType &tmp_item_array,
+                                     const ObRoutePolicyEnum &route_policy);
 private:
   ObLDCItem *item_array_;
   int64_t item_count_;
@@ -400,6 +414,13 @@ inline const ObLDCItem *ObLDCLocation::get_item(const int64_t index) const
 inline const int64_t ObLDCLocation::get_item_count() const
 {
   return item_count_;
+}
+
+inline bool ObLDCLocation::not_allowed_replica_type(const ObReplicaType &replica_type, const ObRoutePolicyEnum &route_policy)
+{
+  return REPLICA_TYPE_LOGONLY == replica_type
+        || REPLICA_TYPE_ENCRYPTION_LOGONLY == replica_type
+        || (PROXY_PRIMARY_ZONE_NAME_ONLY != route_policy && REPLICA_TYPE_COLUMNSTORE == replica_type);
 }
 
 void ObLDCLocation::reset_item_status()

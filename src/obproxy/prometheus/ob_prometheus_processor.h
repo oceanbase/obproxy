@@ -42,13 +42,21 @@ public:
   int start_prometheus_task();
   int start_one_prometheus(int64_t index);
 
-  int handle_counter(const char *name_ptr, const char *help_ptr,
+  int accumulate_counter(const char *name_ptr, const char *help_ptr,
                      common::ObVector<ObPrometheusLabel> &label_array,
                      int64_t value = 1);
 
-  int handle_gauge(const char *name_ptr, const char *help_ptr,
+  int accumulate_gauge(const char *name_ptr, const char *help_ptr,
                    common::ObVector<ObPrometheusLabel> &label_array,
                    int64_t value, bool allow_delete = true);
+
+  int set_counter(const char *name_ptr, const char *help_ptr,
+                  common::ObVector<ObPrometheusLabel> &label_array,
+                  int64_t value);
+
+  int set_gauge(const char *name_ptr, const char *help_ptr,
+                common::ObVector<ObPrometheusLabel> &label_array,
+                int64_t value, bool allow_delete = true);
 
   int handle_histogram(const char *name_ptr, const char *help_ptr,
                        common::ObVector<ObPrometheusLabel> &label_array,

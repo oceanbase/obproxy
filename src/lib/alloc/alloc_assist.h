@@ -19,6 +19,8 @@
 #include <string.h>
 #include "lib/utility/ob_macro_utils.h"
 
+extern void ob_abort (void) __THROW;
+
 // we use int instead of bool to compatible with c code.
 #ifdef __cplusplus
 static inline void abort_unless(bool result)
@@ -27,7 +29,7 @@ static inline void abort_unless(int result)
 #endif
 {
   if (!result) {
-    abort();
+    ob_abort();
   }
 }
 

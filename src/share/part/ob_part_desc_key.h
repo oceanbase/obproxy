@@ -45,6 +45,8 @@ public:
   virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
                                ObIArray<int64_t> &tablet_ids,
                                ObIArray<int64_t> &ls_ids) override;
+
+  virtual int build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const;
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }
   void set_first_part_id(int64_t first_part_id) { first_part_id_ = first_part_id; }
@@ -64,7 +66,7 @@ public:
                        "part_func_type", share::schema::get_partition_func_type_str(part_func_type_),
                        K_(obj_types),
                        K_(cs_types));
-  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const;
+  virtual int64_t to_plain_string(char* buf, const int64_t buf_len) const override;
 private:
   int calc_value_for_mysql(const ObObj *objs, int64_t objs_cnt, int64_t &result, ObPartDescCtx &ctx);
   uint64_t calc_hash_value_with_seed(const ObObj &obj, const int64_t cluster_version, int64_t seed);

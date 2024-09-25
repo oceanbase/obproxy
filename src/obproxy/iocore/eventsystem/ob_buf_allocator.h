@@ -154,7 +154,7 @@ private:
 
   int64_t next_pow2(const int64_t x)
   {
-    return x ? (1ULL << (8 * sizeof(int64_t) - __builtin_clzll(x - 1))) : 1;
+    return x > 1LL ? (1ULL << (8 * sizeof(int64_t) - __builtin_clzll(x - 1))) : 1LL;
   }
 
   int64_t buffer_size_to_index(const int64_t size)

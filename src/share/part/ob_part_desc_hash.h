@@ -46,6 +46,8 @@ public:
                                 ObPartDescCtx &ctx,
                                 ObIArray<int64_t> &tablet_ids,
                                 ObIArray<int64_t> &ls_ids) override;
+
+  virtual int build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const;
   void set_part_num(int64_t part_num) { part_num_ = part_num; }
   void set_part_space(int64_t part_space) { part_space_ = part_space; }
   void set_first_part_id(int64_t first_part_id) { first_part_id_ = first_part_id; }

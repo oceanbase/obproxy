@@ -31,7 +31,6 @@ namespace obproxy
 namespace proxy
 {
 
-static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 int64_t ObOceanBase20RequestAnalyzer::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;

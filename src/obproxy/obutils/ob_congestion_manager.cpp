@@ -1297,6 +1297,24 @@ int init_congestion_map_for_one_thread(int64_t index)
   return ret;
 }
 
+int init_congestion_map_for_one_thread(event::ObEThread *thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(thread)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(EDIAG, "unexpected thread", K(ret));
+  } else {
+    if (OB_ISNULL(thread->congestion_map_
+                  = new (std::nothrow) ObCongestionRefHashMap(ObModIds::OB_PROXY_CONGESTION_ENTRY_MAP))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to new ObCongestionRefHashMap", K(ret));
+    } else if (OB_FAIL(thread->congestion_map_->init())) {
+      LOG_WDIAG("fail to init cgt_map", K(ret));
+    }
+  }
+  return ret;
+}
+
 int ObCongestionRefHashMap::clean_hash_map()
 {
   int ret = OB_SUCCESS;

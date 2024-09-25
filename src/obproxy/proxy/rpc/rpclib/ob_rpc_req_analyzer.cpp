@@ -19,10 +19,18 @@
 #include "obutils/ob_config_server_processor.h"
 #include "obutils/ob_proxy_config.h"
 #include "utils/ob_proxy_utils.h"
+#include "share/part/ob_part_desc.h"
+#include "share/part/ob_part_desc_hash.h"
+#include "share/part/ob_part_desc_key.h"
+#include "share/part/ob_part_desc_range.h"
+#include "share/part/ob_part_desc_list.h"
 #include "proxy/mysqllib/ob_mysql_common_define.h"
+#include "proxy/route/ob_table_entry.h"
 #include "proxy/rpc/ob_rpc_req.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_entry.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx.h"
+#include "proxy/rpc/rpclib/ob_rpc_req_ctx_processor.h"
+#include "proxy/route/ob_index_entry.h"
 
 namespace oceanbase
 {
@@ -36,97 +44,17 @@ using namespace obmysql;
 using namespace obkv;
 using namespace obutils;
 
-int ObProxyRpcReqAnalyzer::analyze_rpc_req(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status, ObRpcReq &ob_rpc_req)
+int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
 {
   int ret = OB_SUCCESS;
-  status = RPC_ANALYZE_NEW_CONT;
-  obkv::ObProxyRpcType rpc_type = ob_rpc_req.get_rpc_type();
-  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
-
-  switch (rpc_type)
-  {
-  case OBPROXY_RPC_OBRPC: {
-    if (OB_FAIL(analyze_obkv_req(ctx, status, ob_rpc_req))) {
-      LOG_WDIAG("fail to call analyze_obkv_req", K(ret), K(status), K(ob_rpc_req), K(rpc_trace_id));
-    }
-    break;
-  }
-  case OBPROXY_RPC_HBASE:
-  case OBPROXY_RPC_UNKOWN:
-  default:
-    ret = OB_ERR_UNEXPECTED;
-    status = RPC_ANALYZE_NEW_ERROR;
-    LOG_WDIAG("ObProxyRpcReqAnalyzer::analyze_rpc_req get an wrong rpc type", K(rpc_type), K(status), K(ret));
-    break;
-  }
-  // }
-
-  return ret;
-}
-
-int ObProxyRpcReqAnalyzer::handle_req_header(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status, ObRpcReq &ob_rpc_req)
-{
-  int ret = OB_SUCCESS;
-  status = RPC_ANALYZE_NEW_CONT;
-  char *req_buf = NULL;
-  int64_t req_buf_len = 0;
-  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
-  if (!ctx.is_response_) {
-    req_buf = ob_rpc_req.get_request_buf();
-    req_buf_len = ob_rpc_req.get_request_buf_len();
-  } else {
-    req_buf = ob_rpc_req.get_response_buf();
-    req_buf_len = ob_rpc_req.get_response_buf_len();
-  }
-
-  LOG_DEBUG("ObProxyRpcReqAnalyzer::handle_request_header get request", K(ob_rpc_req), K(rpc_trace_id));
-
-  if (req_buf_len < ObProxyRpcReqAnalyzer::RPC_NET_HEADER) {
-    ret = OB_ERR_UNEXPECTED;
-    status = RPC_ANALYZE_NEW_ERROR;
-    LOG_WDIAG("ob_rpc_req buffer length less than RPC_NET_HEADER", K(req_buf_len), K(rpc_trace_id));
-  } else {
-    obkv::ObRpcEzHeader ezhdr;
-    ezhdr.ez_payload_size_ = 0;
-
-    for (int i = 0; i < 4; i++) {
-      ezhdr.magic_header_flag_[i] = uint1korr(&req_buf[i]);
-    }
-    for (int i = 0; i < 4; i++) {
-      ezhdr.ez_payload_size_ <<= 8;
-      ezhdr.ez_payload_size_ += uint1korr(&req_buf[4 + i]);
-    }
-    ezhdr.chid_ = uint4korr(&req_buf[8]);
-    ezhdr.reserved_ = uint4korr(&req_buf[12]);
-
-    if (0 == memcmp(ezhdr.magic_header_flag_, obkv::ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(obkv::ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
-      ob_rpc_req.set_rpc_type(obkv::OBPROXY_RPC_OBRPC);
-
-      if (req_buf_len < ezhdr.ez_payload_size_ + ObProxyRpcReqAnalyzer::RPC_NET_HEADER) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("the buffer size is smaller than the packet size", K(req_buf_len), "packet size", ezhdr.ez_payload_size_ + ObProxyRpcReqAnalyzer::RPC_NET_HEADER, K(rpc_trace_id));
-      } else {
-        LOG_DEBUG("ObProxyRpcReqAnalyzer::handle_request_header get an rpc type", K(ezhdr), K(status), K(ret), "partition_id", ob_rpc_req.get_obkv_info().get_partition_id(), K(rpc_trace_id));
-      }
-    } else {
-      ret = OB_ERR_UNEXPECTED;
-      status = RPC_ANALYZE_NEW_ERROR;
-      LOG_WDIAG("ObProxyRpcReqAnalyzer::handle_request_header get an wrong rpc type", K(ezhdr), K(status), K(ret), K(rpc_trace_id));
-    }
-  }
-
-  return ret;
-}
-
-int ObProxyRpcReqAnalyzer::analyze_obkv_req(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status, ObRpcReq &ob_rpc_req)
-{
-  int ret = OB_SUCCESS;
-  int64_t analyze_pos = 0;
+  int64_t &analyze_pos = ctx.analyze_pos_;
   char *req_buf = NULL;
   int64_t req_buf_len = 0;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcReqAnalyzeNewStatus &status = ctx.status_;
   obkv::ObRpcPacketMeta meta;
+  status = RPC_ANALYZE_NEW_CONT;
   if (!ctx.is_response_) {
     req_buf = ob_rpc_req.get_request_buf();
     req_buf_len = ob_rpc_req.get_request_buf_len();
@@ -136,307 +64,504 @@ int ObProxyRpcReqAnalyzer::analyze_obkv_req(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcR
   }
 
   if (OB_FAIL(meta.deserialize(req_buf, req_buf_len, analyze_pos))) {
-    status = RPC_ANALYZE_NEW_ERROR;
-    LOG_WDIAG("fail to deserialize ObRpcPacketMeta", K(ob_rpc_req), K(ret), K(status), K(rpc_trace_id));
+    LOG_WDIAG("fail to deserialize ObRpcPacketMeta", K(ob_rpc_req), K(ret), K(rpc_trace_id));
   } else {
-    if ((meta.rpc_header_.flags_ & ObRpcPacketHeader::RESP_FLAG) > 0) {
-      //reset response flag before set
-      obkv_info.reset_odp_resp_flag();
-    }
     obkv_info.set_pcode(meta.rpc_header_.pcode_);
     obkv_info.set_meta_flag(meta.rpc_header_.flags_);
-    ctx.analyze_pos_ = meta.rpc_header_.hlen_ + RPC_NET_HEADER;
+    obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
+    analyze_pos = meta.rpc_header_.hlen_ + RPC_NET_HEADER;
 
+    // analyze response meta
     if (obkv_info.is_resp()) {
+      ObRpcResultCode result_code;
       ob_rpc_req.set_response(true);
-      // obkv_info.reset_odp_resp_flag();
-      if (OB_FAIL(analyze_obkv_req_response(ctx, status, ob_rpc_req, meta))) {
-        LOG_WDIAG("fail to call analyze_obkv_req_response", K(ret), K(status), K(ob_rpc_req), K(meta), K(rpc_trace_id));
+      obkv_info.reset_odp_resp_flag();
+
+      bool is_compress_response = (meta.get_rpc_header().compressor_type_ > NONE_COMPRESSOR);
+      if (is_compress_response) {
+        if (obkv_info.pcode_ == OB_TABLE_API_MOVE || ctx.is_inner_request_) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("received a compressed response from server", "pcode", obkv_info.pcode_, "is_shard_req", ctx.is_inner_request_, K(ret));
+        } else {
+          status = RPC_ANALYZE_NEW_DONE;
+        }
       } else {
-        obkv_info.set_resp_completed(true);
+        if (OB_FAIL(result_code.deserialize(req_buf, req_buf_len, analyze_pos))) {
+          LOG_WDIAG("fail to call deserialize for result_code", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos));
+        } else if (0 != result_code.rcode_ || obkv_info.is_bad_routing()) {
+          // 记录错误，是否需要重传
+          obkv_info.set_error_resp(true);
+          obkv_info.rpc_origin_error_code_ = result_code.rcode_;
+          LOG_INFO("rpc response is error", "pcode", obkv_info.pcode_,
+                    "error_code", result_code.rcode_, "rpc_trace_id", obkv_info.rpc_trace_id_,
+                    "need_reroute", obkv_info.is_bad_routing(), "error_msg", result_code.msg_,
+                    "cur_serve_ip", obkv_info.server_info_.addr_);
+        } else {
+          // reset error code
+          obkv_info.rpc_origin_error_code_ = 0;
+        }
+
+        /**
+         * @brief
+         *   1. need_parse_response_fully
+         *     1.1. not error
+         *     1.2. shard request
+         *     1.3. async query request
+         *   2. OB_TABLE_API_MOVE
+         */
+        if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_))) {
+          // alloc response and full parse
+          if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
+            LOG_WDIAG("fail to call alloc_rpc_response", K(ob_rpc_req), K(ret), K(rpc_trace_id));
+          } else {
+            // set rpc meta
+            ObRpcResponse *rpc_response = ob_rpc_req.get_rpc_response();
+            rpc_response->set_packet_meta(meta);
+            rpc_response->set_result_code(result_code);
+            rpc_response->set_cluster_version(ctx.cluster_version_);
+          }
+          status = RPC_ANALYZE_NEW_CONT;
+        } else {
+          status = RPC_ANALYZE_NEW_DONE;
+        }
       }
     } else {
-      // only request keep tenant id
-      obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
-      if (OB_FAIL(analyze_obkv_req_request(ctx, status, ob_rpc_req, meta))) {
-        LOG_WDIAG("fail to call analyze_obkv_req_response", K(ret), K(status), K(ob_rpc_req), K(meta), K(rpc_trace_id));
+      // alloc rpc request
+      if (OB_FAIL(ob_rpc_req.alloc_rpc_request())) {
+        LOG_WDIAG("fail to call alloc_rpc_request", K(ob_rpc_req), K(ret), K(rpc_trace_id));
+      } else {
+        // set rpc meta
+        ObRpcRequest *rpc_request = ob_rpc_req.get_rpc_request();
+        rpc_request->set_packet_meta(meta);
+        rpc_request->set_cluster_version(ctx.cluster_version_);
       }
     }
-
-  }
-
-  if (OB_SUCC(ret)) {
-    status = RPC_ANALYZE_NEW_DONE;
-    LOG_DEBUG("analyze_obrpc_req done", K(ob_rpc_req), "partition_id", ob_rpc_req.get_obkv_info().get_partition_id(), K(rpc_trace_id));
   }
 
   return ret;
 }
 
-int ObProxyRpcReqAnalyzer::analyze_obkv_req_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status, ObRpcReq &ob_rpc_req, obkv::ObRpcPacketMeta &meta)
+int ObProxyRpcReqAnalyzer::analyze_rpc_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
 {
   int ret = OB_SUCCESS;
-  int64_t analyze_pos = ctx.analyze_pos_;
-  char *req_buf = NULL;
-  int64_t req_buf_len = 0;
-  if (!ctx.is_response_) {
-    req_buf = ob_rpc_req.get_request_buf();
-    req_buf_len = ob_rpc_req.get_request_buf_len();
-  } else {
-    req_buf = ob_rpc_req.get_response_buf();
-    req_buf_len = ob_rpc_req.get_response_buf_len();
-  }
-  int64_t rpc_request_size = 0;
-  void *buf = NULL;
-  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
-  ObRpcPacketCode pcode = obkv_info.pcode_;
-  ObRpcRequest *rpc_request = NULL;
+  int64_t &analyze_pos = ctx.analyze_pos_;
+  char *req_buf = ob_rpc_req.get_request_buf();
+  int64_t req_buf_len = ob_rpc_req.get_request_buf_len();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  ObRpcRequest *rpc_request = ob_rpc_req.get_rpc_request();
+  ObRpcReqAnalyzeNewStatus &status = ctx.status_;
 
-  if (OB_FAIL(get_rpc_request_size(pcode, rpc_request_size))) {
-    status = RPC_ANALYZE_NEW_ERROR;
-    LOG_WDIAG("fail to get rpc request size", K(pcode), K(rpc_request_size), K(ret), K(rpc_trace_id));
+  if (OB_FAIL(rpc_request->analyze_request(req_buf, req_buf_len, analyze_pos))) {
+    LOG_WDIAG("fail to call analyze_request", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos), K(rpc_trace_id), "pcode", obkv_info.pcode_);
   } else {
-    if (OB_FAIL(ob_rpc_req.free_rpc_request())) {
-      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(pcode), K(rpc_trace_id));
-    } else if (OB_ISNULL(ob_rpc_req.get_rpc_request())) {
-      if (OB_ISNULL(buf = op_fixed_mem_alloc(rpc_request_size))) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WDIAG("analyze_obrpc_req alloc memory failed", K(ret), K(pcode), K(rpc_request_size), K(rpc_trace_id));
-      } else {
-        ob_rpc_req.set_rpc_request_len(rpc_request_size);
-      }
+    // set obkv_info meta
+    obkv_info.set_hbase_request(rpc_request->is_hbase_request());
+    obkv_info.set_read_weak(rpc_request->is_read_weak());
+    obkv_info.set_query_with_index(rpc_request->is_query_with_index());
+    obkv_info.set_stream_query(rpc_request->is_stream_query());
+    obkv_info.table_name_ = rpc_request->get_table_name();
+    obkv_info.index_name_ = rpc_request->get_index_name();
+    int64_t partition_id = rpc_request->get_partition_id();
+    if (partition_id != 0 && partition_id != -1) {
+      obkv_info.set_partition_id(partition_id);
+      obkv_info.is_rpc_request_with_partition_id_ = true;
     }
-    if (OB_SUCC(ret) && OB_NOT_NULL(buf)) {
-      switch (pcode) {
-      case obrpc::OB_TABLE_API_LOGIN: {
-        rpc_request = new (buf) ObRpcTableLoginRequest;
-        obkv_info.set_auth(true);
-        break;
-      }
-      case obrpc::OB_TABLE_API_EXECUTE: {
-        rpc_request = new (buf) ObRpcTableOperationRequest;
-        break;
-      }
-      case obrpc::OB_TABLE_API_BATCH_EXECUTE: {
-        rpc_request = new (buf) ObRpcTableBatchOperationRequest;
-        obkv_info.set_batch(true);
-        break;
-      }
-      case obrpc::OB_TABLE_API_EXECUTE_QUERY: {
-        rpc_request = new (buf) ObRpcTableQueryRequest;
-        break;
-      }
-      case obrpc::OB_TABLE_API_QUERY_AND_MUTATE: {
-        rpc_request = new (buf) ObRpcTableQueryAndMutateRequest;
-        break;
-      }
-      case obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC: {
-        rpc_request = new (buf) ObRpcTableQuerySyncRequest;
-        break;
-      }
-      case obrpc::OB_TABLE_API_DIRECT_LOAD: {
-        rpc_request = new (buf) ObRpcTableDirectLoadRequest;
-        break;
-      }
-      case obrpc::OB_TABLE_API_LS_EXECUTE: {
-        rpc_request = new (buf) ObRpcTableLSOperationRequest;
-        break;
-      }
-      default:
-        status = RPC_ANALYZE_NEW_ERROR;
-        rpc_request = NULL;
-        LOG_WDIAG("invalid rpc pcode", K(pcode), K(ret), K(status), K(rpc_trace_id));
-        break;
+
+    // decode credential
+    int64_t pos = 0;
+    const ObString &credential = rpc_request->get_credential();
+    if (!credential.empty() && OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
+      status = RPC_ANALYZE_NEW_ERROR;
+      LOG_WDIAG("failed to serialize credential", K(ret), K(pos));
+    } else {
+      if (obrpc::OB_TABLE_API_LS_EXECUTE == obkv_info.pcode_) {
+        ObRpcTableDirectLoadRequest *direct_load_request = dynamic_cast<ObRpcTableDirectLoadRequest *>(rpc_request);
+        if (OB_NOT_NULL(direct_load_request)) {
+          obkv_info.set_first_direct_load_request(direct_load_request->is_begin_request());
+        }
+      } else if (obrpc::OB_GET_PARTITIONS == obkv_info.pcode_) {
+        obkv_info.is_internal_rpc_request_ = true;
       }
     }
 
     if (OB_SUCC(ret)) {
-      // set rpc meta
-      rpc_request->set_packet_meta(meta);
-      rpc_request->set_cluster_version(ctx.cluster_version_);
-       
-      if (OB_FAIL(rpc_request->analyze_request(req_buf, req_buf_len, analyze_pos))) {
-        LOG_WDIAG("fail to call analyze_request", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos), K(rpc_trace_id), K(pcode));
-      } else {
-        // set obkv_info meta
-        obkv_info.set_hbase_request(rpc_request->is_hbase_request());
-        obkv_info.set_read_weak(rpc_request->is_read_weak());
-        obkv_info.set_query_with_index(rpc_request->is_query_with_index());
-        obkv_info.set_stream_query(rpc_request->is_stream_query());
-        obkv_info.table_name_ = rpc_request->get_table_name();
-        obkv_info.index_name_ = rpc_request->get_index_name();
-        // TODO 不同请求后续单独加函数处理, rpc_requset中加入handle_rpc_reuqest处理login/batch/query/ls_load等请求，共性的属性获取提取到基类
-        if (obrpc::OB_TABLE_API_LS_EXECUTE == pcode) {
-          ObRpcTableDirectLoadRequest *direct_load_request = dynamic_cast<ObRpcTableDirectLoadRequest *>(rpc_request);
-          if (OB_NOT_NULL(direct_load_request)) {
-            obkv_info.set_first_direct_load_request(direct_load_request->is_begin_request());
-          }
-        }
-        // decode credential
-        int64_t pos = 0;
-        const ObString &credential = rpc_request->get_credential();
-        if (!credential.empty() && OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
-          status = RPC_ANALYZE_NEW_ERROR;
-          LOG_WDIAG("failed to serialize credential", K(ret), K(pos));
-        } else {
-          // success
-          ob_rpc_req.set_rpc_request(rpc_request);
-        }
-      }
-    }
-
-    if (OB_FAIL(ret) && OB_NOT_NULL(buf) && OB_ISNULL(ob_rpc_req.get_rpc_request())) {
-      //free buf, if not analyze request succed
-      if (OB_NOT_NULL(rpc_request)) {
-        rpc_request->~ObRpcRequest();
-      }
-      op_fixed_mem_free(buf, rpc_request_size);
-      ob_rpc_req.set_rpc_request_len(0);
+      status = RPC_ANALYZE_NEW_DONE;
     }
   }
 
   return ret;
 }
 
-int ObProxyRpcReqAnalyzer::analyze_obkv_req_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status, ObRpcReq &ob_rpc_req, obkv::ObRpcPacketMeta &meta)
+int ObProxyRpcReqAnalyzer::analyze_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
 {
   int ret = OB_SUCCESS;
-  int64_t analyze_pos = ctx.analyze_pos_;
-  char *req_buf = NULL;
-  int64_t req_buf_len = 0;
-  if (!ctx.is_response_) {
-    req_buf = ob_rpc_req.get_request_buf();
-    req_buf_len = ob_rpc_req.get_request_buf_len();
-  } else {
-    req_buf = ob_rpc_req.get_response_buf();
-    req_buf_len = ob_rpc_req.get_response_buf_len();
-  }
-  int64_t rpc_response_size = 0;
-  void *buf = NULL;
+  int64_t &analyze_pos = ctx.analyze_pos_;
+  char *req_buf = ob_rpc_req.get_response_buf();
+  int64_t req_buf_len = ob_rpc_req.get_response_buf_len();
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
-  ObRpcResponse *rpc_response = NULL;
-  ObRpcPacketCode pcode = obkv_info.pcode_;
-  ObRpcResultCode result_code;
+  ObRpcResponse *rpc_response = ob_rpc_req.get_rpc_response();
+  ObRpcReqAnalyzeNewStatus &status = ctx.status_;
+
+  if (OB_FAIL(rpc_response->analyze_response(req_buf, req_buf_len, analyze_pos))) {
+    LOG_WDIAG("fail to call analyze_response", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos), K(rpc_trace_id), "pcode", obkv_info.pcode_);
+  } else {
+    status = RPC_ANALYZE_NEW_DONE;
+    obkv_info.set_resp_completed(true);
+  }
+
+  if (OB_SUCC(ret)) {
+    status = RPC_ANALYZE_NEW_DONE;
+  }
+
+  return ret;
+}
+
+bool ObProxyRpcReqAnalyzer::required_async_analyze(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
+{
+  bool async_analyze = false;
+
+  if (ctx.is_response_) {
+    // do nothing
+    // 这里由上层调用保证，传入的ob_rpc_req一定是需要全量解析的
+    ObRpcResponse *rpc_response = ob_rpc_req.get_rpc_response();
+
+    if (OB_ISNULL(rpc_response)) {
+      // do nothing
+    } else {
+      const ObRpcPacketMeta &meta = rpc_response->get_packet_meta();
+      if (meta.ez_header_.ez_payload_size_ > OB_RPC_BIG_PACKET_LEN) {
+        async_analyze = true;
+        LOG_DEBUG("rpc response require async analyze", K(ob_rpc_req), "payload_size", meta.ez_header_.ez_payload_size_);
+      }
+    }
+  } else {
+    // for request analyze
+    ObRpcRequest *rpc_request = ob_rpc_req.get_rpc_request();
+
+    if (OB_ISNULL(rpc_request)) {
+      // do nothing
+    } else {
+      const ObRpcPacketMeta &meta = rpc_request->get_packet_meta();
+      if (meta.ez_header_.ez_payload_size_ > OB_RPC_BIG_PACKET_LEN) {
+        async_analyze = true;
+        LOG_DEBUG("rpc request require async analyze", K(ob_rpc_req), "payload_size", meta.ez_header_.ez_payload_size_);
+      }
+    }
+  }
+
+  return async_analyze;
+}
+
+int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
+{
+  int ret = OB_SUCCESS;
+
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
 
-  if (OB_FAIL(get_rpc_response_size(pcode, rpc_response_size))) {
-    status = RPC_ANALYZE_NEW_ERROR;
-    LOG_WDIAG("fail to get response size", K(ret), K(pcode));
-  } else {
-    bool is_compress_response = (meta.get_rpc_header().compressor_type_ > NONE_COMPRESSOR);
-    if (is_compress_response) {
-      if (pcode == OB_TABLE_API_MOVE || ctx.is_inner_request_) {
-        ret = OB_ERR_UNEXPECTED;
-        status = RPC_ANALYZE_NEW_ERROR;
-        LOG_WDIAG("received a compressed response from server", K(pcode), "is_shard_req", ctx.is_inner_request_, K(ret));
+  #ifdef ERRSIM
+  if (OB_SUCC(ret) && OB_FAIL(OB_E(EventTable::EN_RPC_NO_MASTER) OB_SUCCESS)) {
+    ret = OB_SUCCESS;
+    obkv_info.set_error_resp(true);
+    obkv_info.rpc_origin_error_code_ = OB_NOT_MASTER;
+  }
+  #endif
+  if (obkv_info.is_error() && obkv_info.is_resp()) {
+    LOG_DEBUG("ObRpcRequestSM::handle_server_failed", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+
+    if (obkv_info.pcode_ == obrpc::OB_TABLE_API_DIRECT_LOAD) {
+      LOG_INFO("ObRpcRequestSM::handle_server_failed direct load request receive server failed", "error_code",
+                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+      //don't do any retry for OB_TABLE_API_DIRECT_LOAD request
+      obkv_info.set_resp_reroute_info(false);
+      obkv_info.set_need_retry(false);
+      obkv_info.set_need_retry_with_global_index(false);
+    }
+    // For the -10500 error, there are two main situations:
+    //  1. Use the main table routing to report error -10500, splice it into a global index table, and try again.
+    //  2. Using global index table routing, error -10500 is reported. This situation is usually caused by using the old cache. In this case, normal retry logic is used, and the main table routing is used.
+    else if (OB_ERR_KV_GLOBAL_INDEX_ROUTE == obkv_info.rpc_origin_error_code_) {
+      if (!ob_rpc_req.get_rpc_request_config_info().rpc_enable_global_index_) {
+        ret = OB_ERR_KV_GLOBAL_INDEX_ROUTE;
+        LOG_WDIAG("Currently a global index error is returned but ODP disables global indexing", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+      } else if (!obkv_info.is_query_with_index()) {
+        ret = OB_NOT_SUPPORTED;
+        LOG_WDIAG("Currently it is not an index query request but a related error is returned", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
       } else {
-        status = RPC_ANALYZE_NEW_DONE;
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get global index error", "error_code", obkv_info.rpc_origin_error_code_,
+                  "data_table_id", obkv_info.data_table_id_, "table_id", obkv_info.table_id_, "idx_name", obkv_info.index_name_,
+                  "is_global_index_route", obkv_info.is_global_index_route(), K(rpc_trace_id));
+        if (obkv_info.is_global_index_route()) {
+          // dirtry index entry
+          if (OB_NOT_NULL(obkv_info.index_entry_)) {
+            obkv_info.index_entry_->cas_set_dirty_state();
+            obkv_info.index_entry_->dec_ref();
+            obkv_info.index_entry_ = NULL;
+          }
+          obkv_info.table_id_ = 0;
+          obkv_info.data_table_id_ = 0;
+          obkv_info.index_table_name_.reset();
+          obkv_info.set_need_retry(true);
+
+          ctx.dirty_partition_entry_ = true;
+        } else {
+          // With index table name, try again
+          obkv_info.set_need_retry_with_global_index(true);
+        }
       }
+    // TODO: There may be many different errors in the future. The reroute flag is not set, but you need to update the routing information and try again.
+    //  1. table level.  2. partition level.
+    } else if (OB_SCHEMA_ERROR == obkv_info.rpc_origin_error_code_
+                || OB_TABLE_NOT_EXIST == obkv_info.rpc_origin_error_code_
+                || OB_TABLET_NOT_EXIST == obkv_info.rpc_origin_error_code_
+                || OB_LS_NOT_EXIST == obkv_info.rpc_origin_error_code_
+                || (obrpc::OB_TABLE_API_LS_EXECUTE == obkv_info.pcode_
+                    && OB_NOT_MASTER == obkv_info.rpc_origin_error_code_)) {
+      if (obkv_info.is_rpc_request_with_partition_id_) {
+        ret = OB_ERR_KV_ROUTE_ENTRY_EXPIRE;
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST "
+                  "with set partition id, return OB_ERR_KV_ROUTE_ENTRY_EXPIRE", "error_code",
+                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+      } else {
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST", "error_code",
+                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+        obkv_info.set_need_retry(true);
+        obkv_info.set_route_entry_dirty();
+      }
+
+      ctx.dirty_table_entry_ = true;
+    } else if (obkv_info.is_bad_routing()) {
+      obkv_info.set_need_retry(true);
+      obkv_info.set_route_entry_dirty();
+      LOG_INFO("ObRpcRequestSM::handle_server_failed ", "error_code", obkv_info.rpc_origin_error_code_,
+                "is_inner_request", obkv_info.is_inner_request_,
+                "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+      // if received not master error, it means the partition locations of
+      // the certain table entry has expired, so we need delay to update it;
+      ctx.dirty_partition_entry_ = true;
     } else {
-      if (OB_FAIL(result_code.deserialize(req_buf, req_buf_len, analyze_pos))) {
-        LOG_WDIAG("fail to call deserialize for result_code", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos));
-        status = RPC_ANALYZE_NEW_ERROR;
-      } else if (0 != result_code.rcode_ || obkv_info.is_bad_routing()) {
-        // 记录错误，是否需要重传
-        obkv_info.set_error_resp(true);
-        obkv_info.rpc_origin_error_code_ = result_code.rcode_;
-        LOG_INFO("rpc response is error", K(pcode),
-                  "error_code", result_code.rcode_, "rpc_trace_id", obkv_info.rpc_trace_id_,
-                  "need_reroute", obkv_info.is_bad_routing(), "error_msg", result_code.msg_,
-                  "cur_serve_ip", obkv_info.server_info_.addr_);
-        status = RPC_ANALYZE_NEW_DONE;
-      } else {
-        // reset error code
-        obkv_info.rpc_origin_error_code_ = 0;
-        status = RPC_ANALYZE_NEW_DONE;
+      switch (obkv_info.rpc_origin_error_code_)
+      {
+      case OB_LOCATION_LEADER_NOT_EXIST:
+      case OB_NOT_MASTER:
+      case OB_RS_NOT_MASTER:
+      case OB_RS_SHUTDOWN:
+      case OB_RPC_SEND_ERROR:
+      case OB_RPC_POST_ERROR:
+      case OB_PARTITION_NOT_EXIST:
+      case OB_LOCATION_NOT_EXIST:
+      case OB_PARTITION_IS_STOPPED:
+      case OB_PARTITION_IS_BLOCKED:
+      case OB_SERVER_IS_INIT:
+      case OB_SERVER_IS_STOPPING:
+      // To avoid frequent changes in the tenant ID, return 5150(OB_TENANT_NOT_IN_SERVER) directly and client client recalculate tenant id.
+      // case OB_TENANT_NOT_IN_SERVER:
+      case OB_TRANS_RPC_TIMEOUT:
+      case OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST:
+        obkv_info.set_need_retry(true);
+        obkv_info.set_route_entry_dirty();
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.rpc_origin_error_code_,
+                  "is_inner_request", obkv_info.is_inner_request_,
+                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+        // if received not master error, it means the partition locations of
+        // the certain table entry has expired, so we need delay to update it;
+        ctx.dirty_partition_entry_ = true;
+      default:
+        break;
       }
+    }
+  }
 
-      /**
-       * @brief
-       *   1. need_parse_response_fully
-       *     1.1. not error
-       *     1.2. shard request
-       *     1.3. async query request
-       *   2. OB_TABLE_API_MOVE
-       */
-      if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == pcode))) {
-        if (OB_FAIL(ob_rpc_req.free_rpc_response())) {
-          LOG_WDIAG("failed to free_rpc_response", K(ret));
-        } else if (OB_ISNULL(buf = ob_rpc_req.alloc_rpc_response(rpc_response_size))) {
-          ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WDIAG("analyze_obrpc_req alloc memory failed", K(ret), K(pcode), K(rpc_response_size));
-        }
+  return ret;
+}
 
-        if (OB_SUCC(ret)) {
-          switch (pcode) {
-          case obrpc::OB_TABLE_API_LOGIN: {
-            rpc_response = new (buf) ObRpcTableLoginResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_EXECUTE: {
-            rpc_response = new (buf) ObRpcTableOperationResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_BATCH_EXECUTE: {
-            rpc_response = new (buf) ObRpcTableBatchOperationResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_EXECUTE_QUERY: {
-            rpc_response = new (buf) ObRpcTableQueryResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_QUERY_AND_MUTATE: {
-            rpc_response = new (buf) ObRpcTableQueryAndMutateResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC: {
-            rpc_response = new (buf) ObRpcTableQuerySyncResponse;
-            break;
-          }
-          case obrpc::OB_TABLE_API_MOVE : {
-            rpc_response = new (buf) ObRpcTableMoveResponse;
-            obkv_info.set_resp_reroute_info(true); //handle the response
-            break;
-          }
-          case obrpc::OB_TABLE_API_LS_EXECUTE : {
-            rpc_response = new (buf) ObRpcTableLSOperationResponse;
-            break;
-          }
-          default:
-            status = RPC_ANALYZE_NEW_ERROR;
-            LOG_WDIAG("invalid rpc pcode", K(pcode), K(ret), K(status), K(rpc_trace_id));
-            break;
-          }
-        }
-        if (OB_SUCC(ret)) {
-          rpc_response->set_packet_meta(meta);
-          rpc_response->set_result_code(result_code);
-          rpc_response->set_cluster_version(ctx.cluster_version_);
-          if (OB_FAIL(rpc_response->analyze_response(req_buf, req_buf_len, analyze_pos))) {
-            LOG_WDIAG("fail to call analyze_response", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos), K(rpc_trace_id), K(pcode));
+int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
+{
+  int ret = OB_SUCCESS;
+  ObRpcTableQuerySyncResponse *query_response = NULL;
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+
+  if (OB_ISNULL(query_response = dynamic_cast<ObRpcTableQuerySyncResponse *>(ob_rpc_req.get_rpc_response()))) {
+    LOG_DEBUG("direct return response to client, no need to handle response", K(rpc_trace_id));
+  } else {
+    LOG_DEBUG("handle_obkv_table_query_async_response for OB_TABLE_API_EXECUTE_QUERY_SYNC", K(rpc_trace_id));
+
+    // 处理跨分区SyncQuery的标记，session id处理，标记处理
+    ObTableQueryAsyncEntry *query_async_entry = NULL;
+    if (OB_ISNULL(query_async_entry = obkv_info.query_async_entry_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_DEBUG("process ObRpcTableQuerySyncResponse get query_async_entry is NULL", K(ret), K(obkv_info), KPC(query_async_entry), K(rpc_trace_id));
+    } else {
+      LOG_DEBUG("begin to process ObRpcTableQuerySyncResponse", KPC(query_async_entry), K(rpc_trace_id));
+
+      if (OB_SUCC(ret)) {
+        /**
+         * @brief
+         * 1. If there is data, directly modify the flag to not end and return
+         *  1.1 If it is the last partition with end, clean query_async_entry
+         * 2. If there is no data
+         *  2.1 If it is the last partition, set client_session_id and return, NOTICE：clean query_async_entry
+         *  2.2 If it is not the last partition, you need to try again with the next partition.
+         */
+        bool is_data = 0 != query_response->get_query_result().get_row_count();
+        bool is_end = query_response->get_query_result().is_end_;
+        bool need_clean_query_info = false;
+
+        // reset is_first
+        query_async_entry->set_first_query(false);
+
+        if (query_async_entry->is_single_query_request()) {
+          // single
+          if (is_end) {
+            need_clean_query_info = true;   // clean query_async_entry
           } else {
-            ob_rpc_req.set_rpc_response(rpc_response);
-            ob_rpc_req.set_rpc_response_len(rpc_response_size);
+            LOG_DEBUG("single async query result", "current server session id", query_async_entry->get_server_query_session_id(),
+                        "response server session id", query_response->get_query_result().query_session_id_, K(rpc_trace_id));
+            query_async_entry->set_server_query_session_id(query_response->get_query_result().query_session_id_);
           }
-        }
-        if (OB_FAIL(ret) && OB_NOT_NULL(buf) && OB_ISNULL(ob_rpc_req.get_rpc_response())) {
-          //free memory if failed to deserialize
-          if (OB_NOT_NULL(rpc_response)) {
-            rpc_response->~ObRpcResponse();
-          }
-          if (ob_rpc_req.is_inner_request()) {
-            if (OB_ISNULL(ob_rpc_req.get_inner_request_allocator())) {
-              // not change ret
-              LOG_WDIAG("inner request allocator is NULL", K(ret));
+        } else {
+          // sharding
+          if (is_data) {
+            if (is_end) {
+              if (query_async_entry->is_last_tablet()) {
+                need_clean_query_info = true;   // clean query_async_entry
+              } else {
+                query_response->get_query_result().is_end_ = false;  // set not end
+                query_async_entry->add_current_position();
+                query_async_entry->set_server_query_session_id(0);
+                query_async_entry->set_first_query(true);
+                query_async_entry->reset_server_info();
+                LOG_DEBUG("handle async response with", K(is_data), K(is_end), K(rpc_trace_id));
+              }
             } else {
-              ob_rpc_req.get_inner_request_allocator()->free(buf);
+              LOG_DEBUG("shard async query result", "current server session id", query_async_entry->get_server_query_session_id(),
+                        "response server session id", query_response->get_query_result().query_session_id_, K(rpc_trace_id));
+              query_async_entry->set_server_query_session_id(query_response->get_query_result().query_session_id_);
             }
           } else {
-            op_fixed_mem_free(buf, rpc_response_size);
+            if (!is_end) {
+              // This situation does not exist. The default is is_end to prevent the server from returning an exception and causing an obproxy exception.
+              LOG_WDIAG("Async query get no data but response flag is not end", K(is_end), K(is_data), K(query_response), K(rpc_trace_id));
+              is_end = true;
+            }
+            if (query_async_entry->is_last_tablet()) {
+              need_clean_query_info = true;
+            } else {
+              query_async_entry->add_current_position();
+              query_async_entry->set_server_query_session_id(0);
+              query_async_entry->set_first_query(true);
+              query_async_entry->reset_server_info();
+              query_async_entry->set_need_retry(true);
+              ctx.need_retry_ = true;
+            }
           }
-          ob_rpc_req.set_rpc_response_len(0);
         }
+
+        query_response->get_query_result().query_session_id_ = query_async_entry->get_client_query_session_id();
+        ctx.need_rewrite_ = true;
+
+        if (need_clean_query_info) {
+          query_async_entry->set_need_terminal(true);
+          query_async_entry->set_deleted_state();
+        }
+        LOG_DEBUG("process ObRpcTableQuerySyncResponse done", KPC(query_async_entry), K(is_data), K(is_end), K(need_clean_query_info), K(ctx), K(rpc_trace_id));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(ctx);
+
+  ObRpcReqCtx *rpc_ctx = NULL;
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcTableLoginResponse *login_response = NULL;
+
+  if (OB_ISNULL(rpc_ctx = obkv_info.rpc_ctx_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("handle login result but rpc_ctx is NULL", K(ret), K(rpc_trace_id));
+  } else if (OB_ISNULL(login_response = dynamic_cast<ObRpcTableLoginResponse *>(ob_rpc_req.get_rpc_response()))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("handle login result but login_response is NULL", K(ret), K(rpc_trace_id));
+  } else {
+    // decode and store credential
+    int64_t pos = 0;
+
+    const ObString &credential = login_response->get_credential();
+    if (OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
+      LOG_WDIAG("failed to serialize credential", K(ret), K(pos));
+    } else {
+      // set credential
+      rpc_ctx->set_credential(obkv_info.credential_);
+      // add in global cache
+      rpc_ctx->inc_ref();   //inc before add to cache
+      if (OB_FAIL(get_global_rpc_req_ctx_cache().add_rpc_req_ctx_if_not_exist(*rpc_ctx, false))) {
+        LOG_WDIAG("fail to add rpc ctx", KPC(rpc_ctx), K(ret));
+        rpc_ctx->dec_ref();
+      } else {
+        LOG_DEBUG("succ to add rpc ctx into global cache", KPC(rpc_ctx), K(rpc_trace_id));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
+{
+  int ret = OB_SUCCESS;
+
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+
+  if (obkv_info.is_respo_reroute_info()) {
+    //need reroute base on server reroute info
+    ctx.need_reroute_ = true;
+  } else if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_server_failed(ctx, ob_rpc_req))) {
+    LOG_WDIAG("fail to call handle_server_failed", K(ret), K(rpc_trace_id));
+  } else if (!obkv_info.is_rpc_req_can_retry()) {
+    // if cannot retry, handle special rpc response for additional information
+    if (ob_rpc_req.is_inner_request()) {
+      // do nothing, inner request just callback to operation
+    } else {
+      if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == obkv_info.pcode_) {
+        LOG_DEBUG("handle_obkv_response for OB_TABLE_API_EXECUTE_QUERY_SYNC", K(rpc_trace_id));
+        if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_query_async_response(ctx, ob_rpc_req))) {
+          LOG_WDIAG("fail to call handle_query_async_response", K(ret), K(rpc_trace_id));
+        }
+      } else if (obrpc::OB_TABLE_API_LOGIN == obkv_info.pcode_) {
+        LOG_DEBUG("handle_obkv_response for OB_TABLE_API_LOGIN", K(rpc_trace_id));
+        if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_login_response(ctx, ob_rpc_req))) {
+          LOG_WDIAG("fail to call handle_login_response", K(ret), K(rpc_trace_id));
+        }
+      } else if (obrpc::OB_TABLE_API_DIRECT_LOAD == obkv_info.pcode_) {
+        ctx.need_retry_ = false;
+        obkv_info.set_need_retry(false); //not do any retry for direct_load request(it will be errored if retry)
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (ctx.need_retry_ || obkv_info.is_rpc_req_can_retry()) {
+      // need retry in handle_server_failed or index or async query
+      ctx.need_retry_ = true;
+      LOG_DEBUG("[ObProxyRpcReqAnalyzer::handle_rpc_response] need retry rpc req",
+          "error_code", obkv_info.rpc_origin_error_code_,
+          "global index retry", obkv_info.is_need_retry_with_global_index(),
+          "async retry", obkv_info.is_need_retry_with_query_async(),
+          "retry_times", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+    } else if (ctx.need_rewrite_) {
+      // rewrite response and return to client
+      if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_obkv_response_rewrite(ob_rpc_req))) {
+        LOG_WDIAG("fail to call handle_obkv_response_rewrite", K(ret), K(rpc_trace_id));
       }
     }
   }
@@ -732,9 +857,9 @@ int ObProxyRpcReqAnalyzer::handle_obkv_request_rewrite(ObRpcReq &ob_rpc_req)
     if (obkv_info.is_respo_reroute_info()) {
       //do nothing
       LOG_DEBUG("not need to rewrite request for retry caused by reroute info from server", K(pcode), K(ob_rpc_req), K(rpc_trace_id));
-    // need set enable reroute flag for rpc_req_->request;
+    // need set enable reroute flag for ob_rpc_req.request;
     } else if (OB_FAIL(reset_obkv_request_before_send(ob_rpc_req))) {
-      // need set reroute flag for rpc_req_->request;
+      // need set reroute flag for ob_rpc_req.request;
       LOG_WDIAG("fail to reset table_id or partition_id for rpc request", K(ret), K(ob_rpc_req), K(rpc_trace_id));
     } else {
       if (obkv_info.is_inner_request_) {
@@ -844,42 +969,20 @@ int ObProxyRpcReqAnalyzer::handle_obkv_serialize_response(ObRpcReq &ob_rpc_req)
 int ObProxyRpcReqAnalyzer::build_empty_query_response(ObRpcReq &ob_rpc_req)
 {
   int ret = OB_SUCCESS;
-  void *tmp_buf = NULL;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
-  ObRpcRequest *request = NULL;
-  ObRpcResponse *response = NULL;
-  int64_t response_len = 0;
 
-  if (obrpc::OB_TABLE_API_EXECUTE_QUERY == obkv_info.pcode_) {
-    response_len = sizeof(ObRpcTableQueryResponse);
-  } else if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == obkv_info.pcode_) {
-    response_len = sizeof(ObRpcTableQuerySyncResponse);
-  } else if (obrpc::OB_TABLE_API_QUERY_AND_MUTATE == obkv_info.pcode_) {
-    response_len = sizeof(ObRpcTableQueryAndMutateResponse);
-  } else {
+  if (obrpc::OB_TABLE_API_EXECUTE_QUERY != obkv_info.pcode_
+    && obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC != obkv_info.pcode_
+    && obrpc::OB_TABLE_API_QUERY_AND_MUTATE != obkv_info.pcode_) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("ObProxyRpcReqAnalyzer::build_empty_query_response get a wrong pcode", K(obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC));
-  }
-
-  if (OB_SUCC(ret)) {
-    if (OB_FAIL(ob_rpc_req.free_rpc_response())) {
-      LOG_WDIAG("failed to free_rpc_response", K(ret));
-    } else if (OB_ISNULL(tmp_buf = ob_rpc_req.alloc_rpc_response(response_len))) {
+  } else {
+    if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
-      LOG_WDIAG("analyze_obrpc_req alloc memory failed", K(ret), K(response_len));
-    }
-
-    if (OB_SUCC(ret)) {
-      if (obrpc::OB_TABLE_API_EXECUTE_QUERY == obkv_info.pcode_) {
-        response =  new (tmp_buf) ObRpcTableQueryResponse();
-      } else if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == obkv_info.pcode_) {
-        // Sync Query需要设置end
-        ObRpcTableQuerySyncResponse *sync_response =  new (tmp_buf) ObRpcTableQuerySyncResponse();
-        sync_response->get_query_result().is_end_ = true;
-        response = sync_response;
-      } else if (obrpc::OB_TABLE_API_QUERY_AND_MUTATE == obkv_info.pcode_) {
-        response =  new (tmp_buf) ObRpcTableQueryAndMutateResponse();
-      }
+      LOG_WDIAG("fail to call  alloc_rpc_response", K(ret));
+    } else {
+      ObRpcRequest *request = NULL;
+      ObRpcResponse *response = ob_rpc_req.get_rpc_response();
       ObRpcPacketMeta &meta = response->get_packet_meta();
 
       if (OB_ISNULL(request = ob_rpc_req.get_rpc_request())) {
@@ -893,8 +996,6 @@ int ObProxyRpcReqAnalyzer::build_empty_query_response(ObRpcReq &ob_rpc_req)
 
       meta.rpc_header_.flags_ |= obrpc::ObRpcPacketHeader::RESP_FLAG;
       obkv_info.set_resp_completed(true);
-      ob_rpc_req.set_rpc_response(response);
-      ob_rpc_req.set_rpc_response_len(response_len);
     }
   }
   return ret;
@@ -903,22 +1004,15 @@ int ObProxyRpcReqAnalyzer::build_empty_query_response(ObRpcReq &ob_rpc_req)
 int ObProxyRpcReqAnalyzer::build_error_response(ObRpcReq &ob_rpc_req, int err_code)
 {
   int ret = OB_SUCCESS;
-  void *tmp_buf = NULL;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
-  ObRpcRequest *request = NULL;
-  ObRpcResponse *response = NULL;
-  int64_t response_len = sizeof(ObRpcResponse);
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
 
-  if (OB_FAIL(ob_rpc_req.free_rpc_response())) {
-    LOG_WDIAG("failed to free_rpc_response", K(ret), K(rpc_trace_id));
-  } else if (OB_ISNULL(tmp_buf = ob_rpc_req.alloc_rpc_response(response_len))) {
+  if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WDIAG("analyze_obrpc_req alloc memory failed", K(ret), K(response_len), K(rpc_trace_id));
-  }
-
-  if (OB_SUCC(ret)) {
-    response =  new (tmp_buf) ObRpcResponse();
+    LOG_WDIAG("alloc memory failed", K(ret), K(rpc_trace_id));
+  } else {
+    ObRpcRequest *request = NULL;
+    ObRpcResponse *response = ob_rpc_req.get_rpc_response();
     ObRpcPacketMeta &meta = response->get_packet_meta();
     ObRpcResultCode &result_code = response->get_result_code();
 
@@ -936,8 +1030,6 @@ int ObProxyRpcReqAnalyzer::build_error_response(ObRpcReq &ob_rpc_req, int err_co
     meta.rpc_header_.flags_ |= obrpc::ObRpcPacketHeader::RESP_FLAG;
     result_code.rcode_ = err_code;
     obkv_info.set_resp_completed(true);
-    ob_rpc_req.set_rpc_response(response);
-    ob_rpc_req.set_rpc_response_len(response_len);
   }
   return ret;
 }
@@ -970,6 +1062,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_request_size(const ObRpcPacketCode pcode, int
     break;
   case obrpc::OB_TABLE_API_LS_EXECUTE:
     size = sizeof(ObRpcTableLSOperationRequest);
+    break;
+  case obrpc::OB_GET_PARTITIONS:
+    size = sizeof(ObRpcTableGetRouteRequest);
     break;
   default:
     size = 0;
@@ -1011,6 +1106,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_response_size(const ObRpcPacketCode pcode, in
     break;
   case obrpc::OB_TABLE_API_MOVE:
     size = sizeof(ObRpcTableMoveResponse);
+    break;
+  case obrpc::OB_GET_PARTITIONS:
+    size = sizeof(ObRpcTableGetRouteResponse);
     break;
   default:
     size = 0;
@@ -1177,6 +1275,116 @@ int ObProxyRpcReqAnalyzer::do_parse_auth_result(ObRpcReqCtx &rpc_ctx,
     }
     rpc_ctx.assign_full_name(buf_start, static_cast<int32_t>(pos));
   }
+  return ret;
+}
+
+int ObProxyRpcReqAnalyzer::build_get_partition_response(ObRpcReq &ob_rpc_req, ObTableEntry &table_entry)
+{
+  int ret = OB_SUCCESS;
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  ObRpcRequest *request = NULL;
+  ObRpcTableGetRouteResponse *response = NULL;
+  int64_t response_len = sizeof(ObRpcTableGetRouteResponse);
+
+  if (OB_FAIL(ob_rpc_req.free_rpc_response())) {
+    LOG_WDIAG("failed to free_rpc_response", K(ret));
+  } else if (OB_FAIL(ob_rpc_req.alloc_rpc_response()) || OB_ISNULL(response = dynamic_cast<ObRpcTableGetRouteResponse *>(ob_rpc_req.get_rpc_response()))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("analyze_obrpc_req alloc memory failed", K(ret), K(response_len));
+  } else {
+    ObRpcPacketMeta &meta = response->get_packet_meta();
+
+    if (OB_ISNULL(request = ob_rpc_req.get_rpc_request())) {
+      memcpy(&meta.ez_header_.magic_header_flag_, obkv::ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(obkv::ObRpcEzHeader::MAGIC_HEADER_FLAG));
+      meta.rpc_header_.pcode_ = obkv_info.pcode_;
+    } else {
+      memcpy(&meta.ez_header_, &(request->get_packet_meta().ez_header_), sizeof(meta.ez_header_));
+      memcpy(&meta.rpc_header_, &(request->get_packet_meta().rpc_header_), sizeof(meta.rpc_header_));
+      meta.rpc_header_.flags_ &= (uint16_t)~(ObRpcPacketHeader::REQUIRE_REROUTING_FLAG);  // clear reroute flag
+    }
+
+    meta.rpc_header_.flags_ |= obrpc::ObRpcPacketHeader::RESP_FLAG;
+    obkv_info.set_resp_completed(true);
+    ob_rpc_req.set_rpc_response(response);
+    ob_rpc_req.set_rpc_response_len(response_len);
+
+    // build 完毕 开始解析
+    // table level
+    ObObkvRouteResult &ObkvRouteResult = response->get_route_result();
+    ObkvRouteResult.create_time_us_ = table_entry.get_create_time_us();
+    ObkvRouteResult.table_id_ = table_entry.get_table_id();
+    ObkvRouteResult.part_num_ = table_entry.get_part_num();
+    // partinfo
+    if (table_entry.is_partition_table()) {
+      ObProxyPartInfo &part_info = *table_entry.get_part_info();
+      ObObkvPartitionInfo &result_part_info = ObkvRouteResult.part_info_;
+      result_part_info.part_level_ = static_cast<int64_t>(part_info.get_part_level());
+
+      ObProxyPartOption &first_part_option = part_info.get_first_part_option();
+      result_part_info.part_num_ = first_part_option.part_num_;
+      result_part_info.part_space_ = first_part_option.part_space_;
+      result_part_info.part_type_ = static_cast<int64_t>(first_part_option.part_func_type_);
+      result_part_info.part_expr_ = part_info.get_part_expr();
+      result_part_info.part_range_type_ = part_info.get_part_range_type();
+      if (result_part_info.part_level_ == share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO) {
+        ObProxyPartOption &sub_part_option = part_info.get_sub_part_option();
+        result_part_info.sub_part_num_ = sub_part_option.part_num_;
+        result_part_info.sub_part_space_ = sub_part_option.part_space_;
+        result_part_info.sub_part_type_ = static_cast<int64_t>(sub_part_option.part_func_type_);
+        result_part_info.sub_part_expr_ = part_info.get_sub_part_expr();
+        result_part_info.sub_part_range_type_ = part_info.get_sub_part_range_type();
+      }
+      // part key
+      ObProxyPartKeyInfo &part_key_info = part_info.get_part_key_info();
+      for (int i = 0; i < part_key_info.key_num_; ++i) {
+        ObProxyPartKey &part_key = part_key_info.part_keys_[i];
+        ObObkvPartKey result_part_key;
+        if (0 != part_key.func_type_) {
+          // 生成列、do nothing
+        } else {
+          result_part_key.part_key_cs_type_ = part_key.cs_type_;
+          result_part_key.part_key_idx_ = part_key.idx_;
+          result_part_key.part_key_level_ = static_cast<int64_t>(part_key.level_);
+          result_part_key.part_key_name_.assign(part_key.name_.str_, part_key.name_.str_len_);
+          result_part_key.part_key_type_ = static_cast<int64_t>(part_key.obj_type_);
+          result_part_key.part_key_extra_.assign(part_key.part_key_extra_.str_, part_key.part_key_extra_.str_len_);
+          result_part_info.part_keys_.push_back(result_part_key);
+        }
+      }
+      // first part
+      const common::ObPartDesc *first_part_desc = part_info.get_part_mgr().get_first_part_desc();
+      if (OB_ISNULL(first_part_desc) || OB_FAIL(first_part_desc->build_obkv_part_array(ObkvRouteResult.first_parts_))) {
+        LOG_WDIAG("fail to build obkv first part array", KP(first_part_desc), K(ret));
+      } else {
+        // sub part
+        if (result_part_info.part_level_ == share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO) {
+          int64_t cluster_version = part_info.get_cluster_version();
+          common::ObPartDesc *current_sub_desc = NULL;
+          for (int i = 0; OB_SUCC(ret) && i < ObkvRouteResult.first_parts_.count(); ++i) {
+            int64_t first_part_id = ObkvRouteResult.first_parts_[i].part_id_;
+            int64_t sub_part_num;
+            if (OB_FAIL(part_info.get_part_mgr().get_sub_part_num_by_first_part_id(part_info,
+                                                                                   first_part_id,
+                                                                                   sub_part_num))) {
+              LOG_WDIAG("fail to get sub part num", K(ret));
+            } else if (OB_FAIL(part_info.get_part_mgr().get_sub_part_desc_by_first_part_id(false,
+                                                                                    first_part_id,
+                                                                                    current_sub_desc,
+                                                                                    cluster_version))) {
+              LOG_WDIAG("fail to get sub part desc", K(ret));
+            } else if (OB_FAIL(current_sub_desc->build_obkv_part_array(ObkvRouteResult.sub_parts_))) {
+              LOG_WDIAG("fail to build obkv sub part array", K(ret));
+            } else {
+              ObkvRouteResult.first_parts_.at(i).sub_part_num_ = sub_part_num;
+            }
+          }
+        }
+      }
+    }
+
+    LOG_DEBUG("build_get_partition_response done", K(ObkvRouteResult));
+  }
+
   return ret;
 }
 

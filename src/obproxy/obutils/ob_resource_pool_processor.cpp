@@ -2213,7 +2213,7 @@ bool ObClusterResource::tenant_has_single_leader(const common::ObString &tenant_
   return bret;
 }
 
-int ObClusterResource::get_single_leader_info(
+int ObClusterResource::get_and_update_single_leader_info(
   const common::ObString &tenant_name,
   ObTenantSingleLeaderInfo *&info)
 {
@@ -2226,6 +2226,7 @@ int ObClusterResource::get_single_leader_info(
     } else {
       LOG_WDIAG("fail to get_refactored", K(tenant_name), K(ret));
     }
+    DEC_SHARED_REF(info);
   } else {
     INC_SHARED_REF(info, value);
   }

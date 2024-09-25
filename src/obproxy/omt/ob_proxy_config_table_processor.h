@@ -124,6 +124,12 @@ public:
     |---- 1 bits ---|--- 1 bits ---|--- 1 bits ---|
     |- ColumnStore--|-- ReadOnly --|---- Full ----|
   */
+  enum ObReplicaType
+  {
+    Full = 0,
+    ReadOnly,
+    ColumnStore,
+  };
   static const int64_t FULL_BITS_SHIFT = 0;
   static const int64_t READONLY_BITS_SHIFT = 1;
   static const int64_t COLUMN_STORE_BITS_SHIFT = 2;
@@ -134,9 +140,11 @@ public:
   bool is_exist_full_replica() const { return replica_type_ & WITH_FULL; };
   bool is_exist_readonly_replica() const { return replica_type_ & WITH_READONLY; };
   bool is_exist_column_store_replica() const { return replica_type_ & WITH_COLUMN_STORE; };
+  bool is_column_store_replica_only() const { return replica_type_ == WITH_COLUMN_STORE; };
   void set_full_replica() { replica_type_ = replica_type_ | WITH_FULL; };
   void set_readonly_replica() { replica_type_ = replica_type_ | WITH_READONLY; };
   void set_column_store_replica() { replica_type_ = replica_type_ | WITH_COLUMN_STORE; };
+  void set_all_weakread_replica();
 public:
   int64_t replica_type_;
 };
@@ -275,6 +283,8 @@ public:
 
   static int parse_ssl_attributes(const ObBaseConfigItem &config_item, SSLAttributes &ssl_attributes);
   static bool is_config_vaild(const ObBaseConfigItem &config_item);
+  static int is_replica_type_config_valid(const ObProxyConfigItem &item);
+  static int is_weigth_zone_config_valid(const ObProxyConfigItem &item);
   int backup_hashmap_with_lock();
   int get_proxy_multi_config(const obutils::ObVipAddr &vip_addr, const common::ObString &cluster_name,
                             const common::ObString &tenant_name, const uint64_t global_version,

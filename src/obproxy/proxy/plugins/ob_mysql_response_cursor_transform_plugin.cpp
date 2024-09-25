@@ -191,15 +191,18 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_field(event::ObIOBuff
   } else if (OB_FAIL(pkt_reader_.get_packet(*reader, field_packet))) {
     PROXY_API_LOG(EDIAG, "fail to get filed packet from reader", K(ret));
   } else {
-    pkt_count_++;
-    field_types_.push_back(field.type_);
-    if (OB_MYSQL_TYPE_CURSOR == field.type_) {
-      hava_cursor_ = true;
-    }
+    if (OB_FAIL(field_types_.push_back(field.type_))) {
+      PROXY_API_LOG(EDIAG, "fail to push field type", K(ret), K(field.type_));
+    } else {
+      pkt_count_++;
+      if (OB_MYSQL_TYPE_CURSOR == field.type_) {
+        hava_cursor_ = true;
+      }
 
-    if (pkt_count_ == column_num_) {
-      resultset_state_ = RESULTSET_EOF_FIRST;
-      pkt_count_ = 0;
+      if (pkt_count_ == column_num_) {
+        resultset_state_ = RESULTSET_EOF_FIRST;
+        pkt_count_ = 0;
+      }
     }
   }
 
@@ -239,28 +242,33 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
         if (ObSMUtils::update_from_bitmap(param, bitmap, i + 2)) {
           // do nothing
         } else {
-          if (OB_MYSQL_TYPE_CURSOR == field_types.at(i)) {
-            ObMysqlClientSession *client_session = sm->get_client_session();
-            ObMysqlServerSession *server_session = sm->get_server_session();
-            if (OB_ISNULL(server_session)) {
-              server_session = client_session->get_server_session();
-            }
+          obmysql::EMySQLFieldType type;
+          if (OB_FAIL(field_types.at(i, type))) {
+            PROXY_API_LOG(WDIAG, "fail to get field_types", K(i), K(ret));
+          } else {
+            if (OB_MYSQL_TYPE_CURSOR == type) {
+              ObMysqlClientSession *client_session = sm->get_client_session();
+              ObMysqlServerSession *server_session = sm->get_server_session();
+              if (OB_ISNULL(server_session)) {
+                server_session = client_session->get_server_session();
+              }
 
-            uint32_t client_cursor_id = client_session->inc_and_get_cursor_id();
-            uint32_t server_cursor_id = 0;
-            if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, payload_len, server_cursor_id))) {
-              PROXY_API_LOG(WDIAG, "fail to get cursor id", K(i), K(ret));
-            } else if (OB_FAIL(add_cursor_id_pair(server_session, client_cursor_id, server_cursor_id))) {
-              PROXY_API_LOG(WDIAG, "fail to add cursor id parit", K(i), K(client_cursor_id), K(server_cursor_id), K(ret));
-            } else if (OB_FAIL(add_cursor_id_addr(client_session, client_cursor_id, server_session->get_netvc()->get_remote_addr()))) {
-              PROXY_API_LOG(WDIAG, "fail to add cursor id addr", K(i), K(client_cursor_id), K(ret));
-            } else {
-              // pos - 4 回到 cursor_id 的起始位置, 然后减 start, 得到偏移
-              reader->replace(reinterpret_cast<const char*>(&client_cursor_id), sizeof(client_cursor_id),
-                              MYSQL_NET_HEADER_LENGTH + (pos - 4 - start));
+              uint32_t client_cursor_id = client_session->inc_and_get_cursor_id();
+              uint32_t server_cursor_id = 0;
+              if (OB_FAIL(ObMysqlPacketUtil::get_uint4(pos, payload_len, server_cursor_id))) {
+                PROXY_API_LOG(WDIAG, "fail to get cursor id", K(i), K(ret));
+              } else if (OB_FAIL(add_cursor_id_pair(server_session, client_cursor_id, server_cursor_id))) {
+                PROXY_API_LOG(WDIAG, "fail to add cursor id parit", K(i), K(client_cursor_id), K(server_cursor_id), K(ret));
+              } else if (OB_FAIL(add_cursor_id_addr(client_session, client_cursor_id, server_session->get_netvc()->get_remote_addr()))) {
+                PROXY_API_LOG(WDIAG, "fail to add cursor id addr", K(i), K(client_cursor_id), K(ret));
+              } else {
+                // pos - 4 回到 cursor_id 的起始位置, 然后减 start, 得到偏移
+                reader->replace(reinterpret_cast<const char*>(&client_cursor_id), sizeof(client_cursor_id),
+                                MYSQL_NET_HEADER_LENGTH + (pos - 4 - start));
+              }
+            } else if (OB_FAIL(skip_field_value(pos, payload_len, type))) {
+              PROXY_API_LOG(WDIAG, "fail to skip field value", K(i), K(ret));
             }
-          } else if (OB_FAIL(skip_field_value(pos, payload_len, field_types.at(i)))) {
-            PROXY_API_LOG(WDIAG, "fail to skip field value", K(i), K(ret));
           }
         }
       }

@@ -53,6 +53,12 @@ ObMemLeakChecker &get_global_objpool_leak_checker()
   return g_objpool_leak_checker;
 }
 
+ObRefMemLeakChecker &get_global_ref_leak_checker()
+{
+  static ObRefMemLeakChecker g_ref_leak_checker;
+  return g_ref_leak_checker;
+}
+
 int ObMemLeakChecker::init(const char* name)
 {
   int ret = OB_SUCCESS;
@@ -378,6 +384,331 @@ void ObMemLeakChecker::print(int64_t id /*-1*/)
 
 }
 
+int ObRefMemLeakChecker::get_inc_info_map_for_cur_thread(ref_info_map_t*& ret_ptr, int64_t& id)
+{
+  int ret = OB_SUCCESS;
+
+  ret_ptr = NULL;
+  id = (get_itid() + 1) % MEM_INFO_MAP_NUM; // get_itid() start from -1
+  if (OB_LIKELY(NULL != inc_info_maps_[id])) {
+    ret_ptr = inc_info_maps_[id];
+  } else if (OB_ISNULL(ret_ptr = (ref_info_map_t*) ob_malloc(sizeof(ref_info_map_t), MOD_ID_FOR_CHECK))) {
+    LOG_WDIAG("failed to alloc mem for mod_alloc_info_t");
+  } else {
+    lib::ObMutexGuard guard(locks_[id]);
+    if (NULL == inc_info_maps_[id]) {
+      inc_info_maps_[id] = ret_ptr;
+      LOG_DEBUG("succ to alloc mem info map", K(id), K(ret_ptr), "new_ptr", inc_info_maps_[id], K(lbt()));
+      ret_ptr = new (ret_ptr) ref_info_map_t();
+      if (OB_UNLIKELY(OB_SUCCESS != ret_ptr->create(DEFAULT_MAP_SIZE, MOD_ID_FOR_CHECK, MOD_ID_FOR_CHECK))) {
+        LOG_EDIAG("failed to create mem info map", K(id), K(ret_ptr), "new_ptr", inc_info_maps_[id]);
+      }
+    } else {
+      //is alloc by other thread, release
+      ob_free(ret_ptr);
+      ret_ptr = inc_info_maps_[id];
+      LOG_DEBUG("succ to avoid multi-thread data race", K(ret_ptr));
+    }
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::get_dec_info_map_for_cur_thread(ref_info_map_t*& ret_ptr, int64_t& id)
+{
+  int ret = OB_SUCCESS;
+
+  ret_ptr = NULL;
+  id = (get_itid() + 1) % MEM_INFO_MAP_NUM; // get_itid() start from -1
+  if (OB_LIKELY(NULL != dec_info_maps_[id])) {
+    ret_ptr = dec_info_maps_[id];
+  } else if (OB_ISNULL(ret_ptr = (ref_info_map_t*) ob_malloc(sizeof(ref_info_map_t), MOD_ID_FOR_CHECK))) {
+    LOG_WDIAG("failed to alloc mem for mod_alloc_info_t");
+  } else {
+    lib::ObMutexGuard guard(locks_[id]);
+    if (NULL == dec_info_maps_[id]) {
+      dec_info_maps_[id] = ret_ptr;
+      LOG_DEBUG("succ to alloc mem info map", K(id), K(ret_ptr), "new_ptr", dec_info_maps_[id], K(lbt()));
+      ret_ptr = new (ret_ptr) ref_info_map_t();
+      if (OB_UNLIKELY(OB_SUCCESS != ret_ptr->create(DEFAULT_MAP_SIZE, MOD_ID_FOR_CHECK, MOD_ID_FOR_CHECK))) {
+        LOG_EDIAG("failed to create mem info map", K(id), K(ret_ptr), "new_ptr", dec_info_maps_[id]);
+      }
+    } else {
+      //is alloc by other thread, release
+      ob_free(ret_ptr);
+      ret_ptr = dec_info_maps_[id];
+      LOG_DEBUG("succ to avoid multi-thread data race", K(ret_ptr));
+    }
+  }
+
+  return ret;
+}
+
+
+int ObRefMemLeakChecker::on_inc()
+{
+  int ret = 0;
+
+  ref_info_map_t* malloc_info = NULL;
+  int64_t tid = 0;
+
+  if (OB_FAIL(get_inc_info_map_for_cur_thread(malloc_info, tid)
+             || OB_ISNULL(malloc_info))) {
+    LOG_WDIAG("fail to get cur thread ref alloc info map");
+  } else {
+    StackInfo info;
+    (void) common::ptr_lbt(info.bt_, MAX_BACKTRACE_SIZE);
+
+    if (OB_FAIL(record_stack_in_map(info, *malloc_info, tid))) {
+      LOG_WDIAG("fail to get cur thread ref free info map", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::on_dec()
+{
+  int ret = 0;
+  ref_info_map_t* malloc_info = NULL;
+  int64_t tid = 0;
+
+  if (OB_FAIL(get_dec_info_map_for_cur_thread(malloc_info, tid)
+             || OB_ISNULL(malloc_info))) {
+    LOG_WDIAG("fail to get cur thread ref free info map");
+  } else {
+    StackInfo info;
+    (void) common::ptr_lbt(info.bt_, MAX_BACKTRACE_SIZE);
+
+    if (OB_FAIL(record_stack_in_map(info, *malloc_info, tid))) {
+      LOG_WDIAG("fail to get cur thread ref free info map", K(ret));
+    }
+  }
+
+  return ret;
+}
+
+
+int ObRefMemLeakChecker::record_stack_in_map(const StackInfo& info, ref_info_map_t& malloc_info, int64_t tid)
+{
+  int ret = 0;
+
+  lib::ObMutexGuard guard(locks_[tid]);
+  int64_t alloc_count = 0;
+
+  if (OB_FAIL(malloc_info.get_refactored(info, alloc_count))) {
+    if (OB_HASH_NOT_EXIST == ret) {
+      ret = OB_SUCCESS;
+    } else {
+      LOG_WDIAG("failed to get refleak checker", K(ret), K(lbt()));
+    }
+  } else {
+    alloc_count++;
+  }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_FAIL(malloc_info.set_refactored(info, alloc_count, 1, 0, 0))) {
+    LOG_WDIAG("failed to insert refleak checker", K(ret), K(lbt()));
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::load_ref_inc_info_map(ref_info_map_t& inc_info_map)
+{
+  int ret = OB_SUCCESS;
+
+  ref_info_map_t* malloc_info = NULL;
+  for (int64_t i = 0; OB_SUCC(ret) && i < MEM_INFO_MAP_NUM; ++i) {
+    malloc_info = inc_info_maps_[i];
+    if (OB_NOT_NULL(malloc_info)) {
+      // malloc_info 在多个线程线程读写，需要使用线程安全的遍历方法
+      lib::ObMutexGuard guard(locks_[i]);
+      ref_info_map_t::const_iterator node_it = malloc_info->begin();
+      for (; OB_SUCC(ret) && node_it != malloc_info->end(); ++node_it) {
+        // 预留 id = -1, 用于实现全量信息导出
+        int64_t ref_times = 0;
+        if (OB_FAIL(inc_info_map.get_refactored(node_it->first, ref_times))
+                    && OB_HASH_NOT_EXIST != ret) {
+          LOG_WDIAG("fail to get ptr info from malloc_info", "ptr", node_it->first.bt_, K(ret));
+        } else {
+          ret = OB_SUCCESS; // ignore OB_HASH_NOT_EXIST
+          ref_times += node_it->second;
+          if (OB_FAIL(inc_info_map.set_refactored(node_it->first, ref_times, 1, 0, 0))) {
+            LOG_WDIAG("failed to aggregate memory size", K(ret));
+          } else {
+            // nothing
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::load_ref_dec_info_map(ref_info_map_t& dec_info_map)
+{
+  int ret = OB_SUCCESS;
+
+  ref_info_map_t* malloc_info = NULL;
+  for (int64_t i = 0; OB_SUCC(ret) && i < MEM_INFO_MAP_NUM; ++i) {
+    malloc_info = dec_info_maps_[i];
+    if (OB_NOT_NULL(malloc_info)) {
+      // malloc_info 在多个线程线程读写，需要使用线程安全的遍历方法
+      lib::ObMutexGuard guard(locks_[i]);
+      ref_info_map_t::const_iterator node_it = malloc_info->begin();
+      for (; OB_SUCC(ret) && node_it != malloc_info->end(); ++node_it) {
+        // 预留 id = -1, 用于实现全量信息导出
+        int64_t ref_times = 0;
+        if (OB_FAIL(dec_info_map.get_refactored(node_it->first, ref_times))
+                    && OB_HASH_NOT_EXIST != ret) {
+          LOG_WDIAG("fail to get ptr info from malloc_info", "ptr", node_it->first.bt_, K(ret));
+        } else {
+          ret = OB_SUCCESS; // ignore OB_HASH_NOT_EXIST
+          ref_times += node_it->second;
+          if (OB_FAIL(dec_info_map.set_refactored(node_it->first, ref_times, 1, 0, 0))) {
+            LOG_WDIAG("failed to aggregate memory size", K(ret));
+          } else {
+            // nothing
+          }
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::load_ref_inc_backtrace(char *const buf, int64_t buf_len, int64_t& ret_len)
+{
+ int ret = OB_SUCCESS;
+  ret_len = 0;
+
+  ref_info_map_t tmp_map;
+  common::ObSEArray<ObRefMemLeakChecker::RefInfoHelper, 100> order_array(MOD_ID_FOR_CHECK, common::OB_MALLOC_NORMAL_BLOCK_SIZE);
+  if (OB_UNLIKELY( OB_ISNULL(buf) || buf_len <= 0)) {
+    // 参数错误不返回错误，仅打印日志
+    LOG_WDIAG("invalid parameters", K(buf), K(buf_len));
+  } else if (OB_FAIL(tmp_map.create(DEFAULT_MAP_SIZE, MOD_ID_FOR_CHECK, MOD_ID_FOR_CHECK))) {
+    LOG_EDIAG("failed to create hashmap", K(ret));
+  } else if (OB_FAIL(load_ref_inc_info_map(tmp_map))) {
+    LOG_WDIAG("failed to load leak info hashmap", K(ret));
+  } else if (OB_FAIL(order_array.prepare_allocate(tmp_map.size()))) {
+    LOG_WDIAG("failed to alloc order_array", K(ret));
+  } else {
+
+    // tmp_map 只在当前单个线程访问，可以使用线程不安全的遍历方法
+    int64_t count = tmp_map.size();
+    ref_info_map_t::const_iterator it = tmp_map.begin();
+    for (int64_t i = 0; (it != tmp_map.end()) && (i < count); ++it, ++i) {
+      order_array.at(i).ref_times_ = it->second;
+      order_array.at(i).info_ = &(it->first);
+    }
+
+    std::sort(order_array.begin(), order_array.end());
+    int64_t write_len = 0;
+    for (int64_t i = order_array.count() - 1;
+         OB_SUCC(ret) && (i >= 0) && buf_len > write_len; --i) {
+      int64_t ref_times = order_array[i].ref_times_;
+      const StackInfo* info = order_array[i].info_;
+      int64_t len = 0;
+      len = snprintf(buf + write_len, buf_len - write_len, "\n%ld\n", ref_times);
+      if (len < 0) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_EDIAG("fail to print backtrace");
+      } else {
+        write_len += len;
+      }
+
+      if (OB_SUCC(ret) && buf_len > write_len) {
+        for (int64_t i = 0; OB_SUCC(ret) && i < MAX_BACKTRACE_SIZE && buf_len > write_len; i++) {
+          len = snprintf(buf + write_len, buf_len - write_len, "0x%lx ", get_rel_offset((int64_t) (info->bt_[i])));
+          if (len < 0) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_EDIAG("fail to print backtrace");
+          } else {
+            write_len += len;
+          }
+        }
+      } else {
+        // nothing
+      }
+    }
+
+    if (write_len > 0) {
+      ret_len = write_len;
+    }
+  }
+
+  return ret;
+}
+
+int ObRefMemLeakChecker::load_ref_dec_backtrace(char *const buf, int64_t buf_len, int64_t& ret_len)
+{
+ int ret = OB_SUCCESS;
+  ret_len = 0;
+
+  ref_info_map_t tmp_map;
+  common::ObSEArray<ObRefMemLeakChecker::RefInfoHelper, 100> order_array(MOD_ID_FOR_CHECK, common::OB_MALLOC_NORMAL_BLOCK_SIZE);
+  if (OB_UNLIKELY( OB_ISNULL(buf) || buf_len <= 0)) {
+    // 参数错误不返回错误，仅打印日志
+    LOG_WDIAG("invalid parameters", K(buf), K(buf_len));
+  } else if (OB_FAIL(tmp_map.create(DEFAULT_MAP_SIZE, MOD_ID_FOR_CHECK, MOD_ID_FOR_CHECK))) {
+    LOG_EDIAG("failed to create hashmap", K(ret));
+  } else if (OB_FAIL(load_ref_dec_info_map(tmp_map))) {
+    LOG_WDIAG("failed to load leak info hashmap", K(ret));
+  } else if (OB_FAIL(order_array.prepare_allocate(tmp_map.size()))) {
+    LOG_WDIAG("failed to alloc order_array", K(ret));
+  } else {
+
+    // tmp_map 只在当前单个线程访问，可以使用线程不安全的遍历方法
+    int64_t count = tmp_map.size();
+    ref_info_map_t::const_iterator it = tmp_map.begin();
+    for (int64_t i = 0; (it != tmp_map.end()) && (i < count); ++it, ++i) {
+      order_array.at(i).ref_times_ = it->second;
+      order_array.at(i).info_ = &(it->first);
+    }
+
+    std::sort(order_array.begin(), order_array.end());
+    int64_t write_len = 0;
+    for (int64_t i = order_array.count() - 1;
+         OB_SUCC(ret) && (i >= 0) && buf_len > write_len; --i) {
+      int64_t ref_times = order_array[i].ref_times_;
+      const StackInfo* info = order_array[i].info_;
+      int64_t len = 0;
+      len = snprintf(buf + write_len, buf_len - write_len, "\n%ld\n", ref_times);
+      if (len < 0) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_EDIAG("fail to print backtrace");
+      } else {
+        write_len += len;
+      }
+
+      if (OB_SUCC(ret) && buf_len > write_len) {
+        for (int64_t i = 0; OB_SUCC(ret) && i < MAX_BACKTRACE_SIZE && buf_len > write_len; i++) {
+          len = snprintf(buf + write_len, buf_len - write_len, "0x%lx ", get_rel_offset((int64_t) (info->bt_[i])));
+          if (len < 0) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_EDIAG("fail to print backtrace");
+          } else {
+            write_len += len;
+          }
+        }
+      } else {
+        // nothing
+      }
+    }
+
+    if (write_len > 0) {
+      ret_len = write_len;
+    }
+  }
+
+  return ret;
+}
+
 int64_t ObMemLeakChecker::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
@@ -394,6 +725,56 @@ int64_t ObMemLeakChecker::AllocInfoHelper::to_string(char *buf, const int64_t bu
   J_OBJ_START();
   J_KV(K_(alloc_bytes), K_(alloc_times));
   J_OBJ_END();
+  return pos;
+}
+
+int64_t ObRefMemLeakChecker::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+  int ret = OB_SUCCESS;
+  J_OBJ_START();
+  for (int64_t j = 0; j < MEM_INFO_MAP_NUM; ++j) {
+    if (OB_NOT_NULL(inc_info_maps_[j])) {
+      const ref_info_map_t& map= *inc_info_maps_[j];
+      for (ref_info_map_t::const_iterator iter = map.begin();
+          iter != map.end(); ++iter) {
+        for (int64_t i = 0; OB_SUCC(ret) && i < MAX_BACKTRACE_SIZE && buf_len > pos; i++) {
+          int len = 0;
+          len = snprintf(buf + pos, buf_len - pos, "0x%lx ", get_rel_offset((int64_t) (iter->first.bt_[i])));
+          if (len < 0) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_EDIAG("fail to print backtrace");
+          } else {
+            pos += len;
+          }
+        }
+      }
+      J_COMMA();
+    }
+  }
+  J_OBJ_END();
+  return pos;
+}
+
+int64_t ObRefMemLeakChecker::RefInfoHelper::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+  int ret = OB_SUCCESS;
+
+  J_OBJ_START();
+  J_KV(K_(ref_times));
+  for (int64_t i = 0; OB_SUCC(ret) && i < MAX_BACKTRACE_SIZE && buf_len > pos; i++) {
+    int len = 0;
+    len = snprintf(buf + pos, buf_len - pos, "0x%lx ", get_rel_offset((int64_t) (info_->bt_[i])));
+    if (len < 0) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("fail to print backtrace");
+    } else {
+      pos += len;
+    }
+  }
+  J_OBJ_END();
+
   return pos;
 }
 

@@ -99,21 +99,17 @@ int ObProxyRpcReqLSOp::handle_response_result(void *data, bool &is_final, proxy:
     } else {
       proxy::ObRpcOBKVInfo &obkv_info = rpc_req->get_obkv_info();
       bool return_one_result = request->get_operation().return_one_result();
-      char *buf = NULL;
       obkv::ObRpcTableLSOperationResponse *rpc_response = NULL;
-      LOG_DEBUG("need alloc memory", K(&allocator_), "size", sizeof(obkv::ObRpcTableLSOperationResponse), K(buf), K_(rpc_trace_id));
+      LOG_DEBUG("need alloc memory", K(&allocator_), "size", sizeof(obkv::ObRpcTableLSOperationResponse), K_(rpc_trace_id));
 
-      if (OB_ISNULL(buf = rpc_req->alloc_rpc_response(sizeof(obkv::ObRpcTableLSOperationResponse)))) {
+      if (OB_FAIL(rpc_req->alloc_rpc_response())
+         || OB_ISNULL(rpc_response = dynamic_cast<obkv::ObRpcTableLSOperationResponse *>(rpc_req->get_rpc_response()))) {
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("not enougth alloc memory", K_(rpc_trace_id));
       } else {
         // init rpc response 
-        rpc_response = new (buf) obkv::ObRpcTableLSOperationResponse();
-        //rpc_response->get_ls_result().set_entity_factory(&(rpc_response->get_table_entity_factory()));
-        //rpc_response->get_ls_result().set_allocator(&rpc_response->get_allocator());
         rpc_response->get_ls_result().set_all_properties_names(request->get_operation().get_all_properties_names());
         rpc_response->get_ls_result().set_all_rowkey_names(request->get_operation().get_all_rowkey_names());
-        rpc_req->set_rpc_response_len(sizeof(obkv::ObRpcTableLSOperationResponse));
 
         // handle error resp
         if (error_resp_count_ > 0) {
@@ -156,7 +152,6 @@ int ObProxyRpcReqLSOp::handle_response_result(void *data, bool &is_final, proxy:
 
         rpc_response->get_packet_meta().ez_header_.ez_payload_size_ = (uint32_t)(rpc_response->get_encode_size() - 16); //EZ_HEADER_LEN
         obkv_info.set_resp(true);
-        rpc_req->set_rpc_response(rpc_response);
         result_ = rpc_req;
         result = rpc_req;
 

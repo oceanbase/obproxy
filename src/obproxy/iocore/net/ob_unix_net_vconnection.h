@@ -46,7 +46,7 @@ namespace net
 {
 
 class ObNetHandler;
-struct ObEventIO;
+class ObEventIO;
 
 class ObUnixNetVConnection : public ObNetVConnection
 {

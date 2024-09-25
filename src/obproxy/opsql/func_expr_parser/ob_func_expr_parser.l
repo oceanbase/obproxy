@@ -15,6 +15,8 @@ extern void ob_func_expr_parser_fatal_error(yyconst char *msg, yyscan_t yyscanne
 void store_func_expr_str(char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 void store_func_expr_str_with_quote(ObProxyParseQuoteType type, char* str, int64_t str_len, char* end_ptr, void *yyscanner);
 
+#define UNUSED(v) ((void)(v))
+
 #define YY_FATAL_ERROR(msg) ob_func_expr_parser_fatal_error(msg, yyscanner)
 
 #define PUSH_STATE(state) \
@@ -270,6 +272,7 @@ inline void *yyrealloc(void *ptr, size_t bytes, void *yyscanner)
 
 inline void yyfree(void *ptr, void *yyscanner)
 {
+  UNUSED(yyscanner);
   // Do nothing -- we leave it to the garbage collector.
   obproxy_parse_free(ptr);
 }

@@ -140,7 +140,7 @@ bool ObObj::is_zero() const
         break;
       }
       default:
-        BACKTRACE(EDIAG, true, "unexpected numeric type=%hhd", meta_.get_type());
+        BACKTRACE(EDIAG, true, "unexpected numeric type=%u", meta_.get_type());
         break;
     }
   }
@@ -270,7 +270,7 @@ int ObObj::build_not_strict_default_value()
       break;
     default:
       ret = OB_INVALID_ARGUMENT;
-      _OB_LOG(WDIAG, "unexpected data type=%hhd", data_type);
+      _OB_LOG(WDIAG, "unexpected data type=%u", data_type);
   }
   return ret;
 }

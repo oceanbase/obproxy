@@ -670,7 +670,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
       if (written_pos != header + MYSQL_NET_HEADER_LENGTH) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("not copy completely", K(ret));
-      } else if (!(header[0] == 0x0d && header[1] == 0x0a && header[2] == 0x0d && header[3] == 0x0a)) {
+      } else if (!ProxyProtocolV2::check_proxy_protocol_v2_valid(header)) {
         is_proxy_protocol_v2_request = false;
         trans_state_.is_proxy_protocol_v2_request_ = false;
         event = VC_EVENT_READ_READY;
@@ -2369,6 +2369,8 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool i
     ObClientSessionInfo &session_info = client_session_->get_session_info();
     ObMysqlAuthRequest &orig_auth_req = session_info.get_login_req();
     ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
+    // reset before use
+    trans_state_.trans_info_.sql_cmd_ = OB_MYSQL_COM_MAX_NUM;
     ObMySQLCmd &req_cmd = trans_state_.trans_info_.sql_cmd_;
 
     // for load content of file we couldn't parse cmd from request pkt
@@ -2376,8 +2378,6 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool i
     if (OB_UNLIKELY(trans_state_.trans_info_.resp_result_.is_local_infile_0xfb_resp())) {
       req_cmd = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
       LOG_DEBUG("transferring content of file request", K(req_cmd));
-    } else {
-      req_cmd = OB_MYSQL_COM_MAX_NUM;
     }
 
     ObMysqlRequestAnalyzer::analyze_request(ctx, orig_auth_req, client_request, req_cmd, status,
@@ -2987,10 +2987,10 @@ int ObMysqlSM::do_analyze_ps_execute_request_without_flag(ObPsIdEntry *ps_id_ent
   const ObString& param_type = ps_id_entry->get_ps_sql_meta().get_param_type();
   int64_t param_type_pos = MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH + ((param_num + 7) /8) + 1;
   // decode execute packet to old execute obj
-  if (OB_ISNULL(client_buffer_reader_) || OB_UNLIKELY(param_type.empty())) {
+  if (OB_ISNULL(client_buffer_reader_)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("reader is null or param_type is emptry, which is unexpected", K(param_type), KPC(ps_id_entry), K(ret));
-  } else {
+    LOG_WDIAG("reader is null which is unexpected", KPC(ps_id_entry), K(ret));
+  } else if (!param_type.empty()) {
     int32_t pkt_length = static_cast<int32_t>(read_avail - 4 + param_type.length());
 
     char header[MYSQL_PAYLOAD_LENGTH_LENGTH];
@@ -3003,6 +3003,8 @@ int ObMysqlSM::do_analyze_ps_execute_request_without_flag(ObPsIdEntry *ps_id_ent
       client_buffer_reader_->replace(header, MYSQL_PAYLOAD_LENGTH_LENGTH, 0);
       client_buffer_reader_->replace(reinterpret_cast<char*>(&new_param_bound_flag), 1, new_param_bound_flag_pos);
     }
+  } else {
+    LOG_DEBUG("the param type is empty, may receive null param from client request");
   }
 
   if (OB_SUCC(ret)) {
@@ -3022,9 +3024,9 @@ int ObMysqlSM::do_analyze_ps_execute_request_without_flag(ObPsIdEntry *ps_id_ent
                "actual size", written_len, K(ret));
 
       // Output type content
-    } else if (OB_FAIL(writer->write(param_type.ptr(), param_type.length(), written_len))) {
+    } else if (!param_type.empty() && OB_FAIL(writer->write(param_type.ptr(), param_type.length(), written_len))) {
       LOG_WDIAG("fail to write param type", "length", param_type.length(), K_(sm_id), K(ret));
-    } else if (OB_UNLIKELY(written_len != param_type.length())) {
+    } else if (!param_type.empty() && OB_UNLIKELY(written_len != param_type.length())) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to write to writer", "expected size", param_type.length(),
                "actual size", written_len, K(ret));
@@ -3209,9 +3211,7 @@ int ObMysqlSM::do_parse_text_ps_prepare_sql(char*& text_ps_prepare_buf,
   if (1 == prepare_info.params_.count()) {
     ObProxyTextPsParam* param = prepare_info.params_.at(0);
     ObString user_name = param->str_value_.config_string_;
-    if (cs_info.need_use_lower_case_names()) {
-      string_to_lower_case(user_name.ptr(), user_name.length());
-    }
+    string_to_lower_case(user_name.ptr(), user_name.length());
     ObObj user_value;
     if (OB_FAIL(cs_info.get_user_variable_value(user_name, user_value))) {
       LOG_WDIAG("get user variable failed", K(ret), K(user_name));
@@ -4355,7 +4355,9 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
                                     && 0 != compression_algorithm_.level_;
     const bool enable_transmission_checksum = client_session_->get_session_info().get_enable_transmission_checksum();
 
-    if (OB_FAIL(resp_analyzer_.init(get_server_session_protocol(),
+    const ObProxyProtocol protocol = get_server_session_protocol();
+
+    if (OB_FAIL(resp_analyzer_.init(protocol,
                                     cmd, mysql_mode, analyze_mode,
                                     is_extra_ok_for_stats,
                                     is_compressed_ob20,
@@ -4382,20 +4384,17 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
                 "is_trans_finished", resp_result.is_trans_completed(),
                 "is_local_infile_0xfb_resp", resp_result.is_local_infile_0xfb_resp(),
                 K(result), K(resp_result));
-      if (ANALYZE_DONE == result.status_ && ObProxyProtocol::PROTOCOL_CHECKSUM == get_server_session_protocol()) {
+      if (ANALYZE_DONE == result.status_ && ObProxyProtocol::PROTOCOL_CHECKSUM == protocol) {
         check_update_checksum_switch(result.compressed_mysql_header_.is_compressed_payload());
       }
 
       state = result.status_;
       first_pkt_len = result.compressed_mysql_header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
       cmd_size_stats_.server_response_bytes_ = server_buffer_reader_->read_avail();
-      if (ObProxyProtocol::PROTOCOL_OB20 == get_server_session_protocol() && !is_compressed_ob20) {
-        if (state == ANALYZE_DONE) {
-          // do nothing
-        } else if (state == ANALYZE_CONT) {
-          if (resp_analyzer_.is_last_pkt(result)) {
-            // do nothing
-          } else {
+
+      if (ObProxyProtocol::PROTOCOL_OB20 == protocol && !is_compressed_ob20 && !need_receive_completed) {
+        if (state == ANALYZE_CONT) {
+          if (!resp_analyzer_.is_last_pkt(result)) {
             if (server_buffer_reader_->read_avail() >= ANALYZE_FIRST_OB20_RESP_MAX_LEN) {
               state = ANALYZE_DONE; // analysis of first packet done, use tunnel to process the remain
             } else {
@@ -4403,8 +4402,8 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
               state = ANALYZE_CONT; // continue to read data from net
             }
           }
-        }
-      }
+        } else { /* do nothing */ }
+      } else { /* do nothing */ }
 
       // save flt from response analyze result to sm
       save_response_flt_result_to_sm(resp_result.flt_);
@@ -10758,7 +10757,8 @@ inline void ObMysqlSM::update_monitor_log()
         const char *stmt_type_str = "";
         ObString new_sql;
         const int32_t print_len = static_cast<int32_t>(get_global_proxy_config().digest_sql_length);
-        char new_sql_buf[print_len] = "\0";
+        char new_sql_buf[print_len];
+        MEMSET(new_sql_buf, 0, print_len);
         int32_t new_sql_len = 0;
         if (OB_MYSQL_COM_QUERY == request_cmd
             || OB_MYSQL_COM_STMT_PREPARE == request_cmd
@@ -10858,88 +10858,26 @@ inline void ObMysqlSM::update_monitor_log()
         g_ob_qos_stat_processor.store_stat(cluster_name, tenant_name, database_name, user_name, new_table_name,
                                            hrtime_to_usec(cmd_time_stats_.request_total_time_));
       }
-
-      if (client_session_->is_need_convert_vip_to_tname()
-          && !cs_info.is_sharding_user()
-          && !is_slow_query
-          && !is_error_resp
-          && is_partition_hit) {
-        SQLMonitorInfo monitor_info;
-        SQLstatInfo& stat_info = monitor_info.sql_request_stat_count_;
-        switch (stmt_type) {
-          case OBPROXY_T_SELECT:
-            monitor_info.select_count_ = 1;
-            stat_info.select_request_total_time_ = cmd_time_stats_.request_total_time_;
-            stat_info.select_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-            stat_info.select_prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-          break;
-          case OBPROXY_T_UPDATE:
-            monitor_info.update_count_ = 1;
-            stat_info.update_request_total_time_ = cmd_time_stats_.request_total_time_;
-            stat_info.update_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-            stat_info.update_prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-          break;
-          case OBPROXY_T_INSERT:
-          case OBPROXY_T_REPLACE:
-            monitor_info.insert_count_ = 1;
-            stat_info.insert_request_total_time_ = cmd_time_stats_.request_total_time_;
-            stat_info.insert_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-            stat_info.insert_prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-          break;
-          case OBPROXY_T_DELETE:
-            monitor_info.delete_count_ = 1;
-            stat_info.delete_request_total_time_ = cmd_time_stats_.request_total_time_;
-            stat_info.delete_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-            stat_info.delete_prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-          break;
-          default:
-            monitor_info.other_count_ = 1;
-            stat_info.select_request_total_time_ = cmd_time_stats_.request_total_time_;
-            stat_info.select_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-            stat_info.select_prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-          break;
-        }
-        monitor_info.request_count_ = 1;
-        monitor_info.request_total_time_ = cmd_time_stats_.request_total_time_;
-        monitor_info.server_process_request_time_ = cmd_time_stats_.server_process_request_time_;
-        monitor_info.prepare_send_request_to_server_time_ = cmd_time_stats_.prepare_send_request_to_server_time_;
-        self_ethread().thread_prometheus_->set_sql_monitor_info(tenant_name, cluster_name, monitor_info);
-      } else {
-        if (!client_session_->is_need_convert_vip_to_tname()) {
-          NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                              cluster_name, tenant_name, database_name,
-                              PROMETHEUS_REQUEST_BYTE, true, true,
-                              cmd_size_stats_.client_request_bytes_);
-          NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                              cluster_name, tenant_name, database_name,
-                              PROMETHEUS_REQUEST_BYTE, true, false,
-                              cmd_size_stats_.server_request_bytes_);
-          NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                              cluster_name, tenant_name, database_name,
-                              PROMETHEUS_REQUEST_BYTE, false, true,
-                              cmd_size_stats_.client_response_bytes_);
-          NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                              cluster_name, tenant_name, database_name,
-                              PROMETHEUS_REQUEST_BYTE, false, false,
-                              cmd_size_stats_.server_response_bytes_);
-        }
-
-        SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                            cluster_name, tenant_name, database_name,
-                            stmt_type, PROMETHEUS_REQUEST_COUNT,
-                            is_slow_query, is_error_resp, is_partition_hit, static_cast<int64_t> (1));
-        SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                            cluster_name, tenant_name, database_name,
-                            stmt_type, PROMETHEUS_REQUEST_TOTAL_TIME,
-                            hrtime_to_usec(cmd_time_stats_.request_total_time_));
-        SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                            cluster_name, tenant_name, database_name,
-                            stmt_type, PROMETHEUS_SERVER_PROCESS_REQUEST_TIME,
-                            hrtime_to_usec(cmd_time_stats_.server_process_request_time_));
-        SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name,
-                            cluster_name, tenant_name, database_name,
-                            stmt_type, PROMETHEUS_PREPARE_SEND_REQUEST_TIME,
-                            hrtime_to_usec(cmd_time_stats_.prepare_send_request_to_server_time_));
+      if ((OB_MYSQL_COM_QUERY == request_cmd
+            || OB_MYSQL_COM_STMT_PREPARE == request_cmd
+            || OB_MYSQL_COM_STMT_EXECUTE == request_cmd
+            || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == request_cmd)
+          && get_global_proxy_config().enable_prometheus
+          && g_ob_prometheus_processor.is_inited()) {
+        SQLMonitorInfo::MonitorInfoKey info_key;
+        info_key.is_slow_query_ = is_slow_query;
+        info_key.is_error_resp_ = is_error_resp;
+        info_key.is_partition_hit_ = is_partition_hit;
+        info_key.request_type_ = OBPROXY_SQL_REQUEST;
+        info_key.stmt_type_ = SQLMonitorInfo::get_prometheus_output_type(stmt_type);
+        info_key.rpc_pkt_code_ = oceanbase::obrpc::OB_INVALID_RPC_CODE;
+        info_key.cluster_name_ = cluster_name;
+        info_key.tenant_name_ = tenant_name;
+        info_key.database_name_ = database_name;
+        IGNORE_RETURN self_ethread().thread_prometheus_->set_sql_monitor_info(info_key, 1, cmd_time_stats_.request_total_time_,
+                                                          cmd_time_stats_.server_process_request_time_, cmd_time_stats_.prepare_send_request_to_server_time_,
+                                                          cmd_size_stats_.client_request_bytes_, cmd_size_stats_.server_request_bytes_,
+                                                          cmd_size_stats_.client_response_bytes_, cmd_size_stats_.server_response_bytes_);
       }
     }
   }
@@ -11633,6 +11571,8 @@ void ObMysqlSM::refresh_single_leader()
     if (OB_ISNULL(single_leader_) && OB_ISNULL(single_leader_ = op_alloc(ObSingleLeader))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to alloc ObSingleLeader", K(ret));
+    } else if (OB_FAIL(client_session_->check_update_ldc())) {
+      LOG_WDIAG("fail to check update ldc", K(ret));
     } else if (single_leader_->need_refresh(new_version)) {
       ObString &tenant_name = client_session_->get_session_info().get_priv_info().tenant_name_;
       if (OB_FAIL(single_leader_->refresh(*sm_cluster_resource_, tenant_name, client_session_->dummy_ldc_))) {

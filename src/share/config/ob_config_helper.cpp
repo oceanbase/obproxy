@@ -121,10 +121,9 @@ ObConfigVariableString::ObConfigVariableString(const ObConfigVariableString& oth
 
 void ObConfigVariableString::reset()
 {
-  if (used_len_ > VARIABLE_BUF_LEN) {
+  if (OB_UNLIKELY(used_len_ > VARIABLE_BUF_LEN)) {
     obproxy::op_fixed_mem_free(data_union_.ptr_, used_len_ + 1);
   }
-  MEMSET(static_cast<void*>(&data_union_), 0, sizeof(data_union_));
   used_len_ = 0;
 }
 
@@ -139,15 +138,17 @@ ObConfigVariableString& ObConfigVariableString::operator=(const ObConfigVariable
 
 uint64_t ObConfigVariableString::hash(uint64_t seed) const
 {
-  seed = murmurhash(ptr(), static_cast<int32_t>(used_len_), seed);
+  if (OB_LIKELY(used_len_ > 0)) {
+    seed = murmurhash(ptr(), static_cast<int32_t>(used_len_), seed);
+  }
   return seed;
 }
 
 bool ObConfigVariableString::operator==(const ObConfigVariableString& other) const
 {
   bool bret = true;
-  if (this != &other) {
-    if (other.used_len_ != used_len_) {
+  if (OB_LIKELY(this != &other)) {
+    if (OB_LIKELY(other.used_len_ != used_len_)) {
       bret = false;
     } else {
       bret = (0 == STRNCMP(this->ptr(), other.ptr(), used_len_));
@@ -160,7 +161,7 @@ int ObConfigVariableString::alloc_mem(int64_t len)
 {
   int ret = OB_SUCCESS;
   reset();
-  if (len > VARIABLE_BUF_LEN
+  if (OB_UNLIKELY(len > VARIABLE_BUF_LEN)
       && OB_ISNULL(data_union_.ptr_ = static_cast<char*>(
                                                 obproxy::op_fixed_mem_alloc(len + 1)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -199,27 +200,20 @@ int ObConfigVariableString::rewrite(const ObString &str)
 
 int ObConfigVariableString::rewrite(const char *ptr, const int64_t len)
 {
-  int64_t pos = 0;
   int ret = OB_SUCCESS;
   // 1. 扩缩容
   if (OB_UNLIKELY(len < 0)) {
     ret = OB_INVALID_ARGUMENT;
     OB_LOG(WDIAG, "write length can't less than 0", K(ptr), K(len), K(ret));
-  } else if (used_len_ != len && OB_FAIL(alloc_mem(len))) {
+  } else if (used_len_ < len && OB_FAIL(alloc_mem(len))) {
       OB_LOG(WDIAG, "fail to alloc_mem", K(len), K(ret));
+  } else {
+    char * const real_ptr = used_len_ > VARIABLE_BUF_LEN ?
+                                        data_union_.ptr_ : data_union_.buf_;
+    MEMCPY(real_ptr, ptr, static_cast<size_t>(len));
+    real_ptr[len] = '\0';
   }
-  // 2. 写入数据
-  if (OB_SUCC(ret)
-      && OB_NOT_NULL(ptr)
-      && OB_LIKELY(len > 0)
-      && OB_FAIL(databuff_printf(used_len_ > VARIABLE_BUF_LEN ? 
-                                        data_union_.ptr_ : data_union_.buf_,
-                                 len > VARIABLE_BUF_LEN ? 
-                                      used_len_ + 1 : VARIABLE_BUF_LEN + 1,
-                                  pos, "%.*s", static_cast<int32_t>(len), ptr))) {
-    OB_LOG(WDIAG, "fail to databuff_printf ptr to union buffer", K(ptr), K(len),
-           K(ret));
-  }
+
   return ret;
 }
 

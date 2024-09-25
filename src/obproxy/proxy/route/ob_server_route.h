@@ -266,7 +266,8 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     ss_info, region_names,
                                                     proxy_primary_zone_name,
                                                     tenant_name,
-                                                    cluster_resource))) {
+                                                    cluster_resource,
+                                                    ldc_route_.policy_))) {
     PROXY_LOG(WDIAG, "fail to divide_leader_replica", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count() + (((!need_use_dup_replica_ && proxy_primary_zone_name.empty()) && leader_item_.is_valid()) ? 1 : 0);

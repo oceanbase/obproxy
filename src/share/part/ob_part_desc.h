@@ -19,6 +19,7 @@
 #include "share/part/ob_part_mgr_util.h"
 #include "obproxy/opsql/expr_parser/ob_expr_parse_result.h"
 #include "common/ob_row.h"
+#include "obproxy/obkv/table/ob_table.h"
 
 namespace oceanbase
 {
@@ -103,6 +104,7 @@ public:
   virtual int get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
                                        ObIArray<int64_t> &tablet_ids,
                                        ObIArray<int64_t> &ls_ids);
+  virtual int build_obkv_part_array(ObIArray<obproxy::obkv::ObObkvSinglePart> &single_parts) const;
   void set_part_level(share::schema::ObPartitionLevel part_level) { part_level_ = part_level; }
   share::schema::ObPartitionLevel get_part_level() { return part_level_; }
   void set_part_func_type(share::schema::ObPartitionFuncType part_func_type) { part_func_type_ = part_func_type; }

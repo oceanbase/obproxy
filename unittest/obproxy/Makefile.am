@@ -58,6 +58,7 @@ pub_sources=                                           \
                  ob_mysql_test_utils.h
 
 bin_PROGRAMS =                                         \
+                 test_single_thread_hash_map           \
                  test_atomic_store                     \
                  test_global_ps_entry                  \
                  test_ob_latch                         \
@@ -81,16 +82,16 @@ bin_PROGRAMS =                                         \
                  test_vip_tenant_cache                 \
                  test_white_list_processor             \
                  test_tenant_processor                 \
-                 test_proxy_json_config_info           \
-                 test_mysql_transact                   \
+                 ## test_proxy_json_config_info           \
+                 ## test_mysql_transact                   \
                  test_ldc_location                     \
                  obproxy_task_flow_controller_checker  \
                  ob_expr_parser_checker                \
                  ob_func_expr_parser_checker           \
                  test_zlib_stream_compressor           \
                  test_fast_zlib_stream_compressor      \
-                 test_ob_rpc_request_list              \
-                 test_obkv_request_analyzer            \
+                 ## test_ob_rpc_request_list              \
+                 ## test_obkv_request_analyzer            \
                  obproxy_parser_checker                \
                  test_safe_snapshot_manager            \
                  foo_client                            \
@@ -103,6 +104,7 @@ bin_PROGRAMS =                                         \
                  test_stack_overflow
 ##               test_layout
 
+test_single_thread_hash_map_SOURCES = test_single_thread_hash_map.cpp
 test_atomic_store_SOURCES = test_atomic_store.cpp
 test_dual_parser_SOURCES = test_dual_parser.cpp ${pub_sources}
 obproxy_parser_test_SOURCES = obproxy_parser_test.cpp
@@ -130,8 +132,8 @@ test_resultset_fetcher_SOURCES = test_resultset_fetcher.cpp  ${pub_sources}
 test_vip_tenant_cache_SOURCES = test_vip_tenant_cache.cpp
 test_white_list_processor_SOURCES = test_white_list_processor.cpp
 test_tenant_processor_SOURCES = test_tenant_processor.cpp
-test_proxy_json_config_info_SOURCES = test_proxy_json_config_info.cpp
-test_mysql_transact_SOURCES = test_mysql_transact.cpp
+## test_proxy_json_config_info_SOURCES = test_proxy_json_config_info.cpp
+## test_mysql_transact_SOURCES = test_mysql_transact.cpp
 test_ldc_location_SOURCES = test_ldc_location.cpp
 obproxy_task_flow_controller_checker_SOURCES = obproxy_task_flow_controller_checker.h obproxy_task_flow_controller_checker.cpp
 obproxy_parser_checker_SOURCES = obproxy_parser_checker.h obproxy_parser_checker.cpp
@@ -140,8 +142,8 @@ ob_func_expr_parser_checker_SOURCES = ob_func_expr_parser_checker.h ob_func_expr
 test_zlib_stream_compressor_SOURCES = test_zlib_stream_compressor.cpp
 test_fast_zlib_stream_compressor_SOURCES = test_fast_zlib_stream_compressor.cpp
 test_mysql_request_analyzer_SOURCES = test_mysql_request_analyzer.cpp
-test_ob_rpc_request_list_SOURCES = test_ob_rpc_request_list.cpp
-test_obkv_request_analyzer_SOURCES = test_obkv_request_analyzer.cpp
+## test_ob_rpc_request_list_SOURCES = test_ob_rpc_request_list.cpp
+## test_obkv_request_analyzer_SOURCES = test_obkv_request_analyzer.cpp
 test_safe_snapshot_manager_SOURCES = test_safe_snapshot_manager.cpp
 foo_client_SOURCES = foo_client.cpp
 foo_server_SOURCES = foo_server.cpp

@@ -41,6 +41,25 @@ public:
     warnings_.reset();
   }
 
+  int set_err_msg(int32_t rcode)
+  {
+    int ret = common::OB_SUCCESS;
+    msg_[0] = '\0';
+    int32_t length = 0;
+    const char *error_msg = common::ob_strerror(rcode);
+    if (OB_ISNULL(error_msg)) {
+      length = snprintf(msg_, sizeof(msg_), "Unknown user error");
+    } else {
+      length = snprintf(msg_, sizeof(msg_), error_msg);
+    }
+
+    if (OB_UNLIKELY(length < 0 || OB_UNLIKELY(length >= common::OB_MAX_ERROR_MSG_LEN))) {
+      ret = common::OB_BUF_NOT_ENOUGH;
+      PROXY_LOG(WDIAG, "rpc error msg buffer not enough", K(ret), K(length), K(error_msg));
+    }
+    return ret;
+  }
+
   TO_STRING_KV("code", rcode_, "msg", msg_, K_(warnings));
 
   int32_t rcode_;

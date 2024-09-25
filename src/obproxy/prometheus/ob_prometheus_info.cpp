@@ -61,9 +61,7 @@ int ObPrometheusMetric::init(const ObPrometheusMetricHashKey &key, bool allow_de
   }
 
   if (OB_SUCC(ret)) {
-    if (OB_UNLIKELY(0 == buf_size)) {
-      LOG_DEBUG("empty lables, no need copy");
-    } else if (OB_FAIL(ObProxyPrometheusUtils::copy_label_hash(key.labels_, labels_, buf_, buf_len_))) {
+    if (OB_FAIL(ObProxyPrometheusUtils::copy_label_hash(key.labels_, labels_, buf_, buf_len_))) {
       LOG_WDIAG("fail to copy label hash", K(ret));
     }
   }
