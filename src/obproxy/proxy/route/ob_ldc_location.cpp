@@ -1232,7 +1232,7 @@ int64_t ObLDCLocation::get_rand_zone_index()
             int array_index = non_zero_zone_index.at(i);
             prefix_sum += all_weight_zone_array_->at(array_index)->weight_value_;
             if (rand_index < prefix_sum) {
-              ret_rand_index = i;
+              ret_rand_index = array_index;
               break;
             }
           }
@@ -1359,7 +1359,7 @@ int ObLDCLocation::get_route_info(const ObRoutePolicyEnum &policy,
     } else if (OB_FAIL(get_weight_zone(sm.multi_level_config_->weakread_weight_zone_, zone))) {
       LOG_WDIAG("fail to get weigth zone for SingleLeader", K(ret));
     } else {
-      target_replica_type.set_full_replica();
+      target_replica_type.set_all_weakread_replica();
     }
   } else if (is_target_replica_route(policy)) {
     target_replica_type = sm.multi_level_config_->route_target_replica_type_;
