@@ -398,7 +398,7 @@ bool ObMysqlTransact::need_use_dup_replica(const ObConsistencyLevel level, ObTra
 {
   return (STRONG == level)
           && (s.trans_info_.client_request_.get_parse_result().is_select_stmt())
-          && (s.trans_info_.client_request_.is_for_update_sql())
+          && (!s.trans_info_.client_request_.is_for_update_sql())
           && (s.pll_info_.route_.has_dup_replica_);
 }
 
