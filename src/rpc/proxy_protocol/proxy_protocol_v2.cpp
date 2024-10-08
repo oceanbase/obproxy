@@ -88,16 +88,24 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
             vpc_info_.reset();
             int64_t pscConnectionId_big = 0;
             int64_t pscConnectionId_little = 0;
+            int digit_num = 0;
+            const int MAX_NUM_LEN = 24;
+            char digit_buf[MAX_NUM_LEN];
+            MEMSET(digit_buf, '\0', MAX_NUM_LEN);
             if (OB_UNLIKELY(8 != length)) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("unexpected private service connect ID length", K(length), K(ret));
-            } else if (OB_FAIL(vpc_info_.init_and_write(&buf[end_pos + 3], length))) {
-              LOG_WDIAG("vpc info write failed", K(ret));
             } else {
               pscConnectionId_big = *(int64_t*)(&buf[end_pos + 3]);
               pscConnectionId_little = (int64_t)__bswap_64(pscConnectionId_big);
+              if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%ld", pscConnectionId_little))) {
+                ret = OB_ERR_UNEXPECTED;
+                LOG_WDIAG("fail to printf pscConnectionId_little", K(digit_num), K(pscConnectionId_little), K(ret));
+              } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
+                LOG_WDIAG("vpc info write failed", K(ret));
+              }
             }
-            LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(ret));
+            LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(digit_num), K(ret));
             break;
           } else {
             end_pos += 3 + length;
