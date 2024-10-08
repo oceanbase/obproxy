@@ -7710,24 +7710,7 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
   bool request_support_readonly_zone = is_request_readonly_zone_support(cs.get_session_info());
   ObConsistencyLevel session_consistency_level = static_cast<ObConsistencyLevel>(cs.get_session_info().get_read_consistency());
   ObConsistencyLevel trans_consistency_level = get_trans_consistency_level(cs.get_session_info());
-  switch (cs.get_session_info().get_route_policy()) {
-    case 0:
-      session_route_policy = MERGE_IDC_ORDER;
-      break;
-    case 1:
-      session_route_policy = READONLY_ZONE_FIRST;
-      break;
-    case 2:
-      session_route_policy = ONLY_READONLY_ZONE;
-      break;
-    case 3:
-      session_route_policy = UNMERGE_ZONE_FIRST;
-      break;
-    default:
-      PROXY_TXN_LOG(WDIAG, "unknown route policy, use default policy",
-                    "ob_route_policy", cs.get_session_info().get_route_policy(),
-                    "session_route_policy", get_route_policy_enum_string(session_route_policy));
-  }
+
   const bool is_server_addr_set = server_info_.addr_.is_valid();
   if (OB_UNLIKELY(is_server_addr_set
                   && (use_cmnt_target_db_server_ || use_conf_target_db_server_))) {
@@ -7742,6 +7725,24 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
     //if dup_replica read, use DUP_REPLICA_FIRST, no need care about zone type
     ret_policy = DUP_REPLICA_FIRST;
   } else if (readonly_zone_exist) {
+    switch (cs.get_session_info().get_route_policy()) {
+      case 0:
+        session_route_policy = MERGE_IDC_ORDER;
+        break;
+      case 1:
+        session_route_policy = READONLY_ZONE_FIRST;
+        break;
+      case 2:
+        session_route_policy = ONLY_READONLY_ZONE;
+        break;
+      case 3:
+        session_route_policy = UNMERGE_ZONE_FIRST;
+        break;
+      default:
+        PROXY_TXN_LOG(WDIAG, "unknown route policy, use default policy",
+                      "ob_route_policy", cs.get_session_info().get_route_policy(),
+                      "session_route_policy", get_route_policy_enum_string(session_route_policy));
+    }
     if (common::WEAK == trans_consistency_level) {
       //if wead read, use session_route_policy
       ret_policy = session_route_policy;
