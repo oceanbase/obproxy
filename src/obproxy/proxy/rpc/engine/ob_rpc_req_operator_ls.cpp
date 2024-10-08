@@ -309,15 +309,22 @@ int ObProxyRpcReqLSOp::generate_normal_resp(ObTableLSOpResult &ls_op_result,
                 K(tablet_index), K(single_index), "request_offset", offset, K_(rpc_trace_id));
       } else {
         ObTableLSOpResult &lso_mmres = sub_ls_operation_response->get_ls_result();
-        if (OB_UNLIKELY(lso_mmres.get_tablet_op_result().count() <= tablet_index
-                        || lso_mmres.get_tablet_op_result().at(tablet_index).get_single_op_result().count()
-                               <= single_index)) {
+        if (OB_UNLIKELY(lso_mmres.get_tablet_op_result().count() <= tablet_index)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("unexpected tablet result index or single result index", K(ls_index), K(tablet_index),
-                    K(single_index), K(ret), K_(rpc_trace_id));
+          LOG_WDIAG("unexpected tablet op result count", K(tablet_index), "tablet_resp_count",
+                    lso_mmres.get_tablet_op_result().count(), K(ret), K_(rpc_trace_id));
         } else if (lso_mmres.get_tablet_op_result().at(tablet_index).get_single_op_result().count() == 1
                    && ObTableEntityType::ET_HKV == ls_request.get_entity_type()) {
           single_index = 0;
+        }
+
+        if (OB_FAIL(ret)) {
+          // do nothing
+        } else if (OB_UNLIKELY(lso_mmres.get_tablet_op_result().at(tablet_index).get_single_op_result().count() <= single_index)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("unexpected single op result count", K(tablet_index), K(single_index),
+                    "single_resp_count", ls_op_result.get_tablet_op_result().at(tablet_index).get_single_op_result().count(),
+                    "tablet_resp_count", lso_mmres.get_tablet_op_result().count(), K(ret), K_(rpc_trace_id));
         } else {
           ObTableTabletOpResult &tablet_mmres = lso_mmres.get_tablet_op_result().at(tablet_index);
           ObTableSingleOpResult &mmres = tablet_mmres.get_single_op_result().at(single_index);
