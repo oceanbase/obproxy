@@ -4307,6 +4307,7 @@ int ObRpcRequestSM::state_rpc_req_inner_request_cleanup()
         // clean inner request memory
         inner_request_cleanup();
         rpc_req_->inner_request_cleanup();
+        // destroy ObProxyRpcReqParallelExecuteCont force, and ObProxyRpcReqParallelCont could be clean by it's timeout action
         if (OB_FAIL(inner_request_callback(ASYNC_PROCESS_DESTROY_SELF_EVENT))) {
           // do nothing
           LOG_WDIAG("fail to call inner_request_callback", K(ret), K_(rpc_trace_id));

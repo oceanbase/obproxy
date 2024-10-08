@@ -95,6 +95,7 @@ void ObProxyRpcReqParallelExecuteCont::destroy()
   LOG_DEBUG("parallel execute cont will be destroyed", KP(this));
 
   cancel_pending_action();
+  cancel_inform_out_action();
 
   // 父类里最后是用的 delete, 但是本 Cont 是用的 op_alloc 分配出来的,
   // 所以只能把父类里的 destroy 方法拷贝到这里

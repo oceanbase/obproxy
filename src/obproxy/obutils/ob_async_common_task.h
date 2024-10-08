@@ -30,6 +30,8 @@ namespace obutils
 #define ASYNC_PROCESS_DO_REPEAT_TASK_EVENT (EVENT_ASYNC_PROCESS_START + 3)
 #define ASYNC_PROCESS_START_REPEAT_TASK_EVENT (EVENT_ASYNC_PROCESS_START + 4)
 #define ASYNC_PROCESS_SET_INTERVAL_EVENT (EVENT_ASYNC_PROCESS_START + 5)
+
+// !!ATTENTION, if use ASYNC_PROCESS_DESTROY_SELF_EVENT by deveried class, you should consider if async task destroying make inform_out_action invalid
 #define ASYNC_PROCESS_DESTROY_SELF_EVENT (EVENT_ASYNC_PROCESS_START + 6)
 
 // callback method for anync task data
@@ -42,7 +44,7 @@ public:
   ObAsyncCommonTask(event::ObProxyMutex *m, const char *name, event::ObContinuation *cb_cont = NULL,
                     event::ObEThread *submit_thread = NULL, event::ObEventThreadType etype = event::ET_BLOCKING)
     : ObContinuation(m), terminate_(false), need_callback_(false), is_repeat_(false), is_stop_(false), interval_us_(-1),
-      etype_(etype), task_name_(name), timeout_action_(NULL), pending_action_(NULL), cb_cont_(cb_cont),
+      etype_(etype), task_name_(name), timeout_action_(NULL), pending_action_(NULL), inform_out_action_(NULL), cb_cont_(cb_cont),
       submit_thread_(submit_thread), process_func_(NULL), update_interval_func_(NULL), action_()
   {
     action_.set_continuation(cb_cont);
@@ -53,7 +55,7 @@ public:
   ObAsyncCommonTask(event::ObProxyMutex *m, const char *name, ProcessFunc process_func, UpdateIntervalFunc update_func,
                     const bool is_repeat = false, event::ObEventThreadType etype = event::ET_BLOCKING)
     : ObContinuation(m), terminate_(false), need_callback_(false), is_repeat_(is_repeat), is_stop_(false), interval_us_(-1),
-      etype_(etype), task_name_(name), timeout_action_(NULL), pending_action_(NULL),
+      etype_(etype), task_name_(name), timeout_action_(NULL), pending_action_(NULL), inform_out_action_(NULL),
       cb_cont_(NULL), submit_thread_(NULL), process_func_(process_func),
       update_interval_func_(update_func), action_()
   {
@@ -79,6 +81,7 @@ public:
     }
     return ret;
   }
+
   int cancel_timeout_action()
   {
     int ret = common::OB_SUCCESS;
@@ -91,6 +94,20 @@ public:
     }
     return ret;
   }
+
+  int cancel_inform_out_action()
+  {
+    int ret = common::OB_SUCCESS;
+    if (NULL != inform_out_action_) {
+      if (OB_FAIL(inform_out_action_->cancel())) {
+        PROXY_LOG(WDIAG, "fail to cancel inform out action", K_(inform_out_action), K(ret));
+      } else {
+        inform_out_action_ = NULL;
+      }
+    }
+    return ret;
+  }
+
   virtual void destroy();
 
   virtual int init_task() { return common::OB_NOT_IMPLEMENT; }
@@ -129,6 +146,7 @@ protected:
   const char *task_name_;
   event::ObAction *timeout_action_;
   event::ObAction *pending_action_;
+  event::ObAction *inform_out_action_;
   event::ObContinuation *cb_cont_;
   event::ObEThread *submit_thread_;
   ProcessFunc process_func_;

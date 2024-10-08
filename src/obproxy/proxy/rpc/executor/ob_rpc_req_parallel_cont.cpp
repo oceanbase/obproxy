@@ -200,7 +200,7 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
         //only used by stream rpc request
         // parallel_execute_cont_arr_.push_back(execute_cont);
       }
-      LOG_DEBUG("succ to schedule parallel execute task", "cont index", i);
+      LOG_DEBUG("succ to schedule parallel execute task", "cont index", i, K(execute_cont));
     }
 
     if (OB_FAIL(ret) && OB_NOT_NULL(execute_cont)) {

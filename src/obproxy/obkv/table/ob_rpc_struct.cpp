@@ -657,7 +657,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
 
   // partition_ids mostly is sorted, O(n)
   for (int i = 1; i < partition_ids.count(); ++i) {
-      int key = partition_ids.at(i);
+      int64_t key = partition_ids.at(i);
       int j = i - 1;
       while (j >= 0 && partition_ids.at(j) > key) {
           partition_ids.at(j+1) = partition_ids.at(j);

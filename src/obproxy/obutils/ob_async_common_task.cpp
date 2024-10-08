@@ -110,6 +110,7 @@ int ObAsyncCommonTask::main_handler(int event, void *data)
     }
   }
 
+  // todo: check whether the task cancellation will cause mem leaks if the task is not released in the submission thread.
   if (terminate_) {
     destroy();
   }
@@ -177,7 +178,7 @@ int ObAsyncCommonTask::handle_callback()
     if (OB_FAIL(handle_event_inform_out())) {
       LOG_WDIAG("fail to handle inform out event", K(ret));
     }
-  } else if (OB_ISNULL(submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
+  } else if (OB_ISNULL(inform_out_action_ = submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("fail to schedule back to main handler, will destroy itself", K(ret));
   }
@@ -192,6 +193,9 @@ int ObAsyncCommonTask::handle_event_inform_out()
   int ret = OB_SUCCESS;
   need_callback_ = false;
   terminate_ = true;
+
+  // inform_out_action callback
+  inform_out_action_ = NULL;
 
   if (&self_ethread() != submit_thread_) {
     ret = OB_ERR_UNEXPECTED;
@@ -213,7 +217,7 @@ int ObAsyncCommonTask::handle_event_inform_out()
         }
         cb_cont_->handle_event(ASYNC_PROCESS_DONE_EVENT, get_callback_data());
       }
-    } else if (OB_ISNULL(submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
+    } else if (OB_ISNULL(inform_out_action_ = submit_thread_->schedule_imm(this, EVENT_INFORM_OUT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to do schedule imm", K_(submit_thread), K(ret));
     } else {
@@ -233,6 +237,9 @@ void ObAsyncCommonTask::destroy()
   }
   if (OB_FAIL(cancel_pending_action())) {
     LOG_WDIAG("fail to cancel pending action", K(ret));
+  }
+  if (OB_FAIL(cancel_inform_out_action())) {
+    LOG_WDIAG("fail to cancel inform out action", K(ret));
   }
   cb_cont_ = NULL;
   submit_thread_ = NULL;
