@@ -863,8 +863,11 @@ int ObRespAnalyzer::analyze_one_packet_header(
         analyze_mode_ = DECOMPRESS_MODE;
       } else {
         resp_result.is_resultset_resp_ = true;
-        // only works for oceanbase 2.0
-        if (ObProxyProtocol::PROTOCOL_OB20 == protocol_ && !params_.is_compressed_) {
+        // only works for oceanbase 2.0 exclude prepare and prepare-execute
+        if (ObProxyProtocol::PROTOCOL_OB20 == protocol_
+            && !params_.is_compressed_
+            && req_cmd_ != OB_MYSQL_COM_STMT_PREPARE
+            && req_cmd_ != OB_MYSQL_COM_STMT_PREPARE_EXECUTE) {
           int64_t read_avail = reader.read_avail();
           int64_t first_pkt_len = result.compressed_mysql_header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
 

@@ -4396,7 +4396,12 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
       first_pkt_len = result.compressed_mysql_header_.compressed_len_ + MYSQL_COMPRESSED_HEALDER_LENGTH;
       cmd_size_stats_.server_response_bytes_ = server_buffer_reader_->read_avail();
 
-      if (ObProxyProtocol::PROTOCOL_OB20 == protocol && !is_compressed_ob20 && !need_receive_completed) {
+      // only works for oceanbase 2.0 exclude prepare and prepare-execute
+      if (ObProxyProtocol::PROTOCOL_OB20 == protocol
+          && !is_compressed_ob20
+          && !need_receive_completed
+          && cmd != OB_MYSQL_COM_STMT_PREPARE
+          && cmd != OB_MYSQL_COM_STMT_PREPARE_EXECUTE) {
         if (state == ANALYZE_CONT) {
           if (!resp_analyzer_.is_last_pkt(result)) {
             if (server_buffer_reader_->read_avail() >= ANALYZE_FIRST_OB20_RESP_MAX_LEN) {
