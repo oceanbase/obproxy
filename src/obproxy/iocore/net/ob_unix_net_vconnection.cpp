@@ -1210,17 +1210,7 @@ int ObUnixNetVConnection::set_virtual_addr()
   int ret = OB_SUCCESS;
   get_remote_addr();
 
-  if (OB_UNLIKELY(get_global_proxy_config().enable_qa_mode)) {
-    // 模拟公有云的SLB分配IP地址
-    // 先获取 real client 地址, 然后修改 virutal 地址
-    do_set_virtual_addr();
-    if (OB_FAIL(ops_ip_pton(get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, virtual_addr_))) {
-      PROXY_CS_LOG(WDIAG, "fail to ops ip pton", "qa_mode_mock_public_cloud_slb_addr",
-                   get_global_proxy_config().qa_mode_mock_public_cloud_slb_addr, K(ret));
-    } else {
-      virtual_vid_ = static_cast<uint32_t>(get_global_proxy_config().qa_mode_mock_public_cloud_vid);
-    }
-  } else if (remote_addr_.is_ip4()) {
+  if (remote_addr_.is_ip4()) {
     ret = do_set_virtual_addr();
   } else {
     real_client_addr_ = remote_addr_;
@@ -1269,7 +1259,8 @@ int ObUnixNetVConnection::do_set_virtual_addr()
                       "vid", virtual_vid_,
                       "vaddr", virtual_addr_,
                       "caddr", ObIpEndpoint(ops_ip_sa_cast(sin_c)),
-                      "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)));
+                      "daddr", ObIpEndpoint(ops_ip_sa_cast(sin_d)),
+                      "remote_addr", remote_addr_);
   return ret;
 }
 

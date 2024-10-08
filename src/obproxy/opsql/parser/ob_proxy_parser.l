@@ -1268,6 +1268,9 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"@"                          { return yytext[0]; }
 <in_expr>{binlog_user_var}             { return BINLOG_USER_VAR; }
 <in_expr>{binlog_sys_var}              { return BINLOG_SYS_VAR; }
+<in_expr>"gtid_subset"                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"gtid_subtract"               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"wait_for_executed_gtid_set"  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"get_lock"                    { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"is_free_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"is_used_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }

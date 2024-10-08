@@ -898,10 +898,10 @@ int ObExprResolver::calc_generated_key_value_for_obkv(common::ObObj &obj, const 
       LOG_DEBUG("origin str is empty", K(ret));
     } else {
       length = OB_ISNULL(part_key.params_[2]) ? str.length() : length;
-      LOG_DEBUG("calc substr generated key for obkv params:", K(str), K(length), K(start_pos));
       int64_t mb_len = ObCharset::strlen_char(collation, str.ptr(), str.length());
       start_pos = (start_pos >= 0) ? (start_pos - 1) : start_pos + mb_len;
-      if (OB_UNLIKELY(start_pos < 0 || start_pos > mb_len || length <= 0)) {
+      LOG_DEBUG("calc substr generated key for obkv params:", K(str), K(length), K(start_pos), K(mb_len), K(str.length()));
+      if (OB_UNLIKELY(start_pos < 0 || start_pos >= mb_len || length <= 0)) {
         output.assign(NULL, 0);
       } else {
         length = min(length, mb_len - start_pos);

@@ -247,7 +247,7 @@ inline int ObProxyReplicaLocation::add_rpc_addr(const char *ip, const int64_t sv
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(NULL == ip || svr_port <= 0)) {
     ret = common::OB_INVALID_ARGUMENT;
-  } else if (OB_UNLIKELY(!rpc_server_.set_ipv4_addr(ip, static_cast<int32_t>(svr_port)))) {
+  } else if (OB_UNLIKELY(!rpc_server_.set_ip_addr(ip, static_cast<int32_t>(svr_port)))) {
     ret = common::OB_INVALID_ARGUMENT;
   }
   return ret;

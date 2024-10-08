@@ -482,6 +482,7 @@ public:
                           const ObString &cluster_name,
                           const bool has_tenant_username,
                           const bool has_cluster_username);
+  bool can_pass_white_list();
 
   int init_request_meta_info();
   void refresh_rpc_request_config();

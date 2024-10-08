@@ -32,6 +32,7 @@
 #include "prometheus/ob_rpc_prometheus.h"
 #include "prometheus/ob_thread_prometheus.h"
 #include "omt/ob_proxy_config_table_processor.h"
+#include "omt/ob_white_list_table_processor.h"
 #include "share/inner_table/ob_inner_table_schema_constants.h"
 #include "proxy/route/ob_mysql_route.h"
 #include "proxy/route/ob_table_entry.h"
@@ -59,6 +60,7 @@ using namespace oceanbase::obproxy::obkv;
 using namespace oceanbase::obproxy::prometheus;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obproxy::net;
+using namespace oceanbase::obproxy::omt;
 using namespace oceanbase::share;
 
 #define __REMEMBER(x)  #x
@@ -684,6 +686,22 @@ inline bool ObRpcRequestSM::check_connection_throttle()
   return throttle;
 }
 
+// 调用者保证 client_net_handler、rpc_ctx、rpc_req指针合法
+bool ObRpcRequestSM::can_pass_white_list()
+{
+  bool can_pass = false;
+  ObRpcReqCtx *rpc_ctx = rpc_req_->get_rpc_ctx();
+  ObRpcClientNetHandler *client_net_handler = rpc_req_->get_cnet_sm();
+  ObUnixNetVConnection* unix_vc = static_cast<ObUnixNetVConnection *>(client_net_handler->get_netvc());
+  if (OB_UNLIKELY(NULL == unix_vc)) {
+      LOG_WDIAG("invalid unix_vc");
+  } else if (get_global_white_list_table_processor().can_ip_pass(rpc_ctx->cluster_name_, rpc_ctx->tenant_name_, rpc_ctx->user_name_, unix_vc->get_real_client_addr())) {
+      can_pass = true;
+  }
+
+  return can_pass;
+}
+
 int ObRpcRequestSM::analyze_rpc_login_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status)
 {
   int ret = OB_SUCCESS;
@@ -730,6 +748,9 @@ int ObRpcRequestSM::analyze_rpc_login_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRp
                         rpc_ctx.cluster_name_, ctx.has_tenant_username_, ctx.has_cluster_username_))) {
         LOG_WDIAG("fail to check user identity", K_(sm_id), K(ret), K_(rpc_trace_id));
         ret = OB_PASSWORD_WRONG;
+      } else if (!client_net_handler->is_vip_lookup_success() && !can_pass_white_list()) {
+        ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
+        LOG_DEBUG("can not pass white_list", K(rpc_ctx.cluster_name_), K(rpc_ctx.tenant_name_), K(rpc_ctx.user_name_), K(ret));
       } else {
         // do nothing
       }
@@ -4453,6 +4474,9 @@ int ObRpcRequestSM::setup_rpc_return_error()
   } else if (rpc_req_->get_cnet_state() > ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_HANDLING) {
     // do nothing
     LOG_WDIAG("rpc timeout in packet return status, do nothing", K_(sm_id), K(this), KPC_(rpc_req), K_(rpc_trace_id));
+  } else if (OB_ERR_CAN_NOT_PASS_WHITELIST == rpc_req_->get_rpc_req_error_code()) {
+    // 对于白名单错误码、直接断链
+    client_net_handler->do_io_close();
   } else {
     RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_INNER_ERROR);
     // clear in setup_rpc_return_error

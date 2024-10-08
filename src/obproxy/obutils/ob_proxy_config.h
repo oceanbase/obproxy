@@ -243,7 +243,7 @@ public:
   DEF_INT(client_tcp_user_timeout, "0", "[0,20]", "client tcp user timeout, unit is s,  0 means no user timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //proxy init related
-  DEF_CAP(proxy_mem_limited, "2G", "[100MB,100G]", "proxy memory limited, [100MB, 100G], will disable alloc memory from the OS ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(proxy_mem_limited, "2G", "[100MB,]", "proxy memory limited, [100MB,], will disable alloc memory from the OS ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_CAP(stack_size, "1MB", "[1MB,10MB]", "stack size of one thread, [1MB, 10MB]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_CAP(routing_cache_mem_limited, "128MB", "[1KB,100G]", "max size of all proxy routing cache size, like table cache, location cache, etc. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(work_thread_num, "128", "[1,128]", "proxy work thread num or max work thread num when automatic match, [1, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -528,7 +528,7 @@ public:
   DEF_BOOL(enable_obproxy_rpc_service, "true", "enable obproxy rpc service or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_listen_port, "2885", "(1024,65536)", "obproxy rpc service listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_request_server_entry_max_retries, "3", "[1,)", "retry times when rpc request failed in server table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(rpc_support_key_partition_shard_request, "false", "support shard request for key partition table", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_support_key_partition_shard_request, "true", "support shard request for key partition table", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_srv_session_pool_inactive_timeout, "30s", "[0s,1d]", "rpc server session inactive timeout, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_force_srv_black_list, "false", "enable force black list for rpc service for table login route, false", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_direct_expire_route_entry, "false", "enable force expire route entry directly when route failed, false", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -541,7 +541,7 @@ public:
   DEF_BOOL(rpc_enable_congestion, "false", "rpc request enable congestion feature or not for write request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_server_net_invalid_time_us, "10000000", "rpc server net invalid time us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_server_net_max_pending_request, "10", "rpc server net max pending request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(rpc_enable_global_index, "false", "rpc request enable global index route for query request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_global_index, "true", "rpc request enable global index route for query request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_retry_request_info_log, "true", "rpc request enable to print detail log information if has retried by OBProxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_request_timeout_delta, "500ms", "[0ms,30s]", "rpc request delta timeout value handle in obproxy, [0ms, 30s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_period_task_interval, "600s", "[1ms,1d]", "rpc request period task interval, [1ms, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
