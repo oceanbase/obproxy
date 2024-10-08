@@ -42,7 +42,6 @@ const net::ObIpEndpoint *ObSingleLeader::get_replica(const ObRoutePolicyEnum& po
     bool found = false;
     int64_t random = 0;
     int ret = OB_SUCCESS;
-    ObRandomNumUtils::get_random_num(0, 100, random);
     ObString zone;
     ObSEArray<ObServerStateSimpleInfo, ObServerStateRefreshCont::DEFAULT_SERVER_COUNT> simple_servers_info(ObServerStateRefreshCont::DEFAULT_SERVER_COUNT);
     omt::ObTargetReplicaType target_replica_type;
@@ -52,28 +51,40 @@ const net::ObIpEndpoint *ObSingleLeader::get_replica(const ObRoutePolicyEnum& po
       const bool follower_only = is_follower_only_route(policy) || (is_target_replica_route(policy) && target_replica_type.is_exist_column_store_replica());
       const int64_t total_cnt = follower_only ? follower_cnt : follower_cnt + 1;
       for (int64_t idc_idx = 0; OB_SUCC(ret) && idc_idx < ARRAYSIZEOF(idc_type_priority) && !found; idc_idx++) {
-        for (int64_t check_cnt = 0; check_cnt < total_cnt && !found; random++, check_cnt++) {
-          // 允许发leader时，random%total_cnt == total_cnt - 1时发往leader
-          bool route_leader = !follower_only && (random % total_cnt == (total_cnt - 1));
-          int64_t follower_idx = random % total_cnt;
+        ObSEArray<const net::ObIpEndpoint*, 4> addr_array;
+        for (int64_t check_cnt = 0; OB_SUCC(ret) && check_cnt < total_cnt && !found; check_cnt++) {
+          // 允许发leader时，check_cnt == total_cnt - 1时发往leader
+          bool route_leader = !follower_only && (check_cnt == (total_cnt - 1));
+          int64_t follower_idx = check_cnt % total_cnt;
           const net::ObIpEndpoint &addr = route_leader ? single_leader_info_->leader_addr_ : single_leader_info_->followers_.at(follower_idx).addr_;
           const ObIDCType idc_type = route_leader ? single_leader_idc_ : single_leader_followers_idc_[follower_idx];
           const ObReplicaType replica_type = route_leader ? REPLICA_TYPE_FULL : single_leader_info_->followers_.at(follower_idx).replica_type_;
           LOG_DEBUG("check single leader's follower", K(addr), "idc_type", get_idc_type_string(idc_type_priority[idc_idx]),
-                    "route policy", get_route_policy_enum_string(policy), "target_replica_type", target_replica_type.replica_type_, K(random), K(follower_cnt), K(route_leader));
+                    "route policy", get_route_policy_enum_string(policy), "target_replica_type", target_replica_type.replica_type_, K(check_cnt), K(follower_cnt), K(route_leader));
           if (idc_type != idc_type_priority[idc_idx]) {
             LOG_DEBUG("not match idc type", "replica idc", get_idc_type_string(idc_type), "excepted idc_type", get_idc_type_string(idc_type_priority[idc_idx]));
           } else if (!route_leader && !ObLDCLocation::is_target_replica_type(target_replica_type, replica_type)) {
             LOG_DEBUG("not match replica type", "replica type", ObProxyReplicaLocation::get_replica_type_string(replica_type));
           } else if (is_weight_load_balance_route(policy) && !ObLDCLocation::is_in_same_zone(addr, simple_servers_info, zone)) {
             LOG_DEBUG("follower not in weight zone ", K(zone), K(route_leader), K(addr));
-          } else if ((found = addr.is_valid())) {
-            ret_ip = &addr;
-            LOG_DEBUG("succ to found leader's best follower", K(route_leader), K(addr), K(idc_type));
+          } else if (addr.is_valid()) {
+            if (OB_FAIL(addr_array.push_back(&addr))) {
+              LOG_WDIAG("fail to push addr to array", K(ret));
+            } else {
+              LOG_DEBUG("succ to found leader's best follower", K(route_leader), K(addr), K(idc_type));
+            }
           } else {
             LOG_DEBUG("idc_type and replica_type matched but not an valid addr", K(route_leader), K(addr));
           }
         } // end of check_cnt
+        if (addr_array.count() > 0) {
+          if (OB_FAIL(ObRandomNumUtils::get_random_num(0, addr_array.count() - 1, random))) {
+            LOG_WDIAG("fail to get random number", K(ret));
+          } else {
+            ret_ip = addr_array.at(random);
+            found = true;
+          }
+        }
       } // end of idc_type
     }
   }
