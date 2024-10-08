@@ -498,5 +498,32 @@ int convert_escape_string(const common::ObString &input_str,
   return ret;
 }
 
+int debug_mem_content(const char* src, int64_t len)
+{
+  int ret = OB_SUCCESS;
+  char * buf = NULL;
+  int pos = 0;
+  int print_len = 8192;
+
+  if (OB_ISNULL(buf = static_cast<char *>(common::ob_malloc(print_len)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WARN("fail to alloc mem", K(ret));
+  } else {
+    for (int64_t i = 0; i < len && pos < print_len; i++) {
+      int written_len = snprintf(buf + pos, static_cast<size_t>(print_len - pos), "%#x ", src[i]);
+      if (OB_UNLIKELY(0 == written_len)) {
+        break;
+      } else {
+        pos += written_len;
+      }
+    }
+    LOG_DEBUG("mem content", KP(src), K(len), K(buf));
+  }
+
+  if (OB_NOT_NULL(buf)) {
+    ob_free(buf);
+  }
+  return ret;
+}
 } // end of namespace obproxy
 } // end of namespace oceanbase

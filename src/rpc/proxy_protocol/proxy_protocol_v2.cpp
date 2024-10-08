@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY
 
 #include "rpc/proxy_protocol/proxy_protocol_v2.h"
+#include "obproxy/utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
 
@@ -24,6 +25,10 @@ namespace proxy_protocol_v2
 int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
 {
   int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
+    obproxy::debug_mem_content(buf, buf_len);
+  }
+
   if (OB_UNLIKELY(NULL == buf || buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(buf), K(buf_len), K(ret));
@@ -81,13 +86,18 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
             // 0xe0 的 type 表示 private service connect ID
             // 是 GCP(Google Cloud Platform) 使用的，参考 https://cloud.google.com/vpc/docs/about-vpc-hosted-services?hl=zh-cn#proxy-protocol
             vpc_info_.reset();
+            int64_t pscConnectionId_big = 0;
+            int64_t pscConnectionId_little = 0;
             if (OB_UNLIKELY(8 != length)) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("unexpected private service connect ID length", K(length), K(ret));
             } else if (OB_FAIL(vpc_info_.init_and_write(&buf[end_pos + 3], length))) {
               LOG_WDIAG("vpc info write failed", K(ret));
+            } else {
+              pscConnectionId_big = *(int64_t*)(&buf[end_pos + 3]);
+              pscConnectionId_little = (int64_t)__bswap_64(pscConnectionId_big);
             }
-            LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(ret));
+            LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(ret));
             break;
           } else {
             end_pos += 3 + length;

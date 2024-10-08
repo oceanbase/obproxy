@@ -98,6 +98,8 @@ int split_string_by_char(common::ObString &org_str,
 int convert_escape_string(const common::ObString &input_str,
                           common::ObString &output_str,
                           common::ObIAllocator& allocater);
+
+int debug_mem_content(const char* src, int64_t len);
 } // end of namespace obproxy
 } // end of namespace oceanbase
 
