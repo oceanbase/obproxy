@@ -1162,7 +1162,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
 
       // check if need to parse ppv2 packet
       if (OB_UNLIKELY(is_ppv2_req && buffer_reader.read_avail() > ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN)) {
-        char header[MYSQL_NET_HEADER_LENGTH];
+        char header[ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN];
         char *written_pos = buffer_reader.copy(header, ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN, 0);
         if (OB_UNLIKELY(written_pos != (header + ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN))) {
           ret = OB_ERR_UNEXPECTED;

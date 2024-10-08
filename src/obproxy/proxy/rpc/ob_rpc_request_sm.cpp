@@ -995,11 +995,15 @@ int ObRpcRequestSM::setup_process_request()
   }
 
   if (OB_SUCC(ret)) {
-    if (is_need_async_analyze) {
-      // waiting pending action callback
-      LOG_DEBUG("setup_process_request wait callback", KP_(pending_action), K_(rpc_trace_id));
+    if (OB_LIKELY(!rpc_req_->canceled())) {
+      if (OB_UNLIKELY(is_need_async_analyze)) {
+        // waiting pending action callback
+        LOG_DEBUG("setup_process_request wait callback", KP_(pending_action), K_(rpc_trace_id));
+      } else {
+        handle_event(RPC_REQUEST_SM_ANALYZE_DONE, &ctx);
+      }
     } else {
-      handle_event(RPC_REQUEST_SM_ANALYZE_DONE, &ctx);
+      LOG_DEBUG("rpc req already canceled, waiting for cleanup", K_(rpc_trace_id));
     }
   } else {
     if (OB_NOT_NULL(rpc_req_)) {
@@ -3667,11 +3671,15 @@ int ObRpcRequestSM::setup_process_response()
   }
 
   if (OB_SUCC(ret)) {
-    if (is_need_async_analyze) {
-      // waiting pending action callback
-      LOG_DEBUG("setup_process_response wait callback", KP_(pending_action), K_(rpc_trace_id));
+    if (OB_LIKELY(!rpc_req_->canceled())) {
+      if (OB_UNLIKELY(is_need_async_analyze)) {
+        // waiting pending action callback
+        LOG_DEBUG("setup_process_response wait callback", KP_(pending_action), K_(rpc_trace_id));
+      } else {
+        handle_event(RPC_REQUEST_SM_ANALYZE_DONE, &ctx);
+      }
     } else {
-      handle_event(RPC_REQUEST_SM_ANALYZE_DONE, &ctx);
+      LOG_DEBUG("rpc req already canceled, waiting for cleanup", K_(rpc_trace_id));
     }
   } else {
     LOG_INFO("setup_process_response process response error, dirty route", K_(rpc_trace_id));

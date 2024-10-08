@@ -665,10 +665,10 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
     int64_t first_packet_len = 0;       // the mysql packet total len or mysql compress packet total len
     bool is_proxy_protocol_v2_request = trans_state_.is_proxy_protocol_v2_request_ && client_buffer_reader_->read_avail() > 0;
 
-    if (is_proxy_protocol_v2_request && client_buffer_reader_->read_avail() >= MYSQL_NET_HEADER_LENGTH) {
-      char header[MYSQL_NET_HEADER_LENGTH];
-      char *written_pos = client_buffer_reader_->copy(header, MYSQL_NET_HEADER_LENGTH, 0);
-      if (written_pos != header + MYSQL_NET_HEADER_LENGTH) {
+    if (is_proxy_protocol_v2_request && client_buffer_reader_->read_avail() >= ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN) {
+      char header[ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN];
+      char *written_pos = client_buffer_reader_->copy(header, ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN, 0);
+      if (written_pos != header + ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("not copy completely", K(ret));
       } else if (!ProxyProtocolV2::check_proxy_protocol_v2_valid(header)) {
