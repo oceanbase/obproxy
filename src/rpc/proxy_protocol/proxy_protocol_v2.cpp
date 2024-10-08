@@ -76,8 +76,9 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
             if (OB_FAIL(vpc_info_.init_and_write(&buf[end_pos + 4], length - 1))) {
               LOG_WDIAG("vpc info write failed", K(ret));
             }
-          } else if (0xeb == type) {
-            // 0xeb 的 type 表示 private service connect ID
+            break;
+          } else if (0xe0 == type) {
+            // 0xe0 的 type 表示 private service connect ID
             // 是 GCP(Google Cloud Platform) 使用的，参考 https://cloud.google.com/vpc/docs/about-vpc-hosted-services?hl=zh-cn#proxy-protocol
             vpc_info_.reset();
             if (OB_UNLIKELY(8 != length)) {
@@ -87,6 +88,7 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
               LOG_WDIAG("vpc info write failed", K(ret));
             }
             LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(ret));
+            break;
           } else {
             end_pos += 3 + length;
           }
