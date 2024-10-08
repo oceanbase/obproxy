@@ -19,6 +19,7 @@
 #include "iocore/eventsystem/ob_task.h"
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "lib/allocator/ob_mem_leak_checker.h"
+#include "lib/alloc/malloc_hook.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -158,6 +159,8 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
 #else
       struct mallinfo mi = mallinfo();
 #endif
+      LOG_INFO("get GLIBC mem info", K(mi.arena), K(mi.ordblks), K(mi.smblks), K(mi.hblks),
+               K(mi.hblkhd), K(mi.usmblks), K(mi.fsmblks), K(mi.uordblks), K(mi.fordblks), K(mi.keepcost));
       int64_t allocated = mi.arena + mi.hblkhd;
       int64_t used = allocated - mi.fordblks;
       if (OB_FAIL(dump_mod_memory("GLIBC", "user", allocated, used, mi.hblks))) {
@@ -419,6 +422,7 @@ static int show_memory_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &inf
   action = NULL;
   ObShowMemoryHandler *handler = NULL;
 
+  lib::glibc_hook_opt = lib::GHO_HOOK;
   if (OB_UNLIKELY(!ObInternalCmdHandler::is_constructor_argument_valid(cont, buf))) {
     ret = OB_INVALID_ARGUMENT;
     WDIAG_ICMD("constructor argument is invalid", K(cont), K(buf), K(ret));
@@ -447,6 +451,8 @@ static int show_memory_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &inf
     delete handler;
     handler = NULL;
   }
+
+  lib::glibc_hook_opt = lib::GHO_NOHOOK;
   return ret;
 }
 

@@ -41,6 +41,7 @@
 #include "opsql/parser/ob_proxy_parser.h"
 #include "obproxy/cmd/ob_show_config_handler.h"
 #include "obproxy/utils/ob_proxy_utils.h"
+#include "lib/alloc/malloc_hook.h"
 
 static const char *EXECUTE_SQL =
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
@@ -456,6 +457,7 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   }
 
   if (OB_SUCC(ret)) {
+    lib::glibc_hook_opt = lib::GHO_HOOK;
     ObConfigItem item;
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
       addr, cluster_name.ptr(), tenant_name.ptr(), "sql_firewall_config", item, false))) {
@@ -466,6 +468,7 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
         PROXY_LOG(WDIAG, "fail to parse sql_firewall_config", K(limit_config), K(ret));
       }
     }
+    lib::glibc_hook_opt = lib::GHO_NOHOOK;
   }
   if (OB_SUCC(ret)) {
     ObConfigItem item;
@@ -998,15 +1001,19 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           LOG_WDIAG("fail to parse ssl attributes", KPC(item), K(ret));
         }
 
-        obutils::ObProxyLimitControlConfig limit_config;
-        if (OB_SUCC(ret)
-            && 0 == strcasecmp("sql_firewall_config", item->config_item_.name())
-            && NULL != item->config_item_.str()
-            && '\0' != *item->config_item_.str()
-            && OB_FAIL(limit_config.parse_from_config_string(ObString(item->config_item_.str())))) {
-          ret = OB_INVALID_CONFIG;
-          LOG_WDIAG("fail to parse limit config", KPC(item), K(ret));
+        lib::glibc_hook_opt = lib::GHO_HOOK;
+        {
+          obutils::ObProxyLimitControlConfig limit_config;
+          if (OB_SUCC(ret)
+              && 0 == strcasecmp("sql_firewall_config", item->config_item_.name())
+              && NULL != item->config_item_.str()
+              && '\0' != *item->config_item_.str()
+              && OB_FAIL(limit_config.parse_from_config_string(ObString(item->config_item_.str())))) {
+            ret = OB_INVALID_CONFIG;
+            LOG_WDIAG("fail to parse limit config", KPC(item), K(ret));
+          }
         }
+        lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
         // 检查配置设置时的主键信息和 level 是否匹配
         if (OB_SUCC(ret)) {

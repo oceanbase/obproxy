@@ -617,7 +617,7 @@ ObProxyLimitConfig::~ObProxyLimitConfig()
 {
   int64_t count = cond_array_.count();
   for (int64_t i = 0; i < count; i++) {
-    cond_array_.at(i)->qos::ObProxyQosCond::~ObProxyQosCond();
+    cond_array_.at(i)->~ObProxyQosCond();
   }
 }
 

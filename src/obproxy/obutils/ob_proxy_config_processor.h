@@ -215,7 +215,7 @@ public:
     limit_mode_(LIMIT_MODE_INVALID), limit_priority_(-1), limit_qps_(-1),
     limit_status_(LIMIT_STATUS_INVALID), limit_time_window_(-1),
     limit_conn_(0), limit_fuse_time_(0), allocator_(NULL) {};
-  ~ObProxyLimitConfig();
+  virtual ~ObProxyLimitConfig();
 
   int init(common::ObArenaAllocator &allocator);
 

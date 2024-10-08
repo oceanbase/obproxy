@@ -37,7 +37,7 @@ class ObProxyQosCond
 {
 public:
   explicit ObProxyQosCond() : type_(OB_PROXY_QOS_COND_TYPE_NONE) {}
-  ~ObProxyQosCond() {}
+  virtual ~ObProxyQosCond() {}
 
   void set_cond_type(const ObProxyQosCondType type) { type_ = type; }
   ObProxyQosCondType get_cond_type() const { return type_; }

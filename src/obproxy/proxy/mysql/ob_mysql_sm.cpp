@@ -61,6 +61,7 @@
 #include "obproxy/cmd/ob_internal_cmd_processor.h"
 #include "engine/ob_proxy_operator_cont.h"
 #include "proxy/mysqllib/ob_resp_analyzer.h"
+#include "lib/alloc/malloc_hook.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -1429,6 +1430,7 @@ int ObMysqlSM::handle_limit(bool &need_response_for_client)
 
   need_response_for_client = false;
 
+  lib::glibc_hook_opt = lib::GHO_HOOK;
   ObMySQLCmd &req_cmd = trans_state_.trans_info_.sql_cmd_;
   if (OB_MYSQL_COM_QUERY == req_cmd
       || OB_MYSQL_COM_STMT_PREPARE == req_cmd) {
@@ -1480,6 +1482,8 @@ int ObMysqlSM::handle_limit(bool &need_response_for_client)
       }
     }
   }
+
+  lib::glibc_hook_opt = lib::GHO_NOHOOK;
 
   return ret;
 }
