@@ -2461,13 +2461,13 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableLSOp)
 
     for (int64_t i = 0; OB_SUCC(ret) && i < tablet_op_size; ++i) {
       ObTableTabletOp &tablet_op = tablet_ops_.at(i); 
-      //tablet_op.set_entity_factory(entity_factory_);
-      //tablet_op.set_deserialize_allocator(deserialize_alloc_);
       rpc_request->set_all_rowkey_names(&rowkey_names_);
-      //tablet_op.set_dictionary(&rowkey_names_, &properties_names_);
-      //tablet_op.set_is_ls_same_prop_name(is_same_properties_names_);
       if (OB_FAIL(tablet_op.deserialize(buf, data_len, pos, rpc_request))) {
         LOG_WDIAG("fail to deserialize tablet op", K(ret));
+      } else if (i == 0 && ls_id_.id() != ObLSID::INVALID_LS_ID) {
+        // if client calculate ls id,
+        // we can record the first partition_id to find target server and transfer req to server immediately
+        rpc_request->set_partition_id(tablet_op.get_tablet_id());
       }
     }  // end for
   }

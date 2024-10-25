@@ -14,6 +14,7 @@
 #define OBPROXY_OBRPC_STRUCT_H
 
 #include "lib/ob_define.h"
+#include "lib/utility/ob_ls_id.h"
 #include "ob_proxy_rpc_serialize_utils.h"
 #include "proxy/route/obproxy_part_info.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
@@ -207,13 +208,16 @@ public:
 
   virtual uint64_t get_table_id() const { return 0; }
   virtual uint64_t get_partition_id() const { return 0; }
+  virtual int64_t get_ls_id() const { return ObLSID::INVALID_LS_ID; } // for lsop
   virtual void set_table_id(uint64_t table_id) {
     UNUSED(table_id);
   }
   virtual void set_partition_id(uint64_t part_id) {
     UNUSED(part_id);
   }
-
+  virtual void set_ls_id(int64_t ls_id) {
+    UNUSED(ls_id);
+  }
   virtual common::ObString get_credential() const { return common::ObString(); };
   virtual common::ObString get_table_name() const { return common::ObString(); };
   virtual bool is_hbase_request() const { return false; }

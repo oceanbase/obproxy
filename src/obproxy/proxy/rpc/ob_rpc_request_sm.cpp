@@ -3835,9 +3835,17 @@ int ObRpcRequestSM::setup_rpc_internal_get_partition()
   bool find_entry = false;
 
   LOG_DEBUG("setup_rpc_internal_get_partition name before", K_(rpc_trace_id));
+  ObRpcRequest *rpc_request = rpc_req_->get_rpc_request();
+  ObRpcTableGetRouteRequest *get_route_req = NULL;
+  if (OB_ISNULL(rpc_request) || OB_ISNULL(get_route_req = dynamic_cast<ObRpcTableGetRouteRequest *>(rpc_request))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected get route request", K(ret));
+  } else if (get_route_req->is_force_renew()) {
+    pll_info_.set_force_renew();
+  }
 
   // 1.先从table_map中获取
-  if (OB_LIKELY(!pll_info_.is_force_renew())) {
+  if (OB_SUCC(ret) && OB_LIKELY(!pll_info_.is_force_renew())) {
     ObTableRefHashMap &table_map = self_ethread().get_table_map();
     ObTableEntry *tmp_entry = NULL;
     int64_t cr_id = 0;
@@ -3868,7 +3876,7 @@ int ObRpcRequestSM::setup_rpc_internal_get_partition()
     }
   }
 
-  if (OB_UNLIKELY(!find_entry)) {
+  if (OB_SUCC(ret) && OB_UNLIKELY(!find_entry)) {
     ObRouteParam param;
     param.cont_ = this;
     param.force_renew_ = pll_info_.is_force_renew();

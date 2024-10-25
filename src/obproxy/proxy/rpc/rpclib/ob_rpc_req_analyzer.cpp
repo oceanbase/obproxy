@@ -163,8 +163,10 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_request(ObProxyRpcReqAnalyzeCtx &ctx, ObR
     obkv_info.table_name_ = rpc_request->get_table_name();
     obkv_info.index_name_ = rpc_request->get_index_name();
     int64_t partition_id = rpc_request->get_partition_id();
-    if (partition_id != 0 && partition_id != -1) {
+    int64_t ls_id = rpc_request->get_ls_id();
+    if ((partition_id != 0 && partition_id != -1) || (ls_id != ObLSID::INVALID_LS_ID)) {
       obkv_info.set_partition_id(partition_id);
+      obkv_info.set_ls_id(ls_id);
       obkv_info.is_rpc_request_with_partition_id_ = true;
     }
 

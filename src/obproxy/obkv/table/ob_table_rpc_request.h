@@ -446,7 +446,8 @@ public:
   ObTableEntityType get_entity_type() const override {return ls_request_.entity_type_;}
   ObTableConsistencyLevel get_consistency_level() const {return ls_request_.consistency_level_;}
   uint64_t get_table_id() const {return ls_request_.ls_op_.get_table_id();}
-  uint64_t get_ls_id() const {return ls_request_.ls_op_.get_ls_id();}
+  uint64_t get_partition_id() const override {return first_partition_id_; }
+  int64_t get_ls_id() const override {return ls_request_.ls_op_.get_ls_id();}
   uint8_t get_option_flag() const { return ls_request_.ls_op_.get_option_flag(); }
   const ObSEArray<ObString, 4> &get_all_rowkey_names() const { return ls_request_.ls_op_.get_all_rowkey_names(); }
   const ObSEArray<ObString, 4> &get_all_properties_names() const { return ls_request_.ls_op_.get_all_properties_names(); }
@@ -455,7 +456,8 @@ public:
   void set_entity_type(const ObTableEntityType type) override {ls_request_.entity_type_ = type;}
   void set_consistency_level(const ObTableConsistencyLevel level) {ls_request_.consistency_level_ = level;}
   void set_table_id(const uint64_t table_id) {ls_request_.ls_op_.set_table_id(table_id);}
-  void set_ls_id(const int64_t ls_id) {ls_request_.ls_op_.set_ls_id(ls_id);}
+  void set_partition_id(uint64_t part_id) override { first_partition_id_ = part_id;}
+  void set_ls_id(const int64_t ls_id) override {ls_request_.ls_op_.set_ls_id(ls_id);}
   void set_table_name(const ObString &table_name) {ls_request_.ls_op_.set_table_name(table_name);}
   void set_option_flag(uint8_t option_flag) { ls_request_.ls_op_.set_option_flag(option_flag); }
   void set_dictionary(const ObSEArray<ObString, 4> &rowkey_names, const ObSEArray<ObString, 4> &properties_names) {
@@ -468,7 +470,7 @@ public:
   int init_as_sub_ls_operation_request(const ObRpcTableLSOperationRequest &request,
                                        const int64_t ls_id,
                                        const common::ObIArray<int64_t> &tablet_ids);
-  int record_ls_tablet_index(const int ls_id, const int tablet_id, const int index);
+  int record_ls_tablet_index(int64_t ls_id, int64_t tablet_id, int64_t index);
   int init_tablet_ops(const ObRpcTableLSOperationRequest &root_request, const common::ObIArray<int64_t> &tablet_ids);
 
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
@@ -486,10 +488,9 @@ public:
   INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(ls_request));
 private:
   ObTableLSOpRequest ls_request_;
-  //ObTableEntityFactory<ObTableSingleOpEntity> request_entity_factory_;
   TABLET_ID_INDEX_MAP tablet_id_index_map_;  // ls_id or tablet_id ->  index
-  LS_TABLET_ID_MAP ls_id_tablet_id_map_;  // ls_id or tablet_id ->  index
-  //common::ObArenaAllocator allocator_;
+  LS_TABLET_ID_MAP ls_id_tablet_id_map_;     // ls_id or tablet_id ->  index
+  uint64_t first_partition_id_;              // record the partition id of the first op
 };
 
 class ObRpcTableGetRouteRequest : public ObRpcRequest
@@ -508,6 +509,7 @@ public:
   virtual ObString get_credential() const { return get_route_request_.credential_; }
   virtual ObString get_table_name() const { return get_route_request_.table_name_; }
   ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC;}
+  bool is_force_renew() const { return get_route_request_.force_renew_; }
   void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
 
   INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(get_route_request));

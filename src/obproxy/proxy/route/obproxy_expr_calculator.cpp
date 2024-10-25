@@ -989,7 +989,10 @@ int ObRpcExprCalcTool::eval_rowkey_values(ObProxyPartInfo &proxy_part_info,
           eval_obj[i] = src_obj[index];
           // index of generated key
           int64_t generated_col_idx = part_key_info.part_keys_[part_info_idx].generated_col_idx_;
-          if (generated_col_idx >= 0) {
+          if (src_obj[index].is_max_value() || src_obj[index].is_min_value()) {
+            src_obj = rowkey.get_obj_ptr();
+            eval_obj[i] = src_obj[index];
+          } else if (generated_col_idx >= 0) {
             if (generated_col_idx >= part_key_info.key_num_) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("unexpected generated col idx", K(ret), K(generated_col_idx));
