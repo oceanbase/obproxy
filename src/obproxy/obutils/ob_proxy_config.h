@@ -538,7 +538,7 @@ public:
   DEF_INT(rpc_request_timeout, "5000000", "[0,)", "rpc resquest timeout, unit is us, default 5000000us, 0 means no timeout", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_net_timeout_base, "5", "[0,)", "rpc network timeout base, controls the overall network timeout time, defaults to 1 bytes/5ms, and the timeout time for 400 bytes of data is 2 seconds", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_reroute, "true", "rpc request enable handle the move response for rpc request reroute", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(rpc_enable_congestion, "false", "rpc request enable congestion feature or not for write request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_congestion, "true", "rpc request enable congestion feature or not for write request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_server_net_invalid_time_us, "10000000", "rpc server net invalid time us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_server_net_max_pending_request, "10", "rpc server net max pending request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_global_index, "true", "rpc request enable global index route for query request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -562,6 +562,10 @@ public:
   DEF_BOOL(rpc_enable_async_analyze, "true", "if enabled, will async analyze large packet", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_sub_request_isolation_mode, "2", "[0,2]", "rpc sub req handle mode, 0: not isolate sub request, 1: isolate all sub req to async thread, 2: isolate sub req to part of async thread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_sub_request_weight, "10", "[0,]", "rpc sub request weight, recommended range [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_service_mode, "3", "[1, 3]","rpc service mode flag, option flag out, bit 1: OBKV service, bit 2: OB-Redis servcie", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(rpc_redis_default_database_name, "obkv_redis", "obkv-redis default database name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(rpc_redis_default_user_name, "default", "obkv-redis default user name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_redis_operation_timeout, "10000000",  "obkv redis request timeout us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // 以下是废弃、无用的配置，统一放在下面
   DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

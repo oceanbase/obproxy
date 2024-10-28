@@ -19,6 +19,8 @@
 #include "omt/ob_conn_table_processor.h"
 #include "omt/ob_white_list_table_processor.h"
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_obkv_client_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_redis_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "proxy/rpc/ob_rpc_req_debug_names.h"
 #include "proxy/rpc/ob_rpc_request_sm.h"
@@ -62,37 +64,31 @@ ObMutex g_debug_rpc_cs_list_mutex;
 
 ObRpcClientNetHandler::ObRpcClientNetHandler()
     : ObRpcNetHandler(),
-      vc_ready_killed_(false),
-      half_close_(false),
-      cluster_resource_(NULL),
-      cluster_version_(0),
+      vc_ready_killed_(false), half_close_(false),
+      cluster_resource_(NULL), cluster_version_(0),
       dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0),
+      conn_channel_id_(0), conn_unique_id_(0), conn_seq_(0),
       magic_(RPC_C_NET_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
-      in_list_stat_(LIST_INIT),
-      current_tid_(-1),
+      in_list_stat_(LIST_INIT), current_tid_(-1),
       cs_id_(0), atomic_channel_id_(0), proxy_sessid_(0),
       using_ldg_(false), tcp_init_cwnd_set_(0), read_state_(MCS_INIT), active_(true),
-      is_sending_response_(false), need_delete_cluster_(false), server_state_version_(0),
-      ct_info_(), last_server_ip_(),
-      need_send_response_list_(), sending_response_list_(), period_task_action_(NULL), pending_action_(NULL),
-      current_need_read_len_(RPC_NET_HEADER_LENGTH), current_ez_header_(),
+      is_sending_response_(false), need_delete_cluster_(false), is_first_request_(true), server_state_version_(0),
+      ct_info_(), last_server_ip_(), pending_action_(NULL),
       session_info_(), net_head_buf_(), is_proxy_protocol_v2_request_(true), proxy_protocol_v2_()
 {
-  cid_to_req_map_.create(OB_RPC_PARALLE_REQUEST_MAP_MAX_BUCKET_NUM, ObModIds::OB_RPC);
   SET_HANDLER(&ObRpcClientNetHandler::main_handler);
 }
 
-void ObRpcClientNetHandler::destroy()
+void ObRpcClientNetHandler::cleanup()
 {
-  PROXY_CS_LOG(INFO, "rpc client session destroy", K_(cs_id), K_(proxy_sessid), KP_(rpc_net_vc));
+  PROXY_CS_LOG(INFO, "rpc client session cleanup", K_(cs_id), K_(proxy_sessid), KP_(rpc_net_vc));
 
   if (OB_UNLIKELY(NULL != rpc_net_vc_)
       || OB_ISNULL(read_buffer_)) {
     PROXY_CS_LOG(WDIAG, "invalid rpc client session", K(rpc_net_vc_), K(read_buffer_));
   }
   is_local_connection_ = false;
-  cid_to_req_map_.destroy(); //just abandon, may be need to release it used timeout
 
   if (NULL != dummy_entry_) {
     dummy_entry_->dec_ref();
@@ -133,11 +129,15 @@ void ObRpcClientNetHandler::destroy()
     RPC_NET_SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
     conn_prometheus_decrease_ = false;
   }
-
   session_info_.destroy();
   ObRpcNetHandler::cleanup();
   create_thread_ = NULL;
 
+}
+
+void ObRpcClientNetHandler::destroy()
+{
+  cleanup();
   op_reclaim_free(this);
 }
 
@@ -218,10 +218,12 @@ int ObRpcClientNetHandler::new_connection(
          * RPC_NET_HEADER_LENGTH as the default water mark, when we read the
          * header of request, we reset the water mark.
          */
-        read_buffer_->water_mark_ = RPC_NET_HEADER_LENGTH;
+        read_buffer_->water_mark_ = RPC_NET_HEADER_LENGTH; //TODO change water_mark
         // start listen event on client vc
         if (OB_FAIL(acquire_client_session_id())) {
           PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
+        } else if (OB_FAIL(acquire_client_session_id())) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire connection unique id", K_(conn_unique_id), K(ret));
         } else if (OB_FAIL(add_to_list())) {
           PROXY_CS_LOG(WDIAG, "fail to add cs to list", K_(cs_id), K(ret));
         } else if (OB_FAIL(session_info_.init())) {
@@ -262,9 +264,10 @@ int ObRpcClientNetHandler::new_connection(
 
 
           if (OB_SUCC(ret)) {
-            if (OB_FAIL(schedule_period_task())) {
-              PROXY_CS_LOG(WDIAG, "fail to call schedule_period_task", K_(cs_id), K(ret));
-            } else if (OB_FAIL(setup_client_request_read())) {
+            // if (OB_FAIL(schedule_period_task())) { //TODO obkv need init period task
+            //   PROXY_CS_LOG(WDIAG, "fail to call schedule_period_task", K_(cs_id), K(ret));
+            // } else
+            if (OB_FAIL(setup_client_request_read())) {
               PROXY_CS_LOG(WDIAG, "fail to call setup_client_request_read", K_(cs_id), K(ret));
             }
           }
@@ -420,6 +423,18 @@ int ObRpcClientNetHandler::get_thread_init_cs_id(uint32_t &thread_init_cs_id,
   return ret;
 }
 
+int ObRpcClientNetHandler::acquire_conn_unique_id()
+{
+  int ret = OB_SUCCESS;
+  const ObAddr &addr =  get_real_client_addr();
+  int64_t ip = addr.get_ipv4();
+  int64_t port = int64_t(addr.get_port()) << 32;
+  int64_t is_user_req = int64_t(1) << (32 + 16);
+  int64_t reserved = 0;
+  conn_unique_id_ = (ip | port | is_user_req | reserved);
+  return ret;
+}
+
 int ObRpcClientNetHandler::add_to_list()
 {
   int ret = OB_SUCCESS;
@@ -499,13 +514,13 @@ void ObRpcClientNetHandler::do_io_close(const int alerrno)
   PROXY_CS_LOG(DEBUG, "ObRpcClientNetHandler do_io_close", K_(cs_id));
 
   if (MCS_CLOSED != read_state_) {
-    // clean all rpc req
-    if (OB_FAIL(cancel_period_task())) {
-      PROXY_CS_LOG(WDIAG, "fail to call cancel_period_task", K_(cs_id));
-    } else if (OB_FAIL(cancel_pending_action())) {
-      PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id));
-    }
-    clean_all_pending_request();
+  //   // clean all rpc req
+  //   if (OB_FAIL(cancel_period_task())) {
+  //     PROXY_CS_LOG(WDIAG, "fail to call cancel_period_task", K_(cs_id));
+  //   } else if (OB_FAIL(cancel_pending_action())) {
+  //     PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id));
+  //   }
+  //   clean_all_pending_request();
 
     if (MCS_ACTIVE_READER == read_state_) { // now not enter
       if (LIST_ADDED == in_list_stat_) {
@@ -585,6 +600,55 @@ void ObRpcClientNetHandler::do_io_close(const int alerrno)
       destroy(); // clean
     }
   }
+}
+
+//just release and clean object for detect session not to break net_vc
+void ObRpcClientNetHandler::do_io_release()
+{
+  int ret = OB_SUCCESS;
+  PROXY_CS_LOG(DEBUG, "rpc client session handle to release", K_(cs_id), K_(proxy_sessid), KP_(rpc_net_vc));
+  if (OB_NOT_NULL(rpc_net_vc_)) {
+    PROXY_CS_LOG(WDIAG, "invalid client net to do_io_release", K_(cs_id), K_(rpc_net_vc), K(this));
+    rpc_net_vc_->do_io_close();
+    rpc_net_vc_ = NULL;
+  }
+
+  if (LIST_ADDED == in_list_stat_) {
+    if (this_ethread() != create_thread_) {
+      PROXY_CS_LOG(DEBUG, "current thread is not create thread, should schedule",
+                   "current thread", this_ethread(), "create thread", create_thread_, K_(cs_id));
+      CLIENT_NET_SET_DEFAULT_HANDLER(&ObRpcClientNetHandler::handle_other_event);
+      if (OB_ISNULL(create_thread_->schedule_imm(this, CLIENT_SESSION_ERASE_FROM_MAP_EVENT))) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_CS_LOG(WDIAG, "fail to schedule switch thread", K_(cs_id), K(ret));
+      }
+    } else {
+      ObRpcClientNetHandlerMap &cs_map = get_rpc_client_net_handler_map(*create_thread_);
+      if (OB_FAIL(cs_map.erase(cs_id_))) {
+        PROXY_CS_LOG(WDIAG, "current client session is not in table, no need to erase", K_(cs_id), K(ret));
+      }
+      in_list_stat_ = LIST_REMOVED;
+    }
+  }
+
+  magic_ = RPC_C_NET_MAGIC_DEAD;
+  if (OB_NOT_NULL(read_buffer_)) {
+    PROXY_CS_LOG(WDIAG, "invalid client net to do_io_release", K_(cs_id), K_(read_buffer), K(this));
+    free_miobuffer(read_buffer_);
+    read_buffer_ = NULL;
+  }
+
+  //not to handle net_entry_
+
+    if (conn_prometheus_decrease_) {
+    RPC_NET_SESSION_PROMETHEUS_STAT(session_info_, PROMETHEUS_CURRENT_SESSION, true, -1);
+    conn_prometheus_decrease_ = false;
+  }
+  session_info_.destroy();
+  ObRpcNetHandler::cleanup();
+  create_thread_ = NULL;
+
+  op_reclaim_free(this);
 }
 
 int ObRpcClientNetHandler::handle_other_event(int event, void *data)
@@ -726,11 +790,9 @@ int ObRpcClientNetHandler::main_handler(int event, void *data)
             K_(cs_id),
             "event_name", ObRpcReqDebugNames::get_event_name(event),
             "read_state", get_read_state_str(), K(data));
-
+  //do nothing
   if (OB_LIKELY(RPC_C_NET_MAGIC_ALIVE == magic_)) {
-    if (RPC_CLIENT_NET_PERIOD_TASK == event) {
-      event_ret = handle_period_task();
-    } else if (RPC_CLIENT_NET_SEND_RESPONSE == event) {
+    if (RPC_CLIENT_NET_SEND_RESPONSE == event) {
       event_ret = setup_client_response_send();
     } else if (RPC_CLIENT_NET_READ_REQUEST == event) {
       event_ret = setup_client_request_read();
@@ -746,7 +808,6 @@ int ObRpcClientNetHandler::main_handler(int event, void *data)
   } else {
     PROXY_CS_LOG(WDIAG, "unexpected magic, expected RPC_C_NET_MAGIC_ALIVE", K_(cs_id), K(magic_));
   }
-
   return event_ret;
 }
 
@@ -824,9 +885,6 @@ int ObRpcClientNetHandler::release(ObIOBufferReader *r)
       // IO to wait for new data
       if (buf_reader_->read_avail() > 0) {
         PROXY_CS_LOG(DEBUG, "data already in buffer, starting new transaction", K_(cs_id));
-        // if (OB_FAIL(new_transact())) {
-        //   PROXY_CS_LOG(WDIAG, "fail to start new transaction", K(ret));
-        // }
       } else {
         read_state_ = MCS_KEEP_ALIVE;
         net_entry_.read_vio_ = do_io_read(this, INT64_MAX, read_buffer_);
@@ -1087,20 +1145,26 @@ int ObRpcClientNetHandler::setup_client_request_read()
     }
   }
 
+  //or do nothing
+
   return ret;
 }
 
 int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
 {
   int ret = OB_SUCCESS;
+
   int event_ret = VC_EVENT_NONE;
   UNUSED(event_ret);
 
+
+  UNUSED(event);
+  UNUSED(data);
+
   STATE_ENTER(ObRpcClientNetHandler::state_client_request_read, event, data);
 
-  /* 1. check need update cluster resource */
-  /* 2. check and add trace info */
-  /* 3. check event info */
+   bool need_release = false;
+
   if (OB_UNLIKELY(NULL != net_entry_.read_vio_ && net_entry_.read_vio_ != reinterpret_cast<ObVIO *>(data))
       || (net_entry_.eos_)) {
     ret = OB_INNER_STAT_ERROR;
@@ -1116,141 +1180,128 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
         PROXY_CS_LOG(INFO, "ObRpcClientNetHandler::state_client_request_read", "event", "set event name",
                  K_(cs_id), "client_vc", P(this->get_netvc()));
         break;
-      }
-      case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_ERROR: {
         PROXY_CS_LOG(WDIAG, "ObRpcClientNetHandler::state_client_request_read", "event",
                  ObRpcReqDebugNames::get_event_name(event), K_(cs_id), "client_vc", P(this->get_netvc()));
         ret = OB_CONNECT_ERROR;
-        // The client is closed. Close it.
-        // trans_state_.client_info_.abort_ = ObRpcTransact::ABORTED; //TODO need check queueing RPC and broken connection
         break;
       }
       default:
         ret = OB_INNER_STAT_ERROR;
         PROXY_CS_LOG(EDIAG, "unexpected event", K_(cs_id), K(event), K(ret));
         break;
-    }
-
-    /* 4. set keep alive base on config */
-    ObNetVConnection *vc = this->get_netvc();
-    //TODO PRPC need update trans_state_.mysql_config_params_ info to set keep alive opt
-    if (OB_UNLIKELY(NULL != vc && vc->options_.sockopt_flags_ != get_global_proxy_config().client_sock_option_flag_out)) {
-      vc->options_.sockopt_flags_ = static_cast<uint32_t>(get_global_proxy_config().client_sock_option_flag_out);
-      if (vc->options_.sockopt_flags_ & ObNetVCOptions::SOCK_OPT_KEEP_ALIVE) {
-        vc->options_.set_keepalive_param(static_cast<int32_t>(get_global_proxy_config().client_tcp_keepidle),
-              static_cast<int32_t>(get_global_proxy_config().client_tcp_keepintvl),
-              static_cast<int32_t>(get_global_proxy_config().client_tcp_keepcnt),
-              static_cast<int32_t>(get_global_proxy_config().client_tcp_user_timeout));
-      }
-      if (OB_FAIL(vc->apply_options())) {
-        PROXY_CS_LOG(WDIAG,"client session failed to apply per-transaction socket options", K_(cs_id), K(ret));
       }
     }
 
-    /* 5. read data from vc buffer and init ObReq */
     if (OB_SUCC(ret) && OB_NOT_NULL(get_reader())) {
       ObIOBufferReader &buffer_reader = *get_reader();
-      bool is_ppv2_req = is_proxy_protocol_v2_request() && buffer_reader.read_avail() > 0;
       ObRpcReqReadStatus status = RPC_REQUEST_READ_CONT;
-      ObRpcReq *rpc_req = NULL;
-      ObRpcRequestSM *request_sm = NULL;
-      uint32_t client_channel_id = 0;
-      int64_t request_len = 0;
-      ObRpcReqTraceId rpc_trace_id;
-      bool is_set_cid_to_req_map = false;
+      bool need_read_more_here = false;
 
-      // check if need to parse ppv2 packet
-      if (OB_UNLIKELY(is_ppv2_req && buffer_reader.read_avail() > ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN)) {
-        char header[ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN];
-        char *written_pos = buffer_reader.copy(header, ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN, 0);
-        if (OB_UNLIKELY(written_pos != (header + ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN))) {
+      int64_t current_need_read_len = RPC_NET_DETECT_HRD_LEN;
+      if (buffer_reader.read_avail() < current_need_read_len) { //DETECT_HRD_LEN > PROXY_PROTOCOL_V2_VALIDATE_LEN(4)
+        need_read_more_here = true;
+        PROXY_CS_LOG(DEBUG, "data not meet need", K_(cs_id), "avail_len", buffer_reader.read_avail(), K(current_need_read_len));
+      } else {
+        char *written_pos = buffer_reader.copy(net_head_buf_, current_need_read_len);
+        if (OB_UNLIKELY(written_pos != net_head_buf_ + RPC_NET_DETECT_HRD_LEN)) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(WDIAG, "not copy completely", K(ret));
-        } else if (OB_LIKELY(!proxy_protocol_v2::ProxyProtocolV2::check_proxy_protocol_v2_valid(header))) {
-          // top 12 bytes of ppv2 packet are a fixed signature, and top 4 bytes of ezheader are a magic num
-          // so we determine if it is a ppv2 packet by the top 4 bytes
-          is_ppv2_req = false;
-          set_proxy_protocol_v2_request(false);
-        }
-      }
-
-      PROXY_CS_LOG(DEBUG, "rpc state_client_request_read", K(ret), "read_status", status, K(is_ppv2_req), "read_avail",
-                   buffer_reader.read_avail(), K(request_len), "water_mark", buffer_reader.mbuf_->water_mark_, K(event));
-
-      if (OB_SUCC(ret)) {
-        if (OB_UNLIKELY(is_ppv2_req)) {
+          PROXY_CS_LOG(WDIAG, "not copy completely", K_(cs_id), K(written_pos),
+                       K(net_head_buf_), "meta_length", current_need_read_len, K(ret));
+        } else if (is_first_request_ && proxy_protocol_v2::ProxyProtocolV2::check_proxy_protocol_v2_valid(net_head_buf_)) {
+          need_read_more_here = true;
           if (OB_FAIL(handle_proxy_protocol_v2_request(proxy_protocol_v2_, status))) {
             PROXY_CS_LOG(WDIAG, "fail to handle proxy protocol v2", K(ret), K(status));
           }
         } else {
-          if (OB_FAIL(handle_rpc_request(request_sm, rpc_req, request_len, status))) {
-            PROXY_CS_LOG(WDIAG, "fail to handle rpc request", K(ret));
+          set_proxy_protocol_v2_request(false);
+          obkv::ObProxyRpcType rpc_type = obkv::ObRpcEzHeader::check_rpc_magic_type(net_head_buf_, current_need_read_len);
+          switch (rpc_type) {
+            case obkv::OBPROXY_RPC_OBRPC: //obkv
+            {
+              // ObRpcClientNetHandler *new_session = op_reclaim_alloc(ObRpcClientNetHandler);
+              ObRpcOBKVClientNetHandler *new_session = op_reclaim_alloc(ObRpcOBKVClientNetHandler);
+              if (OB_ISNULL(new_session)) {
+                ret = OB_ALLOCATE_MEMORY_FAILED;
+                PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret));
+              } else {
+                if (OB_FAIL(new_session->new_connection(rpc_net_vc_/*new_vc*/, read_buffer_/*iobuf*/, buf_reader_ /*reader*/))) {
+                  PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));
+                } else {
+                  need_release = true; //to release detect session handler
+                  rpc_net_vc_ = NULL; //has passed it to new_session
+                  buf_reader_ = NULL;
+                  read_buffer_ = NULL;
+                  PROXY_NET_LOG(DEBUG, "handle new obkv client connection", K(ret), K_(cs_id));
+                  if (ct_info_.lookup_success_) {
+                    new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
+                    new_session->get_ct_info().lookup_success_ = true;
+                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+                    new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
+                  }
+                }
+              }
+            }
+            break;
+            case obkv::OBPROXY_RPC_REDIS: //redis
+            {
+              ObRpcRedisClientNetHandler *new_session = op_reclaim_alloc(ObRpcRedisClientNetHandler);
+              if (OB_ISNULL(new_session)) {
+                ret = OB_ALLOCATE_MEMORY_FAILED;
+                PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret));
+              } else {
+                if (OB_FAIL(new_session->new_connection(rpc_net_vc_/*new_vc*/, read_buffer_/*iobuf*/, buf_reader_ /*reader*/))) {
+                  PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));
+                } else {
+                  need_release = true; //to release detect session handler
+                  rpc_net_vc_ = NULL; //has passed it to new_session
+                  buf_reader_ = NULL;
+                  read_buffer_ = NULL;
+                  PROXY_NET_LOG(DEBUG, "handle new ob-redis client connection", K(ret), K_(cs_id));
+                  if (ct_info_.lookup_success_) {
+                    new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
+                    new_session->get_ct_info().lookup_success_ = true;
+                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+                    new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
+                  }
+                }
+              }
+            }
+            break;
+            case obkv::OBPROXY_RPC_HBASE:
+            default:
+              ret = OB_NOT_SUPPORTED;
+              PROXY_CS_LOG(WDIAG, "unsupported protocol to handle", K_(cs_id), K(rpc_type), K(net_head_buf_),
+                           "meta_length", current_need_read_len, K(ret));
+            break;
           }
         }
       }
-
-      if (OB_FAIL(ret)) {
-        status = RPC_REQUEST_READ_ERROR;
-      }
-
-      if (OB_NOT_NULL(rpc_req)) {
-        rpc_trace_id = rpc_req->get_trace_id();
-      }
-      PROXY_CS_LOG(DEBUG, "rpc state_client_request_read", K(ret), "read_status", status, K(is_ppv2_req), "read_avail",
-                   buffer_reader.read_avail(), K(request_len), "water_mark", buffer_reader.mbuf_->water_mark_, K(event));
-
-
-      /* 5. read data from vc buffer and init ObReq */
-      switch (__builtin_expect(status, RPC_REQUEST_READ_DONE)) {
-      case RPC_REQUEST_READ_DONE:
-        if (is_ppv2_req) {
+      if (OB_SUCC(ret) && need_read_more_here) {
+        switch (__builtin_expect(status, RPC_REQUEST_READ_DONE)) {
+        case RPC_REQUEST_READ_DONE:
           set_proxy_protocol_v2_request(false);
           if (OB_FAIL(buffer_reader.consume(proxy_protocol_v2_.get_total_len()))) {
             PROXY_CS_LOG(WDIAG, "fail to consume ppv2 packet", K(ret));
           }
           PROXY_CS_LOG(DEBUG, "succ to analyze ppv2 packet", K(proxy_protocol_v2_));
-        } else if (OB_NOT_NULL(rpc_req) && OB_NOT_NULL(request_sm)) {
-          PROXY_CS_LOG(DEBUG, "[RPC_REQUEST]recv a new rpc_req, to handle", K_(cs_id), K(rpc_trace_id), K(ret), KPC(rpc_req));
-          client_channel_id = rpc_req->get_client_channel_id();
-          if (OB_FAIL(cid_to_req_map_.set_refactored(client_channel_id, rpc_req))) {
-            PROXY_CS_LOG(WDIAG, "failed to set_refactored", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
-          } else {
-            RPC_REQ_CNET_ENTER_STATE(rpc_req, ObRpcReq::ClientNetState::RPC_REQ_CLIENT_REQUEST_HANDLING);
-            is_set_cid_to_req_map = true;
-            if (OB_FAIL(request_sm->schedule_call_next_action(RPC_REQ_NEW_REQUEST))) {
-              PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K(request_sm));
+          net_entry_.read_vio_->nbytes_ = INT64_MAX;
+          net_entry_.read_vio_->reenable(); //need check next data
+          if (OB_SUCC(ret)) {
+            PROXY_CS_LOG(DEBUG, "need read next request immediately when request waiting", K_(cs_id), "net_len", buffer_reader.read_avail());
+            if (OB_FAIL(handle_request_read_throttle())) {
+              PROXY_CS_LOG(WDIAG, "fail to handle rpc req throttle", K_(cs_id), K(ret));
             }
           }
-        } else {
-          ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(WDIAG, "handle rpc request expected null request", K_(cs_id), K(ret));
-        }
 
-        net_entry_.read_vio_->nbytes_ = INT64_MAX;
-        net_entry_.read_vio_->reenable(); //need check next data
-        current_need_read_len_ = RPC_NET_HEADER_LENGTH;
-        current_ez_header_.reset();
-        if (OB_SUCC(ret)) {
-          PROXY_CS_LOG(DEBUG, "need read next request immediately when request waiting", K_(cs_id), "net_len", buffer_reader.read_avail());
-          if (OB_FAIL(handle_request_read_throttle())) {
-            PROXY_CS_LOG(WDIAG, "fail to handle rpc req throttle", K_(cs_id), K(ret));
-          }
-        }
-        break;
-      case RPC_REQUEST_READ_CONT:
-        if (net_entry_.eos_) {
-          ret = OB_CONNECT_ERROR;
-          PROXY_CS_LOG(WDIAG, "EOS before client request parsing finished", K_(cs_id), K(ret));
-          // TODO PRPC client need abort and broken connection
-          net_entry_.read_vio_->nbytes_ = net_entry_.read_vio_->ndone_; // client_entry_->read_vio_->ndone_;
-        } else if (is_ppv2_req) {
+          break;
+        case RPC_REQUEST_READ_CONT:
           if (VC_EVENT_READ_COMPLETE == event) {
-            int64_t read_num = proxy_protocol_v2_.get_len() > 0 ? proxy_protocol_v2_.get_len() : ProxyProtocolV2::PROXY_PROTOCOL_V2_HEADER_LEN;
+            int64_t read_num = proxy_protocol_v2_.get_len() > 0 ? proxy_protocol_v2_.get_len() : RPC_NET_DETECT_HRD_LEN;
             buffer_reader.mbuf_->water_mark_ = read_num;
             if (OB_ISNULL(net_entry_.read_vio_ = do_io_read(this, read_num, buffer_reader.mbuf_))) {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_CS_LOG(WDIAG, "rpc net handler fail to do_io_read", K(ret), "packet_len", proxy_protocol_v2_.get_len());
+              PROXY_CS_LOG(WDIAG, "rpc net handler fail to do_io_read", K(ret), "packet_len", proxy_protocol_v2_.get_len(), K(read_num));
             } else {
               event_ret = VC_EVENT_CONT;
             }
@@ -1259,51 +1310,28 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
             net_entry_.read_vio_->reenable();
             event_ret = VC_EVENT_CONT;
           }
-        } else {
-          if (request_len > 0 && request_len > buffer_reader.mbuf_->water_mark_) {
-            buffer_reader.mbuf_->water_mark_ = request_len;
-          }
-          // if (VC_EVENT_READ_COMPLETE == event) {
-          //   if (OB_ISNULL(net_entry_.read_vio_ = do_io_read(this, INT64_MAX, buffer_reader.mbuf_))) {
-          //     ret = OB_ERR_UNEXPECTED;
-          //     PROXY_CS_LOG(WDIAG, "rpc net handler fail to do_io_read", K(ret));
-          //   } else {
-          //     event_ret = VC_EVENT_CONT;
-          //   }
-          // }
-          net_entry_.read_vio_->nbytes_ = INT64_MAX;
-          net_entry_.read_vio_->reenable(); // need more data
-          event_ret = VC_EVENT_CONT;
+
+          break;
+        case RPC_REQUEST_READ_ERROR:
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_CS_LOG(WDIAG, "error parsing client request", K_(cs_id), K(ret));
+          net_entry_.read_vio_->nbytes_ = net_entry_.read_vio_->ndone_;
+          break;
+        default:
+          ret = OB_INNER_STAT_ERROR;
+          PROXY_CS_LOG(EDIAG, "unknown analyze rpc status", K_(cs_id), K(status), K(ret));
+          break;
         }
-        break;
-      case RPC_REQUEST_READ_ERROR:
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WDIAG, "error parsing client request", K_(cs_id), K(ret));
-        net_entry_.read_vio_->nbytes_ = net_entry_.read_vio_->ndone_;
-        break;
-      default:
-        ret = OB_INNER_STAT_ERROR;
-        PROXY_CS_LOG(EDIAG, "unknown analyze mysql request status", K_(cs_id), K(status), K(ret));
-        break;
-      }
-      if (OB_FAIL(ret)) { // clear all buffer
-        int tmp_ret = ret;
-        if (is_set_cid_to_req_map && OB_FAIL(cid_to_req_map_.erase_refactored(client_channel_id))) {
-          PROXY_CS_LOG(WDIAG, "fail to call erase_refactored", K_(cs_id), K(ret), K(client_channel_id));
-        }
-        if (OB_NOT_NULL(rpc_req)) {
-          PROXY_CS_LOG(INFO, "state_client_request_read error, cleanup rpc_req", K_(cs_id), KPC(rpc_req));
-          ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE);
-          rpc_req->cleanup(cleanup_params);
-        }
-        ret = tmp_ret;
       }
     }
   }
 
   if (OB_FAIL(ret)) {
-    //error state, need abort client session
     do_io_close();
+  }
+
+  if (need_release) {
+    do_io_release();
   }
 
   return ret;
@@ -1370,114 +1398,6 @@ int ObRpcClientNetHandler::handle_proxy_protocol_v2_request(ProxyProtocolV2 &v2,
   return ret;
 }
 
-int ObRpcClientNetHandler::handle_rpc_request(ObRpcRequestSM *&request_sm,
-                                              ObRpcReq *&rpc_req,
-                                              int64_t &request_len,
-                                              ObRpcReqReadStatus &status)
-{
-  int ret = OB_SUCCESS;
-  ObRpcReqTraceId rpc_trace_id;
-  obkv::ObProxyRpcType rpc_type = obkv::OBPROXY_RPC_UNKOWN;
-  request_len = 0;
-  int64_t trace_id1;
-  int64_t trace_id2;
-  int64_t pos = 0;
-
-  if (OB_ISNULL(get_reader())) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WDIAG, "unexpected buffer reader", K(ret));
-  } else {
-    ObIOBufferReader &buffer_reader = *get_reader();
-    if (read_begin_ == 0 && OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-      read_begin_ = ObRpcRequestSM::static_get_based_hrtime();
-    }
-
-    if (buffer_reader.read_avail() < current_need_read_len_) { // need handle the rpc header
-      PROXY_CS_LOG(DEBUG, "data not meet need", K_(cs_id), "avail_len", buffer_reader.read_avail(),
-                   K_(current_need_read_len));
-    } else {
-      // check if ever parsed ez header( large request may call multiple state_client_request_read )
-      // if not ever parsed, parse it
-      if (RPC_NET_HEADER_LENGTH == current_need_read_len_) {
-        char *written_pos = buffer_reader.copy(net_head_buf_, RPC_NET_HEADER_LENGTH);
-        if (OB_UNLIKELY(written_pos != net_head_buf_ + RPC_NET_HEADER_LENGTH)) {
-          ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(WDIAG, "not copy completely", K_(cs_id), K(written_pos), K(net_head_buf_), "meta_length",
-                       RPC_NET_HEADER_LENGTH, K(ret));
-        } else if (OB_FAIL(current_ez_header_.deserialize(net_head_buf_, RPC_NET_HEADER_LENGTH, pos))) {
-          PROXY_CS_LOG(WDIAG, "fail to deserialize ObRpcEzHeader", K_(cs_id), K(written_pos), K(net_head_buf_),
-                       "meta_length", RPC_NET_HEADER_LENGTH, K(ret));
-        } else {
-          current_need_read_len_ = current_ez_header_.ez_payload_size_ + RPC_NET_HEADER_LENGTH;
-        }
-      }
-
-      // ez headerd already parsed
-      if (OB_SUCC(ret) && RPC_NET_HEADER_LENGTH != current_need_read_len_) {
-        request_len = current_need_read_len_;
-        if (buffer_reader.read_avail() < request_len) {
-          // request not completely got from net, next to read it when meet condition
-          PROXY_CS_LOG(DEBUG, "response not ready, need get next", K_(cs_id), K(request_len), "data_len",
-                       buffer_reader.read_avail());
-          status = RPC_REQUEST_READ_CONT;
-        } else {
-          if (obkv::OBPROXY_RPC_OBRPC != (rpc_type = current_ez_header_.get_rpc_magic_type())) {
-            ret = OB_ERR_UNEXPECTED;
-            PROXY_CS_LOG(WDIAG, "get an unsupported rpc type", K_(cs_id), K(rpc_type), K(ret));
-          } else if (OB_ISNULL(rpc_req = ObRpcReq::allocate())) {
-            // TODO handle the error, maybe need broken connection
-            ret = OB_ERR_UNEXPECTED;
-            PROXY_CS_LOG(WDIAG, "could not allocate request, abort connection if need", K_(cs_id), K(ret));
-          } else if (OB_FAIL(rpc_req->alloc_request_buf(request_len + ObProxyRpcReqAnalyzer::OB_RPC_ANALYZE_MORE_BUFF_LEN))) {
-            PROXY_CS_LOG(WDIAG, "fail to allocate rpc request object", K_(cs_id), K(ret));
-          } else if (OB_ISNULL(request_sm = ObRpcRequestSM::allocate())) {
-            ret = OB_ERR_UNEXPECTED;
-            PROXY_CS_LOG(WDIAG, "could not allocate request sm, net need abort connection", K_(cs_id), K(ret));
-          } else {
-
-            // init rpc request trace id
-            int64_t pos = RPC_NET_HEADER_LENGTH + obrpc::ObRpcPacketHeader::RPC_REQ_TRACE_ID_POS;
-            char *request_buf = rpc_req->get_request_buf();
-            PROXY_CS_LOG(DEBUG, "receive one rpc request has init rpc request done", K_(cs_id), K(ret), K(this));
-            // success we need copy net data to request buffer
-            buffer_reader.copy(request_buf, request_len);
-            buffer_reader.consume(request_len); // clean the net data of the request
-            if (OB_UNLIKELY(OB_FAIL(serialization::decode_i64(request_buf, request_len, pos, &trace_id1))
-                            || OB_FAIL(serialization::decode_i64(request_buf, request_len, pos, &trace_id2)))) {
-              PROXY_CS_LOG(WDIAG, "fail to retrive trace id from request", K_(cs_id), K(ret), K(request_len), K(pos));
-            } else {
-              PROXY_CS_LOG(DEBUG, "retrive trace id from request", K_(cs_id), K(pos), K(trace_id1), K(trace_id2));
-              rpc_trace_id.set_rpc_trace_id(trace_id2, trace_id1);
-            }
-            status = RPC_REQUEST_READ_DONE;
-            PROXY_CS_LOG(DEBUG, "request has read to buffer, consume it", K_(cs_id), K(request_len), "block_count",
-                         buffer_reader.get_block_count(), "block_addr", buffer_reader.get_current_block(), "buffer",
-                         buffer_reader.mbuf_, "read_avail", buffer_reader.read_avail(), K(rpc_trace_id));
-
-            RPC_REQ_CNET_ENTER_STATE(rpc_req, ObRpcReq::ClientNetState::RPC_REQ_CLIENT_REQUEST_READ);
-            rpc_req->client_timestamp_.client_begin_ = read_begin_;
-            rpc_req->client_timestamp_.client_read_end_ = ObRpcRequestSM::static_get_based_hrtime();
-            read_begin_ = 0;
-            uint32_t request_id = current_ez_header_.chid_;
-            uint32_t client_channel_id = atomic_channel_id_++;
-            if (OB_FAIL(rpc_req->init(rpc_type, request_sm, this, request_len, cluster_version_, request_id,
-                                      client_channel_id, cs_id_, rpc_net_vc_, trace_id1, trace_id2))) {
-              PROXY_CS_LOG(WDIAG, "failed to init rpc_req", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
-            } else if (OB_FAIL(request_sm->init(rpc_req, mutex_))) {
-              PROXY_CS_LOG(WDIAG, "failed to init request_sm", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
-            }
-          }
-        }
-      }
-    }
-  }
-
-  if (OB_FAIL(ret)) {
-    status = RPC_REQUEST_READ_ERROR;
-  }
-  return ret;
-}
-
 int ObRpcClientNetHandler::fill_tenant_info_with_ppv2(ProxyProtocolV2 &v2)
 {
   int ret = OB_SUCCESS;
@@ -1501,252 +1421,23 @@ int ObRpcClientNetHandler::fill_tenant_info_with_ppv2(ProxyProtocolV2 &v2)
   return ret;
 }
 
-int ObRpcClientNetHandler::calc_response_need_send(int64_t &count)
-{
-  int ret = OB_SUCCESS;
-  int64_t need_send_response_count = need_send_response_list_.size();
-  int64_t max_response_count = get_global_proxy_config().rpc_max_response_batch_size;
-
-  //TODO : add response bytes limite
-
-  if (need_send_response_count > max_response_count) {
-    need_send_response_count = max_response_count;
-  }
-
-  count = need_send_response_count;
-  PROXY_LOG(DEBUG, "ObRpcClientNetHandler::calc_response_need_send done", K(count));
-
-  return ret;
-}
-
-int ObRpcClientNetHandler::store_rpc_req_into_response_buffer(int64_t need_send_resp_count, int64_t &send_response, int64_t &total_response_len)
-{
-  int ret = OB_SUCCESS;
-  ObRpcReq *rpc_req = NULL;
-  ObMIOBuffer *response_buffer = net_entry_.write_buffer_;
-  int64_t written_len = 0;
-  int64_t response_len = 0;
-  char *buf = NULL;
-
-  while (OB_SUCC(ret) && !need_send_response_list_.empty() && send_response < need_send_resp_count) {
-    written_len = 0;
-
-    if (OB_FAIL(need_send_response_list_.pop_front(rpc_req))) {
-      PROXY_CS_LOG(WDIAG, "fail to pop need send response", K_(cs_id), K(ret));
-    } else if (OB_ISNULL(rpc_req)) {
-      PROXY_CS_LOG(WDIAG, "need send response is invalid", K_(cs_id), K(ret));
-    } else if (OB_FAIL(handle_response_rewrite_channel_id(rpc_req))) {
-      PROXY_CS_LOG(WDIAG, "rpc_req convert channel_id failed", K_(cs_id), K(rpc_req));
-    } else {
-      const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
-      RPC_REQ_CNET_ENTER_STATE(rpc_req, ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_HANDLING);
-
-      response_len = rpc_req->get_response_len();
-      if (!rpc_req->is_use_response_inner_buf()) {
-        buf = rpc_req->get_response_buf();
-      } else {
-        buf = rpc_req->get_response_inner_buf();
-      }
-
-      if (OB_FAIL(response_buffer->write(buf, response_len, written_len))) {
-        PROXY_CS_LOG(WDIAG, "response is not written completely, all rpc_req handle failed", K_(cs_id), K(written_len), K(response_len), K(rpc_trace_id));
-      } else if (OB_UNLIKELY(response_len != written_len)) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WDIAG, "response is not written completely, all rpc_req handle failed", K_(cs_id), K(written_len), K(response_len), K(rpc_trace_id));
-      } else if (OB_FAIL(sending_response_list_.push_back(rpc_req))) {
-        PROXY_CS_LOG(WDIAG, "response push back into sending_response_list failed", K_(cs_id), K(response_len), K(rpc_trace_id));
-      } else {
-        PROXY_CS_LOG(DEBUG, "[RPC_REQUEST]sending response...", K_(cs_id), KPC(rpc_req), K(this), K(rpc_trace_id));
-        RPC_REQ_CNET_ENTER_STATE(rpc_req, ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_SEND);
-        send_response++;
-        total_response_len += response_len;
-      }
-    }
-  }
-
-  return ret;
-}
-
 int ObRpcClientNetHandler::setup_client_response_send()
 {
   int ret = OB_SUCCESS;
+  //do nothing
   //set read trigger and read_reschedule. sometimes the data already is in the io buffer
-  PROXY_CS_LOG(DEBUG, "ObRpcServerNetHandler::setup_client_response send", K_(cs_id), "request_count", need_send_response_list_.size());
-  static_cast<ObUnixNetVConnection *>(this->get_netvc())->set_read_trigger();
-  pending_action_ = NULL;
+  PROXY_CS_LOG(DEBUG, "ObRpcServerNetHandler::setup_client_response send", K_(cs_id));
 
-  if (OB_LIKELY(!need_send_response_list_.empty()) && !is_sending_response_) {
-    int64_t send_response = 0;
-    int64_t total_response_len = 0;
-    ObIOBufferReader *buf_start = NULL;
-    int64_t need_send_resp_count = 0;
-
-    if (OB_ISNULL(net_entry_.write_buffer_)) {
-      net_entry_.write_buffer_ = new_empty_miobuffer(MYSQL_BUFFER_SIZE);
-    } else {
-      net_entry_.write_buffer_->reset(); //cleanup
-      net_entry_.write_buffer_->dealloc_all_readers();
-    }
-
-    if (OB_ISNULL(buf_start = net_entry_.write_buffer_->alloc_reader())) {
-      ret = OB_ERR_UNEXPECTED;
-      PROXY_CS_LOG(WDIAG, "setup_client_response_send failed to allocate iobuffer reader", K_(cs_id), K(ret));
-    } else if (OB_FAIL(calc_response_need_send(need_send_resp_count))) {
-      PROXY_CS_LOG(WDIAG, "fail to call calc_response_need_send", K(ret), K_(cs_id), K(ret));
-    } else if (OB_FAIL(store_rpc_req_into_response_buffer(need_send_resp_count, send_response, total_response_len))) {
-      PROXY_CS_LOG(WDIAG, "fail to call store_rpc_req_into_response_buffer", K(ret), K_(cs_id), K(ret));
-    } else if (send_response > 0) {
-      if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-        write_begin_ = ObRpcRequestSM::static_get_based_hrtime(); /* record begin time to write */
-      }
-      // MUTEX_TRY_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);
-      // TODO: Using MUTEX_ LOCK may affect performance. In the future, consider using different mutexes for asynchronous tasks within RPC requests
-      // compared to client VC to prevent race conditions
-      MUTEX_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);    // TODO: check CLIENT_VC_SWAP_MUTEX_EVENT event
-      /* check mutex_->thread_holding_ is same with create_thread_ to avoid
-        writing failed with net_entry_.write_vio_ in not null */
-      if (create_thread_ != mutex_->thread_holding_ || OB_ISNULL(net_entry_.write_vio_ = do_io_write(this, total_response_len, buf_start))) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WDIAG, "client entry failed to do_io_write", K_(cs_id), K(send_response), K(total_response_len), KP_(create_thread), KP(this_ethread()),
-                    KP(mutex_->thread_holding_), K(mutex_.ptr_));
-      } else {
-        is_sending_response_ = true;
-      }
-    }
-  } else {
-    //do nothing
-    PROXY_CS_LOG(DEBUG, "client net is in sending state, need to wait complete for last", K_(cs_id), "waiting_count", need_send_response_list_.size());
-  }
-
-  if (OB_FAIL(ret)) {
-    do_io_close();
-  }
-
+  //do nothing
   return ret;
 }
 
 int ObRpcClientNetHandler::state_client_response_send(int event, void *data)
 {
   int ret = OB_SUCCESS;
-  bool need_terminal = false;
-  ObRpcReq *rpc_req = NULL;
-  if (OB_ISNULL(data)) {
-    ret = OB_INNER_STAT_ERROR;
-    PROXY_CS_LOG(EDIAG,"invalid internal state, server entry is NULL or data is NULL",
-            /* K_(net_entry), */
-            K_(cs_id), K(data), K(ret));
-  } else if (OB_UNLIKELY(net_entry_.read_vio_ != reinterpret_cast<ObVIO *>(data)
-             && net_entry_.write_vio_ != reinterpret_cast<ObVIO *>(data))) {
-    ret = OB_INNER_STAT_ERROR;
-    PROXY_CS_LOG(EDIAG,"invalid internal state, server entry read vio isn't the same as data,"
-              "and server entry write vio isn't the same as data",
-              K_(cs_id), K_(net_entry_.read_vio),
-              K_(net_entry_.write_vio), K(data), K(ret));
-
-  } else {
-    ObHRTime write_done = 0;
-    switch (event) {
-      case VC_EVENT_WRITE_READY:
-        net_entry_.write_vio_->reenable();
-        break;
-      case VC_EVENT_WRITE_COMPLETE:
-        is_sending_response_ = false;
-        if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-          write_done = ObRpcRequestSM::static_get_based_hrtime();
-        }
-        while (OB_SUCC(ret) && !sending_response_list_.empty()) {
-          if (OB_FAIL(sending_response_list_.pop_front(rpc_req))) {
-            ret = OB_ERR_UNEXPECTED;
-            PROXY_CS_LOG(WDIAG, "fail to pop sending response", K_(cs_id), K(ret));
-          } else if (OB_NOT_NULL(rpc_req)) {
-            uint32_t key = rpc_req->get_client_channel_id();
-            const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
-
-            if (OB_FAIL(cid_to_req_map_.erase_refactored(key))) { //remove it
-              // do nothing
-              if (OB_HASH_NOT_EXIST == ret) {
-                ret = OB_SUCCESS;
-                PROXY_CS_LOG(INFO, "rpc_req is not in cid_to_req_map, just destory", K_(cs_id), "rpc_req", *rpc_req, K(ret), K(key), K(rpc_trace_id));
-              } else {
-                PROXY_CS_LOG(WDIAG, "fail to call erase_refactored", K_(cs_id), "rpc_req", *rpc_req, K(ret), K(key), K(rpc_trace_id));
-              }
-            } else {
-              rpc_req->client_timestamp_.client_write_begin_ = write_begin_;
-              rpc_req->client_timestamp_.client_end_ = write_done;
-            }
-            if (OB_SUCC(ret)) {
-              if (rpc_req->is_need_terminal_client_net()) {
-                need_terminal = true;
-              }
-              ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE);
-              rpc_req->cleanup(cleanup_params);
-              rpc_req = NULL;
-            }
-          } else {
-            //do nothing
-            PROXY_CS_LOG(DEBUG, "ObRpcServerNetHandler::state_client_response_send rpc_req is NULL", K_(cs_id), K(event), K(data));
-          }
-        }
-        sending_response_list_.reset();
-        write_begin_ = 0;
-
-        break;
-      case VC_EVENT_READ_READY:
-      case VC_EVENT_READ_COMPLETE:
-        //do nothing, not to be here
-        break;
-      case VC_EVENT_EOS:
-        net_entry_.eos_ = true;
-        break;
-      case VC_EVENT_ERROR:
-        ret = OB_CONNECT_ERROR;
-        //may entry if broken, request need retry
-        break;
-      default:
-        ret = OB_INNER_STAT_ERROR;
-        PROXY_CS_LOG(EDIAG,"Unknown event", K_(cs_id), K(event), K(ret));
-        break;
-    }
-  }
-
-  if (OB_FAIL(ret) || need_terminal || net_entry_.eos_) {
-    PROXY_CS_LOG(WDIAG, "state_client_response_send failed or get need_terminal", K_(cs_id), K(ret), K(need_terminal), K(event));
-    do_io_close();
-  } else if (OB_SUCC(ret) && need_send_response_list_.size() > 0) {
-    // Responses are returned concurrently on a single connection. Here you need to check whether there are any responses that have not been returned.
-    PROXY_CS_LOG(DEBUG, "state_client_response_send need_send_response is not empty, send again", K_(cs_id), K(ret), K_(need_send_response_list));
-    if (OB_FAIL(setup_client_response_send())) {
-      PROXY_CS_LOG(WDIAG, "fail to send again", K_(cs_id), K(ret), K_(need_send_response_list));
-    }
-  }
-
-  return ret;
-}
-
-int ObRpcClientNetHandler::handle_response_rewrite_channel_id(ObRpcReq *rpc_req)
-{
-  int ret = OB_SUCCESS;
-  const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
-  uint32_t request_id = rpc_req->get_origin_channel_id();
-  char *buf = NULL;
-  int64_t buf_len = 0;
-  int64_t pos = ObRpcEzHeader::RPC_PKT_CHANNEL_ID_POS;
-
-  if (rpc_req->is_use_response_inner_buf()) {
-    buf = rpc_req->get_response_inner_buf();
-    buf_len = rpc_req->get_response_inner_buf_len();
-  } else {
-    buf = rpc_req->get_response_buf();
-    buf_len = rpc_req->get_response_buf_len();
-  }
-
-  if (OB_ISNULL(buf) || 0 == buf_len) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WDIAG, "rpc req response buf is invalid", K_(cs_id), K(rpc_trace_id));
-  } else if (OB_FAIL(common::serialization::encode_i32(buf, buf_len, pos, request_id))) {
-    PROXY_CS_LOG(WDIAG, "fail to encode response channel id", K_(cs_id), K(rpc_trace_id));
-  }
-
+  UNUSED(event);
+  UNUSED(data);
+  //do nothing
   return ret;
 }
 
@@ -1754,18 +1445,11 @@ int ObRpcClientNetHandler::schedule_send_response_action()
 {
   int ret = OB_SUCCESS;
 
-  if (OB_UNLIKELY(NULL != pending_action_)) {
-    // do nothing
-    PROXY_LOG(DEBUG, "pending send_response_action, do nothing", K_(cs_id), K_(pending_action), K(ret));
-  } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, RPC_CLIENT_NET_SEND_RESPONSE))) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(EDIAG, "fail to schedule send_response", K_(cs_id), K_(pending_action), K(ret));
-  } else {
-    PROXY_LOG(DEBUG, "succ to schedule send_response for ObRpcClientNetHandler", K_(cs_id), K(pending_action_));
-  }
+  //do nothing
 
   return ret;
 }
+
 int ObRpcClientNetHandler::cancel_pending_action()
 {
   int ret = OB_SUCCESS;
@@ -1777,112 +1461,6 @@ int ObRpcClientNetHandler::cancel_pending_action()
       pending_action_ = NULL;
     }
   }
-
-  return ret;
-}
-
-void ObRpcClientNetHandler::clean_all_pending_request()
-{
-  RPC_PKT_REQ_MAP::iterator iter = cid_to_req_map_.begin();
-  ObRpcReq *rpc_req = NULL;
-  for (; iter != cid_to_req_map_.end(); iter++) {
-    if (OB_NOT_NULL(rpc_req = iter->second)) {
-      PROXY_CS_LOG(INFO, "client net handle do io close, clean pending rpc req", K_(cs_id), KPC(rpc_req));
-      rpc_req->client_net_cancel_request();  // client net done
-      ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_CANCLED);
-      rpc_req->cleanup(cleanup_params);
-      rpc_req = NULL;
-    }
-  }
-  cid_to_req_map_.destroy();
-}
-
-void ObRpcClientNetHandler::clean_all_timeout_request()
-{
-  int ret = OB_SUCCESS;
-  RPC_PKT_REQ_MAP::iterator iter = cid_to_req_map_.begin();
-  ObRpcReq *rpc_req = NULL;
-  int64_t current_time_us = common::ObTimeUtility::current_time();
-  ObRpcReqList clean_list;
-  uint32_t key = 0;
-
-  PROXY_LOG(DEBUG, "ObRpcClientNetHandler::clean_all_timeout_request", K_(cs_id));
-
-  for (;OB_SUCC(ret) && iter != cid_to_req_map_.end(); iter++) {
-    if (OB_NOT_NULL(rpc_req = iter->second) && rpc_req->get_cnet_state() < ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_HANDLING) {
-      if ((0 != rpc_req->get_client_net_timeout_us() &&
-           rpc_req->get_client_net_timeout_us() < current_time_us) ||
-          rpc_req->canceled()) {
-        if (OB_FAIL(clean_list.push_back(rpc_req))) {
-          PROXY_CS_LOG(WDIAG, "fail to push rpc request to clean list", K_(cs_id), K(ret), K(rpc_req));
-        }
-        rpc_req = NULL;
-      }
-    }
-  }
-
-  while (OB_SUCC(ret) && !clean_list.empty()) {
-    if (OB_FAIL(clean_list.pop_front(rpc_req))) {
-      PROXY_LOG(WDIAG, "fail to pop need clean request", K_(cs_id), K(ret));
-    } else if (OB_NOT_NULL(rpc_req)) {
-      key = rpc_req->get_client_channel_id();
-      if (OB_FAIL(cid_to_req_map_.erase_refactored(key))) {
-        PROXY_LOG(WDIAG, "fail to call erase_refactored for clean_list, do nothing", K_(cs_id), K(ret), KPC(rpc_req));
-      } else {
-        const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
-        PROXY_LOG(INFO, "ObRpcClientNetHandler::clean_all_timeout_request clean rpc_req", K_(cs_id), KPC(rpc_req), K(rpc_trace_id));
-        rpc_req->client_net_cancel_request();  // client net done
-        ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_CANCLED);
-        rpc_req->cleanup(cleanup_params);
-      }
-      rpc_req = NULL;
-    }
-  }
-}
-
-int ObRpcClientNetHandler::schedule_period_task()
-{
-  int ret = OB_SUCCESS;
-  ObHRTime period_task_time = HRTIME_USECONDS(get_global_proxy_config().rpc_period_task_interval);
-
-  if (OB_UNLIKELY(NULL != period_task_action_)) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WDIAG, "period_task_action must be NULL here", K_(cs_id), K_(period_task_action), K(ret));
-  } else if (OB_ISNULL(create_thread_) || create_thread_ != this_ethread()) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WDIAG, "ObRpcClientNetHandler::schedule_period_task get wrong thread", K_(cs_id), KP_(create_thread), KP(this_ethread()));
-  } else if (OB_ISNULL(period_task_action_ = self_ethread().schedule_every(this, period_task_time, RPC_CLIENT_NET_PERIOD_TASK))) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(EDIAG, "fail to schedule timeout", K_(cs_id), K(period_task_action_), K(ret));
-  } else {
-    PROXY_LOG(DEBUG, "succ to schedule repeat task for ObRpcClientNetHandler", K_(cs_id), K(period_task_time));
-  }
-
-  return ret;
-}
-
-int ObRpcClientNetHandler::cancel_period_task()
-{
-  int ret = OB_SUCCESS;
-
-  if (NULL != period_task_action_) {
-    if (OB_FAIL(period_task_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel repeat task", K_(cs_id), K_(period_task_action), K(ret));
-    } else {
-      period_task_action_ = NULL;
-    }
-  }
-
-  return ret;
-}
-
-int ObRpcClientNetHandler::handle_period_task()
-{
-  int ret = OB_SUCCESS;
-
-  PROXY_LOG(DEBUG, "ObRpcClientNetHandler::handle_period_task", K_(cs_id));
-  // 1. clean timeout request
-  clean_all_timeout_request();
 
   return ret;
 }

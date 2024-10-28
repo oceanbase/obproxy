@@ -9,5 +9,9 @@ obproxy/proxy/rpc/net/ob_rpc_net_handler.h\
 obproxy/proxy/rpc/net/ob_rpc_net_handler.cpp\
 obproxy/proxy/rpc/net/ob_rpc_client_net_handler.h\
 obproxy/proxy/rpc/net/ob_rpc_client_net_handler.cpp\
+obproxy/proxy/rpc/net/ob_rpc_obkv_client_net_handler.h\
+obproxy/proxy/rpc/net/ob_rpc_obkv_client_net_handler.cpp\
+obproxy/proxy/rpc/net/ob_rpc_redis_client_net_handler.h\
+obproxy/proxy/rpc/net/ob_rpc_redis_client_net_handler.cpp\
 obproxy/proxy/rpc/net/ob_rpc_server_net_handler.h\
 obproxy/proxy/rpc/net/ob_rpc_server_net_handler.cpp

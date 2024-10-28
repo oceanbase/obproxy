@@ -833,6 +833,7 @@ namespace common
 ////////////////////////////////////////////////////////////////
 //error code for OBKV [-10500, -10700)
 //error code for ODP-OBKV [-10650, -10700)
+//  :[-10690, 10699) for ODP-OB_REDIS
 ////////////////////////////////////////////////////////////////
   static const int OB_ERR_KV_GLOBAL_INDEX_ROUTE = -10500;
   static const int OB_TTL_NOT_ENABLE = -10501;
@@ -853,6 +854,8 @@ namespace common
   static const int OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST = -10651;
   static const int OB_ERR_KV_ROWKEY_MISMATCH = -10652;
   static const int OB_ERR_KV_ROUTE_ENTRY_EXPIRE = -10653;
+  //for ob-redis
+  static const int OB_ERR_REDIS_UNKNOWN_COMMAND = - 10690;
 
 #define OB_SUCCESS__USER_ERROR_MSG "Success"
 #define OB_ERROR__USER_ERROR_MSG "Common error"
@@ -1614,7 +1617,11 @@ namespace common
 #define OB_ERR_KV_ODP_TIMEOUT__USER_ERROR_MSG "ODP-OBKV execution timeout"
 #define OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST__USER_ERROR_MSG "ODP-OBKV key partition prohibits shard requests"
 #define OB_ERR_KV_ROWKEY_MISMATCH__USER_ERROR_MSG "ODP-OBKV the partition key cannot be parsed from rowkey"
+//for ob-redis [-10690, -10700)
+#define OB_ERR_REDIS_UNKNOWN_COMMAND__USER_ERROR_MS "unknown command '%.*s'"
+
   const char* ob_strerror(int oberr);
+  const char* ob_strerrorname(int oberr);
   const char* ob_sqlstate(int oberr);
   const char* ob_str_user_error(int oberr);
   int ob_mysql_errno(int oberr);

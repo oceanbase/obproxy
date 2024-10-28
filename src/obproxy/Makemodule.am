@@ -30,6 +30,7 @@ include obproxy/proxy/rpc/optimizer/Makemodule.am
 include obproxy/proxy/rpc/engine/Makemodule.am
 include obproxy/proxy/rpc/executor/Makemodule.am
 include obproxy/proxy/rpc/net/Makemodule.am
+include obproxy/proxy/rpc/redis/Makemodule.am
 include obproxy/proxy/client/Makemodule.am
 include obproxy/proxy/route/Makemodule.am
 include obproxy/proxy/shard/Makemodule.am
@@ -74,6 +75,7 @@ ${proxy_rpc_req_engine_sources}\
 ${proxy_rpc_req_optimize_rpclib_sources}\
 ${proxy_rpc_optimize_sources}\
 ${proxy_rpc_optimize_rpclib_sources}\
+${proxy_rpc_redis_sources}\
 ${proxy_mysqllib_sources}\
 ${proxy_mysql_client_sources}\
 ${obproxy_c_driver_sources}\

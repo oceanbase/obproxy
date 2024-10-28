@@ -34,11 +34,12 @@ class ObRpcClientNetHandlerMap;
 
 static const uint32_t LOCAL_IPV4_ADDR = 0x100007F;
 
-enum ObRpcClientNetMagic
-{
-  RPC_C_NET_MAGIC_ALIVE = 0x0123F00D,
-  RPC_C_NET_MAGIC_DEAD = 0xDEADF00D
-};
+/* *
+ * OB-Redis: *1\r\n$4\r\nAUTH\r\n
+ * OBKV    : 01 DB DB CE   XX XX XX XX(data len)   XX XX XX XX(pkt id) XX XX XX XX（reserved)
+ */
+static const int64_t RPC_NET_DETECT_HRD_LEN = 14;
+const char * OB_RPC_REDIS_FLAG = "$4\r\nauth";
 
 typedef int (ObRpcClientNetHandler::*ClientNetHandler)(int event, void *data);
 
@@ -63,32 +64,34 @@ public:
   ObRpcClientNetHandler();
   virtual ~ObRpcClientNetHandler() {}
 
-  void destroy();
+  virtual void destroy();
+  virtual void cleanup();
   // int new_connection(net::ObNetVConnection &new_vc);
-  int main_handler(int event, void *data);
-  int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
+  virtual int main_handler(int event, void *data);
+  virtual int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
                      event::ObIOBufferReader *reader);
-  int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
+  virtual int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
                      event::ObIOBufferReader *reader, obutils::ObClusterResource *cluster_resource);
 
-  int handle_other_event(int event, void *data);
-  int state_keep_alive(int event, void *data);
+  virtual int handle_other_event(int event, void *data);
+  virtual int state_keep_alive(int event, void *data);
 
-  int handle_delete_cluster();
+  virtual int handle_delete_cluster();
   const char *get_read_state_str() const;
 
   void handle_new_connection();
   int acquire_client_session_id();
+  int acquire_conn_unique_id();
   int add_to_list();
   int get_vip_addr();
   int fetch_tenant_by_vip();
-  common::ObAddr get_real_client_addr(net::ObNetVConnection *server_vc = NULL);
+  // common::ObAddr get_real_client_addr(net::ObNetVConnection *server_vc = NULL);
 
-  int schedule_period_task();
-  int handle_period_task();
-  int cancel_period_task();
+  // int schedule_period_task();
+  // int handle_period_task();
+  // int cancel_period_task();
 
-  int schedule_send_response_action();
+  virtual int schedule_send_response_action();
   int cancel_pending_action();
 
   void set_local_connection();
@@ -102,11 +105,12 @@ public:
 
   uint64_t get_next_proxy_sessid();
 
-  event::ObVIO *do_io_write(
+  virtual event::ObVIO *do_io_write(
     ObContinuation *c, const int64_t nbytes, event::ObIOBufferReader *buf);
-  void do_io_close(const int alerrno = 0);
-  void reenable(event::ObVIO *vio);
-  int release(event::ObIOBufferReader *r);
+  virtual void do_io_close(const int alerrno = 0);
+  virtual void do_io_release();
+  virtual void reenable(event::ObVIO *vio);
+  virtual int release(event::ObIOBufferReader *r);
   void handle_transact_complete(event::ObIOBufferReader *r, bool &close_cs);
 
   ObRpcClientNetSessionInfo &get_session_info() { return session_info_; }
@@ -137,26 +141,31 @@ public:
   // int swap_mutex(void *data);
 
   static int get_thread_init_cs_id(uint32_t &thread_init_cs_id, uint32_t &max_local_seq, const int64_t thread_id = -1);
-  int handle_response_rewrite_channel_id(ObRpcReq *request);
-  int init_request_meta_info(ObRpcReq *request);
+  // int handle_response_rewrite_channel_id(ObRpcReq *request);
+  // int init_request_meta_info(ObRpcReq *request);
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   /** handle net info*/
-  int setup_client_request_read();
-  int state_client_request_read(int event, void *data);
+  virtual int setup_client_request_read();
+  virtual int state_client_request_read(int event, void *data);
+
+  virtual int setup_client_response_send();
+  // virtual int setup_client_response_direct_send();
+  virtual int state_client_response_send(int event, void *data);
+
+  virtual void add_client_response_request(ObRpcReq *request);
 
   int handle_request_read_throttle();
-  int calc_response_need_send(int64_t &count);
-  int store_rpc_req_into_response_buffer(int64_t need_send_resp_count, int64_t &send_response, int64_t &total_response_len);
-  int setup_client_response_send();
-  int setup_client_response_direct_send();
-  int state_client_response_send(int event, void *data);
+  // int calc_response_need_send(int64_t &count);
+  // int store_rpc_req_into_response_buffer(int64_t need_send_resp_count, int64_t &send_response, int64_t &total_response_len);
+  // int setup_client_response_direct_send();
+  // int state_client_response_send(int event, void *data);
 
   int handle_client_entry_setup_error(int event, void *data);
-  void add_client_response_request(ObRpcReq *request);
-  void clean_all_pending_request();
-  void clean_all_timeout_request();
+  // void add_client_response_request(ObRpcReq *request);
+  // void clean_all_pending_request();
+  // void clean_all_timeout_request();
 
   int64_t get_cluster_version() const { return cluster_version_; }
   void set_cluster_version(int64_t cluster_version) { cluster_version_ = cluster_version; }
@@ -217,11 +226,12 @@ public:
   LINK(ObRpcClientNetHandler, link_);
 #endif
 
-private:
+  uint32_t conn_channel_id_;
+  int64_t conn_unique_id_;
+  int64_t conn_seq_;
 
-
+protected:
   ObRpcClientNetMagic magic_;
-
   event::ObEThread *create_thread_;
   bool is_local_connection_;
   ObInListStat in_list_stat_;
@@ -235,20 +245,16 @@ private:
   bool active_;
   bool is_sending_response_;
   bool need_delete_cluster_;
+  bool is_first_request_;
 
   uint64_t server_state_version_;
 
   ObConnTenantInfo ct_info_;
   net::ObIpEndpoint last_server_ip_; /* only used for weak read when not have any route info (need use dummumy entry pll)*/
-  typedef hash::ObHashMap<int32_t, ObRpcReq *, hash::NoPthreadDefendMode> RPC_PKT_REQ_MAP;
-  RPC_PKT_REQ_MAP cid_to_req_map_;
-  ObRpcReqList need_send_response_list_;
-  ObRpcReqList sending_response_list_;
-  event::ObAction *period_task_action_;
-  event::ObAction *pending_action_;
 
-  int64_t current_need_read_len_;
-  obkv::ObRpcEzHeader current_ez_header_;
+  // int64_t current_need_read_len_;
+
+  event::ObAction *pending_action_;
 
   ObRpcClientNetSessionInfo session_info_; //use client session info first
   char net_head_buf_[ObProxyRpcReqAnalyzer::RPC_NET_HEADER];
@@ -267,23 +273,21 @@ inline void ObRpcClientNetHandler::set_local_connection()
   }
 }
 
-inline common::ObAddr ObRpcClientNetHandler::get_real_client_addr(net::ObNetVConnection *server_vc)
-{
-  UNUSED(server_vc);
-  common::ObAddr ret_addr;
-  if (OB_NOT_NULL(rpc_net_vc_)) {
-    ret_addr.set_sockaddr(rpc_net_vc_->get_real_client_addr());
-  }
-  PROXY_CS_LOG(DEBUG, "succ to get real client addr", K(ret_addr));
-  return ret_addr;
-}
+// inline common::ObAddr ObRpcClientNetHandler::get_real_client_addr(net::ObNetVConnection *server_vc)
+// {
+//   UNUSED(server_vc);
+//   common::ObAddr ret_addr;
+//   if (OB_NOT_NULL(rpc_net_vc_)) {
+//     ret_addr.set_sockaddr(rpc_net_vc_->get_real_client_addr());
+//   }
+//   PROXY_CS_LOG(DEBUG, "succ to get real client addr", K(ret_addr));
+//   return ret_addr;
+// }
 
 inline void ObRpcClientNetHandler::add_client_response_request(ObRpcReq *request)
 {
-  if (OB_NOT_NULL(request)) {
-    PROXY_CS_LOG(DEBUG, "ObRpcClientNetHandler::add_client_response_request", K(request));
-    need_send_response_list_.push_back(request);
-  }
+  UNUSED(request);
+  //do nothing
 }
 
 // A list of client sessions.

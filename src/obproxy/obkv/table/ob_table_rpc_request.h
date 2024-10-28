@@ -51,6 +51,7 @@ public:
   const ObString &get_database_name() const {return login_request_.database_name_;}
   ObString get_database_name() {return login_request_.database_name_;}
   uint64_t get_ttl_us() const {return login_request_.ttl_us_;}
+  ObTableLoginRequest &get_login_request() { return login_request_; }
   ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC;}
 
   void set_auth_method(uint8_t auth_method) {login_request_.auth_method_ = auth_method;}
@@ -118,10 +119,10 @@ public:
 
   // rewrite this func to analyze table operation request 
   virtual int analyze_request(const char *buf, const int64_t buf_len, int64_t &pos) override;
-  virtual ObString get_credential() const { return table_request_.credential_; }
-  virtual ObString get_table_name() const { return table_request_.table_name_; }
-  virtual bool is_hbase_request() const { return ObTableEntityType::ET_HKV == table_request_.entity_type_; }
-  virtual bool is_read_weak() const { return obkv::ObTableConsistencyLevel::STRONG != table_request_.consistency_level_; }
+  virtual ObString get_credential() const override { return table_request_.credential_; }
+  virtual ObString get_table_name() const override { return table_request_.table_name_; }
+  virtual bool is_hbase_request() const override { return ObTableEntityType::ET_HKV == table_request_.entity_type_; }
+  virtual bool is_read_weak() const override { return obkv::ObTableConsistencyLevel::STRONG != table_request_.consistency_level_; }
   virtual int calc_partition_id(common::ObArenaAllocator &allocator,
                                 proxy::ObRpcReq &ob_rpc_req,
                                 proxy::ObProxyPartInfo &part_info,

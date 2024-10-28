@@ -127,6 +127,8 @@ public:
   static const uint16_t STREAM_FLAG = 1 << 14;
   static const uint16_t STREAM_LAST_FLAG = 1 << 13;
   static const uint16_t REQUIRE_REROUTING_FLAG = 1<<9;
+  static const uint16_t IS_KV_REQUEST_FLAG = 1 << 5;
+  static const uint16_t RPC_HEADER_DEFAULT_FLAG = 7 | IS_KV_REQUEST_FLAG;
   static const uint16_t RPC_REQ_TRACE_ID_POS = 40;
 
   uint64_t checksum_;

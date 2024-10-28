@@ -13,7 +13,10 @@
 #define USING_LOG_PREFIX PROXY
 #include "obutils/ob_proxy_config.h"
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_obkv_client_net_handler.h"
+#include "proxy/rpc/net/ob_rpc_redis_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_session_accept.h"
+// #include "proxy/rpc_optimize/net/ob_rpc_session_detect_handler.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -37,7 +40,21 @@ int ObRpcSessionAccept::accept(ObNetVConnection *netvc, ObMIOBuffer *iobuf, ObIO
     PROXY_NET_LOG(INFO, "[ObRpcSessionAccept:main_event] accepted connection",
                   K(netvc), "client_ip", ObIpEndpoint(client_ip));
 
-    ObRpcClientNetHandler *new_session = op_reclaim_alloc(ObRpcClientNetHandler);
+    uint32_t rpc_service_mode = obutils::get_global_proxy_config().rpc_service_mode;
+    ObRpcClientNetHandler *new_session = NULL;
+    switch(rpc_service_mode) {
+      case PRC_SERVICE_OBKV_MODE:
+        new_session = op_reclaim_alloc(ObRpcOBKVClientNetHandler);
+        break;
+      case RPC_SERVICE_REDIS_MODE:
+        new_session = op_reclaim_alloc(ObRpcRedisClientNetHandler);
+        break;
+      default:
+        //default support more service mode
+        new_session = op_reclaim_alloc(ObRpcClientNetHandler);
+        break;
+    }
+    // ObRpcClientNetHandler *new_session = op_reclaim_alloc(ObRpcClientNetHandler);
     if (OB_ISNULL(new_session)) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret));

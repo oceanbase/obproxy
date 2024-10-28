@@ -89,7 +89,7 @@ int ObRpcTableLoginRequest::calc_partition_id(ObArenaAllocator &allocator,
 {
   UNUSEDx(allocator, ob_rpc_req, part_info, partition_id);
   LOG_WDIAG("try to calculate partition id of login request", K(lbt()));
-  return OB_SUCCESS;
+  return OB_NOT_SUPPORTED;
 }
 
 int ObRpcTableLoginRequest::encode(char *buf, int64_t &buf_len, int64_t &pos)

@@ -117,6 +117,11 @@ private:
                                       ObProxyPartInfo &part_info,
                                       int64_t &partition_id);
 
+  int calculate_partition_id_for_redis(common::ObArenaAllocator &allocator,
+                                       ObRpcReq &client_request,
+                                       ObProxyPartInfo &part_info,
+                                       int64_t &partition_id);
+
   int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
                                           ObClientSessionInfo &client_info,
@@ -153,6 +158,13 @@ private:
 class ObRpcExprCalcTool 
 {
 public:
+  static int calculate_partition_id_with_rowkey(common::ObArenaAllocator &allocator,
+                                                obkv::ROWKEY_VALUE_PARAM &rowkey_value,
+                                                obkv::ROWKEY_COLUMN_PARAM &rowkey_columns,
+                                                ObProxyPartInfo &part_info,
+                                                int64_t &partition_id,
+                                                int64_t &ls_id);
+
   static int eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                ObProxyPartKeyLevel level,
                                const common::ObIArray<common::ObString> &rowkey_columns_name,

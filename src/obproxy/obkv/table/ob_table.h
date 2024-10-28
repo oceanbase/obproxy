@@ -212,6 +212,8 @@ public:
   //virtual int deep_copy_properties(common::ObIAllocator &allocator, const ObITableEntity &other);
   //virtual int deep_copy_properties_normal_mode(common::ObIAllocator &allocator, const ObITableEntity &other);
   virtual int add_retrieve_property(const ObString &prop_name);
+  virtual bool is_lazy_mode() const = 0;
+  virtual void set_lazy_mode(bool value) = 0;
   //void set_allocator(common::ObIAllocator *alloc) { alloc_ = alloc; }
   //common::ObIAllocator *get_allocator() { return alloc_; }
   VIRTUAL_TO_STRING_KV("ITableEntity", "");
@@ -285,6 +287,9 @@ public:
   virtual const ObIArray<ObString>* get_all_properties_names() const override;
   virtual void set_is_same_properties_names(bool is_same_properties_names) override;
 
+  virtual bool is_lazy_mode() const override;// { return is_lazy_mode_; }
+  virtual void set_lazy_mode(bool value) override { is_lazy_mode_ = value; }
+
 
   DECLARE_TO_STRING;
 private:
@@ -295,6 +300,7 @@ protected:
   ObSEArray<ObObj, ROWKEY_COLUMNS_COUNT> properties_values_;
   ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> rowkey_names_;
   ObRpcFieldBuf properties_buf_;
+  bool is_lazy_mode_;
 };
 
 enum class ObTableEntityType
@@ -406,7 +412,10 @@ struct ObTableOperationType
     SCAN = 8,
     TTL = 9, // internal type for ttl executor cache key
     CHECK_AND_INSERT_UP = 10,
-    INVALID = 11
+    PUT = 11,
+    TRIGGER = 12, // internal type for group commit trigger
+    REDIS = 13,
+    INVALID = 15
   };
 };
 
@@ -421,7 +430,7 @@ public:
   //void set_entity(const ObITableEntity &entity) { entity_ = &entity; }
   //void set_type(ObTableOperationType::Type op_type) { operation_type_ = op_type; }
   //int get_entity(const ObITableEntity *&entity) const;
-  //int get_entity(ObITableEntity *&entity);
+  int get_entity(ObITableEntity *&entity);
   //uint64_t get_checksum();
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntityFactory &entity_factory, const ObTableOperation &other);
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntity &entity, const ObTableOperation &other);
