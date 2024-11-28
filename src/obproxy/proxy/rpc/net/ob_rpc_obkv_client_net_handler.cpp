@@ -62,7 +62,7 @@ ObMutex g_debug_rpc_cs_list_mutex;
 
 ObRpcOBKVClientNetHandler::ObRpcOBKVClientNetHandler()
     : ObRpcClientNetHandler(),
-      atomic_channel_id_(0), is_sending_response_(false),
+      atomic_channel_id_(0), is_sending_response_(false), has_inited_(false),
       ct_info_(), last_server_ip_(),
       need_send_response_list_(), sending_response_list_(), period_task_action_(NULL),
       current_need_read_len_(RPC_NET_HEADER_LENGTH), current_ez_header_()
@@ -85,14 +85,16 @@ void ObRpcOBKVClientNetHandler::do_io_close(const int alerrno)
 {
   int ret = OB_SUCCESS;
   // Prevent double closing
-  PROXY_CS_LOG(DEBUG, "ObRpcOBKVClientNetHandler do_io_close", K_(cs_id));
+  PROXY_CS_LOG(INFO, "ObRpcOBKVClientNetHandler do_io_close", K_(cs_id), K_(pending_action), K(this));
 
   if (MCS_CLOSED != read_state_) {
     // clean all rpc req
     if (OB_FAIL(cancel_period_task())) {
-      PROXY_CS_LOG(WDIAG, "fail to call cancel_period_task", K_(cs_id));
-    } else if (OB_FAIL(cancel_pending_action())) {
-      PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id));
+      //to ignore ret
+      PROXY_CS_LOG(WDIAG, "fail to call cancel_period_task", K_(cs_id), K(ret));
+    }
+    if (OB_FAIL(cancel_pending_action())) {
+      PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id), K(ret));
     }
     clean_all_pending_request();
 
@@ -204,6 +206,7 @@ int ObRpcOBKVClientNetHandler::main_handler(int event, void *data)
     if (RPC_CLIENT_NET_PERIOD_TASK == event) {
       event_ret = handle_period_task();
     } else if (RPC_CLIENT_NET_SEND_RESPONSE == event) {
+      pending_action_ = NULL;
       event_ret = setup_client_response_send();
     } else {
       if (NULL != data && data == net_entry_.read_vio_) { // from client vc
@@ -256,15 +259,24 @@ int ObRpcOBKVClientNetHandler::setup_client_request_read()
   // int64_t read_num = 16; //RPC header len
   int64_t read_num = INT64_MAX; //just header for RPC service
 
-  if (OB_ISNULL(net_entry_.read_vio_ = this->do_io_read(this, read_num, buf_reader_->mbuf_))) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WDIAG, "rpc client net handler failed to do_io_read", K_(cs_id), K(ret));
-  } else {
-    //TODO ZDW schedule period task at first
-    if (buf_reader_->read_avail() > 0) {
-      PROXY_CS_LOG(DEBUG, "the request already in buffer, continue to handle it",
-              K_(cs_id), "buffer len", buf_reader_->read_avail());
-      state_client_request_read(VC_EVENT_READ_READY, net_entry_.read_vio_);
+  if (!has_inited_) {
+    if (OB_FAIL(schedule_period_task())) { //obkv need init period task
+      PROXY_CS_LOG(WDIAG, "fail to call schedule_period_task", K_(cs_id), K(ret));
+    }
+    has_inited_ = true;
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_ISNULL(net_entry_.read_vio_ = this->do_io_read(this, read_num, buf_reader_->mbuf_))) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_CS_LOG(WDIAG, "rpc client net handler failed to do_io_read", K_(cs_id), K(ret));
+    } else {
+      //TODO ZDW schedule period task at first
+      if (buf_reader_->read_avail() > 0) {
+        PROXY_CS_LOG(DEBUG, "the request already in buffer, continue to handle it",
+                K_(cs_id), "buffer len", buf_reader_->read_avail());
+        state_client_request_read(VC_EVENT_READ_READY, net_entry_.read_vio_);
+      }
     }
   }
 
@@ -442,7 +454,7 @@ int ObRpcOBKVClientNetHandler::state_client_request_read(int event, void *data)
               RPC_REQ_CNET_ENTER_STATE(rpc_req, ObRpcReq::ClientNetState::RPC_REQ_CLIENT_REQUEST_HANDLING);
               is_set_cid_to_req_map = true;
               if (OB_FAIL(request_sm->schedule_call_next_action(RPC_REQ_NEW_REQUEST))) {
-                PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K(request_sm));
+                PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K_(cs_id), K(request_sm));
               }
             }
           } else {
@@ -582,7 +594,6 @@ int ObRpcOBKVClientNetHandler::setup_client_response_send()
   //set read trigger and read_reschedule. sometimes the data already is in the io buffer
   PROXY_CS_LOG(DEBUG, "ObRpcServerNetHandler::setup_client_response send", K_(cs_id), "request_count", need_send_response_list_.size());
   static_cast<ObUnixNetVConnection *>(this->get_netvc())->set_read_trigger();
-  pending_action_ = NULL;
 
   if (OB_LIKELY(!need_send_response_list_.empty()) && !is_sending_response_) {
     int64_t send_response = 0;
@@ -766,11 +777,21 @@ int ObRpcOBKVClientNetHandler::schedule_send_response_action()
   if (OB_UNLIKELY(NULL != pending_action_)) {
     // do nothing
     PROXY_LOG(DEBUG, "pending send_response_action, do nothing", K_(cs_id), K_(pending_action), K(ret));
+  } else if (OB_UNLIKELY(create_thread_ != NULL && this_ethread() != create_thread_)) {
+    //need to check it
+    PROXY_CS_LOG(EDIAG, "fail to schedule_send_response_action for client, need scheduled by created_ethread",
+                K_(cs_id), K_(create_thread), "current_thread", self_ethread());
+    if (OB_ISNULL(pending_action_ = create_thread_->schedule_imm(this, RPC_CLIENT_NET_SEND_RESPONSE))) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_LOG(EDIAG, "fail to schedule send_response", K_(cs_id), K_(pending_action), K(ret));
+    } else {
+      PROXY_LOG(DEBUG, "succ to schedule send_response for ObRpcOBKVClientNetHandler", K_(cs_id), K(pending_action_), K(this));
+    }
   } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_imm(this, RPC_CLIENT_NET_SEND_RESPONSE))) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_LOG(EDIAG, "fail to schedule send_response", K_(cs_id), K_(pending_action), K(ret));
   } else {
-    PROXY_LOG(DEBUG, "succ to schedule send_response for ObRpcOBKVClientNetHandler", K_(cs_id), K(pending_action_));
+    PROXY_LOG(DEBUG, "succ to schedule send_response for ObRpcOBKVClientNetHandler", K_(cs_id), K(pending_action_), K(this));
   }
   return ret;
 }

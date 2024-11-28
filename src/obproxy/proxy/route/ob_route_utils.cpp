@@ -760,7 +760,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         } else {
           memcpy(buf, part_range_type.ptr(), part_range_type.length());
           part_expr.assign_ptr(buf, part_range_type.length());
-          part_info.set_part_range_type(part_range_type);
+          part_info.set_part_range_type(part_expr);
         }
 
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "sub_part_range_type", sub_part_range_type);
@@ -773,7 +773,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         } else {
           memcpy(buf, sub_part_range_type.ptr(), sub_part_range_type.length());
           part_expr.assign_ptr(buf, sub_part_range_type.length());
-          part_info.set_sub_part_range_type(sub_part_range_type);
+          part_info.set_sub_part_range_type(part_expr);
         }
         // get part expr
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(rs_fetcher, "part_expr", part_expr);

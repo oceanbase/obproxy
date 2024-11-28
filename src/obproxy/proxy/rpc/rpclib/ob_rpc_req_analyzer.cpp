@@ -73,70 +73,77 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
     obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
     analyze_pos = meta.rpc_header_.hlen_ + RPC_NET_HEADER;
 
-    // analyze response meta
-    if (obkv_info.is_resp()) {
-      ObRpcResultCode result_code;
-      ob_rpc_req.set_response(true);
-      obkv_info.reset_odp_resp_flag();
-
-      bool is_compress_response = (meta.get_rpc_header().compressor_type_ > NONE_COMPRESSOR);
-      if (is_compress_response) {
-        if (obkv_info.pcode_ == OB_TABLE_API_MOVE || ctx.is_inner_request_) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("received a compressed response from server", "pcode", obkv_info.pcode_, "is_shard_req", ctx.is_inner_request_, K(ret));
-        } else {
-          status = RPC_ANALYZE_NEW_DONE;
-        }
-      } else {
-        if (OB_FAIL(result_code.deserialize(req_buf, req_buf_len, analyze_pos))) {
-          LOG_WDIAG("fail to call deserialize for result_code", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos));
-        } else if (0 != result_code.rcode_ || obkv_info.is_bad_routing()) {
-          // 记录错误，是否需要重传
-          obkv_info.set_error_resp(true);
-          obkv_info.rpc_origin_error_code_ = result_code.rcode_;
-          LOG_INFO("rpc response is error", "pcode", obkv_info.pcode_,
-                    "error_code", result_code.rcode_, "rpc_trace_id", obkv_info.rpc_trace_id_,
-                    "need_reroute", obkv_info.is_bad_routing(), "error_msg", result_code.msg_,
-                    "cur_serve_ip", obkv_info.server_info_.addr_);
-        } else {
-          // reset error code
-          obkv_info.rpc_origin_error_code_ = 0;
-        }
-
-        /**
-         * @brief
-         *   1. need_parse_response_fully
-         *     1.1. not error
-         *     1.2. shard request
-         *     1.3. async query request
-         *   2. OB_TABLE_API_MOVE
-         *   3. OB_REDIS_EXECUTE
-         */
-        if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_) || (OB_REDIS_EXECUTE == obkv_info.pcode_ && obkv_info.rpc_origin_error_code_ == 0))) {
-          // alloc response and full parse
-          if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
-            LOG_WDIAG("fail to call alloc_rpc_response", K(ob_rpc_req), K(ret), K(rpc_trace_id));
-          } else {
-            // set rpc meta
-            ObRpcResponse *rpc_response = ob_rpc_req.get_rpc_response();
-            rpc_response->set_packet_meta(meta);
-            rpc_response->set_result_code(result_code);
-            rpc_response->set_cluster_version(ctx.cluster_version_);
-          }
-          status = RPC_ANALYZE_NEW_CONT;
-        } else {
-          status = RPC_ANALYZE_NEW_DONE;
-        }
-      }
+    if (OB_UNLIKELY(obkv_info.is_resp() != ctx.is_response_)) {
+      ret = OB_ERR_UNEXPECTED;
+      //maybe server return response without RESP flag for response
+      LOG_WDIAG("invalid request or response to handle", K(ob_rpc_req), K(ret), K(rpc_trace_id),
+                "request_resp_flag", obkv_info.is_resp(), "ctx_is_response", ctx.is_response_);
     } else {
-      // alloc rpc request
-      if (OB_FAIL(ob_rpc_req.alloc_rpc_request())) {
-        LOG_WDIAG("fail to call alloc_rpc_request", K(ob_rpc_req), K(ret), K(rpc_trace_id));
+      // analyze response meta
+      if (obkv_info.is_resp()) {
+        ObRpcResultCode result_code;
+        ob_rpc_req.set_response(true);
+        obkv_info.reset_odp_resp_flag();
+
+        bool is_compress_response = (meta.get_rpc_header().compressor_type_ > NONE_COMPRESSOR);
+        if (is_compress_response) {
+          if (obkv_info.pcode_ == OB_TABLE_API_MOVE || ctx.is_inner_request_) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("received a compressed response from server", "pcode", obkv_info.pcode_, "is_shard_req", ctx.is_inner_request_, K(ret));
+          } else {
+            status = RPC_ANALYZE_NEW_DONE;
+          }
+        } else {
+          if (OB_FAIL(result_code.deserialize(req_buf, req_buf_len, analyze_pos))) {
+            LOG_WDIAG("fail to call deserialize for result_code", K(ret), KP(req_buf), K(req_buf_len), K(analyze_pos));
+          } else if (0 != result_code.rcode_ || obkv_info.is_bad_routing()) {
+            // 记录错误，是否需要重传
+            obkv_info.set_error_resp(true);
+            obkv_info.rpc_origin_error_code_ = result_code.rcode_;
+            LOG_INFO("rpc response is error", "pcode", obkv_info.pcode_,
+                      "error_code", result_code.rcode_, "rpc_trace_id", obkv_info.rpc_trace_id_,
+                      "need_reroute", obkv_info.is_bad_routing(), "error_msg", result_code.msg_,
+                      "cur_serve_ip", obkv_info.server_info_.addr_);
+          } else {
+            // reset error code
+            obkv_info.rpc_origin_error_code_ = 0;
+          }
+
+          /**
+           * @brief
+           *   1. need_parse_response_fully
+           *     1.1. not error
+           *     1.2. shard request
+           *     1.3. async query request
+           *   2. OB_TABLE_API_MOVE
+           *   3. OB_REDIS_EXECUTE
+           */
+          if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_) || (OB_REDIS_EXECUTE == obkv_info.pcode_ && obkv_info.rpc_origin_error_code_ == 0))) {
+            // alloc response and full parse
+            if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
+              LOG_WDIAG("fail to call alloc_rpc_response", K(ob_rpc_req), K(ret), K(rpc_trace_id));
+            } else {
+              // set rpc meta
+              ObRpcResponse *rpc_response = ob_rpc_req.get_rpc_response();
+              rpc_response->set_packet_meta(meta);
+              rpc_response->set_result_code(result_code);
+              rpc_response->set_cluster_version(ctx.cluster_version_);
+            }
+            status = RPC_ANALYZE_NEW_CONT;
+          } else {
+            status = RPC_ANALYZE_NEW_DONE;
+          }
+        }
       } else {
-        // set rpc meta
-        ObRpcRequest *rpc_request = ob_rpc_req.get_rpc_request();
-        rpc_request->set_packet_meta(meta);
-        rpc_request->set_cluster_version(ctx.cluster_version_);
+        // alloc rpc request
+        if (OB_FAIL(ob_rpc_req.alloc_rpc_request())) {
+          LOG_WDIAG("fail to call alloc_rpc_request", K(ob_rpc_req), K(ret), K(rpc_trace_id));
+        } else {
+          // set rpc meta
+          ObRpcRequest *rpc_request = ob_rpc_req.get_rpc_request();
+          rpc_request->set_packet_meta(meta);
+          rpc_request->set_cluster_version(ctx.cluster_version_);
+        }
       }
     }
   }
@@ -373,7 +380,20 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
         // if received not master error, it means the partition locations of
         // the certain table entry has expired, so we need delay to update it;
         ctx.dirty_partition_entry_ = true;
+        break;
+      case OB_TENANT_NOT_IN_SERVER: // -5150
+        ctx.dirty_table_entry_ = true;
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code, just dirty table entry not retry",
+                  "error_code", obkv_info.rpc_origin_error_code_,
+                  "is_inner_request", obkv_info.is_inner_request_,
+                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+        break;
       default:
+        //do nothing
+        LOG_DEBUG("ObRpcRequestSM::handle_server_failed get route error_code, do nothing",
+                  "error_code", obkv_info.rpc_origin_error_code_,
+                  "is_inner_request", obkv_info.is_inner_request_,
+                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
         break;
       }
     }

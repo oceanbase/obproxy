@@ -54,20 +54,38 @@ int ObProxyRpcReqParallelExecuteCont::init_task()
     // init inner request sm
     if (OB_FAIL(request_sm->init_inner_request(this, mutex_))) {
       LOG_WDIAG("fail to init inner rpc request", K(ret));
-    } else {
+    }
+    //ignore error for
+    if (ret != common::OB_ALLOCATE_MEMORY_FAILED) {
+      /* to recover snet state after ObProxyRpcReqParallelExecuteCont called to execute */
+      rpc_request_->set_snet_state(proxy::ObRpcReq::ServerNetState::RPC_REQ_SERVER_INIT);
+
       if (OB_FAIL(request_sm->setup_rpc_get_cluster())) { //skip parser rpc request
         // todo: setup_rpc_get_cluster in async task to avoid ObProxyRpcReqParallelExecuteCont init fail.
-        LOG_WDIAG("ObProxyRpcReqParallelExecuteCont invalid to handle rpc request");
+        LOG_WDIAG("ObProxyRpcReqParallelExecuteCont invalid to handle rpc request", K(ret));
       } else {
         LOG_DEBUG("ObProxyRpcReqParallelExecuteCont success to handle the inner rpc request", K(rpc_request_), K(request_sm));
       }
-    }
-    if (OB_FAIL(ret)) {
+
+      if (OB_FAIL(ret)) {
+        // request_sm->set_inner_cont(NULL);
+        // //maybe some situation that the main thread has schedule DONE/DESTROY event for this cont_, but it
+        // //clould't be scheduled for that the cont will be destroyed by itself when meet error, so to avoid NULL
+        // //handler to execute when thread scheduled.
+        // request_sm->cancel_child_callback_action(); //request_sm inner_cont has set to be NULL, could be scheduled again, just cancel scheduled
+        LOG_WDIAG("ObProxyRpcReqParallelExecuteCont init all schdule cont return failed, to ignore it in init_task", K(ret),
+                  K(this), K(rpc_request_), KPC(rpc_request_));
+        //destory ObProxyRpcReqParallelExecuteCont by request_sm callabck
+        ret = OB_SUCCESS;
+      }
+    } else {
+      //not set inner_cont any more, so need delete at here
       request_sm->set_inner_cont(NULL);
+      request_sm->cancel_child_callback_action(); //request_sm inner_cont has set to be NULL, could be scheduled again, just cancel scheduled
     }
   } else {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("invalid rpc_request to handle");
+    LOG_WDIAG("invalid rpc_request to handle", K(ret), K_(rpc_request));
   }
 
   return ret;
@@ -84,6 +102,7 @@ int ObProxyRpcReqParallelExecuteCont::finish_task(void *data)
     proxy::ObRpcReq *resp = rpc_request_;
     resp->set_cont_index(cont_index_); //set final cont_index
     LOG_DEBUG("ObProxyRpcReqParallelExecuteCont finish task", K(data), K(resp));
+    rpc_request_ = NULL;
   }
 
   return ret;
@@ -96,6 +115,18 @@ void ObProxyRpcReqParallelExecuteCont::destroy()
 
   cancel_pending_action();
   cancel_inform_out_action();
+
+  //sub rpc request not schedued to execute init, but need to release
+  if (OB_NOT_NULL(rpc_request_)
+      && rpc_request_->get_snet_state() == proxy::ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL
+      && OB_NOT_NULL(rpc_request_->get_request_sm())) {
+    // rpc_request_->get_request_sm()->set_execute_thread()
+    rpc_request_->get_request_sm()->init_inner_request_simple(NULL, mutex_);
+    rpc_request_->server_net_cancel_request();
+    LOG_WDIAG("has not inited task but need to destroy", K(this), K_(rpc_request));
+    ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+    rpc_request_->cleanup(cleanup_params);
+  }
 
   // 父类里最后是用的 delete, 但是本 Cont 是用的 op_alloc 分配出来的,
   // 所以只能把父类里的 destroy 方法拷贝到这里

@@ -320,7 +320,7 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
           set_cnet_state(params.cnet_state_);
         } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
           set_snet_state(params.snet_state_);
-        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
+        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_REQUEST_SM) {
           set_sm_state(params.sm_state_);
         } else {
           // error
@@ -338,7 +338,7 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
           set_cnet_state(params.cnet_state_);
         } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
           set_snet_state(params.snet_state_);
-        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
+        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_REQUEST_SM) {
           set_sm_state(params.sm_state_);
         } else {
           // error
@@ -671,7 +671,7 @@ int ObRpcOBKVInfo::set_dummy_entry(ObTableEntry *dummy_entry)
 
   if (OB_ISNULL(dummy_entry) || OB_UNLIKELY(!dummy_entry->is_tenant_servers_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WDIAG, "dummy_entry is not avail", KPC(dummy_entry), K(ret));
+    PROXY_LOG(WDIAG, "dummy_entry is not avail", KPC(dummy_entry), K(ret));
   } else {
     if (OB_NOT_NULL(dummy_entry_)) {
       dummy_entry_->dec_ref();

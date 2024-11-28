@@ -436,6 +436,9 @@ const char *ObRpcReqDebugNames::get_server_state_name(enum ObRpcReq::ServerNetSt
   case ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING:
     ret = "RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING";
     break;
+  case ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL:
+    ret = "RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL";
+    break;
   case ObRpcReq::ServerNetState::RPC_REQ_SERVER_DONE:
     ret = "RPC_REQ_SERVER_DONE";
     break;

@@ -500,6 +500,7 @@ int ObRpcRedisAnalyzer::build_packet_meta_for_table_request(proxy::ObRpcReq &rpc
     ez_header.chid_ = ATOMIC_AAF(&client_net_handler->conn_channel_id_, 1);
     packet_header.timestamp_ = ObTimeUtility::current_time();
     packet_header.pcode_ = pcode;
+    packet_header.priority_ = 5; // for redis
     // packet_header.tenant_id_ = 1;
     // packet_header.tenant_id_ = 1002; //TODO need update it
     packet_header.tenant_id_ = redis_info->get_tenant_id();

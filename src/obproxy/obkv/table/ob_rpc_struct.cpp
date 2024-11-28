@@ -367,7 +367,7 @@ int ObRpcRequest::init_rowkey_info(int64_t sub_req_count)
   int ret = OB_SUCCESS;
   if (request_info_inited_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("rpc request already inited", K(ret));
+    LOG_WDIAG("rpc request already inited", K(sub_req_count), K(ret));
   } else if (sub_req_count == 0) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("empty request to init", K(sub_req_count), K(ret));
@@ -507,7 +507,7 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
       if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids,
                                                                    ls_ids))) {
         LOG_WDIAG("fail to calc partition id for table", K(ret));
-      } else if (partition_ids.count() != 1 || ls_ids.count() != 1) {
+      } else if (partition_ids.count() != 1 || ls_ids.count() > 1) {
         // client_info.
         // TODO RPC need update it is a shard request
         ret = OB_ERR_UNEXPECTED;

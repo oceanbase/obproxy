@@ -179,6 +179,7 @@ public:
   bool is_no_route_info_found() const { return route_.is_no_route_info_found(); }
   int64_t get_last_valid_time_us() const { return route_.get_last_valid_time_us(); }
   int64_t replica_size() const { return route_.replica_size(); }
+  void reset_cursor() { route_.reset_cursor(); }
   common::ObConsistencyLevel get_consistency_level() const { return route_.get_consistency_level(); }
   bool is_strong_read() const { return route_.is_strong_read(); }
   bool is_weak_read() const { return route_.is_weak_read(); }
@@ -321,6 +322,7 @@ public:
 
   int init(ObRpcReq *rpc_req, event::ObProxyMutex *mutex = NULL);
   int init_inner_request(event::ObContinuation *inner_cont, event::ObProxyMutex *mutex);
+  void init_inner_request_simple(event::ObContinuation *inner_cont, event::ObProxyMutex *mutex);
   static uint32_t get_next_sm_id();
   // Debugging routines to dump the SM history
   void dump_history_state();
@@ -472,6 +474,8 @@ public:
 
   int cancel_sharding_action();
 
+  int cancel_child_callback_action();
+
   int get_proxy_primary_zone_array(common::ObString zone, common::ObSEArray<common::ObString, 5> &zone_array);
 
   int handle_global_index_partition_lookup_done();
@@ -544,6 +548,7 @@ private:
   event::ObAction *cleanup_action_;
   event::ObAction *sharding_action_;
   event::ObAction *sm_next_action_;
+  event::ObAction *child_callback_action_;
   event::ObContinuation *inner_cont_;
   int32_t reentrancy_count_;
 
@@ -582,7 +587,7 @@ private:
   ObRpcRouteMode rpc_route_mode_;
   obkv::ObProxyRpcType rpc_type_;
 
-  common::ObPtr<event::ObProxyMutex> inner_request_cleanup_mutex_;
+  common::ObPtr<event::ObProxyMutex> inner_request_cleanup_mutex_; //for child rpc_request to cleanup
 public:
   ObRouteDiagnosis *route_diagnosis_;
   obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;

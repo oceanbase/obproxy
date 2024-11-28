@@ -399,6 +399,7 @@ ObTableEntity::~ObTableEntity()
 void ObTableEntity::reset()
 {
   rowkey_.reset();
+  rowkey_names_.reset();
   properties_names_.reset();
   properties_values_.reset();
   reset_properties_buf();
@@ -2354,7 +2355,7 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableTabletOp)
   if (OB_SUCC(ret)) {
     if (OB_FAIL(rpc_request->init_rowkey_info(single_op_size))) {
       LOG_WDIAG("fail to init rpc request", K(ret));
-    } if (OB_FAIL(single_ops_.prepare_allocate(single_op_size))) {
+    } else if (OB_FAIL(single_ops_.prepare_allocate(single_op_size))) {
       LOG_WDIAG("fail to prepare allocatate single ops", K(ret), K(single_op_size));
     }
     for (int64_t i = 0; OB_SUCC(ret) && i < single_op_size; ++i) {

@@ -314,8 +314,9 @@ public:
   };
 public:
   ObRpcOBKVInfo() :request_id_(0), server_request_id_(0), is_first_direct_load_request_(false), is_inner_request_(false),
+                   is_internal_rpc_request_(false), is_internal_rpc_request_has_done_(false),
                    cluster_name_(), tenant_name_(), user_name_(), table_name_(), database_name_(), full_username_(),
-                   cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), client_info_(),
+                   cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), ls_id_(common::ObLSID::INVALID_LS_ID), client_info_(),
                    server_info_(), route_policy_(1), cs_read_consistency_(0), is_proxy_route_policy_set_(false),
                    is_read_consistency_set_(false), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY), pcode_(obrpc::OB_INVALID_RPC_CODE),
                    flags_(0), rpc_origin_error_code_(0), rpc_request_retry_last_begin_(0), rpc_request_retry_times_(0),
@@ -467,6 +468,7 @@ public:
   bool is_first_direct_load_request_; //direct load request need
   bool is_inner_request_;             // 内部拆分的子请求
   bool is_internal_rpc_request_;       // obproxy收到的rpc request，该flag表示obproxy内部执行完返回
+  bool is_internal_rpc_request_has_done_; //
   bool is_rpc_request_with_partition_id_;
 
   common::ObString cluster_name_;
@@ -560,6 +562,7 @@ public:
     RPC_REQ_SERVER_RESPONSE_READING,
     RPC_REQ_SERVER_RESPONSE_READED,
     RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING,
+    RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL,
     RPC_REQ_SERVER_DONE,
     RPC_REQ_SERVER_SHARDING_REQUEST_DONE,
     RPC_REQ_SERVER_DESTROY,
@@ -708,6 +711,7 @@ public:
   void  set_server_channel_id(uint32_t channel_id) { s_channel_id_ = channel_id; }
   void  set_inner_request(bool flag) { obkv_info_.is_inner_request_ = flag; }
   void  set_internal_rpc_request(bool flag) { obkv_info_.is_internal_rpc_request_ = flag; }
+  void  set_internal_rpc_request_has_done(bool flag) { obkv_info_.is_internal_rpc_request_has_done_ = flag; }
   void  set_rpc_request_with_partition_id(bool flag) { obkv_info_.is_rpc_request_with_partition_id_ = flag; }
   void  set_use_request_inner_buf(bool flag) { is_use_request_inner_buf_ = flag; }
   void  set_use_response_inner_buf(bool flag) { is_use_response_inner_buf_ = flag; }
@@ -753,6 +757,7 @@ public:
   bool canceled() const { return is_canceled_; }
   // obproxy侧执行的请求、不用发到observer
   bool is_internal_rpc_request() const { return obkv_info_.is_internal_rpc_request_; }
+  bool is_internal_rpc_request_has_done() const { return obkv_info_.is_internal_rpc_request_has_done_; }
   bool is_rpc_request_with_partition_id() const { return obkv_info_.is_rpc_request_with_partition_id_; }
   // 内部子请求
   bool is_inner_request() const { return obkv_info_.is_inner_request_; }

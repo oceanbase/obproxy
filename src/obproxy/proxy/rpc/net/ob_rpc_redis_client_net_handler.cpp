@@ -62,7 +62,7 @@ ObRpcRedisClientNetHandler::ObRpcRedisClientNetHandler()
 
 void ObRpcRedisClientNetHandler::destroy()
 {
-  PROXY_CS_LOG(INFO, "rpc client session destroy", K_(cs_id), K_(proxy_sessid), KP_(rpc_net_vc));
+  PROXY_CS_LOG(INFO, "rpc redis client session destroy", K_(cs_id), K_(proxy_sessid), KP_(rpc_net_vc));
 
   ObRpcRedisClientNetHandler::cleanup();
 
@@ -71,6 +71,7 @@ void ObRpcRedisClientNetHandler::destroy()
 
 void ObRpcRedisClientNetHandler::do_io_close(const int alerrno)
 {
+  int ret = OB_SUCCESS;
   if (OB_NOT_NULL(cur_rpc_request_)) {
     cur_rpc_request_->client_net_cancel_request();
     if (OB_NOT_NULL(cur_rpc_request_->get_request_sm())) {
@@ -80,6 +81,9 @@ void ObRpcRedisClientNetHandler::do_io_close(const int alerrno)
       cur_rpc_request_->destroy();
     }
     cur_rpc_request_ = NULL;
+  }
+  if (OB_FAIL(cancel_pending_action())) {
+    PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id), K(ret));
   }
   ObRpcClientNetHandler::do_io_close(alerrno);
 
@@ -275,7 +279,7 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
                 } else {
                   if (sscanf(request_buf + redis_cmd_info.data_pos_,"*%d", &redis_cmd_info.redis_cmd_arr_len_) != 1) {
                     ret = OB_INVALID_ARGUMENT; // invalid protocol to parser
-                    PROXY_CS_LOG(WDIAG, "invalid to to fetch argc of parameter", K(ret), "str_buf", request_buf + redis_cmd_info.data_pos_);
+                    PROXY_CS_LOG(WDIAG, "invalid to to fetch argc of parameter", K(ret), K_(cs_id), "str_buf", request_buf + redis_cmd_info.data_pos_);
                   }
                   /* to init argc */
                   redis_cmd_info.data_pos_ = tmp_str - request_buf + 2;
@@ -329,7 +333,8 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
               } else {
                 if ((sret = sscanf(request_buf + redis_cmd_info.data_pos_,"$%d", &data_len)) != 1) {
                   ret = OB_INVALID_ARGUMENT; // invalid protocol to parser
-                  PROXY_CS_LOG(WDIAG, "invalid to to fetch argc of parameter", K(ret), K(data_len), K(sret), K(request_buf), K(request_buf + redis_cmd_info.data_pos_), K(redis_cmd_info.data_pos_));
+                  PROXY_CS_LOG(WDIAG, "invalid to to fetch argc of parameter", K(ret), K_(cs_id), K(data_len), K(sret),
+                               K(request_buf), K(request_buf + redis_cmd_info.data_pos_), K(redis_cmd_info.data_pos_));
                 } else {
                   if (redis_cmd_info.data_len_  >= redis_cmd_info.data_pos_ + bulk_num_len + data_len + 2) { //TODO read_len need rewrite to redis_cmd_info.data_len_
                     // read a new str bulk string
@@ -345,14 +350,14 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
                   } else {
                     current_need_read_len = redis_cmd_info.data_pos_ + bulk_num_len + data_len + 2 - redis_cmd_info.data_len_ ; //$x\r\n
                     need_to_parse_bulk_str = false;
-                    PROXY_CS_LOG(DEBUG, "not read enough data to handle", K(redis_cmd_info.data_len_ ), K(redis_cmd_info.data_pos_), K(data_len));
+                    // PROXY_CS_LOG(DEBUG, "not read enough data to handle", K_(cs_id), K(redis_cmd_info.data_len_ ), K(redis_cmd_info.data_pos_), K(data_len));
                   }
                 }
               }
             } else {
               current_need_read_len = 4; //$x\r\n
               need_to_parse_bulk_str = false;
-              PROXY_CS_LOG(DEBUG, "not read meet data");
+              PROXY_CS_LOG(DEBUG, "not read meet data", K_(cs_id));
               //TODO consume data has parsed
             }
           }
@@ -363,14 +368,14 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
             rpc_type = obkv::OBPROXY_RPC_REDIS;
           } else if (redis_cmd_info.data_pos_ == redis_cmd_info.data_len_) {
               current_need_read_len = 4; //$x\r\n
-              PROXY_CS_LOG(DEBUG, "not read meet data");
+              PROXY_CS_LOG(DEBUG, "not read meet data", K_(cs_id));
           }
 
           if (status == RPC_REQUEST_READ_DONE) {
             if (OB_UNLIKELY(redis_cmd_info.redis_bulk_str_arr_.count() != redis_cmd_info.redis_bulk_str_len_arr_.count())) {
               ret = OB_ERR_UNEXPECTED;
               PROXY_CS_LOG(WDIAG, "invalid redis cmd handle", "redis_cmd_info_str_pos", redis_cmd_info.redis_bulk_str_arr_,
-                           "redis_cmd_info_str_len", redis_cmd_info.redis_bulk_str_len_arr_, K(ret));
+                           "redis_cmd_info_str_len", redis_cmd_info.redis_bulk_str_len_arr_, K(ret), K_(cs_id));
             } else {
               int64_t i = 0;
               for (i = 0; i < redis_cmd_info.redis_bulk_str_arr_.count(); i++) {
@@ -425,7 +430,7 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
                 redis_info->set_redis_db(redis_db_);
               }
               if (OB_FAIL(request_sm->schedule_call_next_action(RPC_REQ_NEW_REDIS_REQUEST))) {
-                PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K(request_sm));
+                PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K_(cs_id), K(request_sm));
               }
             }
           } else {

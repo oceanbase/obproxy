@@ -440,7 +440,11 @@ class ObRpcTableLSOperationRequest : public ObRpcRequest
 {
 public:
   ObRpcTableLSOperationRequest();
-  ~ObRpcTableLSOperationRequest() {}
+  ~ObRpcTableLSOperationRequest()
+  {
+    tablet_id_index_map_.destroy();
+    ls_id_tablet_id_map_.destroy();
+  }
   const ObTableLSOp &get_operation() const {return ls_request_.ls_op_;}
   ObTableLSOp &get_operation() {return ls_request_.ls_op_;}
 

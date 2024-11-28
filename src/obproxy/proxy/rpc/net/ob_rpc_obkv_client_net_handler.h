@@ -80,6 +80,7 @@ public:
 protected:
   uint32_t atomic_channel_id_;
   bool is_sending_response_;
+  bool has_inited_;
 
   ObConnTenantInfo ct_info_;
   net::ObIpEndpoint last_server_ip_; /* only used for weak read when not have any route info (need use dummumy entry pll)*/
@@ -100,7 +101,7 @@ private:
 inline void ObRpcOBKVClientNetHandler::add_client_response_request(ObRpcReq *request)
 {
   if (OB_NOT_NULL(request)) {
-    PROXY_CS_LOG(DEBUG, "ObRpcOBKVClientNetHandler::add_client_response_request", K(request));
+    PROXY_CS_LOG(DEBUG, "ObRpcOBKVClientNetHandler::add_client_response_request", K(request), K_(cs_id));
     need_send_response_list_.push_back(request);
   }
 }

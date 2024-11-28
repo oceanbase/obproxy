@@ -86,7 +86,7 @@ void ObRpcClientNetHandler::cleanup()
 
   if (OB_UNLIKELY(NULL != rpc_net_vc_)
       || OB_ISNULL(read_buffer_)) {
-    PROXY_CS_LOG(WDIAG, "invalid rpc client session", K(rpc_net_vc_), K(read_buffer_));
+    PROXY_CS_LOG(WDIAG, "invalid rpc client session", K_(cs_id), K(rpc_net_vc_), K(read_buffer_));
   }
   is_local_connection_ = false;
 
@@ -99,7 +99,7 @@ void ObRpcClientNetHandler::cleanup()
   dummy_entry_valid_time_ns_ = 0;
 
   if (NULL != cluster_resource_) {
-    PROXY_CS_LOG(DEBUG, "client session cluster resource will dec ref", K_(cluster_resource), KPC_(cluster_resource));
+    PROXY_CS_LOG(DEBUG, "client session cluster resource will dec ref", K_(cs_id), K_(cluster_resource), KPC_(cluster_resource));
     cluster_resource_->dec_ref();
     cluster_resource_ = NULL;
   }
@@ -159,10 +159,10 @@ int ObRpcClientNetHandler::new_connection(
   int ret = OB_SUCCESS;
   if (OB_ISNULL(new_vc) || OB_UNLIKELY(NULL != rpc_net_vc_)) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WDIAG, "invalid client connection", K(new_vc), K(rpc_net_vc_), K(ret));
+    PROXY_CS_LOG(WDIAG, "invalid client connection", K(new_vc), K(rpc_net_vc_), K(ret), K_(cs_id));
   } else {
     PROXY_CS_LOG(DEBUG, "ObRpcClientNetHandler::new_connection", K(new_vc), K(iobuf), K(reader),
-        "this_thread", this_ethread());
+        "this_thread", this_ethread(), K_(cs_id));
     create_thread_ = this_ethread();
     rpc_net_vc_ = new_vc;
     magic_ = RPC_C_NET_MAGIC_ALIVE;
@@ -198,7 +198,7 @@ int ObRpcClientNetHandler::new_connection(
         read_buffer_ = iobuf;
       } else if (OB_ISNULL(read_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_CS_LOG(EDIAG, "fail to alloc memory for read_buffer", K(ret));
+        PROXY_CS_LOG(EDIAG, "fail to alloc memory for read_buffer", K_(cs_id), K(ret));
       }
 
       if (OB_SUCC(ret)) {
@@ -207,7 +207,7 @@ int ObRpcClientNetHandler::new_connection(
           buf_reader_ = reader;
         } else if (OB_ISNULL(buf_reader_ = read_buffer_->alloc_reader())) {
           ret = OB_ERR_UNEXPECTED;
-          PROXY_CS_LOG(EDIAG, "fail to alloc buffer reader", K(ret));
+          PROXY_CS_LOG(EDIAG, "fail to alloc buffer reader", K(ret), K_(cs_id));
         }
       }
 
@@ -223,13 +223,13 @@ int ObRpcClientNetHandler::new_connection(
         if (OB_FAIL(acquire_client_session_id())) {
           PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
         } else if (OB_FAIL(acquire_client_session_id())) {
-          PROXY_CS_LOG(WDIAG, "fail to acquire connection unique id", K_(conn_unique_id), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to acquire connection unique id", K_(conn_unique_id), K_(cs_id), K(ret));
         } else if (OB_FAIL(add_to_list())) {
           PROXY_CS_LOG(WDIAG, "fail to add cs to list", K_(cs_id), K(ret));
         } else if (OB_FAIL(session_info_.init())) {
           PROXY_CS_LOG(WDIAG, "fail to init session_info", K_(cs_id), K(ret));
         } else if (OB_FAIL(get_vip_addr())) {
-          PROXY_CS_LOG(WDIAG, "get vip addr failed", K(ret));
+          PROXY_CS_LOG(WDIAG, "get vip addr failed", K_(cs_id), K(ret));
         } else {
           const ObAddr &client_addr = get_real_client_addr();
           session_info_.set_client_host(client_addr);
@@ -1211,7 +1211,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
         } else if (is_first_request_ && proxy_protocol_v2::ProxyProtocolV2::check_proxy_protocol_v2_valid(net_head_buf_)) {
           need_read_more_here = true;
           if (OB_FAIL(handle_proxy_protocol_v2_request(proxy_protocol_v2_, status))) {
-            PROXY_CS_LOG(WDIAG, "fail to handle proxy protocol v2", K(ret), K(status));
+            PROXY_CS_LOG(WDIAG, "fail to handle proxy protocol v2", K(ret), K_(cs_id), K(status));
           }
         } else {
           set_proxy_protocol_v2_request(false);
@@ -1223,15 +1223,13 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
               ObRpcOBKVClientNetHandler *new_session = op_reclaim_alloc(ObRpcOBKVClientNetHandler);
               if (OB_ISNULL(new_session)) {
                 ret = OB_ALLOCATE_MEMORY_FAILED;
-                PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret));
+                PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret), K_(cs_id));
               } else {
+                //has assert rpc_net_vc_ & read_buffer_ & buf_reader_ not NULL, set them to NULL after new_session->new_connection(...) to avoid re-free
                 if (OB_FAIL(new_session->new_connection(rpc_net_vc_/*new_vc*/, read_buffer_/*iobuf*/, buf_reader_ /*reader*/))) {
-                  PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));
+                  PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret), K_(cs_id));
                 } else {
                   need_release = true; //to release detect session handler
-                  rpc_net_vc_ = NULL; //has passed it to new_session
-                  buf_reader_ = NULL;
-                  read_buffer_ = NULL;
                   PROXY_NET_LOG(DEBUG, "handle new obkv client connection", K(ret), K_(cs_id));
                   if (ct_info_.lookup_success_) {
                     new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
@@ -1240,6 +1238,9 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
                     new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
                   }
                 }
+                rpc_net_vc_ = NULL; //has passed it to new_session
+                buf_reader_ = NULL;
+                read_buffer_ = NULL;
               }
             }
             break;
@@ -1250,13 +1251,11 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
                 ret = OB_ALLOCATE_MEMORY_FAILED;
                 PROXY_NET_LOG(EDIAG, "failed to allocate memory for ObRpcClientNetHandler", K(ret));
               } else {
+                //has assert rpc_net_vc_ & read_buffer_ & buf_reader_ not NULL, set them to NULL after new_session->new_connection(...) to avoid re-free
                 if (OB_FAIL(new_session->new_connection(rpc_net_vc_/*new_vc*/, read_buffer_/*iobuf*/, buf_reader_ /*reader*/))) {
                   PROXY_NET_LOG(EDIAG, "fail to new_connection", K(ret));
                 } else {
                   need_release = true; //to release detect session handler
-                  rpc_net_vc_ = NULL; //has passed it to new_session
-                  buf_reader_ = NULL;
-                  read_buffer_ = NULL;
                   PROXY_NET_LOG(DEBUG, "handle new ob-redis client connection", K(ret), K_(cs_id));
                   if (ct_info_.lookup_success_) {
                     new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
@@ -1265,6 +1264,9 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
                     new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
                   }
                 }
+                rpc_net_vc_ = NULL; //has passed it to new_session
+                buf_reader_ = NULL;
+                read_buffer_ = NULL;
               }
             }
             break;
@@ -1282,9 +1284,9 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
         case RPC_REQUEST_READ_DONE:
           set_proxy_protocol_v2_request(false);
           if (OB_FAIL(buffer_reader.consume(proxy_protocol_v2_.get_total_len()))) {
-            PROXY_CS_LOG(WDIAG, "fail to consume ppv2 packet", K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to consume ppv2 packet", K(ret), K_(cs_id));
           }
-          PROXY_CS_LOG(DEBUG, "succ to analyze ppv2 packet", K(proxy_protocol_v2_));
+          PROXY_CS_LOG(DEBUG, "succ to analyze ppv2 packet", K(proxy_protocol_v2_), K_(cs_id));
           net_entry_.read_vio_->nbytes_ = INT64_MAX;
           net_entry_.read_vio_->reenable(); //need check next data
           if (OB_SUCC(ret)) {
@@ -1301,7 +1303,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
             buffer_reader.mbuf_->water_mark_ = read_num;
             if (OB_ISNULL(net_entry_.read_vio_ = do_io_read(this, read_num, buffer_reader.mbuf_))) {
               ret = OB_ERR_UNEXPECTED;
-              PROXY_CS_LOG(WDIAG, "rpc net handler fail to do_io_read", K(ret), "packet_len", proxy_protocol_v2_.get_len(), K(read_num));
+              PROXY_CS_LOG(WDIAG, "rpc net handler fail to do_io_read", K(ret), K_(cs_id), "packet_len", proxy_protocol_v2_.get_len(), K(read_num));
             } else {
               event_ret = VC_EVENT_CONT;
             }
@@ -1328,9 +1330,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
 
   if (OB_FAIL(ret)) {
     do_io_close();
-  }
-
-  if (need_release) {
+  } else if (need_release) {
     do_io_release();
   }
 
@@ -1344,7 +1344,7 @@ int ObRpcClientNetHandler::handle_request_read_throttle()
   if (OB_UNLIKELY(get_global_proxy_config().enable_rpc_throttle
             && get_global_rpc_throttle().is_trigger_throttle())) {
     if (OB_FAIL(get_global_rpc_throttle().calc(is_pass))) {
-      PROXY_CS_LOG(WDIAG, "rpc throttle fail to calc token backet", K(ret));
+      PROXY_CS_LOG(WDIAG, "rpc throttle fail to calc token backet", K(ret), K_(cs_id));
     }
   }
   if (OB_LIKELY(is_pass)) {
@@ -1373,14 +1373,14 @@ int ObRpcClientNetHandler::handle_proxy_protocol_v2_request(ProxyProtocolV2 &v2,
       char *written_pos = buffer_reader.copy(packet, len , 0);
       if (written_pos != (packet + len)) {
         ret = OB_ERR_UNEXPECTED;
-        PROXY_CS_LOG(WDIAG, "not copy completely", K(ret));
+        PROXY_CS_LOG(WDIAG, "not copy completely", K(ret), K_(cs_id));
       } else if (OB_FAIL(v2.analyze_packet(packet, len))) {
-        PROXY_CS_LOG(WDIAG, "proxy protocol v2 analyze packet failed", K(ret));
+        PROXY_CS_LOG(WDIAG, "proxy protocol v2 analyze packet failed", K(ret), K_(cs_id));
       } else if (v2.is_finished()) {
         status = RPC_REQUEST_READ_DONE;
-        PROXY_CS_LOG(DEBUG, "proxy protocol analzye complete", K(v2));
+        PROXY_CS_LOG(DEBUG, "proxy protocol analzye complete", K(v2), K_(cs_id));
         if (OB_FAIL(fill_tenant_info_with_ppv2(v2))) {
-          PROXY_CS_LOG(WDIAG, "fail to fill tenant info with ppv2", K(v2), K(ret));
+          PROXY_CS_LOG(WDIAG, "fail to fill tenant info with ppv2", K(v2), K(ret), K_(cs_id));
         } else {
           ObString user_name;
           if (!get_global_white_list_table_processor().can_ip_pass(get_vip_cluster_name(),
@@ -1389,7 +1389,7 @@ int ObRpcClientNetHandler::handle_proxy_protocol_v2_request(ProxyProtocolV2 &v2,
                                                                    ops_ip_sa_cast(v2.src_addr_.get_sockaddr()))) {
             ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
             status = RPC_REQUEST_READ_ERROR;
-            PROXY_CS_LOG(WDIAG, "can not pass white_list", K(get_vip_cluster_name()), K(get_vip_tenant_name()), K(v2), K(ret));
+            PROXY_CS_LOG(WDIAG, "can not pass white_list", K(get_vip_cluster_name()), K(get_vip_tenant_name()), K(v2), K(ret), K_(cs_id));
           }
         }
       }

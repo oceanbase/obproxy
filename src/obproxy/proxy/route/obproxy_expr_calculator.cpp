@@ -1040,7 +1040,7 @@ int ObRpcExprCalcTool::calculate_partition_id_with_rowkey(common::ObArenaAllocat
     if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids,
                                                                   ls_ids))) {
       LOG_WDIAG("fail to calc partition id for table", K(ret));
-    } else if (partition_ids.count() != 1 || ls_ids.count() != 1) {
+    } else if (partition_ids.count() != 1 || ls_ids.count() > 1) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("obkv single rowkey get part ids/ log stream ids is not one", K(partition_ids), K(ls_ids),
                 K(ret));
