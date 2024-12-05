@@ -454,7 +454,7 @@ int ObShardUserPrivInfo::set_password(const char *password, int64_t len)
     LOG_WDIAG("fail to decode encrypted password", K(password), K(len), K(ret));
   } else {
     ObString password_str(static_cast<int32_t>(strlen(pwd_buf)), pwd_buf);
-    char stage2_buf[SCRAMBLE_LENGTH * 2 + 1];
+    char stage2_buf[SCRAMBLE_LENGTH * 2 + 1 + 1]; // 1 is for '*' at start, 1 is '\0' at end
     char stage2_hex_buf[SCRAMBLE_LENGTH];
     ObString pwd_stage2;
     ObString pwd_stage2_hex;

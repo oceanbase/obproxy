@@ -1072,6 +1072,9 @@ int ObProxyAccumulationAggUnit::merge(common::ObIArray<ObObj> &agg_values)
         LOG_WDIAG("fail to calc", K(ret));
       } else {
         obj_ = result_obj.at(0);
+        // add_expr will call ~expr() for expr in param_array_
+        // it will cause double destruction for first_expr and second_expr.
+        add_expr.get_param_array().reset();
       }
     }
   }
