@@ -190,7 +190,7 @@ ObMysqlSM::ObMysqlSM()
       server_protocol_(ObProxyProtocol::PROTOCOL_NORMAL), need_update_non_login_config_(false),
       need_depend_last_session_(false), single_leader_(NULL), enable_full_link_trace_(false),
       kill_after_cmd_done_err_code_(0),
-      multi_level_config_(NULL), route_diagnosis_(NULL), protocol_diagnosis_(NULL),
+      multi_level_config_(NULL), target_db_server_(NULL), route_diagnosis_(NULL), protocol_diagnosis_(NULL),
       connection_diagnosis_trace_(NULL), service_name_instance_(NULL)
 {
   static bool scatter_inited = false;
