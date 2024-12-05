@@ -900,6 +900,7 @@ void ObProxyMain::sig_direct_handler(const int sig)
           if (info.need_conn_accept_) {
             info.disable_net_accept();  // disable accecpt new connection
           }
+          MEM_BARRIER();
           info.graceful_exit_start_time_ = get_hrtime_internal();
           info.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                          + info.graceful_exit_start_time_;
@@ -927,10 +928,17 @@ void ObProxyMain::sig_direct_handler(const int sig)
         LOG_INFO("gcov flush now");
         __gcov_flush();
       #endif
+      LOG_INFO("recv signal, will graceful exit", K(sig), K(info));
       info.received_sig_ = sig;
       if (info.need_conn_accept_) {
         info.disable_net_accept();  // disable accecpt new connection
       }
+      // 1. disable_net_accept will call pthread_kill() to accept thread
+      // 2. when graceful_exit_start_time_ is changed, ObInactivityCop::check_inactivity
+      //    call pthread_cancel() and pthread_join() to accept thread
+      // - to avoid complex parallel multi-thread status and a lower-probability core problem (2024062100102854439),
+      //   need use MEM_BARRIER to restrict pthread_kill() happens before pthread_cancel()
+      MEM_BARRIER();
       info.graceful_exit_start_time_ = get_hrtime_internal();
       info.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
                                      + info.graceful_exit_start_time_;

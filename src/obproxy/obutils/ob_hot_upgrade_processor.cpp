@@ -826,6 +826,7 @@ int ObHotUpgradeProcessor::state_wait_hu_cmd(const ObProxyServerInfo &proxy_info
       }
       if (OB_SUCC(ret) || info_.is_local_exit()) {
         info_.disable_net_accept();
+        MEM_BARRIER();
         info_.is_parent_ = true;// move to parent site, no mater on which site before
         info_.update_parent_status(HU_STATUS_DO_QUICK_EXIT);
         info_.graceful_exit_start_time_ = get_hrtime_internal();
@@ -942,6 +943,7 @@ int ObHotUpgradeProcessor::state_parent_wait_cr_cmd(const ObProxyServerInfo &pro
         //4. cancel timeout_rollback
 
         info_.disable_net_accept();
+        MEM_BARRIER();
         info_.graceful_exit_start_time_ = get_hrtime_internal();
         info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                         + info_.graceful_exit_start_time_;// nanosecond
@@ -1090,6 +1092,7 @@ int ObHotUpgradeProcessor::state_sub_wait_cr_cmd()
         //4. cancel timeout_rollback job
 
         info_.disable_net_accept();
+        MEM_BARRIER();
         info_.graceful_exit_start_time_ = get_hrtime_internal();
         info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().hot_upgrade_exit_timeout)
                                         + info_.graceful_exit_start_time_; // nanosecond
@@ -1746,6 +1749,7 @@ int ObHotUpgradeProcessor::do_hot_upgrade_work()
         }
         case HUC_LOCAL_EXIT: {
           info_.disable_net_accept();
+          MEM_BARRIER();
           info_.graceful_exit_start_time_ = get_hrtime_internal();
           info_.graceful_exit_end_time_ = HRTIME_USECONDS(get_global_proxy_config().delay_exit_time)
             + info_.graceful_exit_start_time_; // nanosecond
