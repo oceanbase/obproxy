@@ -244,7 +244,11 @@ public:
 
   //proxy init related
   DEF_CAP(proxy_mem_limited, "2G", "[100MB,]", "proxy memory limited, [100MB,], will disable alloc memory from the OS ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+#ifndef USING_ASAN
   DEF_CAP(stack_size, "1MB", "[1MB,10MB]", "stack size of one thread, [1MB, 10MB]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+#else
+  DEF_CAP(stack_size, "8MB", "[1MB,10MB]", "stack size of one thread, [1MB, 10MB]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+#endif
   DEF_CAP(routing_cache_mem_limited, "128MB", "[1KB,100G]", "max size of all proxy routing cache size, like table cache, location cache, etc. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(work_thread_num, "128", "[1,128]", "proxy work thread num or max work thread num when automatic match, [1, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(task_thread_num, "2", "[1,4]", "proxy task thread num, [1, 4]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
