@@ -292,9 +292,11 @@ ObProxyClusterInfo::ObProxyClusterInfo()
 void ObProxyClusterInfo::destroy()
 {
   SubCIHashMap::iterator last = sub_ci_map_.end();
-  for (SubCIHashMap::iterator it = sub_ci_map_.begin(); it != last; ++it) {
-    LOG_DEBUG("destroy sub cluster info", K_(cluster_name), K_(it->cluster_id));
-    it->destroy();
+  for (SubCIHashMap::iterator it = sub_ci_map_.begin(); it != last;) {
+    SubCIHashMap::iterator tmp = it;
+    ++it;
+    LOG_DEBUG("destroy sub cluster info", K_(cluster_name), K_(tmp->cluster_id));
+    tmp->destroy();
   }
   sub_ci_map_.reset();
   op_free(this);
@@ -461,9 +463,11 @@ ObProxyClusterArrayInfo::~ObProxyClusterArrayInfo()
 void ObProxyClusterArrayInfo::destroy()
 {
   CIHashMap::iterator last = ci_map_.end();
-  for (CIHashMap::iterator it = ci_map_.begin(); it != last; ++it) {
-    LOG_DEBUG("destroy cluster info", K(it->cluster_name_));
-    it->destroy();
+  for (CIHashMap::iterator it = ci_map_.begin(); it != last;) {
+    CIHashMap::iterator tmp = it;
+    ++it;
+    LOG_DEBUG("destroy cluster info", K(tmp->cluster_name_));
+    tmp->destroy();
   }
   ci_map_.reset();
 }
