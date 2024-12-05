@@ -281,8 +281,10 @@ int ObVipTenantCache::update_cache_map()
 void ObVipTenantCache::clear_cache_map(VTHashMap &cache_map)
 {
   VTHashMap::iterator last = cache_map.end();
-  for (VTHashMap::iterator it = cache_map.begin(); it != last; ++it) {
-    it->destroy();
+  for (VTHashMap::iterator it = cache_map.begin(); it != last;) {
+    VTHashMap::iterator tmp = it;
+    ++it;
+    tmp->destroy();
   }
   cache_map.reset();
 }
