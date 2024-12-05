@@ -31,6 +31,7 @@ inline void ob_print_mod_memory_usage(bool print_to_std = false,
 
 extern ObMemAttr default_memattr;
 
+#ifndef USING_ASAN
 inline void *ob_malloc(const int64_t nbyte, const ObMemAttr &attr = default_memattr)
 {
   void *ptr = NULL;
@@ -58,6 +59,11 @@ inline void *ob_realloc(void *ptr, const int64_t nbyte, const ObMemAttr &attr)
   }
   return nptr;
 }
+#else
+void *ob_malloc(const int64_t nbyte, const ObMemAttr &attr = default_memattr);
+void ob_free(void *ptr);
+void *ob_realloc(void *ptr, const int64_t nbyte, const ObMemAttr &attr);
+#endif
 
 void *ob_malloc_align(
     const int64_t alignment, const int64_t nbyte,

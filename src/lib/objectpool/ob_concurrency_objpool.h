@@ -14,6 +14,9 @@
 #define OB_LIB_CONCURRENCY_OBJPOOL_H_
 
 #include <typeinfo>
+#include <type_traits>
+
+#include "lib/allocator/ob_malloc.h"
 #include "lib/allocator/page_arena.h"
 #include "lib/utility/ob_print_utils.h"
 #include "lib/list/ob_atomic_list.h"
@@ -21,7 +24,7 @@
 #include "lib/lock/ob_mutex.h"
 #include "lib/container/ob_vector.h"
 #include "lib/allocator/ob_mem_leak_checker.h"
-#include <type_traits>
+
 
 DEFINE_HAS_MEMBER(OP_LOCAL_NUM);
 
@@ -417,12 +420,20 @@ public:
   // @param ptr pointer to be freed.
   virtual void free(T *ptr)
   {
+#ifndef USING_ASAN
     if (OB_LIKELY(NULL != fl_) && OB_LIKELY(NULL != ptr)) {
       common::get_global_objpool_leak_checker().on_free(this->get_objpool_id(), this->get_free_list_name(), ptr);
       ptr->~T();
       fl_->free(ptr);
       ptr = NULL;
     }
+#else
+  if (OB_LIKELY(NULL != ptr)) {
+    ptr->~T();
+    oceanbase::common::ob_free(ptr);
+    ptr = NULL;
+  }
+#endif
   }
 
   // Allocate objects of the templated type via the inherited interface
@@ -734,6 +745,7 @@ struct OPNum
 //             tc or reclaim interfaces for each object type in the whole procject.
 
 // global pool allocator interface
+#ifndef USING_ASAN
 #define op_alloc_args(type, args...) \
   ({ \
     type *ret = NULL; \
@@ -863,6 +875,130 @@ struct OPNum
       instance->set_reclaim_opt(reclaim_type, value); \
     } \
   })
+
+#else
+#define op_alloc_args(type, args...) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      ret = new (tmp) type(args); \
+    } \
+    ret; \
+  })
+
+#define op_alloc(type) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      common::ObClassConstructor<type> construct; \
+      ret = construct(tmp); \
+    } \
+    ret; \
+  })
+
+#define op_free(ptr) \
+  ({ \
+    common::ObClassAllocator<__typeof__(*ptr)> *instance = common::ObClassAllocator<__typeof__(*ptr)>::get(common::OPNum<__typeof__(*ptr)>::LOCAL_NUM, common::OP_GLOBAL); \
+    if (OB_LIKELY(NULL != instance)) { \
+      instance->free(ptr); \
+    } \
+  })
+
+// thread cache pool allocator interface
+#define op_tc_alloc_args(type, args...) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      ret = new (tmp) type(args); \
+    } \
+    ret; \
+  })
+
+#define op_tc_alloc(type) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      common::ObClassConstructor<type> construct; \
+      ret = construct(tmp); \
+    } \
+    ret; \
+  })
+
+#define op_tc_free(ptr) \
+  ({ \
+    common::ObClassAllocator<__typeof__(*ptr)> *instance = common::ObClassAllocator<__typeof__(*ptr)>::get(common::OPNum<__typeof__(*ptr)>::LOCAL_NUM, common::OP_GLOBAL); \
+    if (OB_LIKELY(NULL != instance)) { \
+      instance->free(ptr); \
+    } \
+  })
+
+// thread cache pool and reclaim allocator interface
+#define op_reclaim_alloc_args(type, args...) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      ret = new (tmp) type(args); \
+    } \
+    ret; \
+  })
+
+#define op_reclaim_alloc(type) \
+  ({ \
+    type *ret = NULL; \
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      common::ObClassConstructor<type> construct; \
+      ret = construct(tmp); \
+    } \
+    ret; \
+  })
+
+#define op_reclaim_free(ptr) \
+  ({ \
+    common::ObClassAllocator<__typeof__(*ptr)> *instance = common::ObClassAllocator<__typeof__(*ptr)>::get(common::OPNum<__typeof__(*ptr)>::LOCAL_NUM, common::OP_GLOBAL); \
+    if (OB_LIKELY(NULL != instance)) { \
+      instance->free(ptr); \
+    } \
+  })
+
+#define op_reclaim_opt(type, reclaim_type, value) \
+  ({ \
+    UNUSED(reclaim_type);\
+    UNUSED(value);\
+  })
+
+// thread cache pool and reclaim sparse allocator interface
+#define op_reclaim_sparse_alloc(type, init_func) \
+  ({ \
+    type *ret = NULL; \
+    UNUSED(init_func);\
+    type *tmp = static_cast<type *>(oceanbase::common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+    if (OB_LIKELY(NULL != tmp)) { \
+      ret = new (tmp) type(); \
+    } \
+    ret; \
+  })
+
+#define op_reclaim_sparse_free(ptr) \
+  ({ \
+    common::ObClassAllocator<__typeof__(*ptr)> *instance = common::ObClassAllocator<__typeof__(*ptr)>::get(common::OPNum<__typeof__(*ptr)>::LOCAL_NUM, common::OP_GLOBAL); \
+    if (OB_LIKELY(NULL != instance)) { \
+      instance->free(ptr); \
+    } \
+  })
+
+#define op_reclaim_sparse_opt(type, init_func, reclaim_type, value) \
+  ({ \
+    UNUSED(init_func);\
+    UNUSED(reclaim_type);\
+    UNUSED(value);\
+  })
+#endif
 
 } // end of namespace common
 } // end of namespace oceanbase

@@ -1046,7 +1046,7 @@ int ObRespAnalyzer::stream_analyze_mysql(const ObString data, ObRespAnalyzeResul
     switch (stream_mysql_state_) {
       case STREAM_MYSQL_HEADER: {
         if (OB_FAIL(mysql_analyzer_.stream_analyze_header(start, remain, analyzed, stream_mysql_state_))) {
-          LOG_WDIAG("fail to analyze_header (mysql)", K(start), K(remain), K(analyzed),
+          LOG_WDIAG("fail to analyze_header (mysql)", KP(start), K(remain), K(analyzed),
                     "stream_mysql_state_", ObRespAnalyzerUtil::get_stream_state_str(stream_mysql_state_), K(ret));
         } else if (OB_FALSE_IT(handle_analyze_mysql_header(analyzed))) {
         } else if (OB_FAIL(handle_analyze_mysql_end(start + analyzed, &resp_result))) { // handle empty pkt (len == 0)
@@ -1058,10 +1058,10 @@ int ObRespAnalyzer::stream_analyze_mysql(const ObString data, ObRespAnalyzeResul
       case STREAM_MYSQL_TYPE: {
         if (need_analyze_mysql_pkt_type()) {
           if (OB_FAIL(mysql_analyzer_.stream_analyze_type(start, remain, analyzed, stream_mysql_state_))) {
-            LOG_WDIAG("fail to analyze_type (mysql)", K(start), K(remain), K(analyzed),
+            LOG_WDIAG("fail to analyze_type (mysql)", KP(start), K(remain), K(analyzed),
                       "stream_mysql_state_", ObRespAnalyzerUtil::get_stream_state_str(stream_mysql_state_), K(ret));
           } else if (OB_FAIL(handle_analyze_mysql_pkt_type(start))) {
-            LOG_WDIAG("fail to handle_analyze_mysql_pkt_type", K(start), K(remain), K(analyzed), K(ret));
+            LOG_WDIAG("fail to handle_analyze_mysql_pkt_type", KP(start), K(remain), K(analyzed), K(ret));
           } else if (OB_FAIL(handle_analyze_mysql_end(start + analyzed, &resp_result))) {  // handle pkt (len == 1)
             LOG_WDIAG("fail to handle_analyze_mysql_end", K(resp_result), K(mysql_analyzer_), K(ret));
           }

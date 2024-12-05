@@ -179,7 +179,7 @@ int ObMySQLUtil::store_str_v(char *buf, int64_t len, const char *str,
           K(len), K(pos), K(length), K(ret));
     } else if (len >= pos && length <= static_cast<uint64_t>(len - pos)) {
       if ((0 == length ) || (length > 0 && NULL != str)) {
-        MEMCPY(buf + pos, str, length);
+        MEMMOVE(buf + pos, str, length);
         pos += length;
       } else {
         ret = OB_INVALID_ARGUMENT;

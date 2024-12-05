@@ -187,7 +187,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
     if (OBPROXY_T_TEXT_PS_PREPARE == stmt_type || OBPROXY_T_TEXT_PS_EXECUTE == stmt_type) {
       int i, j, index = 0;
       replace_sql_len = expr_sql.length();
-      if (OB_ISNULL(replace_sql_str = static_cast<char *>(op_fixed_mem_alloc(replace_sql_len)))) {
+      if (OB_ISNULL(replace_sql_str = static_cast<char *>(allocator_.alloc(replace_sql_len)))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         PROXY_LOG(WDIAG, "fail to alloc mem", "alloc_size", replace_sql_len, K(ret));
       } else {
@@ -220,9 +220,7 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
       PROXY_LOG(DEBUG, "succ to do expr parse", "expr_result", ObExprParseResultPrintWrapper(expr_result), K(expr_sql));
     }
   }
-  if (NULL != replace_sql_str) {
-    op_fixed_mem_free(replace_sql_str, replace_sql_len);
-  }
+
   return ret;
 }
 

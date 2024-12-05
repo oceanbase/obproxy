@@ -334,6 +334,10 @@ int ObShowSessionHandler::dump_cs_variables_item(const ObSessionBaseField *field
   int ret = OB_SUCCESS;
   char buf[PROXY_LIKE_NAME_MAX_SIZE] = {0};
   ObString warn_string("---value length is large then 128bytes---");
+  const int32_t MAX_VAR_SCOPE_LENGTH = 80;
+  char scope_array[MAX_VAR_SCOPE_LENGTH] = {'\0'};
+  ObString scope_string(MAX_VAR_SCOPE_LENGTH, 0, scope_array);
+
   int64_t pos = 0;
   if (OB_FIELD_USER_VAR == var_type) {
     // user field has store ' into value, no need to print ' again
@@ -364,9 +368,6 @@ int ObShowSessionHandler::dump_cs_variables_item(const ObSessionBaseField *field
     if (OB_FIELD_USER_VAR == var_type) {
       cells[OB_SVC_FLAG].set_varchar("");
     } else {
-      const int32_t MAX_VAR_SCOPE_LENGTH = 80;
-      char scope_array[MAX_VAR_SCOPE_LENGTH] = {'\0'};
-      ObString scope_string(MAX_VAR_SCOPE_LENGTH, 0, scope_array);
       if (OB_FAIL(get_var_scope_str(reinterpret_cast<const ObSessionSysField *>(field), scope_string))) {
         WDIAG_ICMD("fail to get_var_scope_str", K(ret));
       } else {

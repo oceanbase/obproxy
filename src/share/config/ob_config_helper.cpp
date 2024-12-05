@@ -17,6 +17,8 @@
 #include "lib/alloc/alloc_assist.h"
 #include "lib/hash_func/murmur_hash.h"
 
+using namespace oceanbase::obproxy;
+
 namespace oceanbase
 {
 namespace common
@@ -122,7 +124,7 @@ ObConfigVariableString::ObConfigVariableString(const ObConfigVariableString& oth
 void ObConfigVariableString::reset()
 {
   if (OB_UNLIKELY(used_len_ > VARIABLE_BUF_LEN)) {
-    obproxy::op_fixed_mem_free(data_union_.ptr_, used_len_ + 1);
+    op_fixed_mem_free(data_union_.ptr_, used_len_ + 1);
   }
   used_len_ = 0;
 }
@@ -162,8 +164,8 @@ int ObConfigVariableString::alloc_mem(int64_t len)
   int ret = OB_SUCCESS;
   reset();
   if (OB_UNLIKELY(len > VARIABLE_BUF_LEN)
-      && OB_ISNULL(data_union_.ptr_ = static_cast<char*>(
-                                                obproxy::op_fixed_mem_alloc(len + 1)))) {
+      && OB_ISNULL(data_union_.ptr_ =
+                   static_cast<char*>(op_fixed_mem_alloc(len + 1)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     OB_LOG(WDIAG, "fail to alloc data_info_ mem", K(len), K(ret));
   } else {

@@ -125,6 +125,23 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
         }
       }
     }
+#ifdef USING_ASAN
+    for (int64_t i = 0; OB_SUCC(ret) && i < ObModSet::MOD_COUNT_LIMIT; ++i) {
+      allocator->get_tenant_mod_usage(OB_SERVER_TENANT_ID, static_cast<int32_t>(i), mod_item);
+      backtrace.reset();
+      if (OB_FAIL(get_global_mem_leak_checker().load_backtrace_info_for_id(i, backtrace_count_, backtrace_buf, max_backtrace_len, backtrace_len))) {
+        LOG_WDIAG("fail to load backtrace info", K(i), K(ret));
+      } else if (FALSE_IT(backtrace.assign_ptr(backtrace_buf, (common::ObString::obstr_size_t)backtrace_len))) {
+        // nothing
+      } else if (backtrace.empty()) {
+        // nothing
+      } else if (OB_FAIL(dump_mod_memory(mod_set.get_mod_name(i), is_allocator_mod(i) ? "allocator" : "user",
+                                          mod_item.hold_, mod_item.used_, mod_item.count_, backtrace))) {
+        WDIAG_ICMD("fail to dump mod memory", K(mod_set.get_mod_name(i)), K(ret));
+      }
+
+    }
+#endif
 
     backtrace.reset();
     if (OB_FAIL(get_global_ref_leak_checker().load_ref_inc_backtrace(backtrace_buf, max_backtrace_len, backtrace_len))) {

@@ -71,11 +71,13 @@ bool read_min_max_addr(int64_t &min_addr, int64_t &max_addr)
         }
         if (start < min_addr) {
           min_addr = start;
-          LOG_INFO("get min_addr", K(start), K(end), K(perms), K(offset), K(major), K(minor), K(inode), K(path));
+          _LOG_INFO("get min_addr, start=%#llx, end=%#llx", static_cast<unsigned long long>(start), static_cast<unsigned long long>(end));
+          LOG_INFO("code addr info", K(perms), K(offset), K(major), K(minor), K(inode), K(path));
         }
         if (end > max_addr) {
           max_addr = end;
-          LOG_INFO("get max_addr", K(start), K(end), K(perms), K(offset), K(major), K(minor), K(inode), K(path));
+          _LOG_INFO("get min_addr, start=%#llx, end=%#llx", static_cast<unsigned long long>(start), static_cast<unsigned long long>(end));
+          LOG_INFO("code addr info", K(perms), K(offset), K(major), K(minor), K(inode), K(path));
         }
       }
       break;

@@ -27,8 +27,8 @@
 #define COLLECT_MSG_BUF(args...)     \
   int64_t buf_len = MAX_MSG_BUF_LEN; \
   int64_t pos = 0;                   \
-  char buf[MAX_MSG_BUF_LEN+1];         \
-  MEMSET(buf, 0, MAX_MSG_BUF_LEN);   \
+  char buf[MAX_MSG_BUF_LEN + 1];         \
+  MEMSET(buf, 0, sizeof(buf));   \
   BUF_PRINTF(args);
 
 // connection related trace, record disconnection of client or observer

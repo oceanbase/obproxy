@@ -146,6 +146,7 @@ inline void thread_freeup_void(common::ObFixedMemAllocator &a, ObProxyThreadAllo
   }
 }
 
+#ifndef USING_ASAN
 #define op_thread_alloc(type, freelist, init_func) event::thread_alloc<type>(freelist, init_func)
 #define op_thread_alloc_init(type, freelist, init_func) event::thread_alloc_init<type>(freelist, init_func)
 
@@ -169,6 +170,56 @@ inline void thread_freeup_void(common::ObFixedMemAllocator &a, ObProxyThreadAllo
     event::thread_freeup_void(a, freelist);                    \
   }                                                            \
 } while (0)
+
+#else
+
+#define op_thread_alloc(type, freelist, init_func) \
+({ \
+  type *ret = NULL; \
+  type *tmp = static_cast<type *>(common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+  UNUSED(freelist); \
+  UNUSED(init_func); \
+  if (OB_LIKELY(NULL != tmp)) { \
+    ret = new (tmp) type(); \
+  } \
+  ret; \
+})
+
+#define op_thread_alloc_init(type, freelist, init_func) \
+({ \
+  type *ret = NULL; \
+  type *tmp = static_cast<type *>(common::ob_malloc(sizeof(type), common::ObModIds::OB_CONCURRENCY_OBJ_POOL)); \
+  UNUSED(freelist); \
+  UNUSED(init_func); \
+  if (OB_LIKELY(NULL != tmp)) { \
+    ret = new (tmp) type(); \
+  } \
+  ret; \
+})
+
+#define op_thread_free(type, p, freelist) \
+do {\
+  UNUSED(freelist); \
+  common::ob_free(p);  \
+} while (0)
+
+#define op_thread_fixed_mem_alloc(a, freelist) \
+({ \
+  void *ret = NULL; \
+  ret = common::ob_malloc(a.get_obj_size(), common::ObModIds::OB_CONCURRENCY_OBJ_POOL); \
+  UNUSED(freelist); \
+  ret; \
+})
+
+#define op_thread_fixed_mem_free(a, p, freelist) \
+do {  \
+  UNUSED(a);  \
+  UNUSED(freelist); \
+  common::ob_free(p);  \
+} while (0)
+
+#endif
+
 
 struct ObThreadAllocator
 {

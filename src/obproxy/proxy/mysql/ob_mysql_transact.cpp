@@ -923,7 +923,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
     s.current_.state_ = ObMysqlTransact::INTERNAL_ERROR;
     COLLECT_INTERNAL_DIAGNOSIS(
         s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE, ret, "errsim diagnosis");
-    TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+    TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, "");
     return;
   }
   #endif
@@ -3262,7 +3262,7 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
       if (ObProxyProtocol::PROTOCOL_OB20 == server_protocol
           || ObProxyProtocol::PROTOCOL_CHECKSUM == server_protocol) { // convert standard mysql protocol to compression protocol
         uint8_t next_compress_seq = 0;
-        if (OB_ISNULL(write_buffer = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+        if (OB_ISNULL(write_buffer = s.alloc_internal_writer_buffer(MYSQL_BUFFER_SIZE))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WDIAG("fail to alloc mio_buffer", K(ret));
         } else if (OB_ISNULL(reader = write_buffer->alloc_reader())) {
@@ -3339,7 +3339,7 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
             || obmysql::OB_MYSQL_COM_STMT_RESET == req_cmd_type
             || s.trans_info_.client_request_.get_parse_result().is_text_ps_drop_stmt()) {
           int64_t written_len = 0;
-          if (OB_ISNULL(write_buffer = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+          if (OB_ISNULL(write_buffer = s.alloc_internal_writer_buffer(MYSQL_BUFFER_SIZE))) {
             ret = OB_ALLOCATE_MEMORY_FAILED;
             LOG_WDIAG("fail to alloc mio_buffer", K(ret));
           } else if (OB_ISNULL(request_buffer_reader = write_buffer->alloc_reader())) {
@@ -3359,10 +3359,6 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
 
       if (OB_FAIL(ret)) {
         reader = NULL;
-        if (NULL != write_buffer) {
-          free_miobuffer(write_buffer);
-          write_buffer = NULL;
-        }
       }
     }
   }
@@ -3496,7 +3492,7 @@ inline int ObMysqlTransact::build_normal_login_request(
   if (OB_ISNULL(shard_conn)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("[ObMysqlTransact::build_normal_login_request] shard conn is null");
-  } else if (OB_ISNULL(write_buffer = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+  } else if (OB_ISNULL(write_buffer = s.alloc_internal_writer_buffer(MYSQL_BUFFER_SIZE))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("[ObMysqlTransact::build_normal_login_request] write_buffer is null");
   } else if (OB_ISNULL(reader = write_buffer->alloc_reader())) {
@@ -3673,7 +3669,7 @@ int ObMysqlTransact::build_server_request(ObTransState &s, ObIOBufferReader *&re
     if (OB_UNLIKELY(OB_SUCCESS == ret && NULL != build_func)) {
       ObMIOBuffer *write_buffer = NULL;
 
-      if (OB_ISNULL(write_buffer = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+      if (OB_ISNULL(write_buffer = s.alloc_internal_writer_buffer(MYSQL_BUFFER_SIZE))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("[ObMysqlTransact::build_server_request] write_buffer is null");
       } else if (OB_ISNULL(reader = write_buffer->alloc_reader())) {
@@ -3704,10 +3700,6 @@ int ObMysqlTransact::build_server_request(ObTransState &s, ObIOBufferReader *&re
 
       if (OB_FAIL(ret)) {
         reader = NULL;
-        if (NULL != write_buffer) {
-          free_miobuffer(write_buffer);
-          write_buffer = NULL;
-        }
       }
     } else {
       // do nothing
@@ -7670,6 +7662,9 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
           PROXY_LOG(WDIAG, "fail to load target db server from multi level config", K(ret));
         }
       }
+      // !is_auth_request_, old_config may be invalid
+      // init_sql_ is pointer to old_config, should reset it
+      session_info.clear_init_sql();
     }
   }
   if (OB_SUCC(ret)) {

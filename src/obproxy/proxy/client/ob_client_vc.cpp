@@ -215,9 +215,11 @@ void ObClientVC::reenable_re(ObVIO *vio)
             sm->trans_state_.force_retry_congested_ = true;
             sm->trans_state_.need_retry_ = false;
           }
+          // ObClientVC may be destroyed whern cont_ handle_event(VC_EVENT_READ_READY)
+          // member variable must be set before handle_event(VC_EVENT_READ_READY)
+          is_request_sent_ = true;
           // notify client session to read mysql request
           read_state_.vio_.cont_->handle_event(VC_EVENT_READ_READY, &read_state_.vio_);
-          is_request_sent_ = true;
         }
       }
     }

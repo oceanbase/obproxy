@@ -57,7 +57,7 @@ _PROXY_TXN_LOG(DEBUG, "sm_id=%u, stack_size=%ld, next_action=%s, return=%s", \
     int32_t error_code = 0;                                                  \
     COLLECT_INTERNAL_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,           \
                                obutils::OB_PROXY_INTERNAL_TRACE, error_code, \
-                               r);                                           \
+                               "");                                          \
   }                                                                          \
   TRANSACT_RETURN(n, r);
 
@@ -526,6 +526,7 @@ enum ObServerRespErrorType
           transact_return_point(NULL),
           internal_buffer_(NULL),
           internal_reader_(NULL),
+          internal_write_buffer_(NULL),
           reroute_info_(),
           pll_info_(),
           mysql_errcode_(0),
@@ -692,12 +693,38 @@ enum ObServerRespErrorType
       }
     }
 
+    event::ObMIOBuffer * alloc_internal_writer_buffer(const int64_t buffer_block_size)
+    {
+      if (OB_UNLIKELY(NULL == internal_write_buffer_)) {
+        internal_write_buffer_ = event::new_miobuffer(buffer_block_size);
+      } else {
+        internal_write_buffer_->dealloc_all_readers();
+        internal_write_buffer_->reset();
+      }
+      return internal_write_buffer_;
+    }
+
+    void reset_write_buffer()
+    {
+      if (OB_LIKELY(NULL != internal_write_buffer_)) {
+        internal_write_buffer_->reset();
+      }
+    }
+
+    void free_write_buffer()
+    {
+      if (OB_LIKELY(NULL != internal_write_buffer_)) {
+        free_miobuffer(internal_write_buffer_);
+      }
+    }
+
     void reset()
     {
       // do not reset trans_info_.resp_result_
       // because it will maybe be used in processing the next request
       update_transaction_stats();
       reset_internal_buffer();
+      reset_write_buffer();
       trans_info_.request_content_length_ = MYSQL_UNDEFINED_CL; // disable tunnel client request
       trans_info_.client_request_.reset_parse_result(); // clear SQL parse result
       send_reqeust_direct_ = false;
@@ -771,6 +798,7 @@ enum ObServerRespErrorType
       trans_info_.client_request_.reset();
       trans_info_.resp_result_.reset();
       free_internal_buffer();
+      free_write_buffer();
       if (NULL != mysql_config_params_) {
         mysql_config_params_->dec_ref();
         mysql_config_params_ = NULL;
@@ -830,6 +858,7 @@ enum ObServerRespErrorType
 
     event::ObMIOBuffer *internal_buffer_;
     event::ObIOBufferReader *internal_reader_;
+    event::ObMIOBuffer *internal_write_buffer_;
     common::ObPtr<event::ObIOBufferBlock> cache_block_;
 
     ObProxyRerouteInfo reroute_info_;

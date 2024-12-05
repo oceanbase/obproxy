@@ -24,7 +24,8 @@ static int64_t get_us() { return ::oceanbase::common::ObTimeUtility::current_tim
 
 int LightyQueue::init(const uint64_t capacity, const uint32_t mod_id)
 {
-  return queue_.init(capacity, global_default_allocator, mod_id);
+  allocator_.set_mod_id(mod_id);
+  return queue_.init(capacity, &allocator_, mod_id);
 }
 
 int LightyQueue::push(void *data, const int64_t timeout)

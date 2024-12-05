@@ -647,10 +647,12 @@ int ObProxyMain::init_signal()
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+#ifndef USING_ASAN
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGABRT))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGSEGV))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+#endif
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR2))) {

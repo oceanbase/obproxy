@@ -11,18 +11,57 @@
  */
 
 #include "lib/allocator/ob_malloc.h"
+
 #include <errno.h>
 #include "lib/thread_local/ob_tsi_factory.h"
 #include "lib/utility/utility.h"
 #include <algorithm>
 #include "obutils/ob_proxy_config.h"
+#include "lib/allocator/ob_mem_leak_checker.h"
 #ifdef __OB_MTRACE__
 #include <execinfo.h>
 #endif
 
-oceanbase::common::ObMemAttr oceanbase::common::default_memattr;
+namespace oceanbase
+{
+namespace common
+{
 
-int oceanbase::common::ObMemBuf::ensure_space(const int64_t size, const int64_t mod_id)
+
+#ifdef USING_ASAN
+
+static constexpr int64_t MOD_ID_SIZE = sizeof(int64_t);
+
+void *ob_malloc(const int64_t nbyte, const ObMemAttr &attr)
+{
+  void* ptr = ::malloc(MOD_ID_SIZE + nbyte);
+  if (OB_NOT_NULL(ptr)) {
+    ptr = static_cast<void *>(static_cast<char*>(ptr) + MOD_ID_SIZE);
+    get_global_mem_leak_checker().on_alloc(attr.mod_id_, get_global_mod_set().get_mod_name(attr.mod_id_), ptr, nbyte);
+  }
+  return ptr;
+}
+
+void ob_free(void *ptr)
+{
+  abort_unless(reinterpret_cast<int64_t>(ptr) - MOD_ID_SIZE > 0);
+  int64_t mod_id = *reinterpret_cast<int64_t *>(static_cast<char*>(ptr) - MOD_ID_SIZE);
+  get_global_mem_leak_checker().on_free(mod_id, get_global_mod_set().get_mod_name(mod_id), ptr);
+  ptr = static_cast<void *>(static_cast<char*>(ptr) - MOD_ID_SIZE);
+  ::free(ptr);
+  ptr = NULL;
+
+}
+
+void *ob_realloc(void *ptr, const int64_t nbyte, const ObMemAttr &attr)
+{
+  UNUSED(attr);
+  return ::realloc(ptr, nbyte);
+}
+#endif
+
+ObMemAttr default_memattr;
+int ObMemBuf::ensure_space(const int64_t size, const int64_t mod_id)
 {
   int ret         = OB_SUCCESS;
   char *new_buf   = NULL;
@@ -52,7 +91,7 @@ int oceanbase::common::ObMemBuf::ensure_space(const int64_t size, const int64_t 
   return ret;
 }
 
-void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t nbyte,
+void *ob_malloc_align(const int64_t alignment, const int64_t nbyte,
                                          const int64_t mod_id)
 {
   char *ptr = static_cast<char *>(oceanbase::common::ob_malloc(nbyte + alignment, mod_id));
@@ -82,7 +121,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
   return align_ptr;
 }
 
-void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t nbyte,
+void *ob_malloc_align(const int64_t alignment, const int64_t nbyte,
                                          const ObMemAttr &attr)
 {
   char *ptr = static_cast<char *>(oceanbase::common::ob_malloc(nbyte + alignment, attr));
@@ -112,7 +151,7 @@ void *oceanbase::common::ob_malloc_align(const int64_t alignment, const int64_t 
   return align_ptr;
 }
 
-void oceanbase::common::ob_free_align(void *ptr)
+void ob_free_align(void *ptr)
 {
   if (NULL == ptr) {
     _OB_LOG(WDIAG, "cannot free NULL pointer.");
@@ -127,8 +166,11 @@ void oceanbase::common::ob_free_align(void *ptr)
         origin_ptr = reinterpret_cast<char *>(ptr) - (*sign_ptr & 0x7f);
       }
       if (NULL != origin_ptr) {
-        oceanbase::common::ob_free(origin_ptr);
+        ob_free(origin_ptr);
       }
     }
   }
 }
+
+} // common
+} // oceanbase

@@ -51,11 +51,11 @@ int ObRespAnalyzerUtil::analyze_one_compressed_ob20_packet(
       ObZlibStreamCompressor compressor;
       int64_t filled = 0;
       while (OB_SUCC(ret) && NULL != block && data_size > 0 && start != end) {
-        LOG_DEBUG("going to decompress", K(data), K(data_size));
+        LOG_DEBUG("going to decompress", KP(data), K(data_size));
         if (OB_FAIL(compressor.add_decompress_data(data, data_size))) {
-          LOG_WDIAG("fail to add_decompress_data", K(data), K(data_size), K(ret));
+          LOG_WDIAG("fail to add_decompress_data", KP(data), K(data_size), K(ret));
         } else if (OB_FAIL(compressor.decompress(start, end - start, filled))) {
-          LOG_WDIAG("fail to decompress", K(start), K(filled), K(ret));
+          LOG_WDIAG("fail to decompress", KP(start), K(filled), K(ret));
         } else {
           start += filled;
           block = block->next_;

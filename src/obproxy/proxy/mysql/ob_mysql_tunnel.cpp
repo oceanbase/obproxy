@@ -945,7 +945,7 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
                                     sm_->client_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : sm_->client_session_->get_inactivity_timeout_event(),
                                     sm_->client_session_ == NULL ? 0 : sm_->client_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         }
        }
        client_vc->set_wait_timeout();

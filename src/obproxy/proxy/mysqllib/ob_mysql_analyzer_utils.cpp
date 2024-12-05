@@ -119,7 +119,7 @@ int ObMysqlAnalyzerUtils::do_zlib_compress(
       block_compressed_len = 0;
 
       if (OB_FAIL(stream_compress_data(compressor, des_buf, start, buf_len, is_last_data, block_compressed_len))) {
-        LOG_WDIAG("fail to stream compress data", K(des_buf), K(start), K(buf_len),
+        LOG_WDIAG("fail to stream compress data", K(des_buf), KP(start), K(buf_len),
                  K(is_last_data), K(ret));
       } else {
         compressed_len += block_compressed_len;
@@ -336,7 +336,7 @@ int ObMysqlAnalyzerUtils::consume_and_fast_compress_data(
         remain_len -= buf_len;
 
         if (OB_FAIL(stream_compress_data(write_buf, start, buf_len, compressed_len))) {
-          LOG_WDIAG("fail to stream compress data", K(write_buf), K(start), K(buf_len), K(ret));
+          LOG_WDIAG("fail to stream compress data", K(write_buf), KP(start), K(buf_len), K(ret));
         } else {
           PROTOCOL_DIAGNOSIS(COMPRESSED_MYSQL, send, protocol_diagnosis,
                              static_cast<int32_t>(compressed_len),

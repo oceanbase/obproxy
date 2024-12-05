@@ -518,7 +518,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
             ? obutils::OB_TIMEOUT_UNKNOWN_EVENT
             : client_session_->get_inactivity_timeout_event(),
         client_session_ == NULL ? 0 : client_session_->get_timeout_record(),
-        OB_PROXY_INACTIVITY_TIMEOUT, NULL);
+        OB_PROXY_INACTIVITY_TIMEOUT, "");
   }
   // set net_read_timeout when client begin to read
   set_client_net_read_timeout();
@@ -586,7 +586,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
         } else {
           COLLECT_VC_DIAGNOSIS(
               connection_diagnosis_trace_, obutils::OB_CLIENT_VC_TRACE, event,
-              OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, NULL);
+              OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, "");
         }
 
         client_entry_->eos_ = true;
@@ -625,7 +625,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
       case VC_EVENT_DETECT_SERVER_DEAD: {
         COLLECT_VC_DIAGNOSIS(connection_diagnosis_trace_,
                              obutils::OB_CLIENT_VC_TRACE, event,
-                             OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, NULL);
+                             OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, "");
         LOG_WDIAG("ObMysqlSM::state_client_request_read", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id),
                  "client_vc", client_session_ == NULL ? "NULL" : P(client_session_->get_netvc()));
@@ -773,7 +773,7 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
           ret = OB_CONNECT_ERROR;
           COLLECT_VC_DIAGNOSIS(
               connection_diagnosis_trace_, obutils::OB_CLIENT_VC_TRACE,
-              VC_EVENT_EOS, OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, NULL);
+              VC_EVENT_EOS, OB_CLIENT_RECEIVING_PACKET_CONNECTION_ERROR, "");
           LOG_WDIAG("EOS before client request parsing finished", K_(sm_id), K(ret));
           set_client_abort(ObMysqlTransact::ABORTED, event);
 
@@ -2598,7 +2598,7 @@ int ObMysqlSM::analyze_change_user_request()
       char *written_pos = client_buffer_reader_->copy(start, len, 0);
       if (OB_UNLIKELY(written_pos != start + len)) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("write pos not expected", K(written_pos), K(start), K(len), K(ret));
+        LOG_WDIAG("write pos not expected", KP(written_pos), KP(start), K(len), K(ret));
       } else if (OB_FAIL(client_buffer_reader_->consume_all())) {
         LOG_WDIAG("client_buffer_reader consume_all failed", K(ret));
       } else {
@@ -2802,7 +2802,7 @@ int ObMysqlSM::analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeSta
 
             COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
                                     obutils::OB_LOGIN_DISCONNECT_TRACE, "",
-                                    OB_ERR_TOO_MANY_SESSIONS, NULL);
+                                    OB_ERR_TOO_MANY_SESSIONS, "");
             status = ANALYZE_ERROR; // disconnect
           } else if (!client_session_->is_proxy_mysql_client_
                  && !unix_vc->using_ssl()
@@ -3280,7 +3280,7 @@ int ObMysqlSM::do_analyze_text_ps_prepare_request(const ObString& text_ps_sql)
   if (OB_SUCC(ret) && NULL != text_ps_name_entry) {
     uint32_t client_ps_id = text_ps_name_entry->version_;
     if (OB_FAIL(session_info.delete_text_ps_name_entry(text_ps_name))) {
-      LOG_WDIAG("delete text ps name entry failed", K(ret), KPC(text_ps_name_entry));
+      LOG_WDIAG("delete text ps name entry failed", K(ret), KP(text_ps_name_entry));
     } else {
       session_info.remove_ps_id_addrs(client_ps_id);
       ObMysqlServerSession* server_session = NULL;
@@ -3295,7 +3295,7 @@ int ObMysqlSM::do_analyze_text_ps_prepare_request(const ObString& text_ps_sql)
           server_session->get_session_info().remove_text_ps_version(client_ps_id);
         }
       }
-      LOG_DEBUG("delete text ps name entry succed", K(client_ps_id), KPC(text_ps_name_entry));
+      LOG_DEBUG("delete text ps name entry succed", K(client_ps_id), KP(text_ps_name_entry));
     }
   }
 
@@ -3492,13 +3492,13 @@ int ObMysqlSM::state_watch_for_client_abort(int event, void *data)
                                     client_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : client_session_->get_inactivity_timeout_event(),
                                     client_session_ == NULL ? 0 : client_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         } else {
           COLLECT_VC_DIAGNOSIS(connection_diagnosis_trace_,
                                 obutils::OB_CLIENT_VC_TRACE,
                                 event,
                                 OB_CLIENT_HANDLING_REQUEST_CONNECTION_ERROR,
-                                NULL);
+                                "");
         }
         if (tunnel_.is_tunnel_active()) {
           // Check to see if the client is part of the tunnel.
@@ -3885,7 +3885,7 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
         server_entry_->eos_ = true;
         COLLECT_VC_DIAGNOSIS(connection_diagnosis_trace_,
                              obutils::OB_SERVER_VC_TRACE, event,
-                             OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR, NULL);
+                             OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR, "");
         LOG_WDIAG("ObMysqlSM::state_server_response_read, recevied  VC_EVENT_EOS", K_(sm_id));
         // If no bytes were transmitted, maybe an
         // overloaded server closing the connection so
@@ -3915,13 +3915,13 @@ int ObMysqlSM::state_server_response_read(int event, void *data)
                                     server_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : server_session_->get_inactivity_timeout_event(),
                                     server_session_ == NULL ? 0 :server_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         } else {
           COLLECT_VC_DIAGNOSIS(connection_diagnosis_trace_,
                       obutils::OB_SERVER_VC_TRACE,
                       event,
                       OB_SERVER_RECEIVING_PACKET_CONNECTION_ERROR,
-                      NULL);
+                      "");
         }
         LOG_WDIAG("ObMysqlSM::state_server_response_read", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id));
@@ -5121,12 +5121,6 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
           }
         }
 
-        // We are done sending the request, deallocate our
-        // buffer and then decide what to do next
-        if (OB_UNLIKELY(NULL != server_entry_->write_buffer_)) {
-          free_miobuffer(server_entry_->write_buffer_);
-          server_entry_->write_buffer_ = NULL;
-        }
         ObMySQLCmd request_cmd = trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
         // before send quit cmd to observer, maybe we need send session vars first.
         // after send quit cmd to observer, this connection will disconnect soon.
@@ -5208,11 +5202,11 @@ int ObMysqlSM::state_server_request_send(int event, void *data)
                                     server_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : server_session_->get_inactivity_timeout_event(),
                                     server_session_ == NULL ? 0 : server_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         } else {
           COLLECT_VC_DIAGNOSIS(
               connection_diagnosis_trace_, obutils::OB_SERVER_VC_TRACE, event,
-              OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, NULL);
+              OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, "");
         }
         LOG_WDIAG("ObMysqlSM::state_server_request_send", "event",
                  ObMysqlDebugNames::get_event_name(event), K_(sm_id));
@@ -5880,11 +5874,11 @@ int ObMysqlSM::tunnel_handler_server(int event, ObMysqlTunnelProducer &p)
                                     server_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : server_session_->get_inactivity_timeout_event(),
                                     server_session_ == NULL ? 0 : server_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         } else {
           COLLECT_VC_DIAGNOSIS(
               connection_diagnosis_trace_, obutils::OB_SERVER_VC_TRACE, event,
-              OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, NULL);
+              OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, "");
         }
         switch (event) {
           case VC_EVENT_INACTIVITY_TIMEOUT:
@@ -6451,11 +6445,11 @@ int ObMysqlSM::tunnel_handler_client(int event, ObMysqlTunnelConsumer &c)
                                     client_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : client_session_->get_inactivity_timeout_event(),
                                     client_session_ == NULL ? 0 : client_session_->get_timeout_record(),
                                     OB_PROXY_INACTIVITY_TIMEOUT,
-                                    NULL);
+                                    "");
         } else {
           COLLECT_VC_DIAGNOSIS(
               connection_diagnosis_trace_, obutils::OB_CLIENT_VC_TRACE, event,
-              OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR, NULL);
+              OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR, "");
         }
         // 探测用户不打印断连接日志
         bool is_detect_user = false;
@@ -6576,11 +6570,11 @@ int ObMysqlSM::tunnel_handler_request_transfer_client(int event, ObMysqlTunnelPr
                                   client_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : client_session_->get_inactivity_timeout_event(),
                                   client_session_ == NULL ? 0 : client_session_->get_timeout_record(),
                                   OB_PROXY_INACTIVITY_TIMEOUT,
-                                  NULL);
+                                  "");
       } else {
         COLLECT_VC_DIAGNOSIS(
             connection_diagnosis_trace_, obutils::OB_SERVER_VC_TRACE, event,
-            OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR, NULL);
+            OB_CLIENT_TRANSFERRING_PACKET_CONNECTION_ERROR, "");
       }
       LOG_WDIAG("ObMysqlSM::tunnel_handler_request_transfer_client", "event",
                ObMysqlDebugNames::get_event_name(event), K_(sm_id));
@@ -6677,11 +6671,11 @@ int ObMysqlSM::tunnel_handler_request_transfer_server(int event, ObMysqlTunnelCo
                                   server_session_ == NULL ? obutils::OB_TIMEOUT_UNKNOWN_EVENT : server_session_->get_inactivity_timeout_event(),
                                   server_session_ == NULL ? 0 : server_session_->get_timeout_record(),
                                   OB_PROXY_INACTIVITY_TIMEOUT,
-                                  NULL);
+                                  "");
       } else {
         COLLECT_VC_DIAGNOSIS(
             connection_diagnosis_trace_, obutils::OB_SERVER_VC_TRACE, event,
-            OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, NULL);
+            OB_SERVER_TRANSFERRING_PACKET_CONNECTION_ERROR, "");
       }
       LOG_WDIAG("ObMysqlSM::tunnel_handler_request_transfer_server", "event",
                ObMysqlDebugNames::get_event_name(event), K_(sm_id));
@@ -8278,7 +8272,7 @@ void ObMysqlSM::do_internal_request()
           LOG_WDIAG("[ObMysqlSM::do_internal_request] fail to build OB_MYSQL_COM_STMT_RESET response ok packet",
                    K_(sm_id), K(client_ps_id), K(ret));
         }
-        LOG_DEBUG("proxy no response OB_MYSQL_COM_STMT_RESET", K_(sm_id), "cs_id", client_session_->get_cs_id());
+        LOG_DEBUG("proxy do response OB_MYSQL_COM_STMT_RESET", K_(sm_id), "cs_id", client_session_->get_cs_id());
         break;
       }
 
@@ -9434,9 +9428,6 @@ int ObMysqlSM::setup_server_request_send()
       }
       LOG_DEBUG("build server request finish", K(flt_.span_info_));
 
-      // if write_buffer_ is not NULL, when clean server entry, will free the write_buffer_.
-      // so the mio_buffer we alloc in build_server_request will free evently.
-      server_entry_->write_buffer_ = (buf_start != client_buffer_reader_) ? buf_start->writer() : NULL;
       // oracle模式下，begin是匿名块开启，所以设置过has_set_anonymous_block，则认为在pl中
       ObClientSessionInfo &session_info = client_session_->get_session_info();
       if (session_info.is_oracle_mode() && trans_state_.trans_info_.client_request_.get_parse_result().has_ever_set_anonymous_block()) {
@@ -9600,7 +9591,8 @@ void ObMysqlSM::setup_error_transfer()
       bool is_client_vc_related_err = false;
       ObUnixNetVConnection* vc = NULL;
 
-      if (client_session_ != NULL) {
+      if (client_session_ != NULL
+          && !client_session_->is_proxy_mysql_client_) {
         vc = static_cast<ObUnixNetVConnection *>(client_session_->get_netvc());
         if (vc != NULL) {
           switch (vc->event_record_)

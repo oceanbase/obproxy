@@ -259,7 +259,7 @@ inline bool ObUnixNetVConnection::calculate_towrite_size(int64_t &towrite, bool 
   }
 
   /* 有的地方依赖这里提前调用回调函数, 比如建连, 先触发写事件, 但是需要 Server 先发数据, 所以这里先回调, 后续就不用写数据了
-   * 但是有的地方缺需要先写数据再执行回调, 比如 tunnel 里, 回调函数里会检查是否真正写了数据, 才决定是否放开上游的限流
+   * 但是有的地方却需要先写数据再执行回调, 比如 tunnel 里, 回调函数里会检查是否真正写了数据, 才决定是否放开上游的限流
    * 所以这里加一个 towrite < = 0. 只有当不需要真正写数据时, 才提前执行回调
    */
   if (OB_UNLIKELY(towrite <= 0 && towrite < ntodo && writer->write_avail() > 0)) {
@@ -433,8 +433,10 @@ inline bool ObUnixNetVConnection::handle_write_to_net_success(
 
   if (write_.vio_.ntodo() <= 0) {
     if (EVENT_DONE != write_signal_done(VC_EVENT_WRITE_COMPLETE)) {
-      is_done = false;
+      // VC_EVENT_WRITE_COMPLETE should not do any more thing
+      // is_done = false;
     }
+    is_done = true;
   } else if (signalled && (wbe_event != write_buffer_empty_event_)) {
     // signalled means we won't send an event, and the event values differing means we
     // had a write buffer trap and cleared it, so we need to send it now.

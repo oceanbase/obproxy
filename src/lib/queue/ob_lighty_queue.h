@@ -87,6 +87,7 @@ private:
   typedef ObFixedQueue<void> Queue;
   Queue queue_;
   Cond cond_;
+  ObMalloc allocator_;
 private:
   DISALLOW_COPY_AND_ASSIGN(LightyQueue);
 };

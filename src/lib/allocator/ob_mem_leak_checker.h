@@ -28,8 +28,13 @@ namespace common
 class ObMemLeakChecker
 {
   static const int64_t MAX_BACKTRACE_SIZE = 16;
+#ifndef USING_ASAN
   static const int64_t MEM_INFO_MAP_NUM = common::OB_MAX_CPU_NUM;
   static const int64_t DEFAULT_MAP_SIZE = 3079;
+#else
+  static const int64_t MEM_INFO_MAP_NUM = 1;
+  static const int64_t DEFAULT_MAP_SIZE = 49157;
+#endif
   static const int64_t MAX_PRINT_RECORD = 10;
 public:
   static const int64_t MOD_ID_FOR_CHECK = ObModIds::OB_PROXY_MEM_LEAK_CHECK;
@@ -91,7 +96,11 @@ public:
   };
 
   typedef hash::ObHashMap<Info, std::pair<int64_t, int64_t>, common::hash::NoPthreadDefendMode> mod_info_map_t; // Info -> (alloc_bytes, alloc_times)
+#ifndef USING_ASAN
   typedef hash::ObHashMap<PtrKey, Info, common::hash::NoPthreadDefendMode> mod_alloc_info_t;
+#else
+  typedef hash::ObHashMap<PtrKey, Info, common::hash::ReadWriteDefendMode> mod_alloc_info_t;
+#endif
 
   int reset();
   int reuse();
@@ -115,7 +124,11 @@ private:
   bool init_;
   char check_name_[common::OB_MAX_CONFIG_VALUE_LEN];
 
+#ifndef USING_ASAN
   lib::ObMutex locks_[MEM_INFO_MAP_NUM];
+#else
+  lib::ObDummyMutex locks_[MEM_INFO_MAP_NUM];
+#endif
   mod_alloc_info_t* alloc_info_maps_[MEM_INFO_MAP_NUM];
 };
 

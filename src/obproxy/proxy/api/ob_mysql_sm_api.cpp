@@ -686,7 +686,7 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
       case VC_EVENT_ERROR:
         COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
                              obutils::OB_CLIENT_VC_TRACE, event,
-                             OB_PLUGIN_TRANSFERRING_ERROR, NULL);
+                             OB_PLUGIN_TRANSFERRING_ERROR, "");
         // Transform error
         sm_->tunnel_.chain_abort_all(*c.producer_);
         // if we do not clear server entry and client entry here, for it's vc has already
@@ -765,7 +765,7 @@ int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer
       case VC_EVENT_ERROR:
         COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
                              obutils::OB_CLIENT_VC_TRACE, event,
-                             OB_PLUGIN_TRANSFERRING_ERROR, NULL);
+                             OB_PLUGIN_TRANSFERRING_ERROR, "");
         // Transform error
         sm_->tunnel_.chain_abort_all(*p.self_consumer_->producer_);
         // if we do not clear server entry and client entry here, for it's vc has already
@@ -818,7 +818,7 @@ int ObMysqlSMApi::tunnel_handler_plugin_client(int event, ObMysqlTunnelConsumer 
     case VC_EVENT_ERROR:
       COLLECT_VC_DIAGNOSIS(sm_->connection_diagnosis_trace_,
                       obutils::OB_CLIENT_VC_TRACE, event,
-                      OB_PLUGIN_TRANSFERRING_ERROR, NULL);
+                      OB_PLUGIN_TRANSFERRING_ERROR, "");
       c.vc_->do_io_close(EMYSQL_ERROR); // close up
       // Signal producer if we're the last consumer.
       if (c.producer_->alive_ && 1 == c.producer_->num_consumers_) {

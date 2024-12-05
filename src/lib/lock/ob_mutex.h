@@ -53,6 +53,14 @@ static inline int mutex_release(ObMutex *m)
   return m->unlock();
 }
 
+class ObDummyMutex : public ObMutex
+{
+public:
+  inline int lock() { return common::OB_SUCCESS; }
+  inline int trylock() { return common::OB_SUCCESS; }
+  inline int unlock() { return common::OB_SUCCESS; }
+};
+
 typedef ObLockGuard<ObMutex> ObMutexGuard;
 
 } // end of namespace lib

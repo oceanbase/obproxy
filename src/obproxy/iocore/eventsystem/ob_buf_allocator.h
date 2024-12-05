@@ -169,9 +169,27 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObBufAllocator);
 };
 
+#ifndef USING_ASAN
 // public fixed memory allocate interface
 #define op_fixed_mem_alloc(size) event::ObBufAllocator::get_buf_allocator().alloc(size)
 #define op_fixed_mem_free(ptr, size) event::ObBufAllocator::get_buf_allocator().free(ptr, size)
+
+#else
+
+#define op_fixed_mem_alloc(size) \
+({                          \
+  void *ret_ptr = NULL;     \
+  ret_ptr = common::ob_malloc(size, common::ObModIds::OB_CONCURRENCY_OBJ_POOL); \
+  ret_ptr;                  \
+})
+
+#define op_fixed_mem_free(ptr, size) \
+do {            \
+  UNUSED(size); \
+  common::ob_free(ptr);  \
+} while(0)
+
+#endif
 
 template <const int64_t page_size>
 struct ObFixedPageAllocator : public common::ObIAllocator

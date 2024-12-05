@@ -335,7 +335,9 @@ inline common::ObString ObProxyMysqlRequest::get_sql()
       if (OB_FAIL(ObMysqlPacketUtil::get_length(pos, buf_len, query_len))) {
         PROXY_LOG(EDIAG, "failed to get length", K(ret));
       } else if (query_len > 0) {
-        int64_t copy_len = std::min(static_cast<int64_t>(query_len), req_buf_len_ - PARSE_EXTRA_CHAR_NUM);
+        // buf_len is less than (req_buf_len_ - PARSE_EXTRA_CHAR_NUM + other fields)
+        // so mem of req_buf_len_ will never overflow
+        int64_t copy_len = std::min(static_cast<int64_t>(query_len), buf_len);
         if (OB_ISNULL(req_buf_for_prepare_execute_) 
             || req_buf_for_prepare_execute_len_ < req_buf_len_ 
             || req_buf_for_prepare_execute_len_ > req_buf_len_ * 2) {

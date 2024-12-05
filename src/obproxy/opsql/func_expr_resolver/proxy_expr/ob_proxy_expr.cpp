@@ -85,11 +85,17 @@ static void get_proxy_expr_result_tree_str(ObProxyExpr *root, const int level, c
 void ObProxyExpr::print_proxy_expr(ObProxyExpr *root)
 {
   if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
-    char buf[256 * 1024];
+    static const int buf_len = 64 * 1024;
     int pos = 0;
-    get_proxy_expr_result_tree_str(root, 0, buf, pos, 256 * 1024);
-    ObString tree_str(16  * 1024, buf);
-    LOG_DEBUG("proxy_expr is \n", K(tree_str));
+    char* buf = NULL;
+    if (OB_ISNULL(buf = static_cast<char*>(ob_malloc(buf_len, ObModIds::OB_PROXY_PRINTF)))) {
+      LOG_WDIAG("fail to alloc mem to print ObProxyExpr");
+    } else {
+      get_proxy_expr_result_tree_str(root, 0, buf, pos, buf_len);
+      ObString tree_str(buf_len, buf);
+      LOG_DEBUG("proxy_expr is \n", K(tree_str));
+      ob_free(buf);
+    }
   }
 }
 
