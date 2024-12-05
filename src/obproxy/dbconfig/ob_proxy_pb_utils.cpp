@@ -263,10 +263,10 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
   if (std::regex_match(pattern, sm1, MULTI_PATTERN)) {
     // multi tb or db
     ObString start_str;
-    std::string start = sm1.str(2);
+    std::string start_std_str = sm1.str(2);
     int64_t start = -1;
     int64_t end = -1;
-    start_str.assign_ptr(start.c_str(), static_cast<int32_t>(start.length()));
+    start_str.assign_ptr(start_std_str.c_str(), static_cast<int32_t>(start_std_str.length()));
     suffix_len = start_str.length();
     if (OB_FAIL(get_int_value(start_str, start))) {
       LOG_WDIAG("fail to get int value for start", K(start_str), K(ret));
@@ -274,8 +274,8 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
 
     if (OB_SUCC(ret)) {
       ObString end_str;
-      std::string end = sm1.str(3);
-      end_str.assign_ptr(end.c_str(), static_cast<int32_t>(end.length()));
+      std::string end_std_str = sm1.str(3);
+      end_str.assign_ptr(end_std_str.c_str(), static_cast<int32_t>(end_std_str.length()));
       if (OB_FAIL(get_int_value(end_str, end))) {
         LOG_WDIAG("fail to get int value for end", K(end_str), K(ret));
       }
@@ -283,15 +283,15 @@ int ObProxyPbUtils::parse_rule_pattern(const std::string &pattern, ObProxyConfig
 
     if (OB_SUCC(ret)) {
       ObString tail_str;
-      std::string name = sm1.str(1);
-      std::string tail = sm1.str(4);
-      tail_str.assign_ptr(tail.c_str(), static_cast<int32_t>(tail.length()));
+      std::string name_std_str = sm1.str(1);
+      std::string tail_std_str = sm1.str(4);
+      tail_str.assign_ptr(tail_std_str.c_str(), static_cast<int32_t>(tail_std_str.length()));
       if (!tail_str.empty()) {
         name_tail.set_value(tail_str);
         LOG_INFO("tail_str ", "pattern", pattern.c_str(),K(tail_str));
       }
       count = end - start + 1;
-      name_prefix.set_value(name.length(), name.c_str());
+      name_prefix.set_value(name_std_str.length(), name_std_str.c_str());
     }
   } else {
     // single tb or db group
