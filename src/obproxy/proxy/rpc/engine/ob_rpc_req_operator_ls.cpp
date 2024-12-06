@@ -230,9 +230,9 @@ int ObProxyRpcReqLSOp::generate_normal_resp(ObTableLSOpResult &ls_op_result,
                                             ObRpcResponse *&last_response)
 {
   int ret = OB_SUCCESS;
-  int64_t *all_ls_op_index_arr;                                           // record which ls resp belongs
-  int64_t *all_tablet_op_index_arr;                                       // record which tablet resp belongs
-  int64_t *all_single_op_index_arr;                                       // record which single resp belongs
+  int64_t *all_ls_op_index_arr = NULL;                                           // record which ls resp belongs
+  int64_t *all_tablet_op_index_arr = NULL;                                       // record which tablet resp belongs
+  int64_t *all_single_op_index_arr = NULL;                                       // record which single resp belongs
   LS_TABLET_ID_MAP &ls_id_tablet_id_map = ls_request.get_ls_id_tablet_id_map(); // the map record ls id of all tabelt_id
   TABLET_ID_INDEX_MAP &tablet_id_map = ls_request.get_tablet_id_index_map(); // the map record original index of all  single op
 
@@ -363,6 +363,7 @@ void ObProxyRpcReqLSOp::free_index_arr(int64_t *&arr, const int64_t count)
 {
   if (OB_NOT_NULL(arr)) {
     op_fixed_mem_free(arr, sizeof(int64_t) * count);
+    arr = NULL; //avoid double free
   }
 }
 

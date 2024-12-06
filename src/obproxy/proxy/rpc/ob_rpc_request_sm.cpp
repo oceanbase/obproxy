@@ -1385,6 +1385,10 @@ int ObRpcRequestSM::process_cluster_resource(void *data)
 
       // store cluster version into client net
       client_net_handler->set_cluster_version(cluster_resource_->cluster_version_);
+      if (OB_NOT_NULL(rpc_req_)) {
+        //update rpc_req cluster version by new info
+        rpc_req_->set_cluster_version(cluster_resource_->cluster_version_);
+      }
     }
     if (OB_SUCC(ret)) {
       if (OB_FAIL(update_cached_cluster_resource())) {
