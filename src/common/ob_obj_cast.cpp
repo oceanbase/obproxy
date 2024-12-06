@@ -2242,7 +2242,8 @@ static int number_datetime(const ObObjType expect_type, ObObjCastParams &params,
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(ObNumberTC != in.get_type_class()
-                  || ObDateTimeTC != ob_obj_type_class(expect_type))) {
+                  || (ObDateTimeTC != ob_obj_type_class(expect_type)
+                      && ObMySQLDateTimeTC != ob_obj_type_class(expect_type)))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("invalid input type",
         K(ret), K(in), K(expect_type));
@@ -4642,6 +4643,7 @@ static int string_otimestamp(const ObObjType expect_type,
     ObOTimestampData value;
     ObTimeConvertCtx cvrt_ctx(params.dtc_params_.tz_info_, true);
     cvrt_ctx.oracle_nls_format_ = params.dtc_params_.get_nls_format(expect_type);
+    LOG_DEBUG("param expect type: ", K(ob_obj_type_str(expect_type)), K(cvrt_ctx.oracle_nls_format_));
     if (CAST_FAIL(ObTimeConverter::str_to_otimestamp(utf8_string, cvrt_ctx, expect_type, value, res_scale))) {
     } else {
       SET_RES_OTIMESTAMP(out);

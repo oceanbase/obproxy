@@ -162,6 +162,40 @@ int ObMysqlPacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
   return ret;
 }
 
+int ObMysqlPacketWriter::write_compressed_raw_packet(ObMIOBuffer &mio_buf,
+                                                     const ObString &packet,
+                                                     proxy::ObCompressedHeaderParam &param)
+{
+  int ret = OB_SUCCESS;
+
+  ObIOBufferReader *tmp_mio_reader = NULL;
+  ObMIOBuffer *tmp_mio_buf = NULL;
+  if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to new miobuffer", K(ret));
+  } else if (OB_ISNULL(tmp_mio_reader = tmp_mio_buf->alloc_reader())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to alloc reader", K(ret));
+  } else if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(*tmp_mio_buf, packet))) {
+    LOG_WDIAG("fail to write raw packet", K(ret));
+  } else if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
+                                                                     tmp_mio_reader->read_avail(),
+                                                                     param))) {
+    LOG_WDIAG("fail to consume and compress data", K(ret));
+  } else {
+    LOG_DEBUG("succ to write compressed packet");
+  }
+
+  if (NULL != tmp_mio_buf) {
+    free_miobuffer(tmp_mio_buf);
+    tmp_mio_buf = NULL;
+    tmp_mio_reader = NULL;
+  }
+
+  return ret;
+}
+
+
 int ObMysqlPacketWriter::write_compressed_packet(
     ObMIOBuffer &mio_buf,
     const ObMySQLPacket &packet,

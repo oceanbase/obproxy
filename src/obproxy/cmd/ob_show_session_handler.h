@@ -15,12 +15,17 @@
 
 #include "cmd/ob_internal_cmd_handler.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
-#include "obutils/ob_read_stale_processor.h"
 
 namespace oceanbase
 {
 namespace obproxy
 {
+
+namespace obutils
+{
+  class ObReadStaleFeedback;
+}
+
 namespace proxy
 {
 enum ObSessionVariableType
@@ -42,7 +47,8 @@ enum ObServerSessionType
   OB_SST_MAX_TYPE,
 };
 
-
+class ObMysqlClientSession;
+class ObMysqlServerSession;
 class ObShowSessionHandler : public ObInternalCmdHandler
 {
 public:
@@ -72,9 +78,10 @@ private:
 
   int dump_cs_attribute_item(const char *name, const ObString &value, const char *info);
   int dump_cs_attribute_item(const char *name, const int64_t value, const char *info);
+  int dump_cs_attribute_item(const char *name, const uint64_t value, const char *info);
   int dump_cs_attribute_item(const char *name, const char *value, const char *info);
   int dump_cs_attribute_ss(const ObMysqlServerSession &svr_session,
-                                    const ObServerSessionType type, const int64_t idx = -1);
+                           const ObServerSessionType type, const int64_t idx = -1);
 
   int dump_cs_stat_item(const char *name, const int64_t &value);
   int dump_cs_variables_item(const ObSessionBaseField *field, const ObSessionVariableType var_type);

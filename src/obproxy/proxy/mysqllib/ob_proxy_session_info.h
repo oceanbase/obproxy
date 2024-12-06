@@ -28,6 +28,7 @@
 #include "proxy/mysql/ob_prepare_statement_struct.h"
 #include "proxy/mysql/ob_cursor_struct.h"
 #include "proxy/mysql/ob_piece_info.h"
+#include "proxy/mysql/ob_service_name_session_info.h"
 #include "rpc/obmysql/packet/ompk_handshake.h"
 #include "rpc/obmysql/packet/ompk_ssl_request.h"
 #include "utils/ob_proxy_hot_upgrader.h"
@@ -50,6 +51,7 @@ class ObProxyConfigString;
 class ObDefaultSysVarSet;
 namespace proxy
 {
+const int64_t OB_AUTH_SWITCH_RESP_LEN = 24; // header - 4 bytes, auth data - 20 bytes
 
 enum ObClientSessionIDVersion : uint32_t {
   CLIENT_SESSION_ID_V1 = 1, // original client session id , depends on 8bit proxy_id, only sync with client
@@ -927,6 +929,7 @@ public:
       ps_id_entry = NULL;
     }
   }
+  ObServiceaNameSessionInfo* get_service_name_session_info();
   void destroy_ps_id_entry_map();
   void set_ps_entry(ObPsEntry *entry) { ps_entry_ = entry; }
   void set_ps_id_entry(ObPsIdEntry *ps_id_entry) { ps_id_entry_ = ps_id_entry; }
@@ -1001,10 +1004,28 @@ public:
       ps_id_addrs = NULL;
     }
   }
+  void remove_service_name_cursor_info(uint32_t client_ps_id) {
+    if (NULL != service_name_session_info_) {
+      service_name_session_info_->remove_cursor_info(client_ps_id);
+    }
+  }
+  void remove_service_name_ps_info(uint32_t client_ps_id) {
+    if (NULL != service_name_session_info_) {
+      service_name_session_info_->remove_ps_info(client_ps_id);
+    }
+  }
+  void destroy_service_name_session_info() {
+    if (NULL != service_name_session_info_) {
+      service_name_session_info_->destroy();
+      service_name_session_info_ = NULL;
+    }
+  }
   void destroy_ps_id_addrs_map();
   void destroy_sess_info_list();
 
   common::ObIArray<net::ObIpEndpoint> &get_request_send_addrs() { return request_send_addrs_; }
+  common::ObIArray<common::ObConfigVariableString> &get_request_send_tenants() { return request_send_tenants_; }
+  common::ObIArray<common::ObConfigVariableString> &get_request_send_clusters() { return request_send_clusters_; }
   int remove_request_send_addr(const struct sockaddr &socket_addr) {
     int ret = OB_SUCCESS;
     net::ObIpEndpoint addr(socket_addr);
@@ -1101,6 +1122,10 @@ private:
 
   // login packet will be used to next time(include raw packet data and analyzed result)
   proxy::ObMysqlAuthRequest login_req_;
+public:
+  obutils::ObVariableLenBuffer<OB_AUTH_SWITCH_RESP_LEN> auth_switch_resp_;
+  obutils::ObVariableLenBuffer<MYSQL_NET_HEADER_LENGTH> change_user_req_;
+private:
   //proxy::ObRpcLoginRequest  rpc_login_req_;
 
   // ssl request packet
@@ -1162,16 +1187,21 @@ private:
   uint32_t ps_id_;
   ObPsEntry *ps_entry_;
   ObPsIdEntry *ps_id_entry_;
+public:
   ObPsIdEntryMap ps_id_entry_map_;
   ObTextPsNameEntry* text_ps_name_entry_;
   ObTextPsNameEntryMap text_ps_name_entry_map_;
-
+private:
   uint32_t cursor_id_;
   ObCursorIdAddrMap cursor_id_addr_map_;
+  // 存储连接上service name的信息
+  ObServiceaNameSessionInfo *service_name_session_info_;
 
   ObPsIdAddrsMap ps_id_addrs_map_;
   ObPieceInfoMap piece_info_map_;
   common::ObSEArray<net::ObIpEndpoint, 4> request_send_addrs_;
+  common::ObSEArray<common::ObConfigVariableString, 4> request_send_tenants_;
+  common::ObSEArray<common::ObConfigVariableString, 4> request_send_clusters_;
 
   bool is_read_only_user_;
   bool is_request_follower_user_;

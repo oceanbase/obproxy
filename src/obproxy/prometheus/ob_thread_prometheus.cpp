@@ -57,9 +57,10 @@ int64_t SQLMonitorInfo::MonitorInfoKey::to_string(char *buf, const int64_t buf_l
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(hash), K_(is_slow_query), K_(is_error_resp), K_(is_partition_hit),
-       K_(request_type), K_(stmt_type), K_(rpc_pkt_code), K_(cluster_name),
-       K_(tenant_name), K_(database_name));
+  J_KV(K_(hash), K_(flag_info_.flag_value),
+       K_(request_type), K_(stmt_type), K_(rpc_pkt_code),
+       K_(route_type), K_(route_policy),
+       K_(cluster_name), K_(tenant_name), K_(database_name));
   J_OBJ_END();
   return pos;
 }
@@ -78,13 +79,12 @@ int64_t SQLMonitorInfo::to_string(char *buf, const int64_t buf_len) const
 void SQLMonitorInfo::set_key(const MonitorInfoKey& key)
 {
   monitor_info_key_.hash_ = key.hash_;
-  monitor_info_key_.is_slow_query_ = key.is_slow_query_;
-  monitor_info_key_.is_error_resp_ = key.is_error_resp_;
-  monitor_info_key_.is_partition_hit_ = key.is_partition_hit_;
-  monitor_info_key_.is_shard_ = key.is_shard_;
+  monitor_info_key_.flag_info_.flag_value_ = key.flag_info_.flag_value_;
   monitor_info_key_.request_type_ = key.request_type_;
   monitor_info_key_.stmt_type_ = key.stmt_type_;
   monitor_info_key_.rpc_pkt_code_ = key.rpc_pkt_code_;
+  monitor_info_key_.route_type_ = key.route_type_;
+  monitor_info_key_.route_policy_ = key.route_policy_;
   cluster_name_str_.rewrite(key.cluster_name_);
   tenant_name_str_.rewrite(key.tenant_name_);
   database_name_str_.rewrite(key.database_name_);
@@ -157,29 +157,42 @@ int ObSQLMonitorInfoCont::main_handler(int event, void *data)
     const ObString& tenant_name = info.key().tenant_name_;
     const ObString& database_name = info.key().database_name_;
     ObProxyBasicStmtType stmt_type = info.key().stmt_type_;
-    bool is_slow_query = info.key().is_slow_query_;
-    bool is_error_resp = info.key().is_error_resp_;
-    bool is_partition_hit = info.key().is_partition_hit_;
-    bool is_shard = info.key().is_shard_;
+    proxy::ObRouteInfoType route_type = info.key().route_type_;
+    proxy::ObRoutePolicyEnum route_policy = info.key().route_policy_;
+    bool is_slow_query = info.key().is_slow_query();
+    bool is_error_resp = info.key().is_error_resp();
+    bool is_partition_hit = info.key().is_partition_hit();
+    bool is_shard = info.key().is_shard();
+    bool is_rerouted = info.key().is_rerouted();
+    bool is_partition_calc_fail = info.key().is_partition_calc_fail();
+    bool is_trans_internal_routing = info.key().is_trans_internal_routing();
     int64_t request_total_time = hrtime_to_usec(info.request_total_time_);
     int64_t server_process_request_time = hrtime_to_usec(info.server_process_request_time_);
     int64_t prepare_send_request_to_server_time = hrtime_to_usec(info.prepare_send_request_to_server_time_);
     if (OBPROXY_SQL_REQUEST == info.key().request_type_) {
       SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name,
                           tenant_name, database_name, stmt_type, PROMETHEUS_REQUEST_COUNT,
-                          is_slow_query, is_error_resp, is_partition_hit, info.request_count_);
+                          is_slow_query, is_error_resp, is_partition_hit,
+                          is_rerouted, is_partition_calc_fail, is_trans_internal_routing,
+                          route_type, route_policy, info.request_count_);
 
       SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name,
                           tenant_name, database_name, stmt_type, PROMETHEUS_REQUEST_TOTAL_TIME,
-                          is_slow_query, is_error_resp, is_partition_hit, request_total_time);
+                          is_slow_query, is_error_resp, is_partition_hit,
+                          is_rerouted, is_partition_calc_fail, is_trans_internal_routing,
+                          route_type, route_policy, request_total_time);
 
       SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name,
                           tenant_name, database_name, stmt_type, PROMETHEUS_SERVER_PROCESS_REQUEST_TIME,
-                          is_slow_query, is_error_resp, is_partition_hit, server_process_request_time);
+                          is_slow_query, is_error_resp, is_partition_hit,
+                          is_rerouted, is_partition_calc_fail, is_trans_internal_routing,
+                          route_type, route_policy, server_process_request_time);
 
       SQL_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name,
                           tenant_name, database_name, stmt_type, PROMETHEUS_PREPARE_SEND_REQUEST_TIME,
-                          is_slow_query, is_error_resp, is_partition_hit, prepare_send_request_to_server_time);
+                          is_slow_query, is_error_resp, is_partition_hit,
+                          is_rerouted, is_partition_calc_fail, is_trans_internal_routing,
+                          route_type, route_policy, prepare_send_request_to_server_time);
 
       NET_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name, tenant_name, database_name,
                           PROMETHEUS_REQUEST_BYTE, true, true, info.client_request_bytes_);

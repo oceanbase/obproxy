@@ -857,7 +857,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   bool is_random_route_mode = false;
   ASSERT_EQ(OB_ERR_UNEXPECTED, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item, target_ldc,
             entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader, is_random_route_mode,
-            servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
+            servers_info, region_names, proxy_primary_zone_name, ObString(), NULL, MERGE_IDC_ORDER));
 
   ASSERT_EQ(OB_SUCCESS, dummy_ldc.assign(&ts, ss_info_, idc_name, true, cluster_name, OB_DEFAULT_CLUSTER_ID));
   ASSERT_TRUE(dummy_ldc.is_ldc_used());
@@ -898,7 +898,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
 
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
       target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
-      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL, MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(!entry_need_update);
   ASSERT_TRUE(!leader_item.is_valid());
@@ -919,7 +919,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   is_only_readwrite_zone = true;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
       target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
-      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL, MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());
@@ -936,7 +936,7 @@ TEST_F(TesLDCLocation, fill_strong_read_location)
   is_only_readwrite_zone = false;
   ASSERT_EQ(OB_SUCCESS, ObLDCLocation::fill_strong_read_location(&pl, dummy_ldc, leader_item,
       target_ldc, entry_need_update, is_only_readwrite_zone, need_use_dup_replica, need_skip_leader,
-      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL));
+      is_random_route_mode, servers_info, region_names, proxy_primary_zone_name, ObString(), NULL, MERGE_IDC_ORDER));
   ASSERT_TRUE(target_ldc.is_ldc_used());
   ASSERT_TRUE(entry_need_update);
   ASSERT_TRUE(leader_item.is_valid());

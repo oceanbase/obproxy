@@ -226,28 +226,29 @@ void ob_proxy_parser_gbk_yyfree (void * ,yyscan_t yyscanner );
 #define in_old_comment_expr 4
 #define in_odp_comment_expr 5
 #define in_odp_comment_value_expr 6
-#define in_odp_comment_value_expr_calc 7
-#define in_ignored_comment_expr 8
-#define in_dbp_comment_expr 9
-#define in_dbp_comment_trace_expr 10
-#define in_dbp_comment_trace_value_expr 11
-#define in_dbp_comment_trace_value_expr_calc 12
-#define comment_sq 13
-#define sq 14
-#define dq 15
-#define bt 16
-#define bt_in_expr 17
-#define in_expr 18
-#define in_anonymous_block 19
-#define in_subquery 20
-#define in_no_select_query 21
-#define prepare 22
-#define insert_all_expr 23
-#define set_expr 24
-#define show_elastic_id 25
-#define show_topology 26
-#define show_tables 27
-#define proxy_icmd_state 28
+#define in_odp_comment_key_value_expr 7
+#define in_odp_comment_value_expr_calc 8
+#define in_ignored_comment_expr 9
+#define in_dbp_comment_expr 10
+#define in_dbp_comment_trace_expr 11
+#define in_dbp_comment_trace_value_expr 12
+#define in_dbp_comment_trace_value_expr_calc 13
+#define comment_sq 14
+#define sq 15
+#define dq 16
+#define bt 17
+#define bt_in_expr 18
+#define in_expr 19
+#define in_anonymous_block 20
+#define in_subquery 21
+#define in_no_select_query 22
+#define prepare 23
+#define insert_all_expr 24
+#define set_expr 25
+#define show_elastic_id 26
+#define show_topology 27
+#define show_tables 28
+#define proxy_icmd_state 29
 
 #endif
 
@@ -365,9 +366,9 @@ extern int ob_proxy_parser_gbk_yylex \
 #undef YY_DECL
 #endif
 
-#line 1335 "ob_proxy_parser_gbk.l"
+#line 1323 "ob_proxy_parser_gbk.l"
 
 
-#line 372 "ob_proxy_parser_gbk_lex.h"
+#line 373 "ob_proxy_parser_gbk_lex.h"
 #undef ob_proxy_parser_gbk_yyIN_HEADER
 #endif /* ob_proxy_parser_gbk_yyHEADER_H */

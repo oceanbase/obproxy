@@ -4829,7 +4829,7 @@ inline void ObRpcRequestSM::update_monitor_stats(const ObString &logic_tenant_na
 
 void ObRpcRequestSM::update_monitor_log()
 {
-  // ObMySQLCmd request_cmd = OB_MYSQL_COM_END;
+  // ObMySQLCmd request_cmd = OB_MYSQL_COM_MAX_NUM;
   obrpc::ObRpcPacketCode pcode = obrpc::OB_INVALID_RPC_CODE;
   // ObRpcRequestSM::ObRpcService rpc_serivce = ObRpcRequestSM::ObRpcService::OB_RPC_UNINITED;
   obkv::ObProxyRpcType rpc_type = obkv::ObProxyRpcType::OBPROXY_RPC_UNKOWN;
@@ -4950,12 +4950,18 @@ void ObRpcRequestSM::update_monitor_log()
       }
 
       if (get_global_proxy_config().enable_prometheus
-          && g_ob_prometheus_processor.is_inited()) {
+          && g_ob_prometheus_processor.is_inited()
+          && OB_NOT_NULL(self_ethread().thread_prometheus_)) {
         SQLMonitorInfo::MonitorInfoKey info_key;
-        info_key.is_slow_query_ = is_slow_query;
-        info_key.is_error_resp_ = is_error_resp;
-        // info_key.is_partition_hit_ = is_partition_hit; // unused for obkv
-        info_key.is_shard_ = is_shard_request;
+        info_key.set_is_slow_query(is_slow_query);
+        info_key.set_is_error_resp(is_error_resp);
+        // info_key.set_is_partition_hit(is_partition_hit); // unused for obkv
+        info_key.set_is_shard(is_shard_request);
+
+        // TODO：it need be set rightly for OBKV
+        info_key.set_is_rerouted(false);
+        info_key.set_is_partition_calc_fail(false);
+        info_key.set_is_trans_internal_routing(false);
         info_key.request_type_ = OBPROXY_RPC_REQUEST;
         info_key.stmt_type_ = stmt_type;
         info_key.rpc_pkt_code_ = pcode;

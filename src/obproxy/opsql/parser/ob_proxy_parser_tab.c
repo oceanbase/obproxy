@@ -3451,12 +3451,12 @@ yyreduce:
 
   case 181:
 
-    { result->has_simple_route_info_ = true; result->simple_route_info_.table_name_ = (yyvsp[(2) - (2)].str); ;}
+    { result->has_hint_route_info_ = true; result->hint_route_info_.table_name_ = (yyvsp[(2) - (2)].str); ;}
     break;
 
   case 182:
 
-    { result->simple_route_info_.part_key_ = (yyvsp[(2) - (2)].str); ;}
+    { result->hint_route_info_.part_key_ = (yyvsp[(2) - (2)].str); ;}
     break;
 
   case 186:

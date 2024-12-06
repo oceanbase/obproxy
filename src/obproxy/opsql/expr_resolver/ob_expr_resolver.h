@@ -61,7 +61,7 @@ struct ObExprResolverContext
   proxy::ObClientSessionInfo *client_info_;
   obutils::SqlFieldResult *sql_field_result_;
   ObExprParseResult *parse_result_;
-  bool is_insert_stm_;
+  bool is_insert_stmt_;
 };
 
 class ObExprResolverResult

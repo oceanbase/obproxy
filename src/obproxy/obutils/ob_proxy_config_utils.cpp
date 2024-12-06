@@ -879,7 +879,7 @@ int ObProxyFileUtils::move_file_dir(const char *src_dir, const char *dst_dir)
   if (OB_ISNULL(src_dir) || OB_ISNULL(dst_dir)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid input value", K(src_dir), K(dst_dir), K(ret));
-  } if (OB_UNLIKELY(0 != ::rename(src_dir, dst_dir))) {
+  } else if (OB_UNLIKELY(0 != ::rename(src_dir, dst_dir))) {
     ret = OB_ERR_SYS;
     LOG_WDIAG("fail to move dir", KERRMSGS,
              "src dir", src_dir, "dst dir", dst_dir, K(ret));

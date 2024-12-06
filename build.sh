@@ -61,8 +61,8 @@ function get_os_release() {
   if [[ "${OS_ARCH}x" == "x86_64x" ]]; then
     case "$ID" in
       alinux)
-        version_ge "3" && compat_centos8 && return
-        version_ge "2.1903" && compat_centos7 && return
+        version_ge "3" && OS_RELEASE=8 && return
+        version_ge "2.1903" && OS_RELEASE=7 && return
         ;;
       alios)
         version_ge "8.0" && compat_centos8 && return
@@ -101,8 +101,11 @@ function get_os_release() {
     esac
   elif [[ "${OS_ARCH}x" == "aarch64x" ]]; then
     case "$ID" in
+      alinux)
+        version_ge "3" && OS_RELEASE=8 && return
+        ;;
       alios)
-	version_ge "8.0" && compat_centos8 && return
+        version_ge "8.0" && compat_centos8 && return
         version_ge "7.0" && compat_centos7 && return
         ;;
       centos)
@@ -113,13 +116,6 @@ function get_os_release() {
   fi
   not_supported && return 1
 }
-
-# parse arguments
-function parse_args()
-{
-  echo "parse args..."
-}
-
 
 function do_init()
 {
@@ -233,7 +229,6 @@ xinit)
   do_dep_init
 	;;
 xqinit)
-  parse_args
   do_init
 	;;
 xclean)
@@ -246,15 +241,13 @@ xmake)
   do_make
   ;;
 xrpm)
-  parse_args
   do_dep_init
-  do_config opt
+  do_config release
   do_rpm
   ;;
 *)
-  parse_args
   do_dep_init
-  do_config opt
+  do_config release
   do_make
   ;;
 esac

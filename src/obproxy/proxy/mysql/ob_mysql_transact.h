@@ -33,6 +33,7 @@
 #include "lib/oblog/ob_simple_trace.h"
 #include "obutils/ob_read_stale_processor.h"
 #include "proxy/mysqllib/ob_compression_algorithm.h"
+#include "proxy/route/ob_route_enum.h"
 
 namespace oceanbase
 {
@@ -78,6 +79,7 @@ enum
 class ObMysqlTransact
 {
 public:
+
   enum ObAbortStateType
   {
     ABORT_UNDEFINED = 0,
@@ -110,7 +112,6 @@ public:
 
   static common::ObString get_retry_status_string(const ObSSRetryStatus status);
   static common::ObString get_pl_lookup_state_string(const ObPLLookupState state);
-
 
   // Please do not forget to fix ObServerState
   // (ob_api.h) in case of any modifications in
@@ -150,6 +151,7 @@ enum ObServerRespErrorType
     HANDSHAKE_COMMON_ERROR,
     // saved login related
     SAVED_LOGIN_COMMON_ERROR,
+    SAVED_AUTH_SWITCH_ERROR,
     // sync session var related
     RESET_SESSION_VARS_COMMON_ERROR,
     // sync start trans related
@@ -312,6 +314,7 @@ enum ObServerRespErrorType
     SERVER_SEND_LOGIN,
     SERVER_SEND_INIT_SQL,
     SERVER_SEND_SAVED_LOGIN,
+    SERVER_SEND_SAVED_AUTH_SWITCH_RESP,
     SERVER_SEND_ALL_SESSION_VARS,
     SERVER_SEND_USE_DATABASE,
     SERVER_SEND_SESSION_VARS,
@@ -466,14 +469,14 @@ enum ObServerRespErrorType
           request_content_length_(MYSQL_UNDEFINED_CL),
           transform_request_cl_(MYSQL_UNDEFINED_CL),
           transform_response_cl_(MYSQL_UNDEFINED_CL),
-          sql_cmd_(obmysql::OB_MYSQL_COM_END)
+          sql_cmd_(obmysql::OB_MYSQL_COM_MAX_NUM)
     { }
     ~ObTransactInfo() { }
     void reset()
     {
       client_request_.reuse();
       resp_result_.reset();
-      sql_cmd_ = obmysql::OB_MYSQL_COM_END;
+      sql_cmd_ = obmysql::OB_MYSQL_COM_MAX_NUM;
     }
 
     common::ObString get_print_sql(const int64_t sql_len = PRINT_SQL_LEN)
@@ -498,7 +501,7 @@ enum ObServerRespErrorType
     int64_t request_content_length_;
     int64_t transform_request_cl_;
     int64_t transform_response_cl_;
-    obmysql::ObMySQLCmd sql_cmd_;
+    obmysql::ObMySQLCmd sql_cmd_; // current executing command includes sync ps/xa/begin/login etc.
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ObTransactInfo);
@@ -511,14 +514,9 @@ enum ObServerRespErrorType
         : magic_(MYSQL_TRANSACT_MAGIC_ALIVE),
           sm_(NULL),
           mysql_config_params_(NULL),
-          is_rerouted_(false),
           pl_lookup_state_ (NEED_PL_LOOKUP),
-          is_auth_request_(false),
-          is_trans_first_request_(false),
-          is_proxysys_tenant_(false),
-          is_hold_start_trans_(false),
-          is_hold_xa_start_(false),
-          send_reqeust_direct_(false),
+          request_phase_(REQ_PHASE_COMMAND),
+          request_states_{},
           source_(SOURCE_NONE),
           pre_transform_source_(SOURCE_NONE),
           next_action_(SM_ACTION_UNDEFINED),
@@ -549,11 +547,11 @@ enum ObServerRespErrorType
           need_retry_(true),
           sqlaudit_record_queue_(NULL),
           trace_log_(),
-          is_proxy_protocol_v2_request_(true),
-          use_cmnt_target_db_server_(false),
-          use_conf_target_db_server_(false),
-          internal_error_op_for_diagnosis_ (PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS)
+          internal_error_op_for_diagnosis_(PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS),
+          route_type_(ObRouteInfoType::INVALID),
+          route_policy_(ObRoutePolicyEnum::MAX_ROUTE_POLICY_COUNT)
     {
+      set_proxy_protocol_v2_request(true);
       memset(user_args_, 0, sizeof(user_args_));
     }
 
@@ -585,6 +583,12 @@ enum ObServerRespErrorType
                         const common::ObString &tenant_name,
                         const obutils::ObVipAddr &addr,
                         const int64_t global_version = 0);
+    static int concate_service_name(const ObString& service_name,
+                                    ObConfigVariableString &ret_service_name);
+    static bool get_service_name_str(const ObString& cluster_name,
+                                     const ObString &tenant_name,
+                                     ObConfigVariableString &service_name);
+
     void record_transaction_stats()
     {
       // Loop over our transaction stat blocks and record the stats
@@ -727,29 +731,58 @@ enum ObServerRespErrorType
       reset_write_buffer();
       trans_info_.request_content_length_ = MYSQL_UNDEFINED_CL; // disable tunnel client request
       trans_info_.client_request_.reset_parse_result(); // clear SQL parse result
-      send_reqeust_direct_ = false;
-      is_rerouted_ = false;
+      set_send_request_direct(false);
+      set_rerouted(false);
+      set_use_config_target_server(false);
+      set_use_comment_target_server(false);
+      set_trans_internal_routing(false);
+      set_execute_on_prepare_execute(false);
       reroute_info_.reset();
       mysql_errmsg_ = NULL;
       inner_errcode_ = 0;
       inner_errmsg_ = NULL;
-      use_cmnt_target_db_server_ = false;
-      use_conf_target_db_server_ = false;
       pl_lookup_state_ = NEED_PL_LOOKUP;
       internal_error_op_for_diagnosis_ = PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS;
-      if (CMD_COMPLETE == current_.state_) {
-        if (!is_hold_start_trans_ && !is_hold_xa_start_) {
-          is_trans_first_request_ = false;
-        }
-
+      route_type_ = ObRouteInfoType::INVALID;
+      route_policy_ = ObRoutePolicyEnum::MAX_ROUTE_POLICY_COUNT;
+      ObRequestPhase prev_phase = request_phase_;
+      if (is_handshake_req_phase()) {
         if (obmysql::OB_MYSQL_COM_LOGIN == trans_info_.sql_cmd_) {
-          is_auth_request_ = false;
+          if (trans_info_.resp_result_.is_auth_switch_req()) {
+            // handshake response transferred and auth switch request received
+            set_login_auth_switch_resp_phase();
+          } else {
+            // handshake response transferred and ok resp received
+            set_common_req_phase();
+          }
+        } else {
+          // wait for transferring handshake response
+        }
+      } else if (trans_info_.resp_result_.is_local_infile_0xfb_resp()) {
+        set_file_content_req_phase();
+      } else if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_CHANGE_USER
+                 && trans_info_.resp_result_.is_auth_switch_req()) {
+        set_change_user_auth_switch_resp_phase();
+      } else {
+        set_common_req_phase();
+      }
+
+      if (prev_phase != request_phase_) {
+        PROXY_TXN_LOG(DEBUG, "request phase changed",
+                     "prev_phase", get_request_phase_string(prev_phase),
+                     "cur_phase", get_request_phase_string(request_phase_));
+      }
+
+      if (CMD_COMPLETE == current_.state_) {
+        if (!is_hold_start_trans() && !is_hold_xa_start()) {
+          set_trans_first_request(false);
         }
         pll_info_.reset_consistency();
       } else if (TRANSACTION_COMPLETE == current_.state_) {
         trace_log_.reset();
-        is_trans_first_request_ = true;
-        is_auth_request_ = false;
+        set_trans_first_request(true);
+        set_has_write_in_trans(false);
+        set_has_dup_write_in_trans(false);
         reset_congestion_entry();
 
         if (NULL != sqlaudit_record_queue_) {
@@ -814,7 +847,7 @@ enum ObServerRespErrorType
         sqlaudit_record_queue_->refcount_dec();
         sqlaudit_record_queue_ = NULL;
       }
-      is_proxy_protocol_v2_request_ = true;
+      set_proxy_protocol_v2_request(true);
       arena_.reset();
     }
 
@@ -824,7 +857,45 @@ enum ObServerRespErrorType
     ObRoutePolicyEnum get_route_policy(ObMysqlClientSession &cs, const bool need_use_dup_replica, ObDiagnosisRoutePolicy *diagnosis_route_policy);
     void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy);
     bool is_need_pl_lookup() { return pl_lookup_state_ == NEED_PL_LOOKUP; }
-
+    inline const bool is_handshake_req_phase() const { return request_phase_ == REQ_PHASE_HANDSHAKE; }
+    inline void set_handshake_req_phase() { request_phase_ = REQ_PHASE_HANDSHAKE; }
+    inline const bool is_login_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
+    inline void set_login_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
+    inline const bool is_change_user_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
+    inline void set_change_user_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
+    inline const bool is_auth_switch_resp_phase() const { return is_change_user_auth_switch_resp_phase() || is_login_auth_switch_resp_phase(); }
+    inline const bool is_common_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND; }
+    inline void set_common_req_phase() { request_phase_ = REQ_PHASE_COMMAND; }
+    inline const bool is_send_long_data_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND_SEND_LONG_DATA; }
+    inline void set_send_long_data_req_phase() { request_phase_ = REQ_PHASE_COMMAND_SEND_LONG_DATA; }
+    inline const bool is_file_content_req_phase() const {  return request_phase_ == REQ_PHASE_FILE_CONTENT; }
+    inline void set_file_content_req_phase() {  request_phase_ = REQ_PHASE_FILE_CONTENT; }
+    inline bool is_trans_first_req() { return request_states_.REQ_STATE_TRANS_FIRST_REQUEST; }
+    inline void set_trans_first_request(bool val) { request_states_.REQ_STATE_TRANS_FIRST_REQUEST = val; }
+    inline bool is_hold_start_trans() { return request_states_.REQ_STATE_HOLD_START_TRANS; }
+    inline void set_hold_start_trans(bool val) { request_states_.REQ_STATE_HOLD_START_TRANS = val; }
+    inline bool is_hold_xa_start() { return request_states_.REQ_STATE_HOLD_XA_START; }
+    inline void set_hold_xa_start(bool val) { request_states_.REQ_STATE_HOLD_XA_START = val; }
+    inline bool is_has_write_in_trans() { return request_states_.REQ_STATE_HAS_WRITE_IN_TRANS; }
+    inline void set_has_write_in_trans(bool val) { request_states_.REQ_STATE_HAS_WRITE_IN_TRANS = val; }
+    inline bool is_proxysys_tenant() { return request_states_.REQ_STATE_PROXY_SYS_TENANT_REQUEST; }
+    inline void set_proxysys_tenant(bool val) { request_states_.REQ_STATE_PROXY_SYS_TENANT_REQUEST = val; }
+    inline bool is_send_request_direct() { return request_states_.REQ_STATE_SEND_REQ_DIRECT; }
+    inline void set_send_request_direct(bool val) { request_states_.REQ_STATE_SEND_REQ_DIRECT = val; }
+    inline bool is_rerouted() { return request_states_.REQ_STATE_REROUTE_REQ; }
+    inline void set_rerouted(bool val) { request_states_.REQ_STATE_REROUTE_REQ = val; }
+    inline bool is_proxy_protocol_v2_request() { return request_states_.REQ_STATE_PROXY_PROTOCOL_V2_REQ; }
+    inline void set_proxy_protocol_v2_request(bool val) { request_states_.REQ_STATE_PROXY_PROTOCOL_V2_REQ = val; }
+    inline bool is_use_config_target_server() { return request_states_.REQ_STATE_CONFIG_TARGET_SERVER; }
+    inline void set_use_config_target_server(bool val) { request_states_.REQ_STATE_CONFIG_TARGET_SERVER = val; }
+    inline bool is_use_comment_target_server() { return request_states_.REQ_STATE_COMMENT_TARGET_SERVER; }
+    inline void set_use_comment_target_server(bool val) { request_states_.REQ_STATE_COMMENT_TARGET_SERVER = val; }
+    inline bool is_has_dup_write_in_trans() { return request_states_.REQ_STATE_DUP_WRITE_IN_TRANS; }
+    inline void set_has_dup_write_in_trans(bool val) { request_states_.REQ_STATE_DUP_WRITE_IN_TRANS = val; }
+    inline bool is_trans_internal_routing() { return request_states_.REQ_STATE_TRANS_INERNAL_ROUTING; }
+    inline void set_trans_internal_routing(bool val) { request_states_.REQ_STATE_TRANS_INERNAL_ROUTING = val; }
+    inline bool is_execute_on_prepare_execute() { return request_states_.REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE; }
+    inline void set_execute_on_prepare_execute(bool val) { request_states_.REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE = val; }
     event::ObFixedArenaAllocator<1024> arena_;
 
     ObMysqlTransactMagic magic_;
@@ -839,16 +910,26 @@ enum ObServerRespErrorType
     ObCurrentInfo current_;
     ObTransactInfo trans_info_;
 
-    bool is_rerouted_;
     // determin if do pl lookup
     ObPLLookupState pl_lookup_state_;
-    bool is_auth_request_;
-    bool is_trans_first_request_;
-    bool is_proxysys_tenant_;
-    bool is_hold_start_trans_; // indicate whether hold begin(start transaction)
-    bool is_hold_xa_start_;
-    bool send_reqeust_direct_; // when send sync all session variables, we can send user request directly
+    ObRequestPhase request_phase_;
 
+    struct {
+      uint32_t REQ_STATE_TRANS_FIRST_REQUEST:               1;
+      uint32_t REQ_STATE_PROXY_SYS_TENANT_REQUEST:          1;
+      uint32_t REQ_STATE_HOLD_START_TRANS:                  1; // indicate whether hold begin/start transaction
+      uint32_t REQ_STATE_HOLD_XA_START:                     1;
+      uint32_t REQ_STATE_HAS_WRITE_IN_TRANS:                1;
+      uint32_t REQ_STATE_SEND_REQ_DIRECT:                   1; // when send sync all session variables, we can send user request directly
+      uint32_t REQ_STATE_REROUTE_REQ:                       1; // indicate whether in rerouting the request
+      uint32_t REQ_STATE_PROXY_PROTOCOL_V2_REQ:             1;
+      uint32_t REQ_STATE_CONFIG_TARGET_SERVER:              1;
+      uint32_t REQ_STATE_COMMENT_TARGET_SERVER:             1;
+      uint32_t REQ_STATE_DUP_WRITE_IN_TRANS:                1;
+      uint32_t REQ_STATE_TRANS_INERNAL_ROUTING:             1; // means current request is/isn`t free routing in trans
+      uint32_t REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE:        1; // indicate whether send_long_data/send_piece_data/execute_stmt is executed on prepare_execute_stmt
+      uint32_t :                                            0;
+    } request_states_;
     ObSourceType source_;
     ObSourceType pre_transform_source_;
 
@@ -893,11 +974,10 @@ enum ObServerRespErrorType
 
     ObSqlauditRecordQueue *sqlaudit_record_queue_;
     common::ObSimpleTrace<4096> trace_log_;
-    bool is_proxy_protocol_v2_request_;
     // whether to use target db server from sql comment or multi level config
-    bool use_cmnt_target_db_server_;
-    bool use_conf_target_db_server_;
     ObProxyInternalErrorOp internal_error_op_for_diagnosis_;
+    ObRouteInfoType route_type_;
+    ObRoutePolicyEnum route_policy_;
   private:
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
   }; // End of State struct.
@@ -909,6 +989,13 @@ enum ObServerRespErrorType
   static int set_server_ip_by_shard_conn(ObTransState &s, dbconfig::ObShardConnector* shard_conn);
   static void handle_oceanbase_request(ObTransState &s);
   static void handle_ps_close_reset(ObTransState &s);
+  static void handle_send_ps_close_reset_server(ObTransState &s,
+                                                const bool using_service_name,
+                                                const bool is_need_send_to_bound_ss,
+                                                net::ObIpEndpoint &addr,
+                                                ObIArray<ObConfigVariableString> &tenant_name_array,
+                                                ObIArray<ObConfigVariableString> &cluster_name_array,
+                                                int64_t addr_index);
   static void handle_fetch_request(ObTransState &s);
   static void handle_target_db_not_allow(ObTransState &s);
   static void handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type, const ObRoutePolicyEnum &policy);
@@ -976,8 +1063,7 @@ enum ObServerRespErrorType
   static bool can_direct_ok_for_login(ObTransState &s);
   static bool is_in_trans(ObTransState &s);
   static bool is_user_trans_complete(ObTransState &s);
-  static bool is_large_request(ObTransState &s) { return s.trans_info_.client_request_.is_large_request(); }
-  static bool is_transfer_content_of_file(ObTransState &s) { return s.trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT; }
+  static inline bool is_large_request(ObTransState &s) { return s.trans_info_.client_request_.is_large_request(); }
   static bool is_bad_route_request(ObTransState &s);
   static bool is_session_memory_overflow(ObTransState &s);
   static bool need_use_dup_replica(const common::ObConsistencyLevel level, ObTransState &s);
@@ -998,6 +1084,7 @@ enum ObServerRespErrorType
   static int build_no_privilege_message(ObTransState &trans_state, ObMysqlClientSession &client_session,
                                         const common::ObString &database);
 
+  static int handle_auth_switch_request(ObTransState &s);
   static void handle_handshake_pkt(ObTransState &s);
   static int handle_oceanbase_handshake_pkt(ObTransState &s, uint32_t conn_id,
                                              ObAddr &client_addr);
@@ -1073,7 +1160,9 @@ enum ObServerRespErrorType
   static bool is_trans_specified(ObTransState &s);
   static bool has_dependent_func(ObTransState &s);
   static int refresh_service_name_role(ObTransState &s);
-  static bool is_depend_last_session(ObTransState &s);
+  static bool is_depend_last_tenant(ObTransState &s);
+  static bool is_in_service_name_trans(ObTransState &trans_state);
+  static bool need_route_standby_tenant(ObClientSessionInfo &session_info, ObTransState &trans_state);
   static void record_trans_state(ObTransState &s, bool is_in_trans);
   static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
   static void build_read_stale_param(const ObTransState &s, obutils::ObReadStaleParam &param);
@@ -1096,15 +1185,15 @@ typedef void (*TransactEntryFunc)(ObMysqlTransact::ObTransState &s);
 
 inline bool ObMysqlTransact::is_user_trans_complete(ObTransState &s)
 {
-  return (!(s.is_hold_start_trans_ || s.is_hold_xa_start_)
-          && !s.is_auth_request_
+  return (!(s.is_hold_start_trans() || s.is_hold_xa_start())
+          && !s.is_handshake_req_phase()
           && !ObMysqlTransact::is_in_trans(s));
 }
 
 inline bool ObMysqlTransact::is_bad_route_request(ObTransState &s)
 {
   bool bret = false;
-  if (s.mysql_config_params_->enable_bad_route_reject_ && (s.is_hold_start_trans_ || s.is_hold_xa_start_)) {
+  if (s.mysql_config_params_->enable_bad_route_reject_ && (s.is_hold_start_trans() || s.is_hold_xa_start())) {
     obutils::ObSqlParseResult &parse_result = s.trans_info_.client_request_.get_parse_result();
     const ObString &table_name = parse_result.get_table_name();
     bret = table_name.empty();
@@ -1185,7 +1274,7 @@ inline void ObMysqlTransact::update_stat(
 
 inline int64_t milestone_diff(const ObHRTime start, const ObHRTime end)
 {
-  return (start > 0 && end > start) ? (end - start) : 0;
+  return end - start;
 }
 
 inline void ObMysqlTransact::ObPartitionLookupInfo::reset_consistency()

@@ -28,6 +28,8 @@
 
 #define OBPROXY_MAX_DBP_SHARD_KEY_NUM 64
 
+#define OBPROXY_MAX_PART_KEY_PARSE_NUM 16
+
 typedef enum ObProxyBasicStmtType
 {
   OBPROXY_T_INVALID = 0,
@@ -49,6 +51,7 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_ICMD_SHOW_STAT,
   OBPROXY_T_ICMD_SHOW_TRACE,
   OBPROXY_T_ICMD_SHOW_INFO,
+  OBPROXY_T_ICMD_SHOW_PS,
   OBPROXY_T_ICMD_SHOW_KV,
   OBPROXY_T_ICMD_ALTER_CONFIG,
   OBPROXY_T_ICMD_ALTER_RESOURCE,
@@ -185,7 +188,8 @@ typedef enum ObProxyBasicStmtSubType
   OBPROXY_T_SUB_INFO_BINARY,
   OBPROXY_T_SUB_INFO_UPGRADE,
   OBPROXY_T_SUB_INFO_IDC,
-
+  //ps cache
+  OBPROXY_T_SUB_PS_ALL,
   //stat
   OBPROXY_T_SUB_STAT_REFRESH,
 
@@ -323,13 +327,6 @@ typedef struct _ObProxyTextPsParseInfo
   int32_t node_count_;
 } ObProxyTextPsParseInfo;
 
-typedef struct _ObProxySimpleRouteParseInfo
-{
-  const char *table_start_ptr_;
-  const char *part_key_start_ptr_;
-  ObProxyParseString table_name_;
-  ObProxyParseString part_key_;
-} ObProxySimpleRouteParseInfo;
 
 typedef enum ObDbMeshTokenType
 {
@@ -401,6 +398,12 @@ typedef struct _ObProxySetParseInfo
   int64_t node_count_;
 } ObProxySetParseInfo;
 
+typedef struct _ObProxySimpleRouteParseInfo
+{
+  ObProxyParseString table_name_;
+  ObProxySetParseInfo part_key_info_;
+} ObProxySimpleRouteParseInfo;
+
 typedef struct _ObDbpShardKeyInfo
 {
   ObProxyParseString left_str_;
@@ -450,7 +453,7 @@ typedef struct _ObProxyParseResult
   bool has_last_trace_id_;
   bool has_explain_;
   bool has_explain_route_;
-  bool has_simple_route_info_;
+  bool has_hint_route_info_;
   bool has_anonymous_block_;
   bool has_trace_log_hint_; // true for digest, false for not digest
   bool has_connection_id_;
@@ -479,7 +482,7 @@ typedef struct _ObProxyParseResult
   //call cmd
   ObProxyCallParseInfo call_parse_info_;
   //simple route info
-  ObProxySimpleRouteParseInfo simple_route_info_;
+  ObProxySimpleRouteParseInfo hint_route_info_;
   // partiton(p1)
   ObProxyParseString part_name_;
   // text ps user variables

@@ -100,7 +100,7 @@ private:
 inline void ObRespPacketAnalyzeResult::reset()
 {
   enable_extra_ok_packet_for_stats_ = false;
-  cmd_ = obmysql::OB_MYSQL_COM_END;
+  cmd_ = obmysql::OB_MYSQL_COM_MAX_NUM;
   mysql_mode_ = UNDEFINED_MYSQL_PROTOCOL_MODE;
   resp_type_ = MAX_RESP_TYPE;
   trans_state_ = IN_TRANS_STATE_BY_DEFAULT;

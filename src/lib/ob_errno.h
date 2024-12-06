@@ -814,6 +814,7 @@ namespace common
   static const int OB_PROXY_PROXY_ID_OVER_LIMIT = -10025;
   static const int OB_LOCK_SESSION_CLOSED_ERROR = -10026;
   static const int OB_PROXY_SEND_LONG_DATA_PIECES_ERROR = -10027;
+  static const int OB_SQLITE3_EXEC_ERROR = -10028;
 
   // obproxy related error code
   static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
@@ -1580,6 +1581,7 @@ namespace common
 // obproxy related error code
 #define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
 #define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
+#define OB_SQLITE3_EXEC_ERROR__USER_ERROR_MSG "Sqlite exec ERROR"
 
 // sharding related error code
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"

@@ -90,7 +90,7 @@ public:
   virtual void handle_read_request(ObApiTransaction &transaction)
   {
     ObMysqlSM *sm = transaction.get_sm();
-    if (!transaction.is_internal_cmd() && !sm->trans_state_.is_auth_request_) {
+    if (!transaction.is_internal_cmd() && !sm->trans_state_.is_handshake_req_phase()) {
       transaction.add_plugin(ObNullTransformationPlugin::alloc(
           transaction, ObTransformationPlugin::REQUEST_TRANSFORMATION));
     }
@@ -100,7 +100,7 @@ public:
   virtual void handle_read_response(ObApiTransaction &transaction)
   {
     ObMysqlSM *sm = transaction.get_sm();
-    if (!transaction.is_internal_cmd() && !sm->trans_state_.is_auth_request_
+    if (!transaction.is_internal_cmd() && !sm->trans_state_.is_handshake_req_phase()
         && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_) {
       transaction.add_plugin(ObNullTransformationPlugin::alloc(
           transaction, ObTransformationPlugin::RESPONSE_TRANSFORMATION));

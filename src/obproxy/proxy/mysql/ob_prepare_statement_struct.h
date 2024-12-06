@@ -25,6 +25,7 @@
 #include "lib/lock/ob_drw_lock.h"
 #include "obutils/ob_proxy_sql_parser.h"
 #include "lib/hash/ob_dynamic_build_in_hashmap.h"
+#include "lib/hash/ob_build_in_hashmap_for_ref_count.h"
 
 #define PARAM_TYPE_BLOCK_SIZE  1 << 9 // 512
 
@@ -38,6 +39,10 @@ namespace obproxy
 {
 namespace proxy
 {
+class ObBasePsEntryGlobalCache;
+extern ObBasePsEntryGlobalCache &get_global_ps_entry_cache();
+static inline void inc_ps_entry_memory_count(int64_t);
+
 class ObMysqlClientSession;
 // stored in client session info
 class ObPsIdAddrs
@@ -53,15 +58,13 @@ public:
    * 因此, 一个 HashSet 默认至少占用 12K. 而每执行 Prepeare 一次, 就会生成一个 ObPsIdAddrs
    * 现在这样改, 可以减少 Node 部分的空间，一个 Block 只有 48 * NODE_NUM = 400 个字节, 加上 Bucket 的 3848，大约 4K
    */
-  ObPsIdAddrs() : ps_id_(0), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
-  }
-  ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) {
-  }
-  ~ObPsIdAddrs() {};
+  ObPsIdAddrs() : ps_id_(0), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) { }
+  ObPsIdAddrs(uint32_t ps_id) : ps_id_(ps_id), addrs_(ObModIds::OB_PROXY_PS_RELATED, OB_MALLOC_NORMAL_BLOCK_SIZE) { }
+  ~ObPsIdAddrs();
 
   static int alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, ObPsIdAddrs *&ps_id_addrs);
   void destroy();
-  int add_addr(const struct sockaddr &socket_addr);
+  int add_addr(const struct sockaddr &socket_addr, bool &is_add);
   int remove_addr(const struct sockaddr &socket_addr);
   ObIArray<net::ObIpEndpoint> &get_addrs() { return addrs_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -110,12 +113,13 @@ public:
     return !base_ps_sql_.empty();
   }
 
-  const common::ObString &get_base_ps_sql() { return base_ps_sql_; }
+  const common::ObString &get_base_ps_sql() const { return base_ps_sql_; }
 
 
   virtual void free() override {}
   virtual void destroy();
-
+  int64_t to_string(char *buf, const int64_t buf_len) const;
+  virtual int64_t get_mem_used() const { return buf_len_ + sizeof(ObBasePsEntry); };
 public:
   common::ObString base_ps_sql_;
   LINK(ObBasePsEntry, base_ps_entry_link_);
@@ -196,6 +200,7 @@ public:
   int set_sql(const common::ObString &ps_sql);
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
+  virtual int64_t get_mem_used() const override { return buf_len_ + sizeof(ObPsEntry); };
 private:
   const static int64_t PARSE_EXTRA_CHAR_NUM = 2;
 
@@ -247,6 +252,7 @@ int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
       PROXY_SM_LOG(WDIAG, "fail to set ps sql", K(ret));
     } else {
       entry->set_base_ps_parse_result(parse_result);
+      inc_ps_entry_memory_count(alloc_size);
     }
   }
 
@@ -331,9 +337,9 @@ public:
   virtual void free();
   virtual void destroy();
   int64_t to_string(char *buf, const int64_t buf_len) const;
-
+  virtual int64_t get_mem_used() const override { return buf_len_ + sizeof(ObTextPsEntry); };
 private:
-  DISALLOW_COPY_AND_ASSIGN(ObTextPsEntry);
+DISALLOW_COPY_AND_ASSIGN(ObTextPsEntry);
 };
 
 template <typename T>
@@ -359,6 +365,7 @@ int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
       PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
     } else {
       entry->set_base_ps_parse_result(parse_result);
+      inc_ps_entry_memory_count(alloc_size);
     }
   }
 
@@ -400,6 +407,9 @@ public:
   {
     text_ps_name_.assign_ptr(buf, static_cast<int32_t>(buf_len));
     text_ps_entry_ = entry;
+    if (OB_NOT_NULL(text_ps_entry_)) {
+      text_ps_entry_->inc_ref();
+    }
   }
 
   static int alloc_text_ps_name_entry(const ObString &text_ps_name,
@@ -457,6 +467,8 @@ public:
     static bool equal(Key lhs, Key rhs) { return lhs == rhs;  }
   };
   typedef common::hash::ObBuildInHashMap<ObBasePsEntryHashing, HASH_BUCKET_SIZE> ObBasePsEntryMap;
+
+  ObBasePsEntryMap& get_ps_entry_map() { return ps_entry_thread_map_; }
 
 public:
   template <typename T>
@@ -547,7 +559,8 @@ int ObBasePsEntryThreadCache::acquire_or_create_ps_entry(const ObString &sql,
 class ObBasePsEntryGlobalCache : public ObBasePsEntryCache
 {
 public:
-  ObBasePsEntryGlobalCache() : ObBasePsEntryCache(), ps_entry_global_map_() {}
+  ObBasePsEntryGlobalCache() : ObBasePsEntryCache(), ps_entry_num_(), ps_entry_mem_count_(),
+                               ps_entry_global_map_() {}
   ~ObBasePsEntryGlobalCache() { destroy(); }
   void destroy();
 
@@ -569,6 +582,7 @@ public:
   };
   typedef common::hash::ObBuildInHashMapForRefCount<ObBasePsEntryHashing, HASH_BUCKET_SIZE> ObBasePsEntryGlobalMap;
 
+  const ObBasePsEntryGlobalMap& get_ps_entry_map() const { return ps_entry_global_map_; }
 public:
   template <typename T>
   int acquire_ps_entry(const common::ObString &sql, T *&ps_entry);
@@ -585,8 +599,20 @@ public:
 
   void delete_base_ps_entry(ObBasePsEntry *base_ps_entry);
 
+  void inc_ps_entry_memory_count(int64_t entry_size) {
+    ATOMIC_INC(&ps_entry_num_);
+    ATOMIC_AAF(&ps_entry_mem_count_ ,entry_size);
+  }
+  void dec_ps_entry_memory_count(int64_t entry_size) {
+    ATOMIC_DEC(&ps_entry_num_);
+    ATOMIC_SAF(&ps_entry_mem_count_ ,entry_size);
+  }
+  int64_t get_ps_entry_num() const { return ATOMIC_LOAD(&ps_entry_num_); }
+  int64_t get_ps_entry_mem_count() const { return ATOMIC_LOAD(&ps_entry_mem_count_); }
 private:
-  ObBasePsEntryGlobalMap ps_entry_global_map_;
+  int64_t ps_entry_num_;
+  int64_t ps_entry_mem_count_;
+  ObBasePsEntryGlobalMap ps_entry_global_map_ CACHE_ALIGNED;
   DISALLOW_COPY_AND_ASSIGN(ObBasePsEntryGlobalCache);
 };
 
@@ -665,6 +691,12 @@ int init_text_ps_entry_cache_for_one_thread(int64_t index);
 int init_text_ps_entry_cache_for_one_thread(event::ObEThread *thread);
 ObBasePsEntryGlobalCache &get_global_ps_entry_cache();
 ObBasePsEntryGlobalCache &get_global_text_ps_entry_cache();
+
+
+void inc_ps_entry_memory_count(int64_t alloc_size)
+{
+  return get_global_ps_entry_cache().inc_ps_entry_memory_count(alloc_size);
+}
 
 } // end of namespace proxy
 } // end of namespace obproxy

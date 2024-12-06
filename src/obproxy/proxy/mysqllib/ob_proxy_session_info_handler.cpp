@@ -178,7 +178,7 @@ int ObProxySessionInfoHandler::rewrite_query_req_by_sharding(ObClientSessionInfo
   ObMysqlAnalyzeStatus status = ANALYZE_CONT;
 
   ObRequestAnalyzeCtx target_ctx;
-  target_ctx.is_auth_ = false;
+  target_ctx.request_phase_ = REQ_PHASE_COMMAND;
   target_ctx.reader_ = &buffer_reader;
   target_ctx.request_buffer_length_ = 4096;
   target_ctx.cached_variables_ = &client_info.get_cached_variables();
@@ -250,7 +250,7 @@ int ObProxySessionInfoHandler::rewrite_login_req_by_sharding(ObClientSessionInfo
       passwd_string += 1;
       int64_t actual_len = 0;
       const ObString &scramble_string = (client_info.get_scramble_string().empty()
-                                        ? ObString::make_string("aaaaaaaabbbbbbbbbbbb")
+                                        ? ObString::make_string(OB_AUTH_DATA_AB)
                                         : client_info.get_scramble_string());
       if (OB_FAIL(ObClientUtils::get_auth_password_from_stage1(passwd_string,
               scramble_string, pwd_buf, pwd_buf_len, actual_len))) {
@@ -649,8 +649,7 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
   }
 
   param.cluster_name_ = cluster_name;
-  const bool need_write_proxy_sramble = !proxy_scramble.empty()
-      && !client_info.get_login_req().get_hsr_result().response_.get_auth_response().empty();
+  const bool need_write_proxy_sramble = !proxy_scramble.empty();
 
   if (OB_FAIL(param.write_conn_id_buf(server_sessid))) {
     LOG_WDIAG("fail to write connection id", K(server_sessid), K(ret));

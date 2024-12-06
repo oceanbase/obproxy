@@ -329,6 +329,7 @@ public:
   ObConfigVariableString(): used_len_(0), data_union_() {}
   ~ObConfigVariableString() { reset(); }
   ObConfigVariableString(const ObConfigVariableString& other);
+  ObConfigVariableString(const ObString& other);
   ObConfigVariableString& operator=(const ObConfigVariableString& other);
   void reset();
   bool is_empty() const { return used_len_ == 0; }
@@ -338,6 +339,7 @@ public:
   int rewrite(const char *ptr, const int64_t len);
   int rewrite(const ObString &str);
   int rewrite(const char *ptr);
+  void to_lower_case();
   const char *ptr() const
   {
     return used_len_ > VARIABLE_BUF_LEN ? data_union_.ptr_ : data_union_.buf_;

@@ -48,7 +48,8 @@ namespace prometheus
 
 #define ODP_MEMORY "odp_memory"
 #define ODP_MEMORY_HELP "The num of odp memory count by char"
-
+#define PS_CACHE "ps_cache_info"
+#define PS_CACHE_HELP "ps_cache_info for ps entry count and mem usage"
 #define REQUEST_BYTE "odp_request_byte"
 #define REQUEST_BYTE_HELP "The num of request byte"
 
@@ -66,6 +67,11 @@ namespace prometheus
 #define LABEL_SQL_TYPE "sqlType"
 #define LABEL_SQL_RESULT "sqlResult"
 #define LABEL_PARTITION_HINT "partitionHit"
+#define LABEL_REROUTED "reRouted"
+#define LABEL_PARTITION_CALC_FAIL "partitionCalcFail"
+#define LABEL_TRANS_INTERNAL_ROUTING "transInternalRouting"
+#define LABEL_ROUTE_TYPE "routeType"
+#define LABEL_ROUTE_POLICY "routePolicy"
 #define LABEL_SQL_SLOW "slowQuery"
 #define LABEL_RPC_TYPE "rpcPcode"
 #define LABEL_RPC_RESULT "rpcResult"
@@ -88,6 +94,7 @@ namespace prometheus
 #define LABEL_TRUE "true"
 #define LABEL_VIP "vip"
 #define LABLE_MEMORY_TYPE "memType"
+#define LABLE_PS_TYPE "psType"
 
 class ObProxyPrometheusUtils
 {
@@ -98,7 +105,7 @@ public:
   static const char* get_metric_lable(ObPrometheusMetrics metric);
   static const char* get_type_lable(ObPrometheusEntryType type);
   static const char* get_mem_type_lable(ObPrometheusMetrics metric);
-
+  static const char* get_ps_type_lable(ObPrometheusMetrics metric);
   static int calc_buf_size(common::ObVector<ObPrometheusLabel> *labels, uint32_t &buf_size);
   static int copy_label_hash(common::ObVector<ObPrometheusLabel> *labels,
                              common::ObVector<ObPrometheusLabel> &dst_labels,

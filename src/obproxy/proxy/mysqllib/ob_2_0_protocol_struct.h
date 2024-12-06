@@ -72,7 +72,8 @@ union Ob20ProtocolFlags
     uint32_t OB_IS_WEAK_READ:                           1;
     uint32_t OB_IS_TRANS_INTERNAL_ROUTING:              1;
     uint32_t OB_PROXY_SWITCH_ROUTE:                     1;
-    uint32_t OB_FLAG_RESERVED_NOT_USE:                 25;
+    uint32_t OB_IS_DUP_WRITE_IN_TRANS:                  1;
+    uint32_t OB_FLAG_RESERVED_NOT_USE:                 24;
   } st_flags_;
 };
 

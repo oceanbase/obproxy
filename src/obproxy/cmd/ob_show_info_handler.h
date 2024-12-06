@@ -38,7 +38,7 @@ public:
   virtual ~ObShowInfoHandler() {};
 
 private:
-  int main_handle(int event, void *data);
+  int main_handler(int event, void *data);
   int dump_header();
   int dump_body();
   int dump_idc_body();

@@ -407,7 +407,7 @@ int ObResultSetFetcher::read_field_count()
         LOG_WDIAG("fail to judge error packet", K(ret));
       } else {
         if (is_error_pkt) {
-          // the fist packet in Reusltset is error pakcet, data read complete
+          // the first packet in Reusltset is error pakcet, data read complete
           // just assign mysql_err_code to ret
           ret = mysql_error_code;
         }
@@ -695,8 +695,7 @@ int ObResultSetFetcher::do_read(const int64_t len, common::ObString &data)
     // get first io block
     if (NULL == cur_block_) {
       if (NULL != reader_->block_) {
-        reader_->skip_empty_blocks();
-        cur_block_ = reader_->block_;
+        cur_block_ = reader_->get_start_offset_block();
         cur_offset_ = reader_->start_offset_;
       }
     }

@@ -299,7 +299,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
 %token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
 %token<str> LOAD DATA LOCAL INFILE SLAVE RELAYLOG EVENTS HOSTS BINLOG PORT
-%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS SESSION_ALIAS LOCAL_ALIAS MASTER LOGS RESET FLUSH SERVER TENANT
+%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS MASTER LOGS RESET FLUSH SERVER TENANT
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
@@ -325,7 +325,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_WARNLOG
 %token<str> SHOW_PROXYSTAT REFRESH
 %token<str> SHOW_PROXYTRACE
-%token<str> SHOW_PROXYINFO BINARY UPGRADE IDC
+%token<str> SHOW_PROXYINFO BINARY UPGRADE IDC SHOW_PROXYPS DETAIL
 %token<str> SHOW_ELASTIC_ID SHOW_TOPOLOGY GROUP_NAME SHOW_DB_VERSION
 %token<str> SHOW_DATABASES SHOW_TABLES SHOW_FULL_TABLES SELECT_DATABASE SELECT_PROXY_STATUS
 %token<str> SHOW_CREATE_TABLE SELECT_PROXY_VERSION SHOW_COLUMNS SHOW_INDEX
@@ -756,10 +756,6 @@ merge_stmt: merge_with_opt_hint table_factor {
                                                  HANDLE_ACCEPT();
                                                }
 
-opt_sys_var_alias: GLOBAL_ALIAS
-                 | SESSION_ALIAS
-                 | LOCAL_ALIAS
-
 set_stmt: SET set_expr_list
 
 set_expr_list: set_expr ',' set_expr_list
@@ -832,12 +828,11 @@ comment_expr: COMMENT_BEGIN comment_list COMMENT_END {}
             | COMMENT_BEGIN DBP_COMMENT ROUTE_TAG '=' '{' dbp_comment_list '}' COMMENT_END  {}
             | COMMENT_BEGIN DBP_COMMENT SYS_TAG '=' '{' dbp_sys_comment '}' COMMENT_END  {}
             | COMMENT_BEGIN TARGET_DB_SERVER '=' right_string_val odp_comment_list COMMENT_END { result->target_db_server_ = $4; }
+
 comment_list: /* empty */ {}
             | comment_list comment
 
-comment: ROUTE_TABLE NAME_OB { result->has_simple_route_info_ = true; result->simple_route_info_.table_name_ = $2; }
-       | ROUTE_PART_KEY NAME_OB { result->simple_route_info_.part_key_ = $2; }
-       | NAME_OB
+comment: var_name
 
 dbp_comment_list: dbp_comment ',' dbp_comment_list
                 | dbp_comment
@@ -891,7 +886,18 @@ odp_comment: GROUP_ID '=' right_string_val   { result->dbmesh_route_info_.group_
              $$->col_str_value_ = $5;
              add_shard_column_node(result->dbmesh_route_info_, $$);
            }
-           | NAME_OB '=' name_right_string_val {}
+           | NAME_OB '=' name_right_string_val            {}
+           | ROUTE_TABLE '(' var_name ')'                 { result->has_hint_route_info_ = true; result->hint_route_info_.table_name_ = $3; }
+           | ROUTE_PART_KEY '(' part_kv_comment_list ')'  { result->has_hint_route_info_ = true; }
+
+part_kv_comment_list: part_kv_comment ',' part_kv_comment_list {}
+                    | part_kv_comment
+
+part_kv_comment : var_name '=' set_var_value {
+                    if (result->hint_route_info_.part_key_info_.node_count_ < OBPROXY_MAX_PART_KEY_PARSE_NUM) {
+                      add_set_var_node(result->hint_route_info_.part_key_info_, $3, $1, SET_VAR_USER);
+                    }
+                  }
 
 tracer_right_string_val: /* empty */ { $$.str_ = NULL; $$.str_len_ = 0; }
                        | right_string_val
@@ -899,12 +905,11 @@ tracer_right_string_val: /* empty */ { $$.str_ = NULL; $$.str_len_ = 0; }
 name_right_string_val: /* empty */ { $$.str_ = NULL; $$.str_len_ = 0; }
                      | right_string_val
 
-right_string_val: NAME_OB
+right_string_val: var_name
                 | NAME_STR
 
-select_with_binlog: SELECT '@' BINLOG_USER_VAR
-                  | SELECT opt_sys_var_alias BINLOG_SYS_VAR
-                  | SELECT '@' '@' BINLOG_SYS_VAR
+select_with_binlog: SELECT BINLOG_USER_VAR
+                  | SELECT BINLOG_SYS_VAR
 
 select_with_port : SELECT GLOBAL_ALIAS PORT
                   | SELECT '@' '@' PORT
@@ -974,6 +979,7 @@ show_stmt: SHOW opt_count WARNINGS { result->cur_stmt_type_ = OBPROXY_T_SHOW_WAR
          | SHOW MASTER STATUS { result->is_binlog_related_ = true; }
          | SHOW BINARY LOGS { result->is_binlog_related_ = true; }
          | SHOW BINLOG EVENTS { result->is_binlog_related_ = true; }
+         | SHOW MASTER LOGS { result->is_binlog_related_ = true; }
 
 
  /* internal cmd stmt */
@@ -995,6 +1001,7 @@ icmd_stmt: show_proxynet
          | show_proxytrace
          | show_proxyinfo
          | show_proxykv
+         | show_proxyps
          | alter_proxyconfig
          | alter_proxyresource
          | ping_proxy
@@ -1168,6 +1175,18 @@ show_proxyinfo:
 | SHOW_PROXYINFO UPGRADE      { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_INFO_UPGRADE); }
 | SHOW_PROXYINFO IDC          { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_INFO_IDC); }
 
+show_proxyps:
+  SHOW_PROXYPS opt_int opt_like opt_detail         {}
+| SHOW_PROXYPS opt_int opt_like TENANT opt_large_like opt_detail {}
+
+opt_detail:
+  /*empty*/                     {}
+| DETAIL                        {SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_PS_ALL);}
+
+opt_int:
+  /* empty */                 {}
+| INT_NUM                     { SET_ICMD_ONE_ID($1);  }
+
  /*alter proxyconfig grammer*/
 alter_proxyconfig:
   ALTER_PROXYCONFIG SET NAME_OB '='           { SET_ICMD_ONE_STRING($3); }
@@ -1325,6 +1344,7 @@ non_reserved_keyword: START
                     | FLUSH
                     | SERVER
                     | TENANT
+                    | DETAIL
 
 var_name: NAME_OB
         | non_reserved_keyword

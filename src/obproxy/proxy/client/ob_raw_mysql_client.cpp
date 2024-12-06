@@ -121,7 +121,7 @@ int ObRawMysqlClientActor::sync_raw_execute(const char *sql, const int64_t timeo
 
     if (OB_FAIL(ret)) {
       // do nothing
-    } if (OB_FAIL(send_request(sql))) {
+    } else if (OB_FAIL(send_request(sql))) {
       LOG_WDIAG("fail to post request", K(sql), K(ret));
     } else {
       resp = resp_;

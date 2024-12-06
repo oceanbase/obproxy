@@ -142,6 +142,7 @@ uint64_t ObVipInfo::get_hash() const
   hash = vip_addr_.hash(0);
   hash = tenant_name_.hash(hash);
   hash = cluster_name_.hash(hash);
+  hash = service_name_.hash(hash);
   return hash;
 }
 
@@ -151,7 +152,8 @@ bool ObVipInfo::operator==(const ObVipInfo &other) const
   if (this != &other) {
     bret = (vip_addr_ == other.vip_addr_
             && tenant_name_ == other.tenant_name_
-            && cluster_name_ == other.cluster_name_);
+            && cluster_name_ == other.cluster_name_
+            && service_name_ == other.service_name_);
   }
   return bret;
 }
@@ -242,9 +244,10 @@ int ObProxyConfigTableProcessor::update_proxy_multi_config(
 
 int ObProxyConfigTableProcessor::get_proxy_multi_config(const obutils::ObVipAddr &vip_addr,
                                                         const common::ObString &cluster_name, 
-                                                        const common::ObString &tenant_name, 
+                                                        const common::ObString &tenant_name,
                                                         const uint64_t global_version,
-                                                        ObProxyMultiLevelConfig* &old_config)
+                                                        ObProxyMultiLevelConfig* &old_config,
+                                                        const common::ObString &service_name)
 {
   int ret = OB_SUCCESS;
   ObProxyMultiLevelConfig* cur_config = NULL;
@@ -252,6 +255,7 @@ int ObProxyConfigTableProcessor::get_proxy_multi_config(const obutils::ObVipAddr
   key.vip_addr_ = vip_addr;
   key.cluster_name_.rewrite(cluster_name);
   key.tenant_name_.rewrite(tenant_name);
+  key.service_name_ = service_name;
   // 注意在全局对象中调用！
   // 先读数据是否存在，存在则：判断数据版本是否等于全局版本，不匹配从Hash中删除
   // 如果不等于全局版本，或者不存在（都用cur_config == NULL判断），并创建config并插入Hash
@@ -399,6 +403,7 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   const obutils::ObVipAddr &addr = vip_info_.vip_addr_;
   const ObConfigVariableString &tenant_name = vip_info_.tenant_name_;
   const ObConfigVariableString &cluster_name = vip_info_.cluster_name_;
+  const ObConfigVariableString &service_name = vip_info_.service_name_;
 
   GetProxyConfigVariableStr(proxy_route_policy);
   GetProxyConfigVariableStr(proxy_idc_name);
@@ -424,6 +429,29 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   GetProxyConfigTime(observer_query_timeout_delta);
   GetProxyConfigTime(query_digest_time_threshold);
   GetProxyConfigTime(slow_query_time_threshold);
+  // rootservice_cluster_name
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    // Get from metadb. If not found, will get global level config.
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, "", "", "rootservice_cluster_name", item, false, service_name))) {
+      PROXY_LOG(WDIAG, "fail to get rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(ret));
+    } else if ((0 != strlen(item.str())) && OB_FAIL(rootservice_cluster_name_.rewrite(item.str(), strlen(item.str())))) {
+      PROXY_LOG(WDIAG, "fail to rewrite rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(item), K(ret));
+    }
+  }
+  // enable_standby_read_write_split
+  if (OB_SUCC(ret)) {
+    ObConfigBoolItem item;
+    // Get from metadb. If not found, will get global level config.
+    if (OB_FAIL(get_global_config_processor().get_proxy_config_bool_item(
+          addr, "", "", "enable_standby_read_write_split", item, false, service_name))) {
+      PROXY_LOG(WDIAG, "fail to get enable_standby_read_write_split", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(ret));
+    } else if (0 != strlen(item.str())) {
+      enable_standby_read_write_split_ = item.get_value();
+    }
+  }
+
   // ssl_attributes
   if (OB_SUCC(ret)) {
     ObConfigItem item;
@@ -765,6 +793,57 @@ int ObProxyConfigTableProcessor::is_weigth_zone_config_valid(const ObProxyConfig
   return ret;
 }
 
+bool ObProxyConfigTableProcessor::can_write_to_sqlite(const bool is_backup)
+{
+  // 配置写入有2个阶段：1. 写备内存；2. 写主内存
+  // 其中重写sql到sqlite放到阶段1，且不能在启动阶段（从init_callback调用）
+  return is_backup && need_sync_to_file_;
+}
+
+int ObProxyConfigTableProcessor::rewrite_service_name_config(
+                                  const bool is_backup,
+                                  ObProxyConfigItem &item,
+                                  const ObString &vip,
+                                  const int64_t vport,
+                                  const int64_t vid)
+{
+  int ret = OB_SUCCESS;
+  // service name配置的集群名为空。租户大小写不敏感，统一转为小写保存
+  if (!item.vip_info_.cluster_name_.is_empty()) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("cluster name for service name must be empty", K(item), K(ret));
+  } else {
+    item.vip_info_.tenant_name_.to_lower_case();
+  }
+
+  // 重写sql，覆盖对应的配置
+  if (OB_SUCC(ret) && can_write_to_sqlite(is_backup)) {
+    const int64_t MAX_LEN = OB_MAX_CONFIG_VALUE_LEN + 256;
+    char sql[MAX_LEN];
+    int64_t len = static_cast<int64_t>(snprintf(
+        sql, MAX_LEN, EXECUTE_SQL, vip.length(), vip.ptr(),
+        vid, vport,
+        item.vip_info_.cluster_name_.size(),
+        item.vip_info_.cluster_name_.ptr(),
+        item.vip_info_.tenant_name_.size(), item.vip_info_.tenant_name_.ptr(),
+        item.config_item_.name(), item.config_item_.str(),
+        item.config_level_.size(), item.config_level_.ptr()));
+    if (OB_UNLIKELY(len <= 0 || len >= MAX_LEN)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to rewrite service_name config sql", K(len), K(ret));
+    } else {
+      ObProxyVariantString buf_string;
+      buf_string.set_value(sql);
+      if (OB_FAIL(execute_sql_array_.push_back(buf_string))) {
+        LOG_WDIAG("execute_sql_array push back failed", K(ret));
+      } else {
+        LOG_DEBUG("succ to push service name config sql", K(sql));
+      }
+    }
+  }
+  return ret;
+}
+
 int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backup, int64_t row_index)
 {
   int ret = OB_SUCCESS;
@@ -919,6 +998,17 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
             LOG_WDIAG("route_target_replica_type config is not valid", K(item), K(ret));
           }
         }
+        // service name租户级别配置
+        bool is_service_name_config = false;
+        if (OB_SUCC(ret) && (0 == strncasecmp("LEVEL_TENANT", item->config_level_.ptr(), 12))
+            && static_cast<ObString>(item->vip_info_.tenant_name_).prefix_case_match(OB_SERVICE_NAME_PRIFIX)
+            && NULL != item->config_item_.str()
+            && '\0' != *item->config_item_.str()) {
+          is_service_name_config = true;
+          if (OB_FAIL(rewrite_service_name_config(is_backup, *item, vip, vport, vid))) {
+            LOG_WDIAG("fail to rewrite service_name config", KPC(item), K(ret));
+          }
+        }
 
         if (OB_SUCC(ret) && 0 == strcasecmp("init_sql", item->config_item_.name())
             && NULL != item->config_item_.str()
@@ -1023,32 +1113,15 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
               LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
             }
           } else if (0 == strcasecmp("LEVEL_CLUSTER", item->config_level_.ptr())) {
-            if (!vip.empty() || 0 != vport || -1 != vid || !item->vip_info_.tenant_name_.is_empty()) {
-              ret = OB_ERR_UNEXPECTED;
-              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
-            }
-          } else if (0 == strcasecmp("LEVEL_TENANT", item->config_level_.ptr())) {
-            if (!vip.empty() || 0 != vport || -1 != vid) {
-              ret = OB_ERR_UNEXPECTED;
-              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
-            }
-          }
-        }
-
-        // 检查配置设置时的主键信息和 level 是否匹配
-        if (OB_SUCC(ret)) {
-          if (0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
-            if (!vip.empty() || 0 != vport || -1 != vid || !item->vip_info_.cluster_name_.is_empty() || !item->vip_info_.tenant_name_.is_empty()) {
-              ret = OB_ERR_UNEXPECTED;
-              LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
-            }
-          } else if (0 == strcasecmp("LEVEL_CLUSTER", item->config_level_.ptr())) {
             if (!vip.empty() || 0 != vport || -1 != vid || !item->vip_info_.tenant_name_.is_empty() || item->vip_info_.cluster_name_.is_empty()) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
             }
           } else if (0 == strcasecmp("LEVEL_TENANT", item->config_level_.ptr())) {
-            if (!vip.empty() || 0 != vport || -1 != vid || item->vip_info_.cluster_name_.is_empty() || item->vip_info_.tenant_name_.is_empty()) {
+            if (!vip.empty() || 0 != vport || -1 != vid
+                || item->vip_info_.tenant_name_.is_empty()
+                // service name的集群名为空，其它租户级别配置都不能为空
+                || (!is_service_name_config && item->vip_info_.cluster_name_.is_empty())) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("set config info failed", K(vip), K(vport), K(vid), KPC(item), K(ret));
             }
@@ -1057,7 +1130,7 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
 
         // GLOBAL级别配置同步，统一到before_commit中执行
         if (OB_SUCC(ret)) {
-          if (is_backup && need_sync_to_file_ && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
+          if (can_write_to_sqlite(is_backup) && 0 == strcasecmp("LEVEL_GLOBAL", item->config_level_.ptr())) {
             ObProxyVariantString config_name;
             ObProxyVariantString config_value;
             if (OB_UNLIKELY(!config_name.set_value(item->config_item_.name()))) {
@@ -1411,7 +1484,7 @@ int ObProxyConfigTableProcessor::commit_execute_sql(sqlite3 *db)
       ObString sql = execute_sql_array_.at(i).config_string_;
       int sqlite_err_code = SQLITE_OK;
       if (SQLITE_OK != (sqlite_err_code = sqlite3_exec(db, sql.ptr(), NULL, 0, &err_msg))) {
-        ret = OB_ERR_UNEXPECTED;
+        ret = OB_SQLITE3_EXEC_ERROR;
         LOG_WDIAG("sqlite exec failed", K(sqlite_err_code), K(sql), K(ret), "err_msg", err_msg);
       }
 

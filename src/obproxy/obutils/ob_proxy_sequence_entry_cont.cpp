@@ -777,7 +777,7 @@ int ObProxySequenceEntryCont::handle_inform_out_event()
   if (this_ethread() != submit_thread_) {
     LOG_EDIAG("this thread must be equal with submit_thread", "this ethread", this_ethread(), K_(submit_thread),
               K(sequence_info_.seq_id_), K(ret));
-  } if (cont_type_ == OB_SEQUENCE_CONT_ASYNC_TYPE) {
+  } else if (cont_type_ == OB_SEQUENCE_CONT_ASYNC_TYPE) {
     // async only need set sequence_info2 to entry
     LOG_DEBUG("async type here do nothing", K(sequence_info_.seq_id_));
   } else if (!action_.cancelled_) {

@@ -38,8 +38,7 @@ int ObRespAnalyzerUtil::analyze_one_compressed_ob20_packet(
       char *data = NULL;
       int64_t data_size = 0;
       if (NULL != tmp_reader->block_) {
-        tmp_reader->skip_empty_blocks();
-        block = tmp_reader->block_;
+        block = tmp_reader->get_start_offset_block();
         offset = tmp_reader->start_offset_;
         data = block->start() + offset;
         data_size = block->read_avail() - offset;

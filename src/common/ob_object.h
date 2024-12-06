@@ -1408,6 +1408,7 @@ inline bool ObObj::need_deep_copy()const
             || ob_is_geometry(meta_.get_type())
             || ob_is_raw(meta_.get_type())
             || ob_is_user_defined_sql_type(meta_.get_type())
+            || ob_is_collection_sql_type(meta_.get_type())
             || ob_is_rowid_tc(meta_.get_type())) && 0 != val_len_ && NULL != get_string_ptr())
             || (ob_is_number_tc(meta_.get_type())
              && 0 != nmb_desc_.len_ && NULL != get_number_digits())
@@ -1793,7 +1794,7 @@ OB_INLINE int64_t ObObj::get_deep_copy_size() const
 {
   int64_t ret = 0;
   if (is_string_type() || is_raw() || ob_is_rowid_tc(get_type()) || is_lob_locator() || is_json()
-      || is_geometry() || is_user_defined_sql_type() || ob_is_decimal_int(get_type())) {
+      || is_geometry() || is_user_defined_sql_type() || ob_is_decimal_int(get_type())|| ob_is_collection_sql_type(get_type())) {
     ret += val_len_;
   } else if (ob_is_number_tc(get_type())) {
     ret += (sizeof(uint32_t) * nmb_desc_.len_);

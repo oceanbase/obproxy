@@ -42,7 +42,7 @@ int64_t ObProxyParseResultWapper::to_string(char *buf, const int64_t buf_len) co
   return pos;
 }
 
-ObProxyParserChecker::ObProxyParserChecker() : is_verbose_(true),
+ObProxyParserChecker::ObProxyParserChecker() : is_verbose_(true), is_sharding_req_(false),
                                                total_count_(0), succ_count_(0),
                                                proxy_parse_time_(0),
                                                result_file_name_(""), result_file_(NULL),
@@ -59,7 +59,7 @@ int ObProxyParserChecker::do_obproxy_parser(const ObString &query_str, ObProxyPa
   ObProxyParseResult obproxy_parse_result;
   if (OB_FAIL(parser.parse(query_str, obproxy_parse_result, connection_collation))) {
     // do nothing
-  } else if (OB_FAIL(result.load_result(&obproxy_parse_result))) {
+  } else if (OB_FAIL(result.load_result(&obproxy_parse_result, is_sharding_req_))) {
     // do nothing
   }
 
@@ -176,7 +176,7 @@ int main(int argc, char **argv)
   const char *input_str = "";
   ObCollationType connection_collation = CS_TYPE_INVALID;
   int loop_count = 1;
-  while(-1 != (c = getopt(argc, argv, "f:s:n:r:c:SD"))) {
+  while(-1 != (c = getopt(argc, argv, "f:s:n:r:c:SDX"))) {
     switch(c) {
       case 'f':
         filepath = optarg;
@@ -205,6 +205,8 @@ int main(int argc, char **argv)
         break;
       case 'r':
         checker.result_file_name_ = optarg;
+      case 'X':
+        checker.is_sharding_req_ = true;
     }
   }
 

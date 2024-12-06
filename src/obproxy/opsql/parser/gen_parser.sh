@@ -238,3 +238,5 @@ sed "/Setup the input buffer state to scan the given bytes/,/}/{s/\tbuf\[i\] = y
 rm -f ob_proxy_parser_gbk.l
 rm -f ob_proxy_parser_gbk.y
 rm -f ob_proxy_parser_gbk.output
+rm -f gbk.txt
+rm -f utf8.txt

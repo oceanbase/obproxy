@@ -41,8 +41,6 @@ using namespace obutils;
 using namespace obmysql;
 using namespace event;
 using namespace packet;
-static const char OBPROXY_SIMPLE_PART_KEY_MARK = '*';
-
 int ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,
                                                        ObIOBufferReader *buffer_reader,
                                                        const ObString &vip_tenant_name,
@@ -51,7 +49,7 @@ int ObRequestAnalyzeCtx::init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,
   int ret = OB_SUCCESS;
 
   ctx.reader_ = buffer_reader;
-  ctx.is_auth_ = true;
+  ctx.request_phase_ = REQ_PHASE_HANDSHAKE;
   ctx.vip_tenant_name_ = vip_tenant_name;
   ctx.vip_cluster_name_ = vip_cluster_name;
   /*
@@ -108,16 +106,14 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
   } else {
     // 1. determine whether mysql request packet is received complete
     ObMysqlAnalyzeResult result;
-    if (OB_UNLIKELY(ctx.is_auth_)) {
+    if (OB_UNLIKELY(ctx.is_handshake_req_phase())) {
       if (OB_FAIL(handle_auth_request(*ctx.reader_, result))) {
         LOG_WDIAG("fail to handle auth request", K(ret));
       }
-    // for content of file packet ignore the cmd/pkt type
-    } else if (OB_UNLIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == sql_cmd)) {
-      if (OB_FAIL(ObProxyParserUtils::analyze_one_packet_only_header(*ctx.reader_, result))) {
-        LOG_WDIAG("fail to analyze one packet only header", K(ret), "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(sql_cmd));
-      } else {
-        result.meta_.cmd_ = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
+    // for auth switch response and file content request set cmd manually
+    } else if (OB_UNLIKELY(ctx.is_auth_switch_resp_phase() || ctx.is_file_content_req_phase())) {
+      if (OB_FAIL(handle_no_cmd_request(ctx, result))) {
+        LOG_WDIAG("fail to analyze one packet only header", K(ret));
       }
     } else {
       if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*ctx.reader_, result))) {
@@ -134,7 +130,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
       if (avail_bytes > result.meta_.pkt_len_) {
         LOG_DEBUG("recevied more than one mysql packet at once, it is unexpected so far",
                  "first packet len(include packet header)", result.meta_.pkt_len_,
-                 "total len received", avail_bytes, K(ctx.is_auth_));
+                 "total len received", avail_bytes, K(ctx.is_handshake_req_phase()));
       } else if (result.meta_.cmd_ < OB_MYSQL_COM_SLEEP || result.meta_.cmd_ >= OB_MYSQL_COM_MAX_NUM) {
         LOG_WDIAG("unknown mysql cmd", "cmd", result.meta_.cmd_, K(avail_bytes),
                  "packet len", result.meta_.pkt_len_);
@@ -143,12 +139,12 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
 
     status = result.status_;
     if (ANALYZE_DONE == status) {
-      LOG_DEBUG("mysql request packet is received complete", "is_auth", ctx.is_auth_,
+      LOG_DEBUG("mysql request packet is received complete", "is_handshake_req_phase", ctx.is_handshake_req_phase(),
               "analyze status", ObProxyParserUtils::get_analyze_status_name(status),
               K(result.meta_), "packet cmd type",
               ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
     } else {
-      LOG_DEBUG("mysql request packet has not yet been received complete", "is_auth", ctx.is_auth_,
+      LOG_DEBUG("mysql request packet has not yet been received complete", "is_handshake_req_phase", ctx.is_handshake_req_phase(),
                 "analyze status", ObProxyParserUtils::get_analyze_status_name(status), K(avail_bytes),
                 K(result.meta_), "packet cmd type",
                 ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
@@ -156,9 +152,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
 
     if (OB_SUCC(ret) && (ANALYZE_DONE == status || ANALYZE_CONT == status)) {
       // 3. set mysql request packet meta
-      if (OB_LIKELY(OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd)) {
-        sql_cmd = result.meta_.cmd_;
-      }
+      sql_cmd = result.meta_.cmd_;
       if (OB_UNLIKELY(OB_MYSQL_COM_LOGIN == result.meta_.cmd_ || OB_MYSQL_COM_HANDSHAKE == result.meta_.cmd_)) {
         // add pkt meta to mysql auth request
         auth_request.set_packet_meta(result.meta_);
@@ -183,7 +177,7 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
         }
       } else if (ANALYZE_CONT == status) {
         // we will analyze large request if we received enough packet(> request_buffer_len_)
-        if (!ctx.is_auth_
+        if (!ctx.is_handshake_req_phase()
             && ctx.large_request_threshold_len_ > 0
             && result.meta_.pkt_len_ > ctx.large_request_threshold_len_
             && avail_bytes + ObProxyMysqlRequest::PARSE_EXTRA_CHAR_NUM > ctx.request_buffer_length_
@@ -191,9 +185,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
             && !client_request.is_proxysys_user()
             && !ctx.using_ldg_
             && !ctx.using_service_name_
-            && OB_MYSQL_COM_STMT_SEND_LONG_DATA != sql_cmd
             && OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd
-            && OB_MYSQL_COM_CHANGE_USER != sql_cmd) {
+            && OB_MYSQL_COM_CHANGE_USER != sql_cmd
+            && OB_MYSQL_COM_AUTH_SWITCH_RESP != sql_cmd) {
           if (OB_FAIL(do_analyze_request(ctx, sql_cmd, auth_request, client_request, is_oracle_mode))) {
             status = ANALYZE_ERROR;
             LOG_WDIAG("fail to dispatch mysql cmd", "analyze status",
@@ -264,6 +258,7 @@ int ObMysqlRequestAnalyzer::is_request_finished(
     const ObRequestBuffer &buff,
     bool &is_finish,
     obmysql::ObMySQLCmd cmd,
+    int64_t &analyze_len,
     ObProtocolDiagnosis *protocol_diagnosis)
 {
   int ret = OB_SUCCESS;
@@ -274,6 +269,7 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   int64_t i = 0;
 
   int64_t header_len = 0;
+  analyze_len = 0;
   // payload_len_ is last mysql packet's payload_len
   // if payload_len_ == MYSQL_PACKET_MAX_LENGTH then
   // the next packet would be an empty packet(4 bytes)
@@ -314,7 +310,7 @@ int ObMysqlRequestAnalyzer::is_request_finished(
 
   if (OB_SUCC(ret) && found_next_payload_length) {
     // it is possible that more than one mysql packet is in buff
-    while (total_packet_length_ < length + nbytes_analyze_) {
+    while (total_packet_length_ < length + nbytes_analyze_ && !is_last_request_packet_) {
       // found new payload length
       int64_t next_packet_start_offset = total_packet_length_ - nbytes_analyze_;
       int64_t left_length = length - next_packet_start_offset;
@@ -340,15 +336,22 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   }
 
   if (OB_SUCC(ret)) {
-    nbytes_analyze_ += length;
-    if (total_packet_length_ == nbytes_analyze_ && is_last_request_packet_) {
-      is_finish = true;
+    if (total_packet_length_ < length + nbytes_analyze_ && is_last_request_packet_) {
+      analyze_len = total_packet_length_ - nbytes_analyze_;
+      nbytes_analyze_ = total_packet_length_;
     } else {
+      analyze_len = length;
+      nbytes_analyze_ += length;
+    }
+
+    if (total_packet_length_ == nbytes_analyze_) {
+      is_finish = true;
+     } else {
       is_finish = false;
     }
   }
   LOG_DEBUG("analyze_request_is_finish", K(length), K(nbytes_analyze_), K(total_packet_length_),
-                                         K(is_last_request_packet_), K(is_finish));
+                                         K(is_last_request_packet_), K(is_finish), K(analyze_len));
   return ret;
 }
 
@@ -356,21 +359,21 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   event::ObIOBufferReader &reader,
   bool &is_finish,
   obmysql::ObMySQLCmd cmd,
-  int64_t analyze_len,
+  int64_t request_len,
+  int64_t &analyze_len,
   ObProtocolDiagnosis *protocol_diagnosis)
 {
   int ret = OB_SUCCESS;
-
+  analyze_len = 0;
   ObIOBufferBlock *block = NULL;
   int64_t offset = 0;
   char *data = NULL;
   int64_t data_size = 0;
   if (NULL != reader.block_) {
-    reader.skip_empty_blocks();
-    block = reader.block_;
+    block = reader.get_start_offset_block();
     offset = reader.start_offset_;
     data = block->start() + offset;
-    data_size = std::min(block->read_avail() - offset, analyze_len);
+    data_size = std::min(block->read_avail() - offset, request_len);
   }
 
   if (data_size <= 0) {
@@ -382,26 +385,23 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   ObRequestBuffer buffer;
   while (OB_SUCC(ret) && NULL != block && data_size > 0 && !is_finish) {
     buffer.assign_ptr(data, static_cast<int32_t>(data_size));
-    analyze_len -= data_size;
-    if (OB_FAIL(is_request_finished(buffer, is_finish, cmd, protocol_diagnosis))) {
+    request_len -= data_size;
+    int64_t analyze_block = 0;
+    if (OB_FAIL(is_request_finished(buffer, is_finish, cmd, analyze_block, protocol_diagnosis))) {
       LOG_WDIAG("fail to do is_request_finished", K(ret), K(cmd));
     } else {
+      analyze_len += analyze_block;
       // on to the next block
       offset = 0;
       block = block->next_;
       if (NULL != block) {
         data = block->start();
-        data_size = std::min(block->read_avail(), analyze_len);
-        if (is_finish && (data_size > 0)) {
-          mysql_hex_dump(data, data_size);
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("receive two request, unexpected", K(is_finish), K(data_size), K(ret));
-        }
+        data_size = std::min(block->read_avail(), request_len);
       }
     }
   }
 
-  LOG_DEBUG("analyze_request_is_finish", "data_size", reader.read_avail(), K(is_finish), K(analyze_len));
+  LOG_DEBUG("analyze_request_is_finish", "data_size", reader.read_avail(), K(is_finish), K(request_len));
 
   return ret;
 }
@@ -417,10 +417,29 @@ void ObMysqlRequestAnalyzer::reuse()
   packet_seq_ = 0;
   cmd_ = 0;
   nbytes_analyze_ = 0;
-  is_last_request_packet_ = true;
+  is_last_request_packet_ = false;
   MEMSET(header_length_buffer_, 0, MYSQL_NET_HEADER_LENGTH);
   header_content_offset_ = 0;
   request_count_ = 0;
+}
+
+inline int ObMysqlRequestAnalyzer::handle_no_cmd_request(const ObRequestAnalyzeCtx &ctx,
+                                                         ObMysqlAnalyzeResult &result)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(ObProxyParserUtils::analyze_one_packet_only_header(*ctx.reader_, result))) {
+    LOG_WDIAG("fail to analyze one packet only header", K(ret), K(result));
+  } else {
+    if (ctx.is_auth_switch_resp_phase()) {
+      result.meta_.cmd_ = OB_MYSQL_COM_AUTH_SWITCH_RESP;
+    } else if (ctx.is_file_content_req_phase()) {
+      result.meta_.cmd_ = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("unexpected request phase here", K(ret), K(ctx.request_phase_));
+    }
+  }
+  return ret;
 }
 
 inline int ObMysqlRequestAnalyzer::handle_auth_request(ObIOBufferReader &reader,
@@ -678,13 +697,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_STMT_EXECUTE:
     case OB_MYSQL_COM_STMT_SEND_LONG_DATA:
     case OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
-    case OB_MYSQL_COM_STMT_GET_PIECE_DATA: {
-      // add packet's buffer to mysql common request, for parsing later
-      if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
-        LOG_WDIAG("fail to add com request", K(ret));
-      }
-      break;
-    }
+    case OB_MYSQL_COM_STMT_GET_PIECE_DATA:
     case OB_MYSQL_COM_CHANGE_USER:
     case OB_MYSQL_COM_RESET_CONNECTION:
     case OB_MYSQL_COM_INIT_DB: {
@@ -766,11 +779,6 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
         break;
       }
     }
-    case OB_MYSQL_COM_PING:
-    case OB_MYSQL_COM_HANDSHAKE:
-    case OB_MYSQL_COM_QUIT: {
-      break;
-    }
     default: {
       break;
     }
@@ -835,7 +843,8 @@ int ObMysqlRequestAnalyzer::handle_internal_cmd(ObProxyMysqlRequest &client_requ
   } else {
     //any one can call 'ping proxy' and show proxysession
     //but if parse failed, treat it as internal cmd
-    if (parse_result.is_show_session_stmt()) {
+    if (parse_result.is_show_session_stmt()
+        || parse_result.is_show_proxyps_stmt()) {
       is_internal_cmd = true;
     } else if (parse_result.is_ping_proxy_cmd()) {
       if (parse_result.is_internal_error_cmd()) {
@@ -900,30 +909,6 @@ void  ObMysqlRequestAnalyzer::mysql_hex_dump(const void *data, const int64_t siz
     int64_t dump_size = std::min(size, MAX_DUMP_SIZE);
     hex_dump(data, static_cast<int32_t>(dump_size), true, OB_LOG_LEVEL_WARN);
   }
-}
-
-int ObMysqlRequestAnalyzer::rewrite_part_key_comment(ObIOBufferReader *reader,
-                                                     ObProxyMysqlRequest &client_request)
-{
-  int ret = OB_SUCCESS;
-  ObSqlParseResult &parse_result = client_request.get_parse_result();
-  if (parse_result.has_simple_route_info()
-      && parse_result.is_simple_route_info_valid()) {
-    const ObProxySimpleRouteInfo &info = parse_result.route_info_;
-    int64_t route_info_len = std::max(info.table_len_ + info.table_offset_, info.part_key_len_ + info.part_key_offset_);
-    // start pos and end pos is relative to packet payload, meta bytes are not included
-    if (OB_ISNULL(reader)
-       || OB_UNLIKELY(MYSQL_NET_META_LENGTH + route_info_len > reader->read_avail())) {
-      // obproxy_simple_route_info_hint must be less than read_avail() - MYSQL_NET_META_LENGTH
-      ret = OB_INVALID_ARGUMENT;
-      LOG_WDIAG("invalid buffer reader", K(route_info_len), K(reader), K(ret));
-    } else {
-      // rewrite obproxy_simple_route_info with '*'
-      reader->replace_with_char(OBPROXY_SIMPLE_PART_KEY_MARK, info.table_len_, MYSQL_NET_META_LENGTH + info.table_offset_);
-      reader->replace_with_char(OBPROXY_SIMPLE_PART_KEY_MARK, info.part_key_len_, MYSQL_NET_META_LENGTH + info.part_key_offset_);
-    }
-  }
-  return ret;
 }
 
 int ObMysqlRequestAnalyzer::analyze_execute_header(const int64_t param_num,

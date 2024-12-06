@@ -32,6 +32,7 @@ int64_t ObPartitionEntryKey::to_string(char *buf, const int64_t buf_len) const
   J_OBJ_START();
   J_KV(K_(cr_version),
        K_(cr_id),
+       K_(tenant_id),
        K_(table_id),
        K_(partition_id));
   J_OBJ_END();
@@ -45,7 +46,8 @@ void ObPartitionEntry::free()
 }
 
 int ObPartitionEntry::alloc_and_init_partition_entry(
-    const uint64_t table_id, const uint64_t partition_id, const int64_t cr_version, const int64_t cr_id,
+    const uint64_t table_id, const uint64_t partition_id,
+    const int64_t cr_version, const int64_t cr_id, const uint64_t tenant_id,
     const common::ObIArray<ObProxyReplicaLocation> &replicas,
     ObPartitionEntry *&entry)
 {
@@ -56,7 +58,7 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
                   || OB_INVALID_ID == partition_id)
                   || replicas.empty()) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("invalid input value", K(table_id), K(partition_id), K(cr_version), K(cr_id), K(replicas), K(ret));
+    LOG_WDIAG("invalid input value", K(tenant_id), K(table_id), K(partition_id), K(cr_version), K(cr_id), K(replicas), K(ret));
   } else if (OB_ISNULL(entry = op_reclaim_alloc(ObPartitionEntry))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("fail to alloc parttition entry", K(ret));
@@ -69,6 +71,7 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
     entry->set_table_id(table_id);
     entry->set_cr_version(cr_version);
     entry->set_cr_id(cr_id);
+    entry->set_tenant_id(tenant_id);
     entry->set_partition_id(partition_id);
 
     entry->renew_last_access_time();
@@ -84,8 +87,9 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
     const common::ObIArray<ObProxyReplicaLocation> &replicas,
     ObPartitionEntry *&entry)
 {
-  return alloc_and_init_partition_entry(key.table_id_, key.partition_id_, key.cr_version_,
-      key.cr_id_, replicas, entry);
+  return alloc_and_init_partition_entry(key.table_id_,
+            key.partition_id_, key.cr_version_,
+            key.cr_id_, key.tenant_id_, replicas, entry);
 }
 
 int ObPartitionEntry::alloc_and_init_partition_entry(
@@ -98,7 +102,7 @@ int ObPartitionEntry::alloc_and_init_partition_entry(
   if (OB_FAIL(replicas.push_back(replica))) {
     LOG_WDIAG("fail to add replica location", K(replica), K(ret));
   } else if (OB_FAIL(alloc_and_init_partition_entry(key.table_id_, key.partition_id_,
-      key.cr_version_, key.cr_id_, replicas, entry))) {
+        key.cr_version_, key.cr_id_, key.tenant_id_, replicas, entry))) {
     LOG_WDIAG("fail to alloc and init partition entry", K(key), K(replicas), K(ret));
   } else {}
   return ret;
@@ -114,6 +118,7 @@ int64_t ObPartitionEntry::to_string(char *buf, const int64_t buf_len) const
   J_KV(KP(this),
        K_(pl),
        K_(has_dup_replica),
+       K_(tenant_id),
        K_(table_id),
        K_(partition_id));
   J_OBJ_END();

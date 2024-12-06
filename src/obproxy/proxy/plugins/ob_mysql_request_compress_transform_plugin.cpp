@@ -79,7 +79,8 @@ int ObMysqlRequestCompressTransformPlugin::consume(event::ObIOBufferReader *read
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_UNLIKELY(ObMysqlTransact::is_transfer_content_of_file(sm_->trans_state_))) {
+      if (OB_UNLIKELY(sm_->trans_state_.is_file_content_req_phase()
+                      || sm_->trans_state_.is_send_long_data_req_phase())) {
         if (OB_FAIL(consume_content_of_file_compress_packet())) {
           PROXY_API_LOG(WDIAG, "fail to consume_content_of_file_compress_packet", K(ret));
         }
@@ -134,6 +135,7 @@ int ObMysqlRequestCompressTransformPlugin::consume_normal_compress_packet(event:
     PROXY_API_LOG(DEBUG, "not received enough data to compress", K(local_read_avail),
                   K(newest_read_avail), LITERAL_K(MIN_COMPRESS_DATA_SIZE));
   }
+
   return ret;
 }
 
@@ -147,8 +149,7 @@ int ObMysqlRequestCompressTransformPlugin::consume_content_of_file_compress_pack
   char *block_buf = NULL;
   int64_t block_length = 0;
   if (NULL != local_reader_->block_) {
-    local_reader_->skip_empty_blocks();
-    block = local_reader_->block_;
+    block = local_reader_->get_start_offset_block();
     offset = local_reader_->start_offset_;
     if (OB_NOT_NULL(block)) {
       block_buf = block->start() + offset;

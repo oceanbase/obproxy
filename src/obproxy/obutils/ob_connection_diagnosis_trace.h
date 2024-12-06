@@ -215,7 +215,7 @@ public:
 public:
   int64_t cs_id_;
   int64_t ss_id_;
-  int64_t proxy_session_id_;
+  uint64_t proxy_session_id_;
   int64_t server_session_id_;
   char client_addr_[MAX_IP_ADDR_LENGTH];
   char server_addr_[MAX_IP_ADDR_LENGTH];

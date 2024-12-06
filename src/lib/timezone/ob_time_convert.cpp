@@ -1530,6 +1530,7 @@ int ObTimeConverter::str_to_offset(const ObString &str,
                || !is_single_colon(colon)
                || (none.len_ > 0 && !is_oracle_mode)) {
       ret = OB_ERR_UNKNOWN_TIME_ZONE;
+      LOG_DEBUG("offset str is not valid", K(ret));
     } else if (!need_check_valid) {
       /* sometimes no need check validation, such as session deserialization
        * and load time_zone system variable to session.
@@ -1549,6 +1550,7 @@ int ObTimeConverter::str_to_offset(const ObString &str,
       ret_more = is_oracle_mode ? (hour.value_ > ORACLE_OFFSET_MAX_HOUR ? OB_ERR_INVALID_TIME_ZONE_HOUR
                                                                         : OB_ERR_INVALID_TIME_ZONE_MINUTE)
                                 : ret_more;
+      LOG_DEBUG("offset minute value is valid", K_(minute.value));
     } else {
       value = static_cast<int32_t>(((hour.value_ * MINS_PER_HOUR) + minute.value_) * SECS_PER_MIN);
       if ('-' == sign) {

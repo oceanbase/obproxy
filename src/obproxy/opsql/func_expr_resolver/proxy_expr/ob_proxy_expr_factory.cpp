@@ -129,8 +129,12 @@ int ObProxyExprFactory::register_proxy_expr()
 
     REG_EXPR("TESTLOAD", OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD, ObProxyExprTestLoad);
     REG_EXPR("SPLIT", OB_PROXY_EXPR_TYPE_FUNC_SPLIT, ObProxyExprSplit);
-    REG_EXPR("TO_DATE", OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, ObProxyExprToTimeHandler); // special case will not call
-    REG_EXPR("TO_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, ObProxyExprToTimeHandler); // special case will not call
+    REG_EXPR("TO_DAYS", OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS, ObProxyExprToDays);
+    REG_EXPR("TO_DATE", OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, ObProxyExprToTime); // special case will not call
+    REG_EXPR("TO_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, ObProxyExprToTime); // special case will not call
+    REG_EXPR("TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP, ObProxyExprToTime);
+    REG_EXPR("DATE", OB_PROXY_EXPR_TYPE_FUNC_DATE, ObProxyExprToTime);
+    REG_EXPR("TIME", OB_PROXY_EXPR_TYPE_FUNC_TIME, ObProxyExprToTime);
     REG_EXPR("NVL", OB_PROXY_EXPR_TYPE_FUNC_NVL, ObProxyExprNvl);
     REG_EXPR("TO_CHAR", OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR, ObProxyExprToChar);
     REG_EXPR("SYSDATE", OB_PROXY_EXPR_TYPE_FUNC_SYSDATE, ObProxyExprSysdate);

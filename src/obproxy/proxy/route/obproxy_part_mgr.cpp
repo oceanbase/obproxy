@@ -121,22 +121,26 @@ int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
     } else if ((first_part_name_id_map_.created()) && OB_NOT_NULL(part_id_ptr = (int64_t *)first_part_name_id_map_.get(store_part_name))) {
     //find first part name, get ptr->(first part id)
       LOG_DEBUG("succ to get part id by first part name", K(*part_id_ptr), K(part_name));
-      if(OB_LIKELY(PARTITION_LEVEL_ONE == part_level)) {
+      if (OB_LIKELY(PARTITION_LEVEL_ONE == part_level)) {
         part_id = *part_id_ptr;
-      } else if((PARTITION_LEVEL_TWO == part_level)
-        && !obutils::get_global_proxy_config().enable_primary_zone
-        && !obutils::get_global_proxy_config().enable_cached_server) {
-        int64_t first_part_id = *part_id_ptr;
-        int64_t sub_part_id = OB_INVALID_INDEX;
-        if(OB_FAIL(expr_calculator.calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id, part_id))) {
-          LOG_DEBUG("fail to get random part id by first part name", K(first_part_id), K(part_id), K(part_name));
+      } else if (PARTITION_LEVEL_TWO == part_level) {
+        route.is_partition_calc_fail_ = true;
+        if (!obutils::get_global_proxy_config().enable_primary_zone
+            && !obutils::get_global_proxy_config().enable_cached_server) {
+          int64_t first_part_id = *part_id_ptr;
+          int64_t sub_part_id = OB_INVALID_INDEX;
+          if(OB_FAIL(expr_calculator.calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id, part_id))) {
+            LOG_DEBUG("fail to get random part id by first part name", K(first_part_id), K(part_id), K(part_name));
+          } else {
+            // get part id by random, no need update pl
+            route.no_need_pl_update_ = true;
+            LOG_DEBUG("succ to get random part id by first part name", K(first_part_id), K(sub_part_id), K(part_id));
+          }
         } else {
-          // get part id by random, no need update pl
-          route.no_need_pl_update_ = true;
-          LOG_DEBUG("succ to get random part id by first part name", K(first_part_id), K(sub_part_id), K(part_id));
+          // nothing, will use primary zone or cached server
         }
       } else {
-        //do nothing
+        // impossible
       }
     }
   }

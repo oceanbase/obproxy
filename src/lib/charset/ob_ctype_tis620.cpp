@@ -220,7 +220,7 @@ static int ob_wc_mb_tis620(const ObCharsetInfo *cs [[maybe_unused]], ob_wc_t wc,
 }  // extern "C"
 
 static ObCollationHandler ob_collation_tis620_handler = {
-    // NULL, /* init */
+    NULL, /* init */
     // NULL,
     ob_strnncoll_tis620,
     ob_strnncollsp_tis620,
@@ -235,7 +235,7 @@ static ObCollationHandler ob_collation_tis620_handler = {
     ob_propagate_simple};
 
 static ObCharsetHandler ob_charset_tis620_handler = {
-    // NULL,           /* init */
+    NULL,           /* init */
     NULL,           /* ismbchar  */
     ob_mbcharlen_8bit, /* mbcharlen */
     ob_numchars_8bit,

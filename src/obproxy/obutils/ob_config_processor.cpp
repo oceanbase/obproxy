@@ -447,14 +447,14 @@ int ObConfigProcessor::execute_and_commit_config(const ObString &sql, const ObCo
       sql_buf[sql.length()] = '\0';
       int sqlite_err_code = SQLITE_OK;
       if (SQLITE_OK != (sqlite_err_code = sqlite3_exec(proxy_config_db_, "begin;", NULL, 0, &err_msg))) {
-        ret = OB_ERR_UNEXPECTED;
+        ret = OB_SQLITE3_EXEC_ERROR;
         LOG_WDIAG("sqlite3 exec begin failed", K(sqlite_err_code), K(proxy_config_db_), K(ret), K(sql), "err_msg", err_msg);
         sqlite3_free(err_msg);
       }
 
       if (OB_SUCC(ret) && SQLITE_OK != (sqlite_err_code = sqlite3_exec(proxy_config_db_, sql_buf,
                                                     NULL, 0, &err_msg))) {
-        ret = OB_ERR_UNEXPECTED;
+        ret = OB_SQLITE3_EXEC_ERROR;
         LOG_WDIAG("sqlite3 exec sql failed", K(sqlite_err_code), K(proxy_config_db_), K(sql), "err_msg", err_msg);
         sqlite3_free(err_msg);
       }
@@ -498,7 +498,7 @@ int ObConfigProcessor::execute_and_commit_config(const ObString &sql, const ObCo
   const char *end_sql = (is_success ? "commit;" : "rollback;");
   int sqlite_err_code = SQLITE_OK;
   if (SQLITE_OK != (sqlite_err_code = sqlite3_exec(proxy_config_db_, end_sql, NULL, 0, &err_msg))) {
-    ret = OB_ERR_UNEXPECTED;
+    ret = OB_SQLITE3_EXEC_ERROR;
     LOG_WDIAG("sqlite3 exec commit or rollback failed", K(sqlite_err_code), K(proxy_config_db_), K(sql), "err_msg", err_msg);
     sqlite3_free(err_msg);
   }
@@ -753,7 +753,8 @@ int ObConfigProcessor::get_proxy_config_with_level(const ObVipAddr &addr, const 
 
 int ObConfigProcessor::get_proxy_config(const ObVipAddr &addr, const ObString &cluster_name,
                                         const ObString &tenant_name, const ObString& name,
-                                        ObConfigItem &ret_item, const bool lock_required/*true*/)
+                                        ObConfigItem &ret_item, const bool lock_required/*true*/,
+                                        const ObString service_name/*空字符串*/)
 {
   int ret = OB_SUCCESS;
   ObVipAddr tmp_addr = addr;
@@ -766,7 +767,13 @@ int ObConfigProcessor::get_proxy_config(const ObVipAddr &addr, const ObString &c
 
   if (OB_SUCC(ret) && !found) {
     tmp_addr.reset();
-    if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_TENANT", found, lock_required))) {
+    // service name拿多级别配置时，传入的cluster和tenant一定为空
+    // 目前只有rootservice_cluster_name、enable_standby_read_write_split使用
+    if (!service_name.empty()) {
+      if (OB_FAIL(get_proxy_config_with_level(tmp_addr, "", service_name, name, ret_item, "LEVEL_TENANT", found, lock_required))) {
+        LOG_WDIAG("get_proxy_config_with_level failed", K(ret));
+      }
+    } else if (OB_FAIL(get_proxy_config_with_level(tmp_addr, tmp_cluster_name, tmp_tenant_name, name, ret_item, "LEVEL_TENANT", found, lock_required))) {
       LOG_WDIAG("get_proxy_config_with_level failed", K(ret));
     }
   }
@@ -791,11 +798,12 @@ int ObConfigProcessor::get_proxy_config(const ObVipAddr &addr, const ObString &c
 
 int ObConfigProcessor::get_proxy_config_bool_item(const ObVipAddr &addr, const ObString &cluster_name,
                                                   const ObString &tenant_name, const ObString& name,
-                                                  ObConfigBoolItem &ret_item, const bool lock_required/*true*/)
+                                                  ObConfigBoolItem &ret_item, const bool lock_required/*true*/,
+                                                  const ObString service_name/*空字符串*/)
 {
   int ret = OB_SUCCESS;
   ObConfigItem item;
-  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item, lock_required))) {
+  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item, lock_required, service_name))) {
     LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
   } else {
     ret_item.set(item.str());
@@ -807,11 +815,12 @@ int ObConfigProcessor::get_proxy_config_bool_item(const ObVipAddr &addr, const O
 
 int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const ObString &cluster_name,
                                                   const ObString &tenant_name, const ObString& name,
-                                                  ObConfigIntItem &ret_item, const bool lock_required/*true*/)
+                                                  ObConfigIntItem &ret_item, const bool lock_required/*true*/,
+                                                  const ObString service_name/*空字符串*/)
 {
   int ret = OB_SUCCESS;
   ObConfigItem item;
-  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item, lock_required))) {
+  if (OB_FAIL(get_proxy_config(addr, cluster_name, tenant_name, name, item, lock_required, service_name))) {
     LOG_WDIAG("get proxy config failed", K(addr), K(cluster_name), K(tenant_name), K(name), K(ret));
   } else {
     ret_item.set(item.str());

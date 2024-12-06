@@ -460,7 +460,7 @@ int wild_compare(const ObString &str, const ObString &wild_str, const bool str_i
 
 ///@brief Get the sort value.
 ///  The string wich is more specific has larger number. Each string has 8 bits. The number 128
-///represents string without wild char. Others represent the position of the fist wild char.
+///represents string without wild char. Others represent the position of the first wild char.
 ///wild char
 ///param [in] count count of arguments
 ///param [in] ... strings of needed to compute sort value

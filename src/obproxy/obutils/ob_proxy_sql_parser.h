@@ -247,36 +247,6 @@ struct ObProxyTextPsInfo
   bool is_param_valid_;//whether size is valid
 };
 
-struct ObProxySimpleRouteInfo
-{
-  ObProxySimpleRouteInfo() { reset(); }
-  ~ObProxySimpleRouteInfo() { reset(); }
-  DECLARE_TO_STRING;
-
-  int64_t table_offset_;
-  int64_t table_len_;
-  int64_t part_key_offset_;
-  int64_t part_key_len_;
-  char table_name_buf_[common::OB_MAX_TABLE_NAME_LENGTH + 1];
-  char part_key_buf_[OBPROXY_MAX_STRING_VALUE_LENGTH + 1];
-
-  bool is_valid() const
-  {
-    return strlen(table_name_buf_) > 0 && strlen(part_key_buf_) > 0
-           && table_offset_ > 0 && table_len_ > 0
-           && part_key_offset_ > 0 && part_key_len_ > 0;
-  }
-
-  inline void reset()
-  {
-    table_offset_ = 0;
-    table_len_ = 0;
-    part_key_offset_ = 0;
-    part_key_len_ = 0;
-    table_name_buf_[0] = '\0';
-    part_key_buf_[0] = '\0';
-  }
-};
 
 struct SqlColumnValue
 {
@@ -410,6 +380,7 @@ struct SetVarNode {
   ObProxySetVarType var_type_;
   bool is_alloc_;
 };
+typedef SetVarNode PartVarNode;
 
 struct ObProxySetInfo {
   ObProxySetInfo() : node_count_(0), var_nodes_() {}
@@ -431,6 +402,32 @@ struct ObProxySetInfo {
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxySetInfo);
+};
+
+struct ObProxySimpleRouteInfo
+{
+  ObProxySimpleRouteInfo() { reset(); }
+  ~ObProxySimpleRouteInfo() { reset(); }
+  DECLARE_TO_STRING;
+
+  int64_t table_len_;
+
+  char table_name_buf_[common::OB_MAX_TABLE_NAME_LENGTH + 1];
+  common::ObSEArray<PartVarNode, 3> part_key_values_;
+
+  bool is_valid() const
+  {
+    return (strlen(table_name_buf_) > 0
+           && table_len_ > 0)
+           || part_key_values_.count() > 0;
+  }
+
+  inline void reset()
+  {
+    table_len_ = 0;
+    table_name_buf_[0] = '\0';
+    part_key_values_.reset();
+  }
 };
 
 struct DbpRouteInfo {
@@ -538,7 +535,7 @@ struct ObSqlParseResult
       has_last_trace_id_(false),
       has_explain_(false),
       has_explain_route_(false),
-      has_simple_route_info_(false),
+      has_hint_route_info_(false),
       has_shard_comment_(false),
       is_dual_request_(false),
       has_anonymous_block_(false),
@@ -577,6 +574,7 @@ struct ObSqlParseResult
   bool is_show_errors_stmt() const { return OBPROXY_T_SHOW_ERRORS == stmt_type_; }
   bool is_show_trace_stmt() const { return OBPROXY_T_SHOW_TRACE == stmt_type_; }
   bool is_show_session_stmt() const { return OBPROXY_T_ICMD_SHOW_SESSION == stmt_type_; }
+  bool is_show_proxyps_stmt() const { return OBPROXY_T_ICMD_SHOW_PS == stmt_type_; }
   bool is_select_tx_ro() const { return OBPROXY_T_SELECT_TX_RO == stmt_type_; }
   bool is_select_proxy_version() const { return OBPROXY_T_SELECT_PROXY_VERSION == stmt_type_; }
   bool is_select_route_addr() const { return OBPROXY_T_SELECT_ROUTE_ADDR == stmt_type_; }
@@ -709,7 +707,7 @@ struct ObSqlParseResult
   bool has_last_trace_id() const { return has_last_trace_id_; }
   bool has_explain() const { return has_explain_; }
   bool has_explain_route() const { return has_explain_route_; }
-  bool has_simple_route_info() const { return has_simple_route_info_; }
+  bool has_hint_route_info() const { return has_hint_route_info_; }
   bool has_shard_comment() const { return has_shard_comment_; }
   bool has_anonymous_block() const { return has_anonymous_block_; }
   void set_anonymous_block(bool has_anonymous_block) {has_anonymous_block_ = has_anonymous_block;}
@@ -722,7 +720,7 @@ struct ObSqlParseResult
   bool is_dblink_name() const { return is_dblink_name_; }
   bool is_table_lock_related() const { return is_table_lock_related_; }
 
-  bool is_simple_route_info_valid() const { return route_info_.is_valid(); }
+  bool is_hint_route_info_valid() const { return hint_route_info_.is_valid(); }
 
   bool has_show_errors() const { return is_show_errors_stmt(); }
   bool has_show_warnings() const { return is_show_warnings_stmt(); }
@@ -786,7 +784,8 @@ struct ObSqlParseResult
   int set_col_name(const ObProxyParseString &col_name);
   int set_call_prarms(const ObProxyCallParseInfo &call_parse_info);
   int set_part_name(const ObProxyParseString &part_name);
-  int set_simple_route_info(const ObProxyParseResult &parse_result);
+  int set_hint_route_info(const ObProxyParseResult &parse_result,
+                            bool use_lower_case_name);
   int set_dbmesh_route_info(const ObProxyParseResult &obproxy_parse_result);
   int set_var_info(const ObProxyParseResult &parse_result);
   int set_text_ps_info(ObProxyTextPsInfo& text_ps_info, const ObProxyTextPsParseInfo &execute_parse_info);
@@ -827,7 +826,7 @@ struct ObSqlParseResult
     if (this != &other) {
       cmd_info_ = other.cmd_info_;
       call_info_ = other.call_info_;
-      route_info_ = other.route_info_;
+      hint_route_info_ = other.hint_route_info_;
       text_ps_info_ = other.text_ps_info_;
       has_last_insert_id_ = other.has_last_insert_id_;
       has_found_rows_ = other.has_found_rows_;
@@ -835,7 +834,7 @@ struct ObSqlParseResult
       has_last_trace_id_ = other.has_last_trace_id_;
       has_explain_ = other.has_explain_;
       has_explain_route_ = other.has_explain_route_;
-      has_simple_route_info_ = other.has_simple_route_info_;
+      has_hint_route_info_ = other.has_hint_route_info_;
       has_anonymous_block_ = other.has_anonymous_block_;
       has_ever_set_anonymous_block_ = other.has_ever_set_anonymous_block_;
       has_for_update_ = other.has_for_update_;
@@ -914,7 +913,7 @@ struct ObSqlParseResult
   {
     cmd_info_ = other.cmd_info_;
     call_info_ = other.call_info_;
-    route_info_ = other.route_info_;
+    hint_route_info_ = other.hint_route_info_;
     has_connection_id_ = other.has_connection_id_;
     has_sys_context_ = other.has_sys_context_;
     has_last_insert_id_ = other.has_last_insert_id_;
@@ -923,7 +922,7 @@ struct ObSqlParseResult
     has_last_trace_id_ = other.has_last_trace_id_;
     is_dblink_name_ = other.is_dblink_name_;
     is_table_lock_related_ = other.is_table_lock_related_;
-    has_simple_route_info_ = other.has_simple_route_info_;
+    has_hint_route_info_ = other.has_hint_route_info_;
     hint_query_timeout_ = other.hint_query_timeout_;
     parsed_length_ = other.parsed_length_;
     cmd_sub_type_ = other.cmd_sub_type_;
@@ -972,7 +971,7 @@ struct ObSqlParseResult
 
   ObProxyCmdInfo cmd_info_;
   ObProxyCallInfo call_info_;
-  ObProxySimpleRouteInfo route_info_;
+  ObProxySimpleRouteInfo hint_route_info_;
   ObProxyTextPsInfo text_ps_info_;
   oceanbase::common::ObArenaAllocator allocator_;
 private:
@@ -1032,7 +1031,7 @@ private:
   bool has_last_trace_id_;
   bool has_explain_;
   bool has_explain_route_;
-  bool has_simple_route_info_;
+  bool has_hint_route_info_;
   bool has_shard_comment_;
   bool is_dual_request_;
   bool has_anonymous_block_;
@@ -1153,8 +1152,8 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
     cmd_info_.reset();
   }
 
-  if (has_simple_route_info_) {
-    route_info_.reset();
+  if (has_hint_route_info_) {
+    hint_route_info_.reset();
   }
 
   if (is_reset_origin_db_table) {
@@ -1209,7 +1208,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_last_trace_id_ = false;
   has_explain_ = false;
   has_explain_route_ = false;
-  has_simple_route_info_ = false;
+  has_hint_route_info_ = false;
   has_shard_comment_ = false;
   is_dual_request_ = false;
   has_anonymous_block_ = false;

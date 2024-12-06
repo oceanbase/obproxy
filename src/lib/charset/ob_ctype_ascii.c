@@ -58,7 +58,7 @@ size_t ob_well_formed_len_ascii(const ObCharsetInfo *cs,
 }
 
 static ObCharsetHandler ob_charset_ascii_handler = {
-    // ob_cset_init_8bit, /* init */
+    ob_cset_init_8bit, /* init */
     NULL,
     ob_mbcharlen_8bit,
     ob_numchars_8bit,

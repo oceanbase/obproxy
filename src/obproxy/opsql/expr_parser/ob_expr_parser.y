@@ -606,11 +606,11 @@ static inline ObProxyTokenNode* calc_unary_operator(ObProxyTokenNode *node, ObEx
  %nonassoc HIGHER_PARENS
  %right '!'
  /* type token */
-%token<str> NAME_OB STR_VAL ROW_ID NONE_PARAM_FUNC HEX_VAL TRIM 
+%token<str> NAME_OB STR_VAL ROW_ID NONE_PARAM_FUNC HEX_VAL TRIM TIMESTAMP QUOTE_STR_VAL DATE TIME
 %token<num> INT_VAL POS_PLACE_HOLDER
 %type<func> comp
-%type<node> token opt_column simple_expr trim_type
-%type<list> expr token_list in_expr_list column_list func_param_list trim_param_list trim_type_list
+%type<node> token opt_column simple_expr trim_type date_value_type
+%type<list> expr token_list in_expr_list column_list func_param_list trim_param_list trim_type_list date_value_list
 %type<relation> bool_pri
 %start start
 %%
@@ -645,8 +645,9 @@ cond_expr: bool_pri { check_and_add_relation(result, $1); }
          | '(' cond_expr OR_OP bool_pri ')' { check_and_add_relation(result, $4); }
 
 bool_pri: expr comp expr { add_relation(result, $1, $2,$3); $$ = get_relation(result, $1, $2, $3); }
-        | '(' expr comp expr ')' { $$ = get_relation(result, $2, $3, $4); add_relation(result, $2, $3,$4); }
-        | expr IN '(' in_expr_list ')' { $$ = get_relation(result, $1, F_COMP_EQ, $4); add_relation(result, $1, F_COMP_EQ,$4); }
+        | '(' expr comp expr ')' { $$ = get_relation(result, $2, $3, $4); add_relation(result, $2, $3, $4); }
+        | expr IN '(' in_expr_list ')' { $$ = get_relation(result, $1, F_COMP_EQ, $4); add_relation(result, $1, F_COMP_EQ, $4); }
+        | expr NOT IN '(' in_expr_list ')' { $$ = NULL; }
         | expr BETWEEN expr AND_OP expr
         {
           $$ = get_relation(result, $1, F_COMP_GE, $3);
@@ -777,7 +778,18 @@ trim_type_list: trim_type { malloc_list($$, result, $1); }
 trim_type: BOTH { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 0; }
          | LEADING { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 1; }
          | TRAILING { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = 2; }
-               
+
+date_value_list: date_value_type
+                      {
+                        malloc_list($$, result, $1);
+                      }
+
+date_value_type: QUOTE_STR_VAL
+                     {
+                       malloc_node($$, result, TOKEN_STR_VAL);
+                       $$->str_value_ = $1;
+                     }
+
 token:
      ROW_ID
      {
@@ -830,6 +842,24 @@ token:
       $$->str_value_ = $1;
       $$->child_ = $3;
      }
+     | TIMESTAMP date_value_list
+     {
+      malloc_node($$, result, TOKEN_FUNC);
+      $$->str_value_ = $1;
+      $$->child_ = $2;
+     }
+     | TIME date_value_list
+     {
+      malloc_node($$, result, TOKEN_FUNC);
+      $$->str_value_ = $1;
+      $$->child_ = $2;
+     }
+     | DATE date_value_list
+     {
+      malloc_node($$, result, TOKEN_FUNC);
+      $$->str_value_ = $1;
+      $$->child_ = $2;
+     }
      | NAME_OB '(' token_list ')'
      {
        malloc_node($$, result, TOKEN_FUNC);
@@ -844,6 +874,7 @@ token:
      }
      | INT_VAL { malloc_node($$, result, TOKEN_INT_VAL); $$->int_value_ = $1; }
      | STR_VAL { malloc_node($$, result, TOKEN_STR_VAL); $$->str_value_ = $1; }
+     | QUOTE_STR_VAL { malloc_node($$, result, TOKEN_STR_VAL); $$->str_value_ = $1; }
      | PLACE_HOLDER
      {
        result->placeholder_list_idx_++;

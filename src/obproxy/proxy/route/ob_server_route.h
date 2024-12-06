@@ -49,7 +49,8 @@ public:
     : table_entry_(NULL), dummy_entry_(NULL), part_entry_(NULL), cur_chosen_pl_(NULL),
       is_table_entry_from_remote_(false), is_part_entry_from_remote_(false),
       has_dup_replica_(false), need_use_dup_replica_(false), no_need_pl_update_(false),
-      use_proxy_primary_zone_name_(false), consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
+      use_proxy_primary_zone_name_(false), is_partition_calc_fail_(false),
+      consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
       cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false) {}
   ~ObServerRoute() { reset(); };
@@ -180,6 +181,7 @@ public:
   bool need_use_dup_replica_;
   bool no_need_pl_update_;
   bool use_proxy_primary_zone_name_;
+  bool is_partition_calc_fail_;
 
   common::ObConsistencyLevel consistency_level_;
   ObLDCItem leader_item_;
@@ -200,6 +202,7 @@ inline void ObServerRoute::reset()
   need_use_dup_replica_ = false;
   no_need_pl_update_ = false;
   use_proxy_primary_zone_name_ = false;
+  is_partition_calc_fail_ = false;
   skip_leader_item_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);
@@ -354,7 +357,7 @@ inline int ObServerRoute::fill_replicas(
         ret = fill_strong_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names,
                                        proxy_primary_zone_name, tenant_name, cluster_resource, is_random_routing_mode);
       } else {
-        ret = fill_weak_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name, weight_zone, client_session->is_proxy_mysql_client_, target_replica_type);
+        ret = fill_weak_read_replica(cur_chosen_pl_, dummy_ldc, ss_info, region_names, proxy_primary_zone_name, weight_zone, client_session->is_proxy_mysql_client(), target_replica_type);
       }
 #if OB_DETAILED_SLOW_QUERY
       t2 = common::get_hrtime_internal();

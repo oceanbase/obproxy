@@ -10850,6 +10850,7 @@ static size_t ob_well_formed_len_gbk(const ObCharsetInfo *cs __attribute__((unus
 
 static ObCollationHandler ob_gbk_collation_ci_handler =
 {
+  NULL,
   ob_strnncoll_gbk,
   ob_strnncollsp_gbk,
   ob_strnxfrm_gbk,
@@ -10862,6 +10863,7 @@ static ObCollationHandler ob_gbk_collation_ci_handler =
 
 static ObCharsetHandler ob_charset_gbk_handler=
 {
+  NULL, /* init */
   ismbchar_gbk,
   mbcharlen_gbk,
   ob_numchars_mb,

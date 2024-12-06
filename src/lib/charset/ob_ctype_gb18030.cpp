@@ -20206,6 +20206,7 @@ static void ob_hash_sort_gb18030(const ObCharsetInfo *cs, const uchar *s,
 
 static ObCollationHandler ob_collation_ci_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_weight_if_chinese_character, INSENSITIVE>,
   ob_strnncollsp_gb18030<get_weight_if_chinese_character, INSENSITIVE>,
   ob_strnxfrm_gb18030<get_weight_if_chinese_character, INSENSITIVE>,
@@ -20218,6 +20219,7 @@ static ObCollationHandler ob_collation_ci_handler =
 
 static ObCollationHandler ob_collation_cs_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_weight_if_chinese_character, SENSITIVE>,
   ob_strnncollsp_gb18030<get_weight_if_chinese_character, SENSITIVE>,
   ob_strnxfrm_gb18030<get_weight_if_chinese_character, SENSITIVE>,
@@ -20229,7 +20231,7 @@ static ObCollationHandler ob_collation_cs_handler =
 };
 
 static ObCharsetHandler ob_charset_gb18030_handler = {
-    // NULL,
+    NULL,   /* init */
     ob_ismbchar_gb18030,
     ob_mbcharlen_gb18030,
     ob_numchars_mb,
@@ -20260,6 +20262,7 @@ static ObCharsetHandler ob_charset_gb18030_handler = {
 
 static ObCharsetHandler ob_charset_gb18030_2022_handler =
 {
+  NULL, /* init */
   ob_ismbchar_gb18030,
   ob_mbcharlen_gb18030,
   ob_numchars_mb,
@@ -20614,6 +20617,7 @@ static uint get_stroke_weight_if_chinese_character_2022(uint code) {
 
 static ObCollationHandler ob_collation_2022_pinyin_ci_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_pinyin_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnncollsp_gb18030<get_pinyin_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnxfrm_gb18030<get_pinyin_weight_if_chinese_character_2022, INSENSITIVE>,
@@ -20626,6 +20630,7 @@ static ObCollationHandler ob_collation_2022_pinyin_ci_handler =
 
 static ObCollationHandler ob_collation_2022_pinyin_cs_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_pinyin_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnncollsp_gb18030<get_pinyin_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnxfrm_gb18030<get_pinyin_weight_if_chinese_character_2022, SENSITIVE>,
@@ -20638,6 +20643,7 @@ static ObCollationHandler ob_collation_2022_pinyin_cs_handler =
 
 static ObCollationHandler ob_collation_2022_radical_ci_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_radical_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnncollsp_gb18030<get_radical_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnxfrm_gb18030<get_radical_weight_if_chinese_character_2022, INSENSITIVE>,
@@ -20650,6 +20656,7 @@ static ObCollationHandler ob_collation_2022_radical_ci_handler =
 
 static ObCollationHandler ob_collation_2022_radical_cs_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_radical_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnncollsp_gb18030<get_radical_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnxfrm_gb18030<get_radical_weight_if_chinese_character_2022, SENSITIVE>,
@@ -20662,6 +20669,7 @@ static ObCollationHandler ob_collation_2022_radical_cs_handler =
 
 static ObCollationHandler ob_collation_2022_stroke_ci_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_stroke_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnncollsp_gb18030<get_stroke_weight_if_chinese_character_2022, INSENSITIVE>,
   ob_strnxfrm_gb18030<get_stroke_weight_if_chinese_character_2022, INSENSITIVE>,
@@ -20674,6 +20682,7 @@ static ObCollationHandler ob_collation_2022_stroke_ci_handler =
 
 static ObCollationHandler ob_collation_2022_stroke_cs_handler =
 {
+  NULL,
   ob_strnncoll_gb18030<get_stroke_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnncollsp_gb18030<get_stroke_weight_if_chinese_character_2022, SENSITIVE>,
   ob_strnxfrm_gb18030<get_stroke_weight_if_chinese_character_2022, SENSITIVE>,

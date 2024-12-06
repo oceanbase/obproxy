@@ -40,7 +40,11 @@ typedef enum ObProxyExprType
   OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD,
   OB_PROXY_EXPR_TYPE_FUNC_SPLIT,
   OB_PROXY_EXPR_TYPE_FUNC_TO_DATE,
+  OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS,
   OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP,
+  OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP,
+  OB_PROXY_EXPR_TYPE_FUNC_DATE,
+  OB_PROXY_EXPR_TYPE_FUNC_TIME,
   OB_PROXY_EXPR_TYPE_FUNC_NVL,
   OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR,
   OB_PROXY_EXPR_TYPE_FUNC_SYSDATE,
@@ -66,6 +70,13 @@ typedef enum ObProxyExprType
   OB_PROXY_EXPR_TYPE_FUNC_SUBSTR_INDEX,
   OB_PROXY_EXPR_TYPE_MAX,
 } ObProxyExprType;
+
+bool is_time_literal_related_type(const ObProxyExprType type)
+{
+  return OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP == type
+         || OB_PROXY_EXPR_TYPE_FUNC_DATE == type
+         || OB_PROXY_EXPR_TYPE_FUNC_TIME == type;
+}
 
 const char* get_expr_type_name(int expr_type)
 {
@@ -140,8 +151,20 @@ const char* get_expr_type_name(int expr_type)
     case OB_PROXY_EXPR_TYPE_FUNC_TO_DATE:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_DATE";
       break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS";
+      break;
     case OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_DATE:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_DATE";
+      break;
+    case OB_PROXY_EXPR_TYPE_FUNC_TIME:
+      type_name = "OB_PROXY_EXPR_TYPE_FUNC_TIME";
       break;
     case OB_PROXY_EXPR_TYPE_FUNC_NVL:
       type_name = "OB_PROXY_EXPR_TYPE_FUNC_NVL";

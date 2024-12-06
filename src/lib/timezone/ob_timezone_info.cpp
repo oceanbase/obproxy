@@ -39348,7 +39348,7 @@ int ObTimeZoneInfo::set_timezone(const ObString &str)
 {
   int ret = OB_SUCCESS;
   int ret_more = OB_SUCCESS;
-  if (OB_FAIL(ObTimeConverter::str_to_offset(str, offset_, ret_more, true, true))) {
+  if (OB_FAIL(ObTimeConverter::str_to_offset(str, offset_, ret_more, lib::is_oracle_mode(), true))) {
     LOG_WDIAG("invalid time zone offset", K(ret), K(str));
   } else {
     tz_id_ = 0;

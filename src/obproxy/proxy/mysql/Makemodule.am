@@ -33,4 +33,6 @@ obproxy/proxy/mysql/ob_prepare_statement_struct.cpp\
 obproxy/proxy/mysql/ob_prepare_statement_struct.h\
 obproxy/proxy/mysql/ob_cursor_struct.cpp\
 obproxy/proxy/mysql/ob_cursor_struct.h\
-obproxy/proxy/mysql/ob_piece_info.h
+obproxy/proxy/mysql/ob_piece_info.h\
+obproxy/proxy/mysql/ob_service_name_session_info.h\
+obproxy/proxy/mysql/ob_service_name_session_info.cpp

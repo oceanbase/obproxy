@@ -106,13 +106,16 @@ public:
 
   int get_proxy_config(const ObVipAddr &addr, const common::ObString &cluster_name,
                        const common::ObString &tenant_name, const common::ObString& name,
-                       common::ObConfigItem &ret_item, const bool lock_required = true);
+                       common::ObConfigItem &ret_item, const bool lock_required = true,
+                       const ObString service_name = ObString::make_empty_string());
   int get_proxy_config_bool_item(const ObVipAddr &addr, const common::ObString &cluster_name,
                                  const common::ObString &tenant_name, const common::ObString& name,
-                                 common::ObConfigBoolItem &ret_item, const bool lock_required = true);
+                                 common::ObConfigBoolItem &ret_item, const bool lock_required = true,
+                                 const ObString service_name = ObString::make_empty_string());
   int get_proxy_config_int_item(const ObVipAddr &addr, const common::ObString &cluster_name,
                                  const common::ObString &tenant_name, const common::ObString& name,
-                                 common::ObConfigIntItem &ret_item, const bool lock_required = true);
+                                 common::ObConfigIntItem &ret_item, const bool lock_required = true,
+                                 const ObString service_name = ObString::make_empty_string());
   int get_proxy_config_with_level(const ObVipAddr &addr, const common::ObString &cluster_name,
                                   const common::ObString &tenant_name, const common::ObString& name,
                                   common::ObConfigItem &ret_item, const ObString level, bool &found, const bool lock_required = true);

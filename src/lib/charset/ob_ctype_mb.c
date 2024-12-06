@@ -750,6 +750,7 @@ void ob_hash_sort_mb_bin(const ObCharsetInfo *cs __attribute__((unused)),
 
 
 ObCollationHandler ob_collation_mb_bin_handler = {
+  NULL,
   ob_strnncoll_mb_bin,
   ob_strnncollsp_mb_bin,
   ob_strnxfrm_mb,

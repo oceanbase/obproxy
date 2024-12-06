@@ -76,10 +76,10 @@ const ObProxyColumnSchema DETAIL_COLUMN_ARRAY[OB_IC_DETAIL_MAX_COLUMN_ID] = {
 ObShowInfoHandler::ObShowInfoHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
     : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type())
 {
-  SET_HANDLER(&ObShowInfoHandler::main_handle);
+  SET_HANDLER(&ObShowInfoHandler::main_handler);
 }
 
-int ObShowInfoHandler::main_handle(int event, void *data)
+int ObShowInfoHandler::main_handler(int event, void *data)
 {
   int event_ret = EVENT_NONE;
   int ret = OB_SUCCESS;

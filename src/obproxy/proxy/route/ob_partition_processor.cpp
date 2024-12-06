@@ -467,6 +467,7 @@ int ObPartitionEntryCont::handle_client_resp(void *data)
   if (is_add_building_entry_succ_ && !is_add_succ) {
     ObPartitionEntryKey key(param_.get_table_entry()->get_cr_version(),
                             param_.get_table_entry()->get_cr_id(),
+                            param_.get_table_entry()->get_tenant_id(),
                             param_.get_table_entry()->get_table_id(),
                             param_.partition_id_);
 
@@ -616,7 +617,7 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
           if (batch_size >= get_global_proxy_config().rpc_async_pull_batch_max_size &&
                 OB_ISNULL(cont->batch_schedule_action_ = cont->create_thread_->schedule_imm(cont, PARTITION_ENTRY_LOOKUP_BATCH_REMOTE_EVENT))) {// lookup_batch_entry_remote()
             LOG_WDIAG("fail to lookup batch enty remote", K(ret), K(batch_size));
-          } else if (1 == batch_size) {  //the firt partition id has put batch array
+          } else if (1 == batch_size) {  //the first partition id has put batch array
             uint64_t interval_ns = HRTIME_USECONDS(get_global_proxy_config().rpc_async_pull_batch_wait_interval);
             LOG_DEBUG("ObBatchPartitionEntryCont interval", K(interval_ns));
             event::ObProxyMutex *batch_mutex = param_.get_table_entry()->get_batch_fetch_mutex();
@@ -684,6 +685,7 @@ int ObPartitionEntryCont::lookup_entry_in_cache()
   int ret = OB_SUCCESS;
   ObPartitionEntryKey key(param_.get_table_entry()->get_cr_version(),
                           param_.get_table_entry()->get_cr_id(),
+                          param_.get_table_entry()->get_tenant_id(),
                           param_.get_table_entry()->get_table_id(),
                           param_.partition_id_);
   ObAction *action = NULL;
@@ -1044,6 +1046,7 @@ int ObPartitionProcessor::get_partition_entry_from_thread_cache(
     ObPartitionEntry *tmp_entry = NULL;
     ObPartitionEntryKey key(param.get_table_entry()->get_cr_version(),
                             param.get_table_entry()->get_cr_id(),
+                            param.get_table_entry()->get_tenant_id(),
                             param.get_table_entry()->get_table_id(),
                             param.partition_id_);
 

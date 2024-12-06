@@ -58,12 +58,13 @@ namespace omt
 struct ObVipInfo
 {
 public:
-  ObVipInfo() : vip_addr_(), tenant_name_(), cluster_name_() {}
+  ObVipInfo() : vip_addr_(), tenant_name_(), cluster_name_(), service_name_() {}
   bool operator==(const ObVipInfo &other) const;
   uint64_t get_hash() const;
   obutils::ObVipAddr vip_addr_;
   ObConfigVariableString tenant_name_;
   ObConfigVariableString cluster_name_;
+  ObConfigVariableString service_name_;
 };
 
 struct SSLAttributes
@@ -155,11 +156,11 @@ public:
   ObProxyMultiLevelConfig(): proxy_route_policy_(), proxy_idc_name_(), proxy_primary_zone_name_(),
                              mysql_version_(), binlog_service_ip_(), init_sql_(),
                              target_db_server_(), compression_algorithm_(),
-                             enable_cloud_full_username_(false),
+                             rootservice_cluster_name_(), enable_cloud_full_username_(false),
                              enable_client_ssl_(false), enable_server_ssl_(false),
                              enable_read_write_split_(false), enable_transaction_split_(false),
                              enable_weak_reroute_(false), enable_single_leader_node_routing_(false),
-                             read_stale_retry_interval_(0),
+                             enable_standby_read_write_split_(false), read_stale_retry_interval_(0),
                              ssl_attributes_(), weakread_weight_zone_(), limit_config_(), route_target_replica_type_(),
                              observer_query_timeout_delta_(0), query_digest_time_threshold_(0),
                              route_diagnosis_level_(0), slow_query_time_threshold_(0),
@@ -181,6 +182,7 @@ public:
   ObConfigVariableString init_sql_;
   ObConfigVariableString target_db_server_;
   ObConfigVariableString compression_algorithm_;
+  ObConfigVariableString rootservice_cluster_name_;
   bool enable_cloud_full_username_;
   bool enable_client_ssl_;
   bool enable_server_ssl_;
@@ -188,6 +190,7 @@ public:
   bool enable_transaction_split_;
   bool enable_weak_reroute_;
   bool enable_single_leader_node_routing_;
+  bool enable_standby_read_write_split_;
   int64_t read_stale_retry_interval_;
   int64_t obproxy_read_only_;
   int64_t obproxy_read_consistency_;
@@ -285,10 +288,18 @@ public:
   static bool is_config_vaild(const ObBaseConfigItem &config_item);
   static int is_replica_type_config_valid(const ObProxyConfigItem &item);
   static int is_weigth_zone_config_valid(const ObProxyConfigItem &item);
+  bool can_write_to_sqlite(const bool is_backup);
+  int rewrite_service_name_config(const bool is_backup,
+                                           ObProxyConfigItem &item,
+                                           const ObString &vip,
+                                           const int64_t vport,
+                                           const int64_t vid);
+
   int backup_hashmap_with_lock();
   int get_proxy_multi_config(const obutils::ObVipAddr &vip_addr, const common::ObString &cluster_name,
                             const common::ObString &tenant_name, const uint64_t global_version,
-                            ObProxyMultiLevelConfig* &old_config);
+                            ObProxyMultiLevelConfig* &old_config,
+                            const common::ObString &service_name);
 private:
   void clean_hashmap_with_lock(ProxyConfigHashMap &map);
   int alter_proxy_config();

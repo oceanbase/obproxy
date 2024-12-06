@@ -196,7 +196,7 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
         }
       }
 
-      if (OB_SUCC(ret) && ctx.is_insert_stm_) {
+      if (OB_SUCC(ret) && ctx.is_insert_stmt_) {
         if(OB_FAIL(handle_default_value(ctx.parse_result_->part_key_info_,
                                         ctx.client_info_, result.ranges_,
                                         ctx.sql_field_result_,part_columns_border,

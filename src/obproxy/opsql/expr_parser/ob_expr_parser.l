@@ -51,6 +51,15 @@ do {\
 #define RETURN_NONE_PARAM_FUNC() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return NONE_PARAM_FUNC; }
 
+#define RETURN_TIMESTAMP() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return TIMESTAMP; }
+
+#define RETURN_DATE() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return DATE; }
+
+#define RETURN_TIME() \
+  { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return TIME; }
+
 #define RETURN_HEX_VAL() \
   { store_expr_str(yytext, yyleng, yytext + yyleng, yyscanner); return HEX_VAL; }
 
@@ -159,6 +168,9 @@ NULL      { return NULL_VAL; }
 "CURRENT_DATE" { RETURN_NONE_PARAM_FUNC(); }
 "CURRENT_TIME" { RETURN_NONE_PARAM_FUNC(); }
 "CURRENT_TIMESTAMP" { RETURN_NONE_PARAM_FUNC(); }
+"TIMESTAMP" { RETURN_TIMESTAMP(); }
+"DATE" { RETURN_DATE(); }
+"TIME" { RETURN_TIME(); }
 "TRIM"    { RETURN_TRIM();}
 "FROM"    { RETURN_FROM();}
 "BOTH"    { RETURN_BOTH();}
@@ -206,7 +218,7 @@ NULL      { return NULL_VAL; }
   if (OB_NOTNULL(p)) {
     store_expr_str(p->tmp_buf_, p->tmp_len_, p->tmp_start_ptr_ + p->tmp_len_ + 2, yyscanner);
   }
-  return STR_VAL;
+  return QUOTE_STR_VAL;
 }
 
  /** 
@@ -252,7 +264,7 @@ NULL      { return NULL_VAL; }
       return NAME_OB;
     }
   }
-  return STR_VAL;
+  return QUOTE_STR_VAL;
 }
 
 <dq>{dqdouble}            {}

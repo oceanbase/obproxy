@@ -88,8 +88,7 @@ int ObOceanBase20RequestAnalyzer::analyze_first_request(ObIOBufferReader &reader
     char *data = NULL;
     int64_t data_size = 0;
     if (NULL != reader.block_) {
-      reader.skip_empty_blocks();
-      block = reader.block_;
+      block = reader.get_start_offset_block();
       offset = reader.start_offset_;
       data = block->start() + offset;
       data_size = block->read_avail() - offset;

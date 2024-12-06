@@ -86,7 +86,7 @@ static uchar to_upper_utf8mb4[]=
 };
 
 
-static ObUnicaseInfoChar plane00[]={
+ObUnicaseInfoChar utf8_plane00[]={
   {0x0000,0x0000,0x0000},  {0x0001,0x0001,0x0001},
   {0x0002,0x0002,0x0002},  {0x0003,0x0003,0x0003},
   {0x0004,0x0004,0x0004},  {0x0005,0x0005,0x0005},
@@ -217,7 +217,7 @@ static ObUnicaseInfoChar plane00[]={
   {0x00DE,0x00FE,0x00DE},  {0x0178,0x00FF,0x0059}
 };
 
-static ObUnicaseInfoChar plane01[]={
+ObUnicaseInfoChar utf8_plane01[]={
   {0x0100,0x0101,0x0041},  {0x0100,0x0101,0x0041},
   {0x0102,0x0103,0x0041},  {0x0102,0x0103,0x0041},
   {0x0104,0x0105,0x0041},  {0x0104,0x0105,0x0041},
@@ -348,7 +348,7 @@ static ObUnicaseInfoChar plane01[]={
   {0x01FE,0x01FF,0x00D8},  {0x01FE,0x01FF,0x00D8}
 };
 
-static ObUnicaseInfoChar plane02[]={
+ObUnicaseInfoChar utf8_plane02[]={
   {0x0200,0x0201,0x0041},  {0x0200,0x0201,0x0041},
   {0x0202,0x0203,0x0041},  {0x0202,0x0203,0x0041},
   {0x0204,0x0205,0x0045},  {0x0204,0x0205,0x0045},
@@ -479,7 +479,7 @@ static ObUnicaseInfoChar plane02[]={
   {0x02FE,0x02FE,0x02FE},  {0x02FF,0x02FF,0x02FF}
 };
 
-static ObUnicaseInfoChar plane03[]={
+ObUnicaseInfoChar utf8_plane03[]={
   {0x0300,0x0300,0x0300},  {0x0301,0x0301,0x0301},
   {0x0302,0x0302,0x0302},  {0x0303,0x0303,0x0303},
   {0x0304,0x0304,0x0304},  {0x0305,0x0305,0x0305},
@@ -610,7 +610,7 @@ static ObUnicaseInfoChar plane03[]={
   {0x03FE,0x03FE,0x03FE},  {0x03FF,0x03FF,0x03FF}
 };
 
-static ObUnicaseInfoChar plane04[]={
+ObUnicaseInfoChar utf8_plane04[]={
   {0x0400,0x0450,0x0415},  {0x0401,0x0451,0x0415},
   {0x0402,0x0452,0x0402},  {0x0403,0x0453,0x0413},
   {0x0404,0x0454,0x0404},  {0x0405,0x0455,0x0405},
@@ -741,7 +741,7 @@ static ObUnicaseInfoChar plane04[]={
   {0x04FE,0x04FE,0x04FE},  {0x04FF,0x04FF,0x04FF}
 };
 
-static ObUnicaseInfoChar plane05[]={
+ObUnicaseInfoChar utf8_plane05[]={
   {0x0500,0x0500,0x0500},  {0x0501,0x0501,0x0501},
   {0x0502,0x0502,0x0502},  {0x0503,0x0503,0x0503},
   {0x0504,0x0504,0x0504},  {0x0505,0x0505,0x0505},
@@ -872,7 +872,7 @@ static ObUnicaseInfoChar plane05[]={
   {0x05FE,0x05FE,0x05FE},  {0x05FF,0x05FF,0x05FF}
 };
 
-static ObUnicaseInfoChar plane1E[]={
+ObUnicaseInfoChar utf8_plane1E[]={
   {0x1E00,0x1E01,0x0041},  {0x1E00,0x1E01,0x0041},
   {0x1E02,0x1E03,0x0042},  {0x1E02,0x1E03,0x0042},
   {0x1E04,0x1E05,0x0042},  {0x1E04,0x1E05,0x0042},
@@ -1003,7 +1003,7 @@ static ObUnicaseInfoChar plane1E[]={
   {0x1EFE,0x1EFE,0x1EFE},  {0x1EFF,0x1EFF,0x1EFF}
 };
 
-static ObUnicaseInfoChar plane1F[]={
+ObUnicaseInfoChar utf8_plane1F[]={
   {0x1F08,0x1F00,0x0391},  {0x1F09,0x1F01,0x0391},
   {0x1F0A,0x1F02,0x0391},  {0x1F0B,0x1F03,0x0391},
   {0x1F0C,0x1F04,0x0391},  {0x1F0D,0x1F05,0x0391},
@@ -1134,7 +1134,7 @@ static ObUnicaseInfoChar plane1F[]={
   {0x1FFE,0x1FFE,0x1FFE},  {0x1FFF,0x1FFF,0x1FFF}
 };
 
-static ObUnicaseInfoChar plane21[]={
+ObUnicaseInfoChar utf8_plane21[]={
   {0x2100,0x2100,0x2100},  {0x2101,0x2101,0x2101},
   {0x2102,0x2102,0x2102},  {0x2103,0x2103,0x2103},
   {0x2104,0x2104,0x2104},  {0x2105,0x2105,0x2105},
@@ -1265,7 +1265,7 @@ static ObUnicaseInfoChar plane21[]={
   {0x21FE,0x21FE,0x21FE},  {0x21FF,0x21FF,0x21FF}
 };
 
-static ObUnicaseInfoChar plane24[]={
+ObUnicaseInfoChar utf8_plane24[]={
   {0x2400,0x2400,0x2400},  {0x2401,0x2401,0x2401},
   {0x2402,0x2402,0x2402},  {0x2403,0x2403,0x2403},
   {0x2404,0x2404,0x2404},  {0x2405,0x2405,0x2405},
@@ -1396,7 +1396,7 @@ static ObUnicaseInfoChar plane24[]={
   {0x24FE,0x24FE,0x24FE},  {0x24FF,0x24FF,0x24FF}
 };
 
-static ObUnicaseInfoChar planeFF[]={
+ObUnicaseInfoChar utf8_planeFF[]={
   {0xFF00,0xFF00,0xFF00},  {0xFF01,0xFF01,0xFF01},
   {0xFF02,0xFF02,0xFF02},  {0xFF03,0xFF03,0xFF03},
   {0xFF04,0xFF04,0xFF04},  {0xFF05,0xFF05,0xFF05},
@@ -1529,14 +1529,11 @@ static ObUnicaseInfoChar planeFF[]={
 
 static ObUnicaseInfoChar *ob_unicase_pages_default[256]=
 {
- plane00, plane01, plane02, plane03, plane04, plane05,    NULL,    NULL,
+ utf8_plane00, utf8_plane01, utf8_plane02, utf8_plane03, utf8_plane04, utf8_plane05,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
-    NULL,    NULL,    NULL,    NULL,    NULL,    NULL, plane1E, plane1F,
-    NULL, plane21,    NULL,    NULL, plane24,    NULL,    NULL,    NULL,
-    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
-    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
-    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
+    NULL,    NULL,    NULL,    NULL,    NULL,    NULL, utf8_plane1E, utf8_plane1F,
+    NULL, utf8_plane21,    NULL,    NULL, utf8_plane24,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
@@ -1560,7 +1557,10 @@ static ObUnicaseInfoChar *ob_unicase_pages_default[256]=
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
     NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
-    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL, planeFF
+    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
+    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
+    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,
+    NULL,    NULL,    NULL,    NULL,    NULL,    NULL,    NULL, utf8_planeFF
 };
 
 ObUnicaseInfo ob_unicase_default=
@@ -5054,9 +5054,10 @@ size_t ob_strnxfrm_unicode(const ObCharsetInfo *cs,
 //    if (dst < de)
 //      *dst++= (uchar) (wc & 0xFF);
     // replace code above with code below.
-    if ((res= cs->cset->wc_mb(cs, wc, dst, de)) <= 0)
-      break;
-    dst+= res;
+    dst = (unsigned char *)(store16be((char *)(dst), wc)); //这是是不是bydesign的
+    // if ((res= cs->cset->wc_mb(cs, wc, dst, de)) <= 0)
+    //   break;
+    // dst+= res;
   }
   ob_strnxfrm_unicode_help(&dst,&de, nweights, flags, &dst0);
   return dst - dst0;
@@ -5407,9 +5408,16 @@ size_t ob_strnxfrm_unicode_full_bin(const ObCharsetInfo *cs,
 //        *dst++= (uchar) (wc & 0xFF);
 //    }
     // replace code above with code below.
-    if ((res= cs->cset->wc_mb(cs, wc, dst, de)) <= 0)
-      break;
-    dst+= res;
+    *dst++= (uchar) (wc >> 16);
+    if (dst < de)
+    {
+      *dst++= (uchar) ((wc >> 8) & 0xFF);
+      if (dst < de)
+        *dst++= (uchar) (wc & 0xFF);
+    }
+    // if ((res= cs->cset->wc_mb(cs, wc, dst, de)) <= 0)
+    //   break;
+    // dst+= res;
   }
   if (flags & OB_STRXFRM_PAD_WITH_SPACE)
   {
@@ -5445,7 +5453,7 @@ size_t ob_strnxfrm_unicode_full_bin(const ObCharsetInfo *cs,
 
 ObCharsetHandler ob_charset_utf8mb4_handler=
 {
-  //NULL,               /* init */
+  NULL,               /* init */
   ob_ismbchar_utf8mb4,
   ob_mbcharlen_utf8mb4,
   ob_numchars_mb,
@@ -5477,7 +5485,7 @@ ObCharsetHandler ob_charset_utf8mb4_handler=
 
 static ObCollationHandler ob_collation_utf8mb4_general_ci_handler=
 {
-  //NULL,               /* init */
+  NULL,               /* init */
   ob_strnncoll_utf8mb4,
   ob_strnncollsp_utf8mb4,
   ob_strnxfrm_unicode,
@@ -5492,7 +5500,7 @@ static ObCollationHandler ob_collation_utf8mb4_general_ci_handler=
 
 static ObCollationHandler ob_collation_utf8mb4_bin_handler =
 {
-  //NULL,		/* init */
+  NULL,		/* init */
   ob_strnncoll_mb_bin,
   ob_strnncollsp_mb_bin,
   ob_strnxfrm_unicode_full_bin,

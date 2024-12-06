@@ -13,6 +13,7 @@
 #include "ob_route_diagnosis.h"
 #include "share/part/ob_part_desc.h"
 #include "lib/rowid/ob_urowid.h"
+#include "proxy/route/ob_route_enum.h"
 
 namespace oceanbase
 {
@@ -166,79 +167,7 @@ static const char *get_diagnosis_type_name(const ObDiagnosisType type) {
   }
   return name;
 }
-static const char *get_route_info_type_name(const ObRouteInfoType type)
-{
-  const char *name = NULL;
-  switch(type) {
-    case ObRouteInfoType::INVALID:
-      name = "INVALID";
-      break;
 
-    case ObRouteInfoType::USE_GLOBAL_INDEX:
-      name = "USE_GLOBAL_INDEX";
-      break;
-
-    case ObRouteInfoType::USE_OBPROXY_ROUTE_ADDR:
-      name = "USE_OBPROXY_ROUTE_ADDR";
-      break;
-
-    case ObRouteInfoType::USE_CURSOR:
-      name = "USE_CURSOR";
-      break;
-
-    case ObRouteInfoType::USE_PIECES_DATA:
-      name = "USE_PIECES_DATA";
-      break;
-
-    case ObRouteInfoType::USE_CONFIG_TARGET_DB:
-      name = "USE_CONFIG_TARGET_DB";
-      break;
-
-    case ObRouteInfoType::USE_COMMENT_TARGET_DB:
-      name = "USE_COMMENT_TARGET_DB";
-      break;
-
-    case ObRouteInfoType::USE_TEST_SVR_ADDR:
-      name = "USE_TEST_SVR_ADDR";
-      break;
-
-    case ObRouteInfoType::USE_LAST_SESSION:
-      name = "USE_LAST_SESSION";
-      break;
-
-    case ObRouteInfoType::USE_LOCK_SESSION:
-      name = "USE_LOCK_SESSION";
-      break;
-
-    case ObRouteInfoType::USE_CACHED_SESSION:
-      name = "USE_CACHED_SESSION";
-      break;
-
-    case ObRouteInfoType::USE_SINGLE_LEADER:
-      name = "USE_SINGLE_LEADER";
-      break;
-
-    case ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER:
-      name = "USE_SINGLE_LEADERS_FOLLOWER";
-      break;
-
-    case ObRouteInfoType::USE_PARTITION_LOCATION_LOOKUP:
-      name = "USE_PARTITION_LOCATION_LOOKUP";
-      break;
-
-    case ObRouteInfoType::USE_COORDINATOR_SESSION:
-      name = "USE_COODINATOR_SESSION";
-      break;
-
-    case ObRouteInfoType::USE_ROUTE_POLICY:
-      name = "USE_ROUTE_POLICY";
-      break;
-
-    default:
-      name = "unkonwn route type";
-  }
-  return name;
-}
 static const char *get_retry_type_name(const ObRetryType type) {
   const char *name = NULL;
   switch(type) {
@@ -655,6 +584,7 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
     svr_addr_.to_plain_string(svr_buf, 1 << 7);
     if (!svr_addr_.is_valid() &&
         (ObRouteInfoType::USE_CURSOR == route_info_type_ ||
+         ObRouteInfoType::USE_PREPARE_EXECUTED_ADDR == route_info_type_ ||
          ObRouteInfoType::USE_PIECES_DATA == route_info_type_ ||
          ObRouteInfoType::USE_COMMENT_TARGET_DB == route_info_type_ ||
          ObRouteInfoType::USE_CONFIG_TARGET_DB == route_info_type_ ||
@@ -664,6 +594,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
          ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_ ||
          ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_)) {
       DIAGNOSE_WARN("Unexpected invalid server addr")
+    } else if (ObRouteInfoType::USE_PREPARE_EXECUTED_ADDR == route_info_type_) {
+      DIAGNOSE_INFO("Will route to the OBServer which already executed a prepare_execute_stmt");
     } else if (ObRouteInfoType::USE_CURSOR == route_info_type_ || ObRouteInfoType::USE_PIECES_DATA == route_info_type_) {
       DIAGNOSE_INFO("Will route to starting server(%s) because use streaming data transfer", svr_buf);
     } else if (ObRouteInfoType::USE_CONFIG_TARGET_DB == route_info_type_ || ObRouteInfoType::USE_COMMENT_TARGET_DB == route_info_type_) {
@@ -711,7 +643,7 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
 int64_t ObDiagnosisRouteInfo::to_string(char *buf, const int64_t buf_len) const
 {
   DIAGNOSIS_DATA_PRINT(
-    J_KV("route_info_type", get_route_info_type_name(route_info_type_));
+    J_KV("route_info_type", proxy::get_route_info_type_name(route_info_type_));
     if (svr_addr_.is_valid()) {
       J_COMMA();
       BUF_PRINTF("svr_addr:");

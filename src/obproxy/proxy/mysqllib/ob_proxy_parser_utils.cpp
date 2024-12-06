@@ -319,10 +319,8 @@ int ObProxyParserUtils::analyze_one_packet_only_header(ObIOBufferReader &reader,
       result.meta_.pkt_len_ = uint3korr(buf_start) + MYSQL_NET_HEADER_LENGTH; // include header
       result.meta_.pkt_seq_ = uint1korr(buf_start + 3);
       result.meta_.cmd_ = OB_MYSQL_COM_MAX_NUM; // only analyze header
-      if (result.meta_.pkt_len_ == 0) { // last empty pkt of content of file
+      if (OB_LIKELY(len >= result.meta_.pkt_len_)) {
         result.status_ = ANALYZE_DONE;
-      } else {
-        result.status_ = ANALYZE_CONT;
       }
     }
   }

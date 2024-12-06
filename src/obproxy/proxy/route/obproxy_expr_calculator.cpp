@@ -64,8 +64,8 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
       LOG_WDIAG("fail to get part id with part name", K(part_name), K(ret));
     }
   }
-  if (OB_INVALID_INDEX == partition_id && parse_result.has_simple_route_info()) {
-    if (OB_FAIL(calc_part_id_with_simple_route_info(allocator, parse_result, client_info,
+  if (OB_INVALID_INDEX == partition_id && parse_result.has_hint_route_info()) {
+    if (OB_FAIL(calc_part_id_with_hint_route_info(allocator, parse_result, client_info,
                                                     route, part_info, partition_id,
                                                     part_idx, sub_part_idx))) {
       LOG_WDIAG("fail to calc part id with simple part info, will do calc in normal path", K(ret));
@@ -123,20 +123,24 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
       }
     }
 
-    if ((OB_FAIL(ret) || partition_id == OB_INVALID_INDEX)
-        && !get_global_proxy_config().enable_primary_zone
-        && !get_global_proxy_config().enable_cached_server) {
-      // if proxy primary zone route optimization disabled, use random part id optimization
-      int64_t tmp_first_part_id = OB_INVALID_INDEX;
-      int64_t tmp_sub_part_id = OB_INVALID_INDEX;
-      if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info,
-                                                           tmp_first_part_id,
-                                                           tmp_sub_part_id,
-                                                           partition_id))) {
-        LOG_WDIAG("fail to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(ret));
+    if ((OB_FAIL(ret) || partition_id == OB_INVALID_INDEX)) {
+      route.is_partition_calc_fail_ = true;
+      if (!get_global_proxy_config().enable_primary_zone
+          && !get_global_proxy_config().enable_cached_server) {
+        // if proxy primary zone route optimization disabled, use random part id optimization
+        int64_t tmp_first_part_id = OB_INVALID_INDEX;
+        int64_t tmp_sub_part_id = OB_INVALID_INDEX;
+        if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info,
+                                                            tmp_first_part_id,
+                                                            tmp_sub_part_id,
+                                                            partition_id))) {
+          LOG_WDIAG("fail to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(ret));
+        } else {
+          route.no_need_pl_update_ = true;
+          LOG_DEBUG("succ to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(partition_id));
+        }
       } else {
-        route.no_need_pl_update_ = true;
-        LOG_DEBUG("succ to cal part id by random choose", K(tmp_first_part_id), K(tmp_sub_part_id), K(partition_id));
+        // // nothing, will use primary zone or cached server
       }
     }
   }
@@ -156,7 +160,7 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
   return ret;
 }
 
-int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator &allocator,
+int ObProxyExprCalculator::calc_part_id_with_hint_route_info(ObArenaAllocator &allocator,
                                                                const ObSqlParseResult &parse_result,
                                                                ObClientSessionInfo &client_info,
                                                                ObServerRoute &route,
@@ -166,15 +170,13 @@ int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator 
                                                                int64_t &sub_part_idx)
 {
   int ret = OB_SUCCESS;
-  const ObProxySimpleRouteInfo &info = parse_result.route_info_;
-  // we only calulate id with simple part info for first part table
-  // and table name must be equal with parse result
+
+  const ObProxySimpleRouteInfo &info = parse_result.hint_route_info_;
   if (info.is_valid()
       && parse_result.get_table_name().case_compare(info.table_name_buf_) == 0
-      && part_info.has_first_part()
-      && !part_info.has_sub_part()) {
+      && part_info.has_first_part()) {
     ObExprResolverResult resolve_result;
-    if (OB_FAIL(do_resolve_with_part_key(parse_result, allocator, resolve_result))) {
+    if (OB_FAIL(do_resolve_with_part_key(parse_result, allocator, resolve_result, part_info))) {
       LOG_WDIAG("fail to do_resolve_with_part_key", K(ret));
     } else if (OB_FAIL(do_partition_id_calc(resolve_result, client_info, route, part_info,
                                             parse_result, allocator, part_id,
@@ -182,6 +184,7 @@ int ObProxyExprCalculator::calc_part_id_with_simple_route_info(ObArenaAllocator 
       LOG_INFO("fail to do_partition_id_calc", K(resolve_result), K(part_info));
     }
   }
+
   return ret;
 }
 
@@ -301,28 +304,97 @@ int ObProxyExprCalculator::do_expr_parse_diagnosis(ObExprParseResult &expr_resul
 
 int ObProxyExprCalculator::do_resolve_with_part_key(const ObSqlParseResult &parse_result,
                                                     ObIAllocator &allocator,
-                                                    ObExprResolverResult &resolve_result)
+                                                    ObExprResolverResult &resolve_result,
+                                                    ObProxyPartInfo &part_info)
 {
   int ret = OB_SUCCESS;
-  const ObProxySimpleRouteInfo &info = parse_result.route_info_;
+  const ObProxySimpleRouteInfo& info = parse_result.hint_route_info_;
+  const ObIArray<PartVarNode>& part_key_values = info.part_key_values_;
   ObExprResolver expr_resolver(allocator);
   expr_resolver.set_route_diagnosis(route_diagnosis_);
-  ObObj *target_obj = NULL;
-  void *tmp_buf = NULL;
-  if (OB_ISNULL(tmp_buf = allocator.alloc(sizeof(ObObj)))) {
+
+  int64_t obj_cnt = part_key_values.count();
+  int64_t first_part_obj_cnt = 0;
+  int64_t sub_part_obj_cnt = 0;
+
+  void * first_part_tmp_buf = NULL;
+  void * sub_part_tmp_buf = NULL;
+
+  if (OB_ISNULL(first_part_tmp_buf = allocator.alloc(obj_cnt * sizeof(ObObj)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc new obj", K(ret));
+  } else if (OB_ISNULL(sub_part_tmp_buf = allocator.alloc(obj_cnt * sizeof(ObObj)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("fail to alloc new obj", K(ret));
   } else {
-    target_obj = new (tmp_buf) ObObj();
-    target_obj->set_varchar(info.part_key_buf_);
-    target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+    for (int64_t i = 0; OB_SUCC(ret) && i < part_key_values.count(); ++i) {
+      const PartVarNode& part_val = part_key_values.at(i);
+      const ObString& key_name = part_val.var_name_;
+      int64_t first_part_column_idx = part_info.get_first_part_idx(key_name);
+      int64_t sub_part_column_idx = part_info.get_sub_part_idx(key_name);
+
+
+      if (-1 != first_part_column_idx) {
+        ObObj *target_obj = NULL;
+        void * real_addr = static_cast<char *>(first_part_tmp_buf) + first_part_obj_cnt * sizeof(ObObj);
+        target_obj = new (real_addr) ObObj();
+
+        if (SET_VALUE_TYPE_STR == part_val.value_type_) {
+          target_obj->set_varchar(part_val.str_value_);
+          target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+        } else if (SET_VALUE_TYPE_INT == part_val.value_type_) {
+          target_obj->set_int(part_val.int_value_);
+        } else if (SET_VALUE_TYPE_NUMBER == part_val.value_type_) {
+          target_obj->set_varchar(part_val.str_value_);
+          target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+        } else {
+          // impossible
+          target_obj->set_null();
+        }
+
+        first_part_obj_cnt++;
+      }
+
+      if (-1 != sub_part_column_idx) {
+        ObObj *target_obj = NULL;
+        void * real_addr = static_cast<char *>(sub_part_tmp_buf) + sub_part_obj_cnt * sizeof(ObObj);
+        target_obj = new (real_addr) ObObj();
+
+        if (SET_VALUE_TYPE_STR == part_val.value_type_) {
+          target_obj->set_varchar(part_val.str_value_);
+          target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+        } else if (SET_VALUE_TYPE_INT == part_val.value_type_) {
+          target_obj->set_int(part_val.int_value_);
+          target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+        } else if (SET_VALUE_TYPE_NUMBER == part_val.value_type_) {
+          target_obj->set_varchar(part_val.str_value_);
+          target_obj->set_collation_type(ObCharset::get_default_collation(ObCharset::get_default_charset()));
+        } else {
+          // impossible
+          target_obj->set_null();
+        }
+
+        sub_part_obj_cnt++;
+      }
+    }
   }
+
   if (OB_SUCC(ret)) {
-    resolve_result.ranges_[0].start_key_.assign(target_obj, 1);
-    resolve_result.ranges_[0].end_key_.assign(target_obj, 1);
+    resolve_result.ranges_[0].start_key_.assign(static_cast<ObObj*>(first_part_tmp_buf),
+                                                first_part_obj_cnt);
+    resolve_result.ranges_[0].end_key_.assign(static_cast<ObObj*>(first_part_tmp_buf),
+                                              first_part_obj_cnt);
     resolve_result.ranges_[0].border_flag_.set_inclusive_start();
     resolve_result.ranges_[0].border_flag_.set_inclusive_end();
-    LOG_DEBUG("succ to do resolve with part key", K(resolve_result.ranges_[0]));
+
+    resolve_result.ranges_[1].start_key_.assign(static_cast<ObObj*>(sub_part_tmp_buf),
+                                                sub_part_obj_cnt);
+    resolve_result.ranges_[1].end_key_.assign(static_cast<ObObj*>(sub_part_tmp_buf),
+                                              sub_part_obj_cnt);
+    resolve_result.ranges_[1].border_flag_.set_inclusive_start();
+    resolve_result.ranges_[1].border_flag_.set_inclusive_end();
+    LOG_DEBUG("succ to do resolve with part key", K(resolve_result.ranges_[0]), K(first_part_obj_cnt),
+              K(resolve_result.ranges_[1]), K(sub_part_obj_cnt));
   }
   return ret;
 }
@@ -347,7 +419,7 @@ int ObProxyExprCalculator::do_expr_resolve(ObExprParseResult &parse_result,
   ctx.text_ps_entry_ = text_ps_entry;
   ctx.client_info_ = client_info;
   ctx.parse_result_ = &parse_result;
-  ctx.is_insert_stm_ = sql_parse_result.is_insert_stmt();
+  ctx.is_insert_stmt_ = sql_parse_result.is_insert_stmt();
   ObSqlParseResult &result = const_cast<ObSqlParseResult &>(sql_parse_result);
   ctx.sql_field_result_ = &result.get_sql_filed_result();
   ObExprResolver expr_resolver(allocator);
@@ -446,6 +518,7 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
       LOG_DEBUG("succ to get part id", K(first_part_id), K(sub_part_id), K(partition_id));
     } else if (!get_global_proxy_config().enable_primary_zone
                && !get_global_proxy_config().enable_cached_server) {
+      route.is_partition_calc_fail_ = true;
       // if proxy primary zone route optimization disabled, use random part id optimization
       if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id, partition_id))) {
         LOG_WDIAG("fail to get part id at last", K(first_part_id), K(sub_part_id), K(ret));
@@ -455,7 +528,8 @@ int ObProxyExprCalculator::do_partition_id_calc(ObExprResolverResult &resolve_re
         LOG_DEBUG("succ to get part id by random", K(first_part_id), K(sub_part_id), K(partition_id));
       }
     } else {
-      // nothing
+      route.is_partition_calc_fail_ = true;
+      // nothing, will use primary zone or cached server later
     }
   } else {
     ret = OB_INVALID_ARGUMENT;
@@ -667,7 +741,7 @@ int ObExprCalcTool::build_dtc_params_with_tz_info(ObClientSessionInfo *session_i
 {
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(session_info)) {
-    if (OB_FAIL(build_tz_info(session_info, obj_type, tz_info, &dtc_params))) {
+    if (OB_FAIL(build_tz_info(session_info, obj_type, tz_info))) {
       LOG_WDIAG("fail to build tz info", K(ret));
     } else if (OB_FAIL(build_dtc_params(session_info, obj_type, dtc_params))) {
       LOG_WDIAG("fail to build dtc params", K(ret));
@@ -688,19 +762,17 @@ int ObExprCalcTool::build_dtc_params_with_tz_info(ObClientSessionInfo *session_i
  */
 int ObExprCalcTool::build_tz_info(ObClientSessionInfo *session_info,
                                   ObObjType obj_type,
-                                  ObTimeZoneInfo &tz_info,
-                                  const ObDataTypeCastParams *dtc_params)
+                                  ObTimeZoneInfo &tz_info)
 {
   int ret = OB_SUCCESS;
   if (OB_NOT_NULL(session_info)) {
     if (ObTimestampLTZType == obj_type || ObTimestampTZType == obj_type
-        || (NULL != dtc_params
-            && share::schema::ObPartitionFuncType::PARTITION_FUNC_TYPE_RANGE_COLUMNS == dtc_params->part_func_type_
-            && ObTimestampType == obj_type)) {
+        || ObTimestampType == obj_type) {
       if (OB_FAIL(build_tz_info_for_all_type(session_info, tz_info))) {
         LOG_WDIAG("fail to build time zone info with session", K(ret));
       }
     }
+    LOG_DEBUG("try build time zone", K(obj_type));
   } else {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("fail to build tz info for null session info", K(ret));

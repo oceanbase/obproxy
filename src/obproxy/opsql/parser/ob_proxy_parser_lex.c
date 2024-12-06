@@ -3984,7 +3984,7 @@ YY_RULE_SETUP
   PUSH_STATE(in_old_comment_expr);
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
-    p->simple_route_info_.table_start_ptr_ = yytext;
+    p->hint_route_info_.table_start_ptr_ = yytext;
     return ROUTE_TABLE;
   }
 }
@@ -3998,7 +3998,7 @@ YY_RULE_SETUP
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
     if (OBPROXY_T_INVALID == p->cur_stmt_type_) {
-      p->simple_route_info_.part_key_start_ptr_ = yytext;
+      p->hint_route_info_.part_key_start_ptr_ = yytext;
       return ROUTE_PART_KEY;
     }
   }
@@ -4010,7 +4010,7 @@ YY_RULE_SETUP
 {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
-    p->simple_route_info_.table_start_ptr_ = yytext;
+    p->hint_route_info_.table_start_ptr_ = yytext;
     return ROUTE_TABLE;
   }
 }
@@ -4022,7 +4022,7 @@ YY_RULE_SETUP
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
     if (OBPROXY_T_INVALID == p->cur_stmt_type_) {
-      p->simple_route_info_.part_key_start_ptr_ = yytext;
+      p->hint_route_info_.part_key_start_ptr_ = yytext;
       return ROUTE_PART_KEY;
     }
   }

@@ -197,9 +197,9 @@ char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd)
     "Shutdown",  // OB_MYSQL_COM_SHUTDOWN,
     "Statistics",  // OB_MYSQL_COM_STATISTICS,
 
-    "Process Info",  // OB_MYSQL_COM_PROCESS_INFO,
+    "Process info",  // OB_MYSQL_COM_PROCESS_INFO,
     "Connect",  // OB_MYSQL_COM_CONNECT,
-    "Process Kill",  // OB_MYSQL_COM_PROCESS_KILL,
+    "Process kill",  // OB_MYSQL_COM_PROCESS_KILL,
     "Debug",  // OB_MYSQL_COM_DEBUG,
     "Ping",  // OB_MYSQL_COM_PING,
 
@@ -220,28 +220,35 @@ char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd)
     "Stmt reset",  // OB_MYSQL_COM_STMT_RESET,
     "Set option",  // OB_MYSQL_COM_SET_OPTION,
     "Stmt fetch",  // OB_MYSQL_COM_STMT_FETCH,
-    "Daemno",  // OB_MYSQL_COM_DAEMON,
+    "Daemon",  // OB_MYSQL_COM_DAEMON,
 
     "Binlog dump gtid",  // OB_MYSQL_COM_BINLOG_DUMP_GTID,
     "Reset connection",  // OB_MYSQL_COM_RESET_CONNECTION,
+    "Clone", // OB_MYSQL_COM_CLONE
+    "Subscribe group replication stream", // OB_MYSQL_COM_SUBSCRIBE_GROUP_REPLICATION_STREAM
 
-    "Prepare Execute", // OB_MYSQL_COM_STMT_PREPARE_EXECUTE,
-    "SEND PIECE DATA",
-    "GET PIECE DATA",
     "End",  // OB_MYSQL_COM_END,
+
+    "Prepare execute", // OB_MYSQL_COM_STMT_PREPARE_EXECUTE,
+    "Send piece data",
+    "Get piece data",
 
     "Delete session", // OB_MYSQL_COM_DELETE_SESSION
     "Handshake",  // OB_MYSQL_COM_HANDSHAKE,
     "Login"  // OB_MYSQL_COM_LOGIN,
+    "Transfer file content", // OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT
+    "Auth switch response", // OB_MYSQL_COM_AUTH_SWITCH_RESP
+
+    "Max" // OB_MYSQL_COM_MAX_NUM
   };
 
-  if (mysql_cmd >= OB_MYSQL_COM_SLEEP && mysql_cmd <= OB_MYSQL_COM_RESET_CONNECTION) {
+  if (mysql_cmd >= OB_MYSQL_COM_SLEEP && mysql_cmd <= OB_MYSQL_COM_END) {
     str = mysql_cmd_array[mysql_cmd];
-  } else if (mysql_cmd >= OB_MYSQL_COM_STMT_PREPARE_EXECUTE && mysql_cmd <= OB_MYSQL_COM_END) {
-    int start = OB_MYSQL_COM_RESET_CONNECTION + 1;
+  } else if (mysql_cmd >= OB_MYSQL_COM_STMT_PREPARE_EXECUTE && mysql_cmd <= OB_MYSQL_COM_STMT_GET_PIECE_DATA) {
+    int start = OB_MYSQL_COM_END + 1;
     str = mysql_cmd_array[mysql_cmd - OBPROXY_NEW_MYSQL_CMD_START + start];
-  } else if (mysql_cmd > OB_MYSQL_COM_END && mysql_cmd < OB_MYSQL_COM_MAX_NUM) {
-    int start = OB_MYSQL_COM_RESET_CONNECTION + 1 + OB_MYSQL_COM_END - OB_MYSQL_COM_STMT_PREPARE_EXECUTE + 1;
+  } else if (mysql_cmd >= OB_MYSQL_COM_DELETE_SESSION && mysql_cmd <= OB_MYSQL_COM_MAX_NUM) {
+    int start = OB_MYSQL_COM_END + 4;
     str = mysql_cmd_array[mysql_cmd - OBPROXY_MYSQL_CMD_START + start];
   }
   return str;

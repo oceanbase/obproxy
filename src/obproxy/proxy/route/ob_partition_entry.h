@@ -41,12 +41,15 @@ struct ObPartitionEntryKey
 {
 public:
   ObPartitionEntryKey()
-    : cr_version_(-1), cr_id_(common::OB_INVALID_CLUSTER_ID), table_id_(common::OB_INVALID_ID), partition_id_(common::OB_INVALID_ID) {}
+    : cr_version_(-1), cr_id_(common::OB_INVALID_CLUSTER_ID), tenant_id_(common::OB_INVALID_ID),
+      table_id_(common::OB_INVALID_ID), partition_id_(common::OB_INVALID_ID) {}
   explicit ObPartitionEntryKey(const int64_t cr_version,
                                const int64_t cr_id,
+                               const uint64_t tenant_id,
                                const uint64_t table_id,
                                const uint64_t partition_id)
-    : cr_version_(cr_version), cr_id_(cr_id), table_id_(table_id), partition_id_(partition_id) {}
+    : cr_version_(cr_version), cr_id_(cr_id), tenant_id_(tenant_id), table_id_(table_id),
+      partition_id_(partition_id) {}
   ~ObPartitionEntryKey() {}
 
   bool is_valid() const;
@@ -58,6 +61,7 @@ public:
 
   int64_t cr_version_;
   int64_t cr_id_;
+  uint64_t tenant_id_;
   uint64_t table_id_;
   uint64_t partition_id_;
 };
@@ -66,12 +70,15 @@ inline void ObPartitionEntryKey::reset()
 {
   cr_version_ = -1;
   cr_id_ = common::OB_INVALID_CLUSTER_ID;
+  tenant_id_ = common::OB_INVALID_ID;
   table_id_ = common::OB_INVALID_ID;
   partition_id_ = common::OB_INVALID_ID;
 }
 
 inline bool ObPartitionEntryKey::is_valid() const
 {
+  // for ob 3.x
+  // common::OB_INVALID_ID == tenant_id_
   return (common::OB_INVALID_ID != table_id_
           && common::OB_INVALID_ID != partition_id_
           && (cr_version_ >= 0)
@@ -80,10 +87,7 @@ inline bool ObPartitionEntryKey::is_valid() const
 
 inline uint64_t ObPartitionEntryKey::hash(uint64_t seed) const
 {
-  uint64_t hashs = common::murmurhash(&cr_version_, sizeof(cr_version_), seed);
-  hashs = common::murmurhash(&cr_id_, sizeof(cr_id_), hashs);
-  hashs = common::murmurhash(&table_id_, sizeof(table_id_), hashs);
-  hashs = common::murmurhash(&partition_id_, sizeof(partition_id_), hashs);
+  uint64_t hashs = common::murmurhash(this, sizeof(ObPartitionEntryKey), seed);
   return hashs;
 }
 
@@ -91,6 +95,7 @@ inline bool ObPartitionEntryKey::operator==(const ObPartitionEntryKey &other) co
 {
   return ((cr_version_ == other.cr_version_)
           && (cr_id_ == other.cr_id_)
+          && (tenant_id_ == other.tenant_id_)
           && (table_id_ == other.table_id_)
           && (partition_id_ == other.partition_id_));
 }
@@ -105,6 +110,7 @@ class ObPartitionEntry : public ObRouteEntry
 public:
   ObPartitionEntry()
     : ObRouteEntry(), has_dup_replica_(false),
+      tenant_id_(common::OB_INVALID_ID),
       table_id_(common::OB_INVALID_ID),
       partition_id_(common::OB_INVALID_ID), pl_()
   {
@@ -113,9 +119,11 @@ public:
   virtual ~ObPartitionEntry() {} // must be empty
   virtual void free();
 
-  static int alloc_and_init_partition_entry(const uint64_t table_id, const uint64_t partition_id,
+  static int alloc_and_init_partition_entry(const uint64_t table_id,
+                                            const uint64_t partition_id,
                                             const int64_t cr_version,
                                             const int64_t cr_id,
+                                            const uint64_t tenant_id,
                                             const common::ObIArray<ObProxyReplicaLocation> &replicas,
                                             ObPartitionEntry *&entry);
   static int alloc_and_init_partition_entry(const ObPartitionEntryKey &key,
@@ -125,6 +133,7 @@ public:
                                             const ObProxyReplicaLocation &replica,
                                             ObPartitionEntry *&entry);
 
+  void set_tenant_id(const uint64_t tenant_id) { tenant_id_ = tenant_id; }
   void set_table_id(const uint64_t table_id) { table_id_ = table_id; }
   void set_partition_id(const uint64_t partition_id) { partition_id_ = partition_id; }
   int set_pl(const common::ObIArray<ObProxyReplicaLocation> &replicas) { return pl_.set_replicas(replicas); }
@@ -135,6 +144,7 @@ public:
   uint64_t get_partition_id() const { return partition_id_; }
   const ObProxyPartitionLocation &get_pl() const { return pl_; }
   const ObProxyReplicaLocation *get_leader_replica() const;
+  uint64_t get_tenant_id() const { return tenant_id_; }
   uint64_t get_table_id() const { return table_id_; }
 
   int64_t get_server_count() const { return pl_.replica_count(); }
@@ -148,6 +158,7 @@ public:
 
 private:
   bool has_dup_replica_;
+  uint64_t tenant_id_;
   uint64_t table_id_;
   uint64_t partition_id_;
   ObProxyPartitionLocation pl_;
@@ -156,6 +167,8 @@ private:
 
 inline bool ObPartitionEntry::is_valid() const
 {
+  // for ob 3.x
+  // common::OB_INVALID_ID == tenant_id_
   return (common::OB_INVALID_ID != table_id_
           && common::OB_INVALID_ID != partition_id_
           && cr_version_ > 0
@@ -203,7 +216,7 @@ inline bool ObPartitionEntry::need_update_entry() const
 
 inline ObPartitionEntryKey ObPartitionEntry::get_key() const
 {
-  ObPartitionEntryKey key(cr_version_, cr_id_, table_id_, partition_id_);
+  ObPartitionEntryKey key(cr_version_, cr_id_, tenant_id_, table_id_, partition_id_);
   return key;
 }
 

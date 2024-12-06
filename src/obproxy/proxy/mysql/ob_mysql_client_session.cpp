@@ -64,14 +64,8 @@ ObMutex g_debug_cs_list_mutex;
 #endif
 
 ObMysqlClientSession::ObMysqlClientSession()
-    : can_direct_ok_(false), is_proxy_mysql_client_(false), can_direct_send_request_(false),
-      active_(false), test_server_addr_(),
-      vc_ready_killed_(false), is_waiting_trans_first_request_(false),
-      is_need_send_trace_info_(true), is_already_send_trace_info_(false),
-      is_first_handle_request_(true), is_in_trans_for_close_request_(false), is_last_request_in_trans_(false),
-      is_trans_internal_routing_(false), is_need_return_last_bound_ss_(false), need_delete_cluster_(false),
-      is_first_dml_sql_got_(false), is_proxy_enable_trans_internal_routing_(false),
-      is_proxy_enable_cross_shard_txn_(false), compressed_seq_(0),
+    : active_(false), test_server_addr_(),
+      session_states_{}, compressed_seq_(0),
       cluster_resource_(NULL), dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0),
       inner_request_param_(NULL), is_request_transferring_(false), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT),
@@ -83,14 +77,17 @@ ObMysqlClientSession::ObMysqlClientSession()
       lock_ss_(NULL), closed_key_ss_(NULL), sharding_txn_ss_addr_(), trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
       server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
-      ps_id_(0), cursor_id_(CURSOR_ID_START), using_ldg_(false), using_service_name_(false),
+      ps_id_(0), cursor_id_(CURSOR_ID_START),
       cs_id_version_(CLIENT_SESSION_ID_V1), connected_time_(0)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
   bool enable_session_pool = get_global_proxy_config().is_pool_mode
                              && get_global_proxy_config().enable_session_pool_for_no_sharding;
   set_session_pool_client(enable_session_pool);
-  can_server_session_release_ = true;
+  set_can_server_session_release(true);
+  set_need_send_trace_info(true);
+  set_first_handle_ps_close_reset_request(true);
+  set_first_send_ps_close_reset_request(true);
 }
 
 void ObMysqlClientSession::destroy()
@@ -158,15 +155,16 @@ void ObMysqlClientSession::destroy()
     conn_decrease_ = false;
   }
 
-  is_need_send_trace_info_ = true;
-  is_already_send_trace_info_ = false;
-  is_first_handle_request_ = true;
-  is_in_trans_for_close_request_ = false;
-  is_last_request_in_trans_ = false;
-  is_trans_internal_routing_ = false;
-  is_need_return_last_bound_ss_ = false;
-  is_first_dml_sql_got_ = false;
-  is_proxy_enable_trans_internal_routing_ = false;
+  set_need_send_trace_info(true);
+  set_already_send_trace_info(false);
+  set_first_handle_ps_close_reset_request(true);
+  set_first_send_ps_close_reset_request(true);
+  set_in_trans_for_close_request(false);
+  set_last_request_in_trans(false);
+  set_trans_internal_routing(false);
+  set_need_return_last_bound_ss(false);
+  set_first_dml_sql_got(false);
+  set_proxy_enable_trans_internal_routing(false);
   compressed_seq_ = 0;
   lock_ss_ = NULL;
   closed_key_ss_ = NULL;
@@ -175,8 +173,9 @@ void ObMysqlClientSession::destroy()
   schema_key_.reset();
   ObProxyClientSession::cleanup();
   create_thread_ = NULL;
-  using_ldg_ = false;
-  using_service_name_ = false;
+  set_using_ldg(false);
+  set_using_service_name(false);
+  set_standby_read_write_split(false);
   cs_id_version_ = CLIENT_SESSION_ID_V1;
   op_reclaim_free(this);
 }
@@ -312,7 +311,7 @@ int ObMysqlClientSession::new_connection(
 
       MYSQL_INCREMENT_DYN_STAT(CURRENT_CLIENT_CONNECTIONS);
       conn_decrease_ = true;
-      if (is_proxy_mysql_client_) {
+      if (is_proxy_mysql_client()) {
         MYSQL_INCREMENT_DYN_STAT(TOTAL_INTERNAL_CLIENT_CONNECTIONS);
       } else {
         MYSQL_INCREMENT_DYN_STAT(TOTAL_CLIENT_CONNECTIONS);
@@ -377,7 +376,7 @@ int ObMysqlClientSession::new_connection(
           session_info_.set_client_host(client_addr);
           set_local_connection();
           PROXY_CS_LOG(INFO, "client session born", K_(cs_id), K_(proxy_sessid), K_(is_local_connection), K_(client_vc),
-                       "client_fd", client_vc_->get_conn_fd(), K(client_addr), "is_proxy_client", is_proxy_mysql_client_);
+                       "client_fd", client_vc_->get_conn_fd(), K(client_addr), "is_proxy_client", is_proxy_mysql_client());
 
           // 1. first convert vip to tenant info, if needed.
           // 这里需要注意，在阿里云上这里可以获取成功，但 aws 走了
@@ -684,7 +683,7 @@ int ObMysqlClientSession::add_to_list()
   const int64_t MAX_TRY_TIMES = 1000;
   if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
     PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
-  } else if (is_proxy_mysql_client_) {
+  } else if (is_proxy_mysql_client()) {
     //if it is is proxy mysql client, we do follow things:
     //1. do not add to list
     //2. set cs_id top flag to 1
@@ -838,7 +837,7 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
       }
     }
     if (MCS_ACTIVE_READER == read_state_) {
-      if (LIST_ADDED == in_list_stat_ || is_proxy_mysql_client_) {
+      if (LIST_ADDED == in_list_stat_ || is_proxy_mysql_client()) {
         MYSQL_DECREMENT_DYN_STAT(CURRENT_CLIENT_TRANSACTIONS);
       }
       if (active_) {
@@ -927,15 +926,15 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
     // 2. fail to verify cluster name in login step, user cluster and server cluster are not the same
     //
     // if we only delete resource, loacl cluster rslist still exist, so we must delete both of them
-    if (OB_UNLIKELY(need_delete_cluster_)) {
+    if (OB_UNLIKELY(is_need_delete_cluster())) {
       if (OB_FAIL(handle_delete_cluster())) {
         PROXY_CS_LOG(WDIAG, "fail to handle delete cluster", K(ret));
       }
-      need_delete_cluster_ = false;
+      set_need_delete_cluster(false);
     }
 
     if ((this_ethread() == create_thread_)
-        || is_proxy_mysql_client_ // if proxy mysql client, direct destroy, no need scheudle to create thread
+        || is_proxy_mysql_client() // if proxy mysql client, direct destroy, no need scheudle to create thread
         ) {
       read_state_ = MCS_CLOSED;
       if (OB_FAIL(do_api_callout(OB_MYSQL_SSN_CLOSE_HOOK))) {
@@ -1124,7 +1123,7 @@ void ObMysqlClientSession::close_last_used_ss()
 {
    PROXY_CS_LOG(INFO, "close last server session", KPC(bound_ss_));
   if (NULL != bound_ss_) {
-    if (is_session_pool_client() && can_server_session_release_) {
+    if (is_session_pool_client() && is_can_server_session_release()) {
       PROXY_CS_LOG(DEBUG, "is_session_pool_client will release");
       bound_ss_->release();
     } else {
@@ -1243,7 +1242,7 @@ int ObMysqlClientSession::main_handler(int event, void *data)
       if (OB_FAIL(swap_mutex(data))) {
         PROXY_CS_LOG(WDIAG, "fail to swap mutex", KP(data), K(ret));
       }
-    } else if (is_proxy_mysql_client_ && CLIENT_VC_DISCONNECT_LAST_USED_SS_EVENT == event) {
+    } else if (is_proxy_mysql_client() && CLIENT_VC_DISCONNECT_LAST_USED_SS_EVENT == event) {
       close_last_used_ss();
     } else {
       event_ret = (this->*cs_default_handler_)(event, data); // others
@@ -1259,7 +1258,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
 {
   int ret = OB_SUCCESS;
   close_cs = false;
-  is_waiting_trans_first_request_ = true;
+  set_is_waiting_trans_first_request(true);
   if (OB_LIKELY(MCS_ACTIVE_READER == read_state_) && OB_LIKELY(NULL != mysql_sm_)) {
     PROXY_CS_LOG(DEBUG, "client session handle transaction complete",
                  K_(cs_id), K(mysql_sm_->sm_id_), KPC_(cluster_resource));
@@ -1282,7 +1281,7 @@ void ObMysqlClientSession::handle_transaction_complete(ObIOBufferReader *r, bool
       if ((OB_ISNULL(cluster_resource_) || OB_UNLIKELY(cluster_resource_->is_deleting())) && !is_proxysys_tenant()) {
         if (NULL != cluster_resource_) {
           PROXY_CS_LOG(INFO, "the cluster resource is deleting, client session will close",
-                       KPC_(cluster_resource), K_(cluster_resource), K_(is_proxy_mysql_client));
+                       KPC_(cluster_resource), K_(cluster_resource), K_(session_states_.is_proxy_mysql_client));
         }
         COLLECT_INTERNAL_DIAGNOSIS(mysql_sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE, OB_PROXY_CLUSTER_RESOURCE_EXPIRED, "cluster resource is deleting, will disconnect");
         close_cs = true;
@@ -1358,7 +1357,7 @@ int ObMysqlClientSession::release(ObIOBufferReader *r)
 int ObMysqlClientSession::init_session_pool_info()
 {
   int ret = OB_SUCCESS;
-  if (is_proxy_mysql_client_) {
+  if (is_proxy_mysql_client()) {
     //pool_client schema_key will set in client_vc
   } else if (!session_info_.is_sharding_user() && schema_key_.init_) {
     PROXY_CS_LOG(DEBUG, "no sharding already init", K(schema_key_));
@@ -1454,7 +1453,7 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
         // Release this session back to the main session pool and
         // then continue looking for one from the shared pool
         // if is mysql client, close last session
-        if (is_proxy_mysql_client_ && !is_session_pool_client()) {
+        if (is_proxy_mysql_client() && !is_session_pool_client()) {
           bound_ss_->do_io_close();
           bound_ss_ = NULL;
           ret = OB_SESSION_NOT_FOUND;
@@ -1471,7 +1470,7 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
     }
 
     // 2. try other session in common pool
-    if (!is_proxy_mysql_client_ && NULL == svr_session) {
+    if (!is_proxy_mysql_client() && NULL == svr_session) {
       if (OB_UNLIKELY(is_session_pool_client())) {
         ret = acquire_svr_session_in_session_pool(addr, svr_session);
       } else {
@@ -1537,7 +1536,7 @@ inline void ObMysqlClientSession::update_session_stats()
     if (0 == session_stats_.reported_time_) {
       session_stats_.reported_time_ = get_hrtime();
     }
-    if (!is_proxy_mysql_client_
+    if (!is_proxy_mysql_client()
         && (session_stats_.modified_time_ - session_stats_.reported_time_) > mysql_sm_->trans_state_.mysql_config_params_->stat_table_sync_interval_
         && g_current_report_count < ObStatProcessor::MAX_RUNNING_SESSION_STAT_REPROT_TASK_COUNT) {
       PROXY_CS_LOG(DEBUG, "ObMysqlClientSession::update_session_stats()", K_(cs_id));
@@ -1598,11 +1597,11 @@ int64_t ObMysqlClientSession::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(KP(this),
-       K_(is_proxy_mysql_client),
-       K_(is_waiting_trans_first_request),
-       K_(need_delete_cluster),
-       K_(is_first_dml_sql_got),
-       K_(vc_ready_killed),
+       K_(session_states_.is_proxy_mysql_client),
+       K_(session_states_.is_waiting_trans_first_request),
+       K_(session_states_.need_delete_cluster),
+       K_(session_states_.is_first_dml_sql_got),
+       K_(session_states_.vc_ready_killed),
        K_(active),
        K_(magic),
        K_(conn_decrease),
@@ -1620,8 +1619,8 @@ int64_t ObMysqlClientSession::to_string(char *buf, const int64_t buf_len) const
        KP_(closed_key_ss),
        KPC_(cluster_resource),
        KP_(client_vc),
-       K_(using_ldg),
-       K_(using_service_name),
+       K_(session_states_.using_ldg),
+       K_(session_states_.using_service_name),
        KPC_(trace_stats));
   J_OBJ_END();
   return pos;
@@ -1661,7 +1660,7 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
   } else {
     const ObString &login_passwd = session_info_.get_login_req().get_hsr_result().response_.get_auth_response();
     const ObString &scramble_string = (session_info_.get_scramble_string().empty()
-        ? ObString::make_string("aaaaaaaabbbbbbbbbbbb")
+        ? ObString::make_string(OB_AUTH_DATA_AB)
         : get_scramble_string());
     ObString stored_stage1;
 
@@ -1703,7 +1702,7 @@ bool ObMysqlClientSession::is_authorised_proxysys(const ObProxyLoginUserType typ
 bool ObMysqlClientSession::is_need_convert_vip_to_tname()
 {
   return (get_global_proxy_config().need_convert_vip_to_tname
-          && !this->is_proxy_mysql_client_
+          && !this->is_proxy_mysql_client()
           && RUN_MODE_PROXY == g_run_mode);
 }
 
@@ -1713,7 +1712,7 @@ inline bool ObMysqlClientSession::need_close() const
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   if (OB_UNLIKELY(info.graceful_exit_start_time_ > 0)
       && OB_LIKELY(!info.need_conn_accept_)
-      && !is_proxy_mysql_client_
+      && !is_proxy_mysql_client()
       && info.active_client_vc_count_ > 0
       && OB_LIKELY(info.graceful_exit_end_time_ > info.graceful_exit_start_time_)) {
     int64_t current_active_count = 0;
@@ -1761,10 +1760,10 @@ ObString ObMysqlClientSession::get_current_idc_name() const
 {
   ObString ret_idc;
   //ldc_name has three case:
-  //1. if is_proxy_mysql_client_ && is_user_idc_name_set_, use inner_request_param_->current_idc_name_
+  //1. if is_proxy_mysql_client() && is_user_idc_name_set_, use inner_request_param_->current_idc_name_
   //2. if session_info_.is_user_idc_name_set, use user's
   //3. if congfig is avail, use global config
-  if (is_proxy_mysql_client_
+  if (is_proxy_mysql_client()
       && OB_LIKELY(NULL != inner_request_param_)
       && inner_request_param_->is_user_idc_name_set_) {
     if (!inner_request_param_->current_idc_name_.empty()) {
@@ -1920,7 +1919,7 @@ int ObMysqlClientSession::check_update_ldc()
 
 bool ObMysqlClientSession::need_print_trace_stat() const
 {
-  return (is_proxy_mysql_client_
+  return (is_proxy_mysql_client()
           && OB_NOT_NULL(inner_request_param_)
           && inner_request_param_->need_print_trace_stat_);
 }

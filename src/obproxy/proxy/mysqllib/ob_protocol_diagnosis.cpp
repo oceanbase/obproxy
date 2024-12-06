@@ -215,14 +215,16 @@ int ObProtocolDiagnosis::record_send_mysql(const ObMysqlPacketRecord &mysql_rec)
 
 int ObProtocolDiagnosis::record_send_mysql(event::ObIOBufferReader &mysql_buf_reader, const int64_t buf_len) {
   bool finished = false;
+  int64_t tmp_len = 0;
   return mysql_req_analyzer_.is_request_finished(
-            mysql_buf_reader, finished, sql_cmd_, buf_len, this);
+            mysql_buf_reader, finished, sql_cmd_, buf_len, tmp_len, this);
 }
 
 int ObProtocolDiagnosis::record_send_mysql(event::ObIOBufferReader &mysql_buf_reader) {
   bool finished = false;
+  int64_t tmp_len = 0;
   return mysql_req_analyzer_.is_request_finished(
-            mysql_buf_reader, finished, sql_cmd_, mysql_buf_reader.read_avail(), this);
+            mysql_buf_reader, finished, sql_cmd_, mysql_buf_reader.read_avail(), tmp_len, this);
 }
 
 int ObProtocolDiagnosis::record_send_compressed_mysql(const ObCompressedMysqlPacketRecord &compressed_mysql_rec) {

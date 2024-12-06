@@ -79,6 +79,7 @@
 #include "cmd/ob_show_vip_handler.h"
 #include "cmd/ob_show_sm_handler.h"
 #include "cmd/ob_show_session_handler.h"
+#include "cmd/ob_show_ps_handler.h"
 #include "cmd/ob_kill_op_handler.h"
 #include "cmd/ob_show_sqlaudit_handler.h"
 #include "cmd/ob_show_trace_handler.h"
@@ -871,6 +872,8 @@ int ObProxy::init_inner_request_env()
   } else if (OB_FAIL(show_sm_cmd_init())) {
     LOG_EDIAG("fail to init show_sm_cmd", K(ret));
   } else if (OB_FAIL(show_session_cmd_init())) {
+    LOG_EDIAG("fail to init show_session_cmd", K(ret));
+  } else if (OB_FAIL(show_ps_cmd_init())) {
     LOG_EDIAG("fail to init show_session_cmd", K(ret));
   } else if (OB_FAIL(kill_op_cmd_init())) {
     LOG_EDIAG("fail to init kill_op_cmd", K(ret));

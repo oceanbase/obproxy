@@ -273,7 +273,7 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
           } else {
             is_last_eof_pkt = false;
           }
-        } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd_ && resp_result != NULL) {
+        } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd_ || OB_MYSQL_COM_LOGIN == req_cmd_) && resp_result != NULL) {
           resp_result->is_auth_switch_req_ = true;
         }
 
@@ -907,7 +907,7 @@ int ObRespAnalyzer::analyze_one_packet_header(
               // do nothing
             }
           } else if (OB_UNLIKELY(MYSQL_ERR_PACKET_TYPE == result.mysql_header_.pkt_type_)) {
-            // 2. if the fist packet is an err pkt, it must be followed by an ok packet.
+            // 2. if the first packet is an err pkt, it must be followed by an ok packet.
             //    in this case, we should also confirm the second ok packet is received competed.
             if (OB_FAIL(ObRespAnalyzerUtil::receive_next_ok_packet(reader, result))) {
               LOG_WDIAG("fail to receive next ok packet", K(ret));
@@ -984,7 +984,9 @@ int ObRespAnalyzer::analyze_all_packets(
     if (OB_SUCC(ret)) {
       if (ANALYZE_DONE == result.status_) {
         if (is_stream_end()) {
-          if (resp_result.is_eof_resp()
+        if (OB_MYSQL_COM_LOGIN == req_cmd_ || OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
+          resp_result.is_resultset_resp_ = false;
+        } else if (resp_result.is_eof_resp()
               || ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_)
                    && !resp_result.is_error_resp())) {
             resp_result.is_resultset_resp_ = true;
@@ -1022,9 +1024,10 @@ int ObRespAnalyzer::analyze_all_packets(
     } else {
       if (is_stream_end()) {
         result.status_ = ANALYZE_DONE;
-        if (resp_result.is_eof_resp() ||
-            ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_) &&
-            !resp_result.is_error_resp())) {
+        if (OB_MYSQL_COM_LOGIN == req_cmd_ || OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
+          resp_result.is_resultset_resp_ = false;
+        } else if (resp_result.is_eof_resp() || ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_)
+                                                 && !resp_result.is_error_resp())) {
           resp_result.is_resultset_resp_ = true;
         }
       } else {
@@ -1322,8 +1325,7 @@ int ObRespAnalyzer::analyze_response(event::ObIOBufferReader &reader, ObRespAnal
     char *data = NULL;
     int64_t data_size = 0;
     if (NULL != reader.block_) {
-      reader.skip_empty_blocks();
-      block = reader.block_;
+      block = reader.get_start_offset_block();
       offset = reader.start_offset_;
       data = block->start() + offset;
       data_size = block->read_avail() - offset;
@@ -1365,8 +1367,7 @@ int ObRespAnalyzer::analyze_response_with_length(event::ObIOBufferReader &reader
   char *data = NULL;
   int64_t data_size = 0;
   if (NULL != reader.block_) {
-    reader.skip_empty_blocks();
-    block = reader.block_;
+    block = reader.get_start_offset_block();
     offset = reader.start_offset_;
     data = block->start() + offset;
     data_size = block->read_avail() - offset;
@@ -1750,7 +1751,7 @@ int ObRespAnalyzer::update_ending_type()
     case MYSQL_EOF_PACKET_TYPE:
       if (mysql_analyzer_.get_pkt_len() < MYSQL_MAX_EOF_PACKET_LEN) {
         ending_type_ = EOF_PACKET_ENDING_TYPE;
-      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
+      } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd_ || OB_MYSQL_COM_LOGIN == req_cmd_) {
         ending_type_ = EOF_PACKET_ENDING_TYPE;
       }
       break;

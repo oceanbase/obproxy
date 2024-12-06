@@ -72,6 +72,8 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   char *packet_0b = NULL;
   int32_t packet_0b_size = 0;
 
+  int64_t analyze = 0;
+
   gen_mysql_packet(packet_less_16m, packet_less_16m_size);
   gen_mysql_packet(packet_16m, packet_16m_size);
   gen_mysql_packet(packet_2m, packet_2m_size);
@@ -83,7 +85,7 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 0
   LOG_INFO("analyze less 16m");
   buffer.assign_ptr(packet_less_16m, packet_less_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -91,7 +93,7 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 1
   LOG_INFO("analyze 2m");
   buffer.assign_ptr(packet_2m, packet_2m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -99,12 +101,12 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 2
   LOG_INFO("analyze 16m + 0b");
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_0b, packet_0b_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -112,12 +114,12 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 3
   LOG_INFO("analyze 16m + 2m");
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_2m, packet_2m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -125,17 +127,17 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 4
   LOG_INFO("analyze 16m + 16m + 0b");
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_0b, packet_0b_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -143,17 +145,17 @@ TEST_F(TestEvent, test_analyze_complete_mysql_request)
   // case 5
   LOG_INFO("analyze 16m + 16m + 2m");
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_16m, packet_16m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(packet_2m, packet_2m_size + MYSQL_NET_HEADER_LENGTH);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   request_analyzer_->reuse();
   buffer.reset();
@@ -167,6 +169,7 @@ TEST_F(TestEvent, test_analyze_10b_mysql_request_by_1_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = 10;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -175,30 +178,30 @@ TEST_F(TestEvent, test_analyze_10b_mysql_request_by_1_byte)
 
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
   request_analyzer_->reuse();
@@ -211,6 +214,7 @@ TEST_F(TestEvent, test_analyze_10b_mysql_request_by_2_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = 10;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -220,23 +224,23 @@ TEST_F(TestEvent, test_analyze_10b_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < 4; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
   request_analyzer_->reuse();
@@ -249,6 +253,7 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_1_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -258,30 +263,30 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_1_byte)
   // 16m
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 0b
@@ -289,24 +294,24 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_1_byte)
 
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
 
@@ -320,6 +325,7 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_2_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -330,26 +336,26 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (((1<<20) * 8) - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
   buffer.reset();
   buffer.assign_ptr(tmp_buf, 1);
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
 
@@ -358,13 +364,13 @@ TEST_F(TestEvent, test_analyze_16m_0b_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   buffer.reset();
 
@@ -378,6 +384,7 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_1_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -387,30 +394,30 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_1_byte)
   // 16m
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 2m
@@ -418,31 +425,31 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_1_byte)
 
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i=0; i<packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   buffer.reset();
 
@@ -456,6 +463,7 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_2_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -466,26 +474,26 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (((1<<20) * 8) - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
   buffer.reset();
   buffer.assign_ptr(tmp_buf, 1);
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 2m
@@ -493,23 +501,23 @@ TEST_F(TestEvent, test_analyze_16m_2m_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (packet_len/2 - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
   request_analyzer_->reuse();
@@ -522,6 +530,7 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_1_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -531,60 +540,60 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_1_byte)
   // 16m
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 16m
   packet_len = (1<<20) * 16 - 1;
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 2m
@@ -592,31 +601,31 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_1_byte)
 
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 1);
   for (int32_t i = 0; i < packet_len; i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 1);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
   buffer.reset();
 
@@ -630,6 +639,7 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_2_byte)
 {
   char *tmp_buf = NULL;
   int32_t packet_len = (1<<20) * 16 - 1;
+  int64_t analyze = 0;
 
   bool is_finish = false;
   ObRequestBuffer buffer;
@@ -640,26 +650,26 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (((1<<20) * 8) - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
   buffer.reset();
   buffer.assign_ptr(tmp_buf, 1);
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 16m
@@ -667,26 +677,26 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (((1<<20) * 8) - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
   buffer.reset();
   buffer.assign_ptr(tmp_buf, 1);
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
 
   // 2m
@@ -694,23 +704,23 @@ TEST_F(TestEvent, test_analyze_16m_16m_2m_mysql_request_by_2_byte)
   *((uchar *)tmp_buf) = (uchar) (packet_len);
   *(((uchar *)tmp_buf) + 1) = (uchar) (packet_len >> 8);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   *((uchar *)tmp_buf) = (uchar) (packet_len >> 16);
   buffer.assign_ptr(tmp_buf, 2);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_FALSE(is_finish);
   buffer.reset();
 
   buffer.assign_ptr(tmp_buf, 2);
   for (int32_t i = 0; i < (packet_len/2 - 1); i++) {
-    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+    request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
     ASSERT_FALSE(is_finish);
   }
 
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
   request_analyzer_->reuse();
@@ -724,6 +734,7 @@ TEST_F(TestEvent, test_analyze_16m_0b_in_one_buffer)
   char *tmp_buf = NULL;
   int32_t packet_len_16m = (1<<20) * 16 - 1;
   int32_t packet_len_0b = 0;
+  int64_t analyze = 0;
 
   int64_t size = -1;
 
@@ -740,7 +751,7 @@ TEST_F(TestEvent, test_analyze_16m_0b_in_one_buffer)
   LOG_INFO("gen mysql packet", K(size));
 
   buffer.assign_ptr(tmp_buf, MYSQL_NET_HEADER_LENGTH + packet_len_16m + MYSQL_NET_HEADER_LENGTH + packet_len_0b);
-  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY);
+  request_analyzer_->is_request_finished(buffer, is_finish, oceanbase::obmysql::OB_MYSQL_COM_QUERY, analyze);
   ASSERT_TRUE(is_finish);
 
   buffer.reset();

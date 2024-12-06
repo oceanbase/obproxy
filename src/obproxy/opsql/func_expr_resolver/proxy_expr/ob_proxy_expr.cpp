@@ -1602,7 +1602,7 @@ int ObProxyExprAvg::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &c
 /*
  * for to_date and to_timestamp, only support at least one param, at most two params 
  */
-int ObProxyExprToTimeHandler::calc(const ObProxyExprCtx &ctx,
+int ObProxyExprToTime::calc(const ObProxyExprCtx &ctx,
                                    const ObProxyExprCalcItem &calc_item,
                                    common::ObIArray<common::ObObj> &result_obj_array)
 {
@@ -1653,10 +1653,13 @@ int ObProxyExprToTimeHandler::calc(const ObProxyExprCtx &ctx,
                 }
               }
             }
+          } else if (1 == param_result.count()
+                     && is_time_literal_related_type(ObProxyExpr::get_expr_type())) {
+            dtc_params.set_nls_format_by_type(target_type_, ObTimeConverter::COMPAT_OLD_NLS_TIMESTAMP_FORMAT);
           }
         }
         if (OB_SUCC(ret)) {
-          if (OB_FAIL(proxy::ObExprCalcTool::build_tz_info(ctx.client_session_info_, param_result.at(0).get_type() ,tz_info))) {
+          if (OB_FAIL(proxy::ObExprCalcTool::build_tz_info(ctx.client_session_info_, target_type_ ,tz_info))) {
             LOG_WDIAG("fail to build time zone info with ctx session", K(ret));
           } else {
             dtc_params.tz_info_ = &tz_info;
@@ -1673,6 +1676,56 @@ int ObProxyExprToTimeHandler::calc(const ObProxyExprCtx &ctx,
           LOG_WDIAG("result obj array push back failed", K(ret));
         }
       } while (OB_SUCC(ret) && ++i < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+int ObProxyExprToDays::calc(const ObProxyExprCtx &ctx,
+                                   const ObProxyExprCalcItem &calc_item,
+                                   common::ObIArray<common::ObObj> &result_obj_array)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WDIAG("calc expr failed", K(ret), K(param_array_.count()));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() != 1)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WDIAG("to_days function only have one param", K(param_array_.count()), K(ret));
+    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WDIAG("calc param expr failed", K(ret));
+    } else {
+      int index = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        LOCATE_PARAM_RESULT(param_result_array, param_result, index);
+
+        ObObj result_obj = param_result.at(0);
+        if (OB_SUCC(ret)) {
+          ObCollationType collation = get_collation(ctx);
+          ObCastCtx cast_ctx(ctx.allocator_, NULL, CM_NULL_ON_WARN, collation);
+          if (OB_FAIL(ObObjCasterV2::to_type(ObDateType, collation, cast_ctx, param_result.at(0), param_result.at(0)))) {
+            LOG_WDIAG("failed to cast ObDateTimeType obj", K(param_result.at(0)), K(ret));
+          } else {
+            int64_t day_int = param_result.at(0).get_date() + DAYS_FROM_ZERO_TO_BASE;
+            if (day_int < 0 || ObTimeConverter::ZERO_DATE == day_int) {
+              result_obj.set_null();
+            } else {
+              result_obj.set_int(target_type_, day_int);
+            }
+            LOG_DEBUG("succ calc `to_days('xxx')`", "get_date", param_result.at(0).get_date(), K(day_int), K(result_obj));
+            if (OB_FAIL(result_obj_array.push_back(result_obj))) {
+              LOG_WDIAG("result obj array push back failed", K(ret));
+            }
+          }
+        }
+
+      } while (OB_SUCC(ret) && ++index < cnt);
     }
   }
   ObProxyExpr::print_proxy_expr(this);

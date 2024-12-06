@@ -98,6 +98,8 @@ public:
   void set_sub_part_range_type(ObString type) { sub_part_range_type_ = type; }
   ObString get_sub_part_range_type() const { return sub_part_range_type_; }
 
+  int64_t get_first_part_idx(const ObString& column_name);
+  int64_t get_sub_part_idx(const ObString& column_name);
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:

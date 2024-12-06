@@ -59,6 +59,9 @@ public:
                                   const common::ObString &sql_str,
                                   const bool need_compress,
                                   proxy::ObCompressedHeaderParam &compressed_param);
+  static int write_compressed_raw_packet(event::ObMIOBuffer &mio_buf,
+                                         const common::ObString &packet,
+                                         proxy::ObCompressedHeaderParam &compressed_param);
 private:
   // @packet, normal mysql packet
   // compress the packet and write compressed packet to mio_buf
@@ -72,7 +75,7 @@ private:
   static int write_compressed_packet(event::ObMIOBuffer &mio_buf,
                                      const obmysql::ObMySQLRawPacket &packet,
                                      proxy::ObCompressedHeaderParam &compressed_param);
-  
+
   DISALLOW_COPY_AND_ASSIGN(ObMysqlPacketWriter);
 };
 

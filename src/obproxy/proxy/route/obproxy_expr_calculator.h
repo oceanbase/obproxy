@@ -117,7 +117,7 @@ private:
                                       ObProxyPartInfo &part_info,
                                       int64_t &partition_id);
 
-  int calc_part_id_with_simple_route_info(common::ObArenaAllocator &allocator,
+  int calc_part_id_with_hint_route_info(common::ObArenaAllocator &allocator,
                                           const obutils::ObSqlParseResult &parse_result,
                                           ObClientSessionInfo &client_info,
                                           ObServerRoute &route,
@@ -127,7 +127,8 @@ private:
                                           int64_t &sub_part_idx);
   int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,
                                common::ObIAllocator &allocator,
-                               opsql::ObExprResolverResult &resolve_result);
+                               opsql::ObExprResolverResult &resolve_result,
+                               ObProxyPartInfo &part_info);
   int calc_partition_id_using_rowid(opsql::ObExprResolverContext &ctx,
                                     opsql::ObExprResolverResult &resolve_result,
                                     common::ObIAllocator &allocator,
@@ -184,8 +185,7 @@ public:
                                            common::ObDataTypeCastParams &dtc_params);
   static int build_tz_info(ObClientSessionInfo *session_info,
                            common::ObObjType obj_type,
-                           common::ObTimeZoneInfo &tz_info,
-                           const ObDataTypeCastParams *dtc_params = NULL);
+                           common::ObTimeZoneInfo &tz_info);
 
   static int build_tz_info_for_all_type(ObClientSessionInfo *session_info,
                                         common::ObTimeZoneInfo &tz_info);

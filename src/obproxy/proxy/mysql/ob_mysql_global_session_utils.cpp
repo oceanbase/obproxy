@@ -511,7 +511,7 @@ int ObMysqlSessionUtils::init_schema_key_with_client_session(ObProxySchemaKey& s
 {
   int ret = OB_SUCCESS;
   // proxy session pool
-  if (client_session->schema_key_.init_ && client_session->is_proxy_mysql_client_
+  if (client_session->schema_key_.init_ && client_session->is_proxy_mysql_client()
       && client_session->is_session_pool_client()) {
     schema_key = client_session->schema_key_;
     LOG_DEBUG("init with client_session schema_key:", K(client_session->schema_key_));
@@ -552,7 +552,7 @@ int ObMysqlSessionUtils::init_common_addr_with_client_session(ObCommonAddr& comm
 {
   int ret = OB_SUCCESS;
   ObClientSessionInfo& session_info = client_session->get_session_info();
-  if (client_session->is_proxy_mysql_client_) {
+  if (client_session->is_proxy_mysql_client()) {
     //内部连接池已经被设置
     common_addr = client_session->common_addr_;
   } else if (session_info.is_sharding_user() &&

@@ -93,6 +93,7 @@ inline int ObPacketAnalyzer::process_request_content(
   int ret = OB_SUCCESS;
   cmd_complete = false;
   trans_complete = false;
+  int64_t analyze_len = 0; // bytes of current request be analyzed
   if (VC_EVENT_READ_COMPLETE == last_server_event_) {
     // if last_server_event_ is VC_EVENT_READ_COMPLETE,
     // this means the network layer reads the data you specify
@@ -107,7 +108,7 @@ inline int ObPacketAnalyzer::process_request_content(
       int64_t data_size = packet_reader_->read_avail();
       if (data_size > 0) {
         if (OB_FAIL(request_analyzer_->is_request_finished(*packet_reader_, trans_complete, cmd,
-                                                            data_size, protocol_diagnosis_))) {
+                                                            data_size, analyze_len, protocol_diagnosis_))) {
           LOG_WDIAG("fail to analyze_request_is_finish", K(ret));
         } else {
           if (trans_complete) {
@@ -124,7 +125,7 @@ inline int ObPacketAnalyzer::process_request_content(
     }
   }
 
-  if (OB_SUCC(ret) && (NULL != packet_reader_) && OB_FAIL(packet_reader_->consume_all())) {
+  if (OB_SUCC(ret) && (NULL != packet_reader_) && OB_FAIL(packet_reader_->consume(analyze_len))) {
     LOG_WDIAG("fail to consume all", K(ret));
   }
 
@@ -670,6 +671,39 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
       if (VC_EVENT_READ_READY == event) {
         if (trans_complete) {
           ret = VC_EVENT_READ_COMPLETE;
+          ObMIOBuffer *client_buffer = sm_->get_client_session()->get_buffer();
+          ObIOBufferReader *producer_reader = p.packet_analyzer_.packet_reader_;
+          int64_t written = 0;
+          int64_t producer_avail = producer_reader == NULL ? 0 : producer_reader->read_avail();
+          int tmp_ret = OB_SUCCESS;
+          // if trans_complete is true but packet_reader_ still remains data,
+          // then the producer has processed multiple requests and
+          // we need to move the data of next request to client buffer
+          // to ensure the current tunnel only transmits one request once
+          if (MYSQL_REQUEST == p.packet_analyzer_.packet_type_
+              && producer_avail != 0
+              && OB_NOT_NULL(client_buffer)) {
+            if (OB_SUCCESS != (tmp_ret = client_buffer->write(producer_reader, producer_avail, written, 0))) {
+              LOG_WDIAG("fail to write the next request's data to client buffer", K(tmp_ret), K(written));
+            } else if (producer_reader->read_avail() != written) {
+              ret = VC_EVENT_ERROR;
+              LOG_WDIAG("fail to write completed data of next request to client buffer", K(ret), K(written), K(producer_reader->read_avail()));
+            } else if (OB_SUCCESS != (tmp_ret = producer_reader->mbuf_->trim(*producer_reader, written))) {
+              LOG_WDIAG("fail to trim the data of next request from current tunnel buffer", K(tmp_ret), K(written));
+            } else {
+              // just analyzed data in the init buffer then tunnel finished
+              // and tunnel didn't read data from vc so read_vio_ is NULL
+              if (OB_ISNULL(p.read_vio_)) {
+                p.init_bytes_done_ -= written;
+              // minus the data length of the next request to ensure the tunnel works
+              } else {
+                p.bytes_read_ -= written;
+                LOG_DEBUG("the data of next request from the producer was moved to client buffer",
+                          K(p.bytes_read_), K(written));
+
+              }
+            }
+          }
         } else if (cmd_complete) {
           ret = MYSQL_TUNNEL_EVENT_CMD_COMPLETE;
         }
@@ -750,7 +784,12 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
       // The producer completed
       p.alive_ = false;
       if (NULL != p.read_vio_) {
-        p.bytes_read_ = p.read_vio_->ndone_;
+        // p.read_vio_.ndone_ means how much bytes the producer read from net
+        // p.bytes_read_ means how much bytes the producer really produce to consumers
+        // because we may want to preset p.bytes.read as a negative number
+        // to indicate the certain data read from the net does not need to be produced for consumers
+        // so change '=' to '+='
+        p.bytes_read_ += p.read_vio_->ndone_;
       } else {
         p.bytes_read_ = 0;
       }
@@ -762,7 +801,7 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
         if (active_count > 0) {
           MYSQL_SUM_DYN_STAT(TOTAL_SERVER_RESPONSE_REREAD_COUNT, (active_count - 1));
         }
-      } else if (MT_MYSQL_CLIENT == p.vc_type_ && !static_cast<ObMysqlClientSession *>(p.vc_)->is_proxy_mysql_client_) {
+      } else if (MT_MYSQL_CLIENT == p.vc_type_ && !static_cast<ObMysqlClientSession *>(p.vc_)->is_proxy_mysql_client()) {
         static_cast<ObUnixNetVConnection *>(static_cast<ObMysqlClientSession *>(p.vc_)->get_netvc())->reset_read_trigger();
       }
 
@@ -1112,8 +1151,12 @@ int ObMysqlTunnel::finish_all_internal(ObMysqlTunnelProducer &p, const bool chai
         total_bytes = p.bytes_read_ + p.init_bytes_done_;
         c->write_vio_->nbytes_ = total_bytes - c->skip_bytes_ - c->buffer_reader_->reserved_size_;
         LOG_DEBUG("finish_all_internal", K(&p), K(p.bytes_read_), K(p.init_bytes_done_), K(total_bytes),
-                  K(c->skip_bytes_), K(c->buffer_reader_->reserved_size_), K(c->write_vio_->nbytes_));
-
+                  K(c->skip_bytes_), K(c->buffer_reader_->reserved_size_),
+                  K(c->write_vio_->nbytes_),
+                  K(c->write_vio_->ndone_),
+                  K(c->buffer_reader_),
+                  K(c->buffer_reader_->read_avail()),
+                  K(c->buffer_reader_->mbuf_));
         if (c->write_vio_->nbytes_ < 0) {
           ret = OB_ERR_SYS;
           LOG_EDIAG("finish_all_internal, Incorrect nbytes",

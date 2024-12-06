@@ -56,11 +56,19 @@ lib/charset/ob_config.h\
 lib/charset/ob_dtoa.h\
 lib/charset/ob_dtoa.c\
 lib/charset/ob_uctype.h\
-lib/charset/ob_ctype_simple.c\
 lib/charset/ob_ctype_ascii_tab.h\
 lib/charset/ob_ctype_ascii.c\
 lib/charset/ob_ctype_tis620_tab.h\
 lib/charset/ob_ctype_tis620.cpp\
+lib/charset/ob_template_helper.h\
+lib/charset/ob_ctype_big5_tab.h\
+lib/charset/ob_ctype_big5.cpp\
+lib/charset/ob_ctype_hkscs_tab.h\
+lib/charset/ob_ctype_hkscs31_tab.h\
+lib/charset/ob_ctype_hkscs.cpp\
+lib/charset/ob_ctype_uca_tab.h\
+lib/charset/ob_ctype_sjis.cpp\
+lib/charset/ob_ctype_extra.cpp\
 lib/checksum/check_sum.h\
 lib/checksum/ob_crc16.h\
 lib/checksum/ob_crc64.h\
@@ -140,6 +148,7 @@ lib/hash/ob_serialization.h\
 lib/hash/mprotect.h\
 lib/hash/ob_array_index_hash_set.h\
 lib/hash/ob_hashset.h\
+lib/hash/ob_build_in_hashmap_for_ref_count.h\
 lib/hash/ob_build_in_hashmap.h\
 lib/hash/ob_dynamic_build_in_hashmap.h\
 lib/hash/ob_hash.h\
@@ -267,6 +276,7 @@ lib/trace/ob_trace.h\
 lib/trace/ob_trace.cpp\
 lib/trace/ob_trace_def.h\
 lib/profile/ob_trace_id.h\
+lib/profile/ob_trace_id.cpp\
 lib/profile/ob_trace_id_new.h\
 lib/wait_event/ob_wait_class.h\
 lib/wait_event/ob_wait_event.h\

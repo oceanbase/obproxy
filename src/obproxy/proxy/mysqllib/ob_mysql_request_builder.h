@@ -122,6 +122,12 @@ public:
                                     ObMysqlServerSession *server_session,
                                     const ObProxyProtocol ob_proxy_protocol);
 
+  static int build_saved_auth_switch_resp(ObMysqlSM *sm,
+                                          event::ObMIOBuffer &mio_buf,
+                                          ObClientSessionInfo &client_info,
+                                          ObMysqlServerSession *server_session,
+                                          const ObProxyProtocol ob_proxy_protocol);
+
   // build mysql request packet
   static int build_mysql_request(event::ObMIOBuffer &mio_buf,
                                  const obmysql::ObMySQLCmd cmd,

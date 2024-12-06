@@ -38,6 +38,16 @@ DEF_TO_STRING(ObPsIdAddrs)
   return pos;
 }
 
+DEF_TO_STRING(ObBasePsEntry)
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(KP(this), "ps_sql_len", base_ps_sql_.length(), "ps_sql", ObProxyMysqlRequest::get_print_sql(base_ps_sql_),
+       K_(base_ps_parse_result));
+  J_OBJ_END();
+  return pos;
+}
+
 DEF_TO_STRING(ObPsSqlMeta)
 {
   int64_t pos = 0;
@@ -111,7 +121,8 @@ int ObPsIdAddrs::alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, 
     LOG_WDIAG("fail to alloc mem for cursor id entry", K(alloc_size), K(ret));
   } else {
     ps_id_addrs = new (buf) ObPsIdAddrs(ps_id);
-    if (OB_FAIL(ps_id_addrs->add_addr(addr))) {
+    bool is_add = false;
+    if (OB_FAIL(ps_id_addrs->add_addr(addr, is_add))) {
       LOG_WDIAG("set addr in ps_id_addrs failed", "addr", net::ObIpEndpoint(addr), K(ret));
       ps_id_addrs->destroy();
       ps_id_addrs = NULL;
@@ -120,10 +131,12 @@ int ObPsIdAddrs::alloc_ps_id_addrs(uint32_t ps_id, const struct sockaddr &addr, 
   return ret;
 }
 
-int ObPsIdAddrs::add_addr(const struct sockaddr &socket_addr) {
+
+int ObPsIdAddrs::add_addr(const struct sockaddr &socket_addr, bool &is_add) {
   int ret = OB_SUCCESS;
   net::ObIpEndpoint addr(socket_addr);
   bool found = false;
+  is_add = false;
   for (int64_t i = 0; !found && i < addrs_.count(); i++) {
     if (addrs_.at(i) == addr) {
       found = true;
@@ -131,6 +144,8 @@ int ObPsIdAddrs::add_addr(const struct sockaddr &socket_addr) {
   }
   if (!found && OB_FAIL(addrs_.push_back(addr))) {
     LOG_WDIAG("set refactored failed", K(addr), K(ret));
+  } else {
+    is_add = !found;
   }
   return ret;
 }
@@ -147,6 +162,11 @@ int ObPsIdAddrs::remove_addr(const struct sockaddr &socket_addr) {
     }
   }
   return ret;
+}
+
+ObPsIdAddrs::~ObPsIdAddrs()
+{
+
 }
 
 void ObPsIdAddrs::destroy()
@@ -277,6 +297,7 @@ void ObPsEntry::destroy()
     ObBasePsEntry::destroy();
     is_inited_ = false;
     int64_t total_len = sizeof(ObPsEntry) + buf_len_;
+    get_global_ps_entry_cache().dec_ps_entry_memory_count(total_len);
     buf_start_ = NULL;
     buf_len_ = 0;
     op_fixed_mem_free(this, total_len);
@@ -333,6 +354,7 @@ void ObTextPsEntry::destroy()
     ObBasePsEntry::destroy();
     is_inited_ = false;
     int64_t total_len = sizeof(ObTextPsEntry) + buf_len_;
+    get_global_ps_entry_cache().dec_ps_entry_memory_count(total_len);
     buf_start_ = NULL;
     buf_len_ = 0;
     op_fixed_mem_free(this, total_len);
@@ -374,7 +396,6 @@ int ObTextPsNameEntry::alloc_text_ps_name_entry(const ObString &text_ps_name,
 
 void ObTextPsNameEntry::destroy()
 {
-  LOG_DEBUG("text ps name entry will be destroyed", KPC(this));
   int64_t total_len = sizeof(ObTextPsNameEntry) + text_ps_name_.length();
   text_ps_entry_->dec_ref();
   text_ps_entry_ = NULL;
@@ -405,13 +426,9 @@ void ObBasePsEntryGlobalCache::delete_base_ps_entry(ObBasePsEntry *base_ps_entry
 
 void ObBasePsEntryGlobalCache::destroy()
 {
-  ObBasePsEntryGlobalMap::iterator last = ps_entry_global_map_.end();
-  ObBasePsEntryGlobalMap::iterator tmp_iter;
-  for (ObBasePsEntryGlobalMap::iterator base_ps_iter = ps_entry_global_map_.begin(); base_ps_iter != last;) {
-    tmp_iter = base_ps_iter;
-    ++base_ps_iter;
-    tmp_iter->destroy();
-  }
+  // this function will not be call normally.
+  // so the elements freeing is left to TODO.
+  // it can traverse every bucket and free elements if nessesary.
   ps_entry_global_map_.reset();
 }
 

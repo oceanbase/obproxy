@@ -101,7 +101,7 @@ int ObSingleLeader::refresh(
   int64_t version = cluster_resource.get_single_leader_map_version();
   // 1. version changed
   if (OB_UNLIKELY(version != single_leader_version_)) {
-    single_leader_version_ = version;
+    set_single_leader_version(version);
     if (OB_FAIL(cluster_resource.get_and_update_single_leader_info(tenant_name, single_leader_info_))) {
       LOG_DEBUG("fail to get single leader", K(tenant_name), K(ret));
     } else {

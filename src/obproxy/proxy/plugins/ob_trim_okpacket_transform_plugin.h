@@ -178,10 +178,10 @@ public:
         if (OB_SUCCESS != (ret = src_ok.decode())) {
           PROXY_API_LOG(WDIAG, "fail to decode ok packet", K(src_ok), K(ret));
         } else if (OB_SUCCESS != (ret = ObProxySessionInfoHandler::save_changed_session_info(
-            client_info, server_info, sm_->trans_state_.is_auth_request_, NULL, src_ok, 
+            client_info, server_info, sm_->trans_state_.is_handshake_req_phase(), NULL, src_ok,
             sm_->trans_state_.trans_info_.resp_result_, sm_->trans_state_.trace_log_))) {
           _PROXY_API_LOG(WDIAG, "fail to save changed session info, is_auth_request=%d, ret=%d",
-                         sm_->trans_state_.is_auth_request_, ret);
+                         sm_->trans_state_.is_handshake_req_phase(), ret);
         }
         PROXY_API_LOG(DEBUG, "analyze last ok packet of result set", K(src_ok));
       } else {
@@ -236,7 +236,7 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
-    return (!sm->trans_state_.is_auth_request_
+    return (!sm->trans_state_.is_handshake_req_phase()
             && !sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());

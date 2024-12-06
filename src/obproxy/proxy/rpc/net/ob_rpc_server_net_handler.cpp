@@ -2152,7 +2152,7 @@ void ObRpcServerNetTableEntry::do_entry_close()
     PROXY_SS_LOG(INFO, "try to clean all waiting req", K(this), K_(server_ip), K_(waiting_req_list));
     if (OB_FAIL(clean_all_pending_request())) {
       PROXY_SS_LOG(WDIAG, "fail to clean up all waiting request", K(this), K_(server_ip), K(ret));
-    } if (OB_FAIL(cancel_period_task())) {
+    } else if (OB_FAIL(cancel_period_task())) {
       PROXY_SS_LOG(WDIAG, "fail to cancel period task", K(this), K_(server_ip), K(ret));
     } else if (OB_FAIL(cancel_send_request_action())) {
       PROXY_SS_LOG(WDIAG, "fail to cancel pending action", K(this), K_(server_ip), K(ret));

@@ -45,18 +45,58 @@ namespace proxy
 class ObProtocolDiagnosis;
 typedef common::ObString ObRequestBuffer;
 
+enum ObRequestPhase
+{
+  REQ_PHASE_HANDSHAKE = 0,
+  REQ_PHASE_LOGIN_AUTH_SWITCH_RESP,
+  REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP,
+  REQ_PHASE_FILE_CONTENT,
+  REQ_PHASE_COMMAND,
+  REQ_PHASE_COMMAND_SEND_LONG_DATA,
+};
+inline common::ObString get_request_phase_string(const ObRequestPhase phase)
+{
+  const char *str = "";
+  switch (phase) {
+    case REQ_PHASE_HANDSHAKE:
+      str = "REQ_PHASE_HANDSHAKE";
+      break;
+    case REQ_PHASE_LOGIN_AUTH_SWITCH_RESP:
+      str = "REQ_PHASE_LOGIN_AUTH_SWITCH_RESP";
+      break;
+    case REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP:
+      str = "REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP";
+      break;
+    case REQ_PHASE_FILE_CONTENT:
+      str = "REQ_PHASE_FILE_CONTENT";
+      break;
+    case REQ_PHASE_COMMAND:
+      str = "REQ_PHASE_COMMAND";
+      break;
+    case REQ_PHASE_COMMAND_SEND_LONG_DATA:
+      str = "REQ_PHASE_COMMAND_SEND_LONG_DATA";
+      break;
+    default:
+      str = "UNKNOWN";
+  }
+  return common::ObString::make_string(str);
+}
+
 struct ObRequestAnalyzeCtx
 {
   ObRequestAnalyzeCtx() { reset(); }
   ~ObRequestAnalyzeCtx() { }
   void reset() { memset(this, 0, sizeof(ObRequestAnalyzeCtx)); }
 
+  inline const bool is_handshake_req_phase() const { return request_phase_ == REQ_PHASE_HANDSHAKE; }
+  inline const bool is_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP
+                                                               || request_phase_ == REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
+  inline const bool is_file_content_req_phase() const {  return request_phase_ == REQ_PHASE_FILE_CONTENT; }
   static int init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,
                                            event::ObIOBufferReader *buffer_reader,
                                            const common::ObString &vip_tenant_name,
                                            const common::ObString &vip_cluster_name);
-
-  bool is_auth_;
+  ObRequestPhase request_phase_;
   bool drop_origin_db_table_name_;
   bool is_sharding_mode_;
   common::ObCollationType connection_collation_;
@@ -82,13 +122,13 @@ public:
       packet_seq_(0),
       cmd_(0),
       nbytes_analyze_(0),
-      is_last_request_packet_(true),
+      is_last_request_packet_(false),
       request_count_(0),
       header_content_offset_(0) { MEMSET(header_length_buffer_, 0, MYSQL_NET_META_LENGTH); }
   ObMysqlRequestAnalyzer(const ObMysqlRequestAnalyzer& analyzer);
   ObMysqlRequestAnalyzer &operator=(const ObMysqlRequestAnalyzer &analyzer);
-  int is_request_finished(event::ObIOBufferReader &reader, bool &is_finish,
-                          obmysql::ObMySQLCmd cmd, int64_t analyze_len,
+  int is_request_finished(event::ObIOBufferReader &reader, bool &is_finish, obmysql::ObMySQLCmd cmd,
+                          int64_t request_len, int64_t &analyze_len,
                           ObProtocolDiagnosis *protocol_diagnosis);
   uint8_t get_packet_seq() const { return packet_seq_; }
   void reset();
@@ -157,10 +197,12 @@ private:
   int check_is_last_request_packet(obmysql::ObMySQLCmd cmd);
   int is_request_finished(const ObRequestBuffer &buff, bool &is_finish,
                           obmysql::ObMySQLCmd cmd,
+                          int64_t &analyze_len,
                           ObProtocolDiagnosis *protocol_diagnosis = NULL);
 
   // handle auth reqeust packet
   static int handle_auth_request(event::ObIOBufferReader &reader, ObMysqlAnalyzeResult &result);
+  static int handle_no_cmd_request(const ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeResult &result);
 
   // dispatch mysql pkt according to cmd type, and then parse each other
   static int do_analyze_request(const ObRequestAnalyzeCtx &ctx,
@@ -170,9 +212,6 @@ private:
                                 const bool is_oracle_mode = false);
   static int handle_internal_cmd(ObProxyMysqlRequest &client_request);
   static void extract_fileds(const ObExprParseResult& result, ObProxyMysqlRequest &client_request);
-
-  static int rewrite_part_key_comment(event::ObIOBufferReader *reader,
-                                      ObProxyMysqlRequest &client_request);
 
   static void mysql_hex_dump(const void *data, const int64_t size);
 
@@ -213,7 +252,7 @@ private:
   uint8_t packet_seq_;                  // current analyzing packet's seq
   uint8_t cmd_;                         // current analyzing packet's cmd
   int64_t nbytes_analyze_;         // total bytes already analyze
-  bool is_last_request_packet_;    // whether is mysql last package
+  bool is_last_request_packet_;    // whether is last mysql packet of the request
   int64_t request_count_;
   char header_length_buffer_[MYSQL_NET_META_LENGTH];
   int64_t header_content_offset_;

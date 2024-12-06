@@ -545,7 +545,7 @@ int init_cache_map_for_one_thread(event::ObEThread *thread)
   if (OB_ISNULL(thread)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("unexpected thread", K(ret));
-  } if (OB_FAIL(proxy::init_cs_map_for_one_thread(thread))) {
+  } else if (OB_FAIL(proxy::init_cs_map_for_one_thread(thread))) {
     LOG_EDIAG("fail to init cs map for one thread", K(ret));
   } else if (OB_FAIL(proxy::init_rpc_net_cs_map_for_one_thread(thread))) {
     LOG_EDIAG("fail to init rpc net cs map for one thread", K(ret));

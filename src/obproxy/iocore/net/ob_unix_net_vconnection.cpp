@@ -681,7 +681,7 @@ inline int ObUnixNetVConnection::write_to_net_internal(ObIOBufferReader &reader,
     ret = OB_BUF_NOT_ENOUGH;
   } else {
     // XXX because of reserved_size_ in ObIOBufferReader.
-    // we can't use skip_empty_blocks() to do this.
+    // we can't use skip_start_offset_blocks() to do this.
     offset = reader.start_offset_;
     while (NULL != block && len <= 0) {
       len = block->read_avail();

@@ -237,7 +237,7 @@ ObClientSessionInfo::ObClientSessionInfo()
       consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_(NULL), ps_id_entry_map_(),
       text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
-      ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
+      service_name_session_info_(NULL), ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
       last_server_sess_id_(0), sync_conf_sys_var_(false), init_sql_()
 {
@@ -1380,6 +1380,18 @@ int ObClientSessionInfo::revalidate_sys_var_set(ObSysVarSetProcessor &var_set_pr
   return ret;
 }
 
+ObServiceaNameSessionInfo* ObClientSessionInfo::get_service_name_session_info()
+{
+  int ret = OB_SUCCESS;
+  if (NULL == service_name_session_info_
+      && OB_ISNULL(service_name_session_info_ = op_alloc(ObServiceaNameSessionInfo))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc ObServiceaNameSessionInfo", K(ret));
+  }
+  return service_name_session_info_;
+}
+
+
 void ObClientSessionInfo::destroy()
 {
   if (is_inited_)  {
@@ -1403,6 +1415,7 @@ void ObClientSessionInfo::destroy()
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();
   destroy_ps_id_addrs_map();
+  destroy_service_name_session_info();
   destroy_piece_info_map();
   destroy_text_ps_name_entry_map();
   is_trans_specified_ = false;

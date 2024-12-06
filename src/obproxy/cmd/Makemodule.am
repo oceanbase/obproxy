@@ -17,6 +17,8 @@ obproxy/cmd/ob_show_warning_handler.h\
 obproxy/cmd/ob_show_warning_handler.cpp\
 obproxy/cmd/ob_show_net_handler.h\
 obproxy/cmd/ob_show_net_handler.cpp\
+obproxy/cmd/ob_show_ps_handler.h\
+obproxy/cmd/ob_show_ps_handler.cpp\
 obproxy/cmd/ob_show_cluster_handler.h\
 obproxy/cmd/ob_show_cluster_handler.cpp\
 obproxy/cmd/ob_show_config_handler.h\

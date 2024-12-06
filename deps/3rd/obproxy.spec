@@ -26,10 +26,7 @@ OceanBase Database Proxy
 
 %define _unpackaged_files_terminate_build 0
 %undefine _missing_build_ids_terminate_build 0
-%define __debug_install_post %{_rpmconfigdir}/find-debuginfo.sh %{?_find_debuginfo_opts} "%{_builddir}/%{?buildsubdir}" %{nil}
-%define debug_package %{nil}
 %define install_dir /home/admin/obproxy-%{version}
-
 %prep
 %setup
 
@@ -38,15 +35,15 @@ mkdir -p lib
 cp ${TOOLS_DIR}/lib64/libstdc++.so.6.0.28 lib/libstdc++.so.6
 cp -r %{rpm_path}/deps/3rd deps
 
-#./configure --with-so --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
+./configure --with-so --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 CPU_CORES=`grep -c ^processor /proc/cpuinfo`
 MAKE_ARGS="-j $CPU_CORES"
-#make $MAKE_ARGS
-#cp src/obproxy/.libs/libobproxy_so.so.0.0.0 lib/libobproxy_so.so
+make $MAKE_ARGS
+cp src/obproxy/.libs/libobproxy_so.so.0.0.0 lib/libobproxy_so.so
 
-#make distclean >/dev/null 2>&1
-#find . -path ./tools/codestyle/astyle/build -prune -o -path ./doc -prune -o -name Makefile -exec rm -f {} \;
-#find . -name .deps -prune -exec rm -rf {} \;
+make distclean >/dev/null 2>&1
+find . -path ./tools/codestyle/astyle/build -prune -o -path ./doc -prune -o -name Makefile -exec rm -f {} \;
+find . -name .deps -prune -exec rm -rf {} \;
 
 ./configure RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 mkdir -p unittest
@@ -69,6 +66,7 @@ rm -rf $RPM_BUILD_ROOT
 %{install_dir}/bin/obproxy
 %{install_dir}/bin/obproxyd.sh
 %{install_dir}/lib/libstdc++.so.6
+%{install_dir}/lib/libobproxy_so.so
 
 %pre
 rm -rf %{install_dir}/log
@@ -79,6 +77,7 @@ rm -rf /u01/obproxy/lib
 mkdir -p /u01/obproxy/lib
 
 %post
+ln -fs /home/admin/logs/obproxy/log %{install_dir}/log
 chown -R admin:admin %{install_dir}
 ln -s %{install_dir}/lib/libobproxy_so.so /u01/obproxy/lib/libobproxy_so.so.0
 ln -s %{install_dir}/lib/libobproxy_so.so /u01/obproxy/lib/libobproxy_so.so

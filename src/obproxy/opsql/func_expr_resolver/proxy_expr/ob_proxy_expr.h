@@ -53,7 +53,7 @@ enum ExprStrCaseOperation
         }                                                                 \
       }                                                                   \
       if (OB_SUCC(ret) && OB_FAIL(param_result.push_back(tmp_obj))) {     \
-        LOG_WDIAG("push back obj failed", K(ret), K(i), K(j));            \
+        LOG_WDIAG("push back obj failed", K(ret), K(index), K(j));            \
       }                                                                   \
     }                                                                     \
   } while (0)
@@ -480,14 +480,28 @@ public:
 };
 
 // include to_date and to_timestamp
-class ObProxyExprToTimeHandler : public ObProxyFuncExpr
+class ObProxyExprToTime : public ObProxyFuncExpr
 {
 public:
-  explicit ObProxyExprToTimeHandler() {}
-  explicit ObProxyExprToTimeHandler(ObObjType &target_type) : target_type_(target_type) {}
-  ~ObProxyExprToTimeHandler() {}
+  explicit ObProxyExprToTime() {}
+  explicit ObProxyExprToTime(ObObjType &target_type) : target_type_(target_type) {}
+  ~ObProxyExprToTime() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
            common::ObIArray<common::ObObj> &result_obj_array);
+  void set_target_type(ObObjType target_type) { target_type_ = target_type; }
+private:
+  ObObjType target_type_;
+};
+
+// to_days('xxx')
+class ObProxyExprToDays : public ObProxyFuncExpr
+{
+public:
+  explicit ObProxyExprToDays(): target_type_(ObNullType) {}
+  explicit ObProxyExprToDays(ObObjType &target_type) : target_type_(target_type) {}
+  ~ObProxyExprToDays() {}
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array);
   void set_target_type(ObObjType target_type) { target_type_ = target_type; }
 private:
   ObObjType target_type_;

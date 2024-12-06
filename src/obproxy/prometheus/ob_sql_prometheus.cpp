@@ -15,6 +15,7 @@
 #include "prometheus/ob_sql_prometheus.h"
 #include "prometheus/ob_prometheus_utils.h"
 #include "obutils/ob_proxy_config.h"
+#include "proxy/route/ob_route_enum.h"
 
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::obutils;
@@ -127,12 +128,23 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     bool is_slow = (bool)va_arg(args, int);
     bool is_error = (bool)va_arg(args, int);
     bool is_partition_hit = (bool)va_arg(args, int);
+    bool is_rerouted = (bool)va_arg(args, int);
+    bool is_partition_calc_fail = (bool)va_arg(args, int);
+    bool is_trans_internal_routing = (bool)va_arg(args, int);
+    proxy::ObRouteInfoType route_type = (proxy::ObRouteInfoType)va_arg(args, int);
+    proxy::ObRoutePolicyEnum route_policy = (proxy::ObRoutePolicyEnum)va_arg(args, int);
+
     int64_t value = va_arg(args, int64_t);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_TYPE, get_print_stmt_name(stmt_type), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_HINT, is_partition_hit ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_REROUTED, is_rerouted ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_CALC_FAIL, is_partition_calc_fail ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_TRANS_INTERNAL_ROUTING, is_trans_internal_routing ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_TYPE, proxy::get_route_info_type_name(route_type), false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_POLICY, proxy::get_route_policy_enum_string(route_policy), false);
 
     if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_TOTAL, REQUEST_TOTAL_HELP, label_vector, value))) {
       LOG_WDIAG("fail to accumulate counter with REQUEST_TOTAL", K(ret));
@@ -146,14 +158,24 @@ int ObSQLPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     bool is_slow = (bool)va_arg(args, int);
     bool is_error = (bool)va_arg(args, int);
     bool is_partition_hit = (bool)va_arg(args, int);
-    int64_t value = va_arg(args, int64_t);
+    bool is_rerouted = (bool)va_arg(args, int);
+    bool is_partition_calc_fail = (bool)va_arg(args, int);
+    bool is_trans_internal_routing = (bool)va_arg(args, int);
+    proxy::ObRouteInfoType route_type = (proxy::ObRouteInfoType)va_arg(args, int);
+    proxy::ObRoutePolicyEnum route_policy = (proxy::ObRoutePolicyEnum)va_arg(args, int);
 
+    int64_t value = va_arg(args, int64_t);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_TYPE, get_print_stmt_name(stmt_type), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SQL_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_HINT, is_partition_hit ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_REROUTED, is_rerouted ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_PARTITION_CALC_FAIL, is_partition_calc_fail ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_TRANS_INTERNAL_ROUTING, is_trans_internal_routing ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TIME_TYPE, ObProxyPrometheusUtils::get_metric_lable(metric), false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_TYPE, proxy::get_route_info_type_name(route_type), false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_ROUTE_POLICY, proxy::get_route_policy_enum_string(route_policy), false);
 
     if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(COST_TOTAL, COST_TOTAL_HELP, label_vector, value))) {
       LOG_WDIAG("fail to accumulate gauge with COST_TOTAL", K(ret));

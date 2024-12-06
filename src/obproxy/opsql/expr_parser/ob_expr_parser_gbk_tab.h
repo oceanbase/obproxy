@@ -95,8 +95,12 @@ extern int ob_expr_parser_gbk_yydebug;
      NONE_PARAM_FUNC = 294,
      HEX_VAL = 295,
      TRIM = 296,
-     INT_VAL = 297,
-     POS_PLACE_HOLDER = 298
+     TIMESTAMP = 297,
+     QUOTE_STR_VAL = 298,
+     DATE = 299,
+     TIME = 300,
+     INT_VAL = 301,
+     POS_PLACE_HOLDER = 302
    };
 #endif
 

@@ -449,7 +449,7 @@ public:
    */
   int64_t get_block_count() const;
 
-  void skip_empty_blocks();
+  void skip_start_offset_blocks();
 
   /**
    * whether all readable data is in one single IOBlockBuffer
@@ -586,6 +586,7 @@ public:
    *         available for this reader.
    */
   ObIOBufferBlock *get_current_block();
+  ObIOBufferBlock *get_start_offset_block();
 
   ObMIOBuffer *writer() const { return mbuf_; }
 
@@ -1556,7 +1557,7 @@ inline int ObIOBufferBlock::realloc(const int64_t size)
 }
 
 // class ObIOBufferReader -- functions definitions
-inline void ObIOBufferReader::skip_empty_blocks()
+inline void ObIOBufferReader::skip_start_offset_blocks()
 {
   while (NULL != block_->next_ && block_->next_->read_avail() > 0
          && start_offset_ >= block_->size()) {
@@ -1585,11 +1586,17 @@ inline ObIOBufferBlock *ObIOBufferReader::get_current_block()
   return block_;
 }
 
+inline ObIOBufferBlock *ObIOBufferReader::get_start_offset_block()
+{
+  skip_start_offset_blocks();
+  return block_;
+}
+
 inline char *ObIOBufferReader::start()
 {
   char *ret = NULL;
   if (OB_LIKELY(NULL != block_)) {
-    skip_empty_blocks();
+    skip_start_offset_blocks();
     ret = block_->start() + start_offset_;
   }
   return ret;
@@ -1599,7 +1606,7 @@ inline char *ObIOBufferReader::end()
 {
   char *ret = NULL;
   if (OB_LIKELY(NULL != block_)) {
-    skip_empty_blocks();
+    skip_start_offset_blocks();
     ret = block_->end();
   }
   return ret;
@@ -1609,7 +1616,7 @@ inline int64_t ObIOBufferReader::block_read_avail()
 {
   int64_t ret = 0;
   if (OB_LIKELY(NULL != block_)) {
-    skip_empty_blocks();
+    skip_start_offset_blocks();
     ret = static_cast<int64_t>(block_->end() - (block_->start() + start_offset_));
   }
   return ret;

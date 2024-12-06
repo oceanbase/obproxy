@@ -13,6 +13,7 @@
 #define USING_LOG_PREFIX PROXY_ICMD
 
 #include "cmd/ob_show_session_handler.h"
+#include "proxy/mysql/ob_mysql_client_session.h"
 #include "obutils/ob_read_stale_processor.h"
 
 using namespace oceanbase::common;
@@ -471,9 +472,9 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
   const char *cs_var_info       = "cs var version";
 
   //dump common cs info
-  if (OB_FAIL(dump_cs_attribute_item("proxy_sessid", static_cast<int64_t>(cs.get_proxy_sessid()), cs_common_info))) {
+  if (OB_FAIL(dump_cs_attribute_item("proxy_sessid", static_cast<uint64_t>(cs.get_proxy_sessid()), cs_common_info))) {
     WDIAG_ICMD("fail to dump attribute item", K(ret));
-  } else if (OB_FAIL(dump_cs_attribute_item("cs_id", static_cast<int64_t>(cs.get_cs_id()), cs_common_info))) {
+  } else if (OB_FAIL(dump_cs_attribute_item("cs_id", static_cast<uint64_t>(cs.get_cs_id()), cs_common_info))) {
     WDIAG_ICMD("fail to dump attribute item", K(ret));
   } else if (OB_FAIL(dump_cs_attribute_item("cluster", cluster_name, cs_common_info))) {
     WDIAG_ICMD("fail to dump attribute item", K(ret));
@@ -585,6 +586,22 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
   return ret;
 }
 
+int ObShowSessionHandler::dump_cs_attribute_item(const char *name, const uint64_t value, const char *info)
+{
+  int ret = OB_SUCCESS;
+  const int64_t MAX_INT64_SIZE = 24;
+  char uint64_buffer[MAX_INT64_SIZE];
+  int64_t length = snprintf(uint64_buffer, sizeof(uint64_buffer), "%lu", value);
+
+  if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int64_t>(sizeof(uint64_buffer)))) {
+    ret = OB_BUF_NOT_ENOUGH;
+    LOG_WDIAG("buf not enought", K(length), "uint64_buffer length", sizeof(uint64_buffer), K(value), K(ret));
+  } else if (OB_FAIL(dump_cs_attribute_item(name, ObString::make_string(uint64_buffer), info))) {
+    LOG_WDIAG("fail to dump uint64 attribute item", K(name), K(ret));
+  }
+  return ret;
+}
+
 int ObShowSessionHandler::dump_cs_attribute_item(const char *name, const int64_t value, const char *info)
 {
   int ret = OB_SUCCESS;
@@ -673,7 +690,7 @@ int ObShowSessionHandler::dump_cs_attribute_ss(const ObMysqlServerSession &svr_s
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("server_port", static_cast<int64_t>((ntohs)(svr_session.server_ip_.port())), info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
-      } else if (OB_FAIL(dump_cs_attribute_item("server_sessid", svr_session.server_sessid_, info))) {
+      } else if (OB_FAIL(dump_cs_attribute_item("server_sessid", static_cast<uint64_t>(svr_session.server_sessid_), info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("ss_id", svr_session.ss_id_, info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));

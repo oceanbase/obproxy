@@ -49,6 +49,7 @@ public:
 
   inline const net::ObIpEndpoint *get_leader() { return OB_NOT_NULL(single_leader_info_) ? &single_leader_info_->leader_addr_ : NULL; }
   const bool need_refresh(int64_t new_version) { return single_leader_version_ != new_version; }
+  void set_single_leader_version(int64_t new_version) { single_leader_version_ = new_version; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
 private:

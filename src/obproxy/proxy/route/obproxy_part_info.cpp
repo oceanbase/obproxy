@@ -87,6 +87,35 @@ int64_t ObProxyPartInfo::to_string(char *buf, const int64_t buf_len) const
   return pos;
 }
 
+int64_t ObProxyPartInfo::get_first_part_idx(const ObString& column_name)
+{
+  int64_t first_part_idx = -1;
+
+  for (int64_t i = 0; i < part_columns_.count(); ++i) {
+    if (0 == column_name.case_compare(part_columns_.at(i))) {
+      first_part_idx = i;
+      break;
+    }
+  }
+
+  return first_part_idx;
+}
+
+int64_t ObProxyPartInfo::get_sub_part_idx(const ObString& column_name)
+{
+  int64_t sub_part_idx = -1;
+
+  for (int64_t i = 0; i < part_columns_.count(); ++i) {
+    if (0 == column_name.case_compare(sub_part_columns_.at(i))) {
+      sub_part_idx = i;
+      break;
+    }
+  }
+
+  return sub_part_idx;
+}
+
+
 int ObProxyPartInfo::alloc(ObProxyPartInfo *&part_info)
 {
   int ret = OB_SUCCESS;

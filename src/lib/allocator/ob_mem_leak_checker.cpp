@@ -171,6 +171,7 @@ int ObMemLeakChecker::get_info_map_for_cur_thread(mod_alloc_info_t*& ret_ptr, in
 {
   int ret = OB_SUCCESS;
 
+  mod_alloc_info_t* redundant_map_ptr = NULL;
   ret_ptr = NULL;
   id = (get_itid() + 1) % MEM_INFO_MAP_NUM; // get_itid() start from -1
   if (OB_LIKELY(NULL != alloc_info_maps_[id])) {
@@ -181,17 +182,21 @@ int ObMemLeakChecker::get_info_map_for_cur_thread(mod_alloc_info_t*& ret_ptr, in
     lib::ObMutexGuard guard(locks_[id]);
     if (NULL == alloc_info_maps_[id]) {
       alloc_info_maps_[id] = ret_ptr;
-      LOG_DEBUG("succ to alloc mem info map", K(id), K(ret_ptr), "new_ptr", alloc_info_maps_[id], K(lbt()));
       ret_ptr = new (ret_ptr) mod_alloc_info_t();
+      LOG_DEBUG("succ to alloc mem info map", K(id), K(ret_ptr), "new_ptr", alloc_info_maps_[id], K(lbt()));
       if (OB_UNLIKELY(OB_SUCCESS != ret_ptr->create(DEFAULT_MAP_SIZE, MOD_ID_FOR_CHECK, MOD_ID_FOR_CHECK))) {
         LOG_EDIAG("failed to create mem info map", K(id), K(ret_ptr), "new_ptr", alloc_info_maps_[id]);
       }
     } else {
-      //is alloc by other thread, release
-      ob_free(ret_ptr);
+      //is alloc by other thread, need release
+      redundant_map_ptr = ret_ptr;
       ret_ptr = alloc_info_maps_[id];
       LOG_DEBUG("succ to avoid multi-thread data race", K(ret_ptr));
     }
+  }
+
+  if (OB_UNLIKELY(NULL != redundant_map_ptr)) {
+    ob_free(redundant_map_ptr);
   }
 
   return ret;

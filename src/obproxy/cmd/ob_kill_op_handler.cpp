@@ -142,7 +142,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
         if (OB_FAIL(encode_err_packet(errcode))) {
           WDIAG_ICMD("fail to encode err resp packet", K(errcode), K(ret));
         } else {
-          cs.vc_ready_killed_ = true;// after send msg succ, we will kill self
+          cs.set_vc_ready_killed(true);// after send msg succ, we will kill self
           cs.record_sess_killed(session_priv_.cs_id_);
         }
       } else {

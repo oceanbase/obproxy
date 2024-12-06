@@ -31,10 +31,13 @@ extern "C" {
 #define OB_UTF8MB4_UNICODE_CI OB_UTF8MB4 "_unicode_ci"
 
 #define OB_UTF16                 "utf16"
+#define OB_UTF16LE               "utf16le"
 
 #define OB_UTF16_GENERAL_CI OB_UTF16 "_general_ci"
 #define OB_UTF16_BIN        OB_UTF16 "_bin"
 #define OB_UTF16_UNICODE_CI OB_UTF16 "_unicode_ci"
+#define OB_UTF16LE_GENERAL_CI OB_UTF16LE "_general_ci"
+#define OB_UTF16LE_BIN        OB_UTF16LE "_bin"
 
 #define OB_LATIN1 "latin1"
 #define OB_LATIN1_SWEDISH_CI OB_LATIN1 "_swedish_ci"
@@ -221,7 +224,7 @@ typedef struct ObUnicaseInfo
 
 typedef struct ObCharsetHandler
 {
-  //ob_bool (*init)(struct ObCharsetInfo *, MY_CHARSET_LOADER *loader);
+  ob_bool (*init)(struct ObCharsetInfo */*, MY_CHARSET_LOADER *loader*/);
   /* Multibyte routines */
   uint    (*ismbchar)(const struct ObCharsetInfo *, const char *,
                       const char *);
@@ -294,7 +297,7 @@ typedef uint64_t (*hash_algo)(const void* input, uint64_t length, uint64_t seed)
 
 typedef struct ObCollationHandler
 {
-  //bool (*init)(ObCharsetInfo *, ObCharsetLoader *);
+  ob_bool (*init)(struct ObCharsetInfo */*, ObCharsetLoader* */);
   /* Collation routines */
   // Functions that do string comparisons
   int     (*strnncoll)(const struct ObCharsetInfo *,
@@ -422,6 +425,7 @@ extern ObUniCtype ob_uni_ctype[256];
 //=============================================================================
 
 extern ObUnicaseInfo ob_unicase_default;
+extern ObUnicaseInfo ob_unicase_turkish;
 extern ObUnicaseInfo ob_unicase_unicode520;
 
 //=============================================================================
@@ -442,10 +446,23 @@ extern ObCharsetInfo ob_charset_ascii;
 extern ObCharsetInfo ob_charset_ascii_bin;
 extern ObCharsetInfo ob_charset_tis620_thai_ci;
 extern ObCharsetInfo ob_charset_tis620_bin;
+extern ObCharsetInfo ob_charset_sjis_japanese_ci;
+extern ObCharsetInfo ob_charset_sjis_bin;
+extern ObCharsetHandler ob_charset_utf16le_handler;
+extern ObCharsetInfo ob_charset_big5_chinese_ci;
+extern ObCharsetInfo ob_charset_big5_bin;
+extern ObCharsetInfo ob_charset_hkscs_bin;
+extern ObCharsetInfo ob_charset_hkscs31_bin;
+extern ObCharsetInfo ob_charset_dec8_swedish_ci;
+extern ObCharsetInfo ob_charset_dec8_bin;
+extern ObCharsetInfo *uca900_collations[63];
+extern ObCharsetInfo *euro_collations[46];
 extern ObCharsetInfo ob_charset_gbk_chinese_ci;
 extern ObCharsetInfo ob_charset_gbk_bin;
 extern ObCharsetInfo ob_charset_utf16_general_ci;
 extern ObCharsetInfo ob_charset_utf16_bin;
+extern ObCharsetInfo ob_charset_utf16le_general_ci;
+extern ObCharsetInfo ob_charset_utf16le_bin;
 extern ObCharsetInfo ob_charset_utf16_unicode_ci;
 extern ObCharsetInfo ob_charset_gb18030_chinese_ci;
 extern ObCharsetInfo ob_charset_gb18030_bin;
@@ -665,6 +682,7 @@ uint32_t ob_instr_simple(const ObCharsetInfo* cs , const char* b, size_t b_lengt
     const char* s, size_t s_length, ob_match_t* match, unsigned int nmatch);
 //+tis使用
 size_t ob_strnxfrmlen_simple(const struct ObCharsetInfo *, size_t);
+ob_bool ob_coll_init_simple(ObCharsetInfo *cs);
 //+ascii使用
 size_t ob_well_formed_len_ascii(const ObCharsetInfo *cs,
                                 const char *start, const char *end,
@@ -676,6 +694,14 @@ int ob_wc_mb_8bit(const ObCharsetInfo *cs, ob_wc_t wc, uchar *str, uchar *end);
 int ob_mb_wc_8bit(const ObCharsetInfo *cs, ob_wc_t *wc, const uchar *str,const uchar *end);
 int ob_mb_wc_utf8mb4_thunk(const ObCharsetInfo *cs, ob_wc_t *pwc,
                            const unsigned char *s, const unsigned char *e);
+ob_bool ob_cset_init_8bit(ObCharsetInfo *cs);
+static inline void OB_PUT_MB2(unsigned char *s, uint16 code) {
+  s[0] = code >> 8;
+  s[1] = code & 0xFF;
+}
+#define ALWAYS_INLINE __attribute__((always_inline)) inline
+
+char *store16be(char *ptr, uint16_t val);
 
 #ifdef	__cplusplus
 }

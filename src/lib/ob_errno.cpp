@@ -3022,6 +3022,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_LOCK_SESSION_CLOSED_ERROR] = "HY000";
     STR_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
     STR_USER_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
+    MYSQL_ERRNO[-OB_SQLITE3_EXEC_ERROR] = -1;
+    SQLSTATE[-OB_SQLITE3_EXEC_ERROR] = "HY000";
+    STR_ERROR[-OB_SQLITE3_EXEC_ERROR] = "Sqlite exec ERROR";
+    STR_USER_ERROR[-OB_SQLITE3_EXEC_ERROR] = "Sqlite exec ERROR";
     // obproxy related error code
     MYSQL_ERRNO[-OB_PROXY_FETCH_RSLIST_FAIL] = -1;
     SQLSTATE[-OB_PROXY_FETCH_RSLIST_FAIL] = "HY000";

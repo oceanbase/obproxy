@@ -852,7 +852,7 @@ int ObProxyTraceUtils::build_client_ip(ObIArray<ObObJKV> &extra_info,
 
   ObMysqlClientSession *client_session = sm->get_client_session();
   if (OB_NOT_NULL(client_session)
-      && !client_session->is_proxy_mysql_client_
+      && !client_session->is_proxy_mysql_client()
       && client_session->is_need_send_trace_info()
       && is_last_packet_or_segment) {
     int64_t pos = 0;
@@ -896,7 +896,7 @@ int ObProxyTraceUtils::build_sync_sess_info(common::ObIArray<ObObJKV> &extra_inf
   if (OB_SUCC(ret) && OB_NOT_NULL(client_session) && OB_NOT_NULL(server_session)) {
     ObClientSessionInfo &client_info = client_session->get_session_info();
     ObServerSessionInfo &server_info = server_session->get_session_info();
-    if (!client_session->is_proxy_mysql_client_
+    if (!client_session->is_proxy_mysql_client()
         && client_info.need_reset_sess_info_vars(server_info)
         && is_last_packet) {
       LOG_DEBUG("send session info to server", "server addr", sm->trans_state_.server_info_.addr_);

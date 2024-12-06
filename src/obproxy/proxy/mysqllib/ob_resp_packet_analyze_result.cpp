@@ -24,7 +24,7 @@ namespace proxy
 
 ObRespPacketAnalyzeResult::ObRespPacketAnalyzeResult()
     : enable_extra_ok_packet_for_stats_(false),
-      cmd_(OB_MYSQL_COM_END),
+      cmd_(OB_MYSQL_COM_MAX_NUM),
       mysql_mode_(UNDEFINED_MYSQL_PROTOCOL_MODE),
       resp_type_(MAX_RESP_TYPE),
       trans_state_(IN_TRANS_STATE_BY_DEFAULT),
@@ -39,6 +39,8 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
     obmysql::ObMySQLCmd req_cmd, ObMysqlProtocolMode protocol_mode,
     bool is_extra_ok_for_stats) const
 {
+  // TODO: remove all code in this function if is_oceanbase_mode
+  // just judge is_resp_finished if 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE];
   bool is_mysql_mode = STANDARD_MYSQL_PROTOCOL_MODE == protocol_mode;
   bool is_ob_mysql_mode = OCEANBASE_MYSQL_PROTOCOL_MODE == protocol_mode;
   bool is_ob_oracle_mode = OCEANBASE_ORACLE_PROTOCOL_MODE == protocol_mode;
@@ -51,7 +53,7 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       || OB_UNLIKELY(pkt_cnt_[EOF_PACKET_ENDING_TYPE] > 3)
       || OB_UNLIKELY(pkt_cnt_[ERROR_PACKET_ENDING_TYPE] < 0)
       || OB_UNLIKELY(pkt_cnt_[ERROR_PACKET_ENDING_TYPE] > 1)
-      || OB_UNLIKELY(OB_MYSQL_COM_END == req_cmd)
+      || OB_UNLIKELY(OB_MYSQL_COM_MAX_NUM == req_cmd)
       || OB_UNLIKELY(UNDEFINED_MYSQL_PROTOCOL_MODE == protocol_mode)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", "ok pkt count", pkt_cnt_[OK_PACKET_ENDING_TYPE],
@@ -120,7 +122,7 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
             finished = true;
             ending_type = ERROR_PACKET_ENDING_TYPE;
           // eof as auth switch response
-          } else if (OB_MYSQL_COM_CHANGE_USER == req_cmd && 1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+          } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd || OB_MYSQL_COM_LOGIN == req_cmd) && 1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
             finished = true;
             ending_type = EOF_PACKET_ENDING_TYPE;
           }
@@ -133,7 +135,12 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       case OB_MYSQL_COM_PROCESS_INFO :
       case OB_MYSQL_COM_STMT_PREPARE : {
         if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]) {
-          finished = true;
+          if (is_mysql_mode) {
+            finished = true;
+          } else if (is_oceanbase_mode
+                     && 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+            finished = true;
+          }
           ending_type = ERROR_PACKET_ENDING_TYPE;
         } else if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
           uint32_t expect_pkt_cnt = expect_pkt_cnt_;
@@ -167,7 +174,9 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       }
       case OB_MYSQL_COM_STMT_FETCH: {
         if (RESULT_SET_RESP_TYPE == resp_type_ || OTHERS_RESP_TYPE == resp_type_) {
-          if (OB_UNLIKELY(is_mysql_mode || is_ob_mysql_mode)) {
+          if (is_oceanbase_mode && (0 ==  pkt_cnt_[OK_PACKET_ENDING_TYPE])) {
+            // nothing, not received ok pkt now
+          } else if (OB_UNLIKELY(is_mysql_mode || is_ob_mysql_mode)) {
             if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
               finished = true;
               ending_type = EOF_PACKET_ENDING_TYPE;
@@ -407,6 +416,14 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       }
     }
   }
+
+  if (OB_UNLIKELY(finished
+                  && is_oceanbase_mode
+                  && (0 == pkt_cnt_[OK_PACKET_ENDING_TYPE]))) {
+    LOG_WDIAG("invalid pkt num, potential problems",
+              "ok pkt num", pkt_cnt_[OK_PACKET_ENDING_TYPE]);
+  }
+
   return ret;
 }
 

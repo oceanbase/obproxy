@@ -1062,8 +1062,28 @@ size_t ob_strnxfrmlen_simple(const ObCharsetInfo *cs, size_t len)
   return len * (cs->strxfrm_multiply ? cs->strxfrm_multiply : 1);
 }
 
+static void set_max_sort_char(ObCharsetInfo *cs) {
+  uchar max_char;
+  uint i;
+
+  if (!cs->sort_order) return;
+
+  max_char = cs->sort_order[(uchar)cs->max_sort_char];
+  for (i = 0; i < 256; i++) {
+    if ((uchar)cs->sort_order[i] > max_char) {
+      max_char = (uchar)cs->sort_order[i];
+      cs->max_sort_char = i;
+    }
+  }
+}
+
+ob_bool ob_coll_init_simple(ObCharsetInfo *cs) {
+  set_max_sort_char(cs);
+  return 0;
+}
+
 ObCollationHandler ob_collation_8bit_simple_ci_handler = {
-    // NULL /* init */
+    ob_coll_init_simple,   /* init */
     ob_strnncoll_simple,
     ob_strnncollsp_simple,
     ob_strnxfrm_simple,

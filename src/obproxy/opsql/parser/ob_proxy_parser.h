@@ -94,7 +94,7 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.has_last_trace_id_ = false;
   p.has_explain_ = false;
   p.has_explain_route_ = false;
-  p.has_simple_route_info_ = false;
+  p.has_hint_route_info_ = false;
   p.has_anonymous_block_ = false;
   p.has_trace_log_hint_ = false;
   p.has_connection_id_ = false;
@@ -166,8 +166,11 @@ inline void ObProxyParser::init_result_call(ObProxyParseResult &p)
 
 inline void ObProxyParser::init_result_route(ObProxyParseResult &p)
 {
-  p.simple_route_info_.table_name_.str_len_ = 0;
-  p.simple_route_info_.part_key_.str_len_ = 0;
+  p.hint_route_info_.table_name_.str_len_ = 0;
+  p.hint_route_info_.part_key_info_.node_count_ = 0;
+  p.hint_route_info_.part_key_info_.head_ = NULL;
+  p.hint_route_info_.part_key_info_.tail_ = NULL;
+
   p.part_name_.str_len_ = 0;
 }
 

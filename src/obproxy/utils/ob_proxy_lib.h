@@ -91,10 +91,6 @@ struct ifafilt;
 typedef unsigned int in_addr_t;
 #endif
 #include <sys/sysinfo.h>
-#ifdef EL9_PLATFORM
-#else
-#include <sys/sysctl.h>
-#endif
 #include <dlfcn.h>
 #include <math.h>
 #include <float.h>
@@ -128,6 +124,7 @@ static const char *const OB_PROXY_DBP_RUNTIME_ENV = "dbpcloud";
 
 //service name
 static const char *const OB_SERVICE_NAME_PRIFIX = "SERVICE:";
+static const char *const OB_SERVICE_NAME_ALIAS = "SERVICE";   // 用此租户名登录，认为cluster name为service name值
 
 static const int64_t OB_DEFAULT_CLUSTER_ID = 0;
 

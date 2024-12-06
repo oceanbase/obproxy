@@ -353,8 +353,8 @@ public:
   proxy::ObSqlTableRefHashMap &get_sql_table_map() { return *sql_table_map_; }
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
   proxy::ObRoutineRefHashMap &get_routine_map() { return *routine_map_; }
-  proxy::ObBasePsEntryThreadCache &get_ps_entry_cache() { return *ps_entry_cache_; }
-  proxy::ObBasePsEntryThreadCache &get_text_ps_entry_cache() { return *text_ps_entry_cache_; }
+  proxy::ObBasePsEntryThreadCache &get_ps_entry_cache() const { return *ps_entry_cache_; }
+  proxy::ObBasePsEntryThreadCache &get_text_ps_entry_cache() const { return *text_ps_entry_cache_; }
 
   obutils::ObCongestionRefHashMap &get_cgt_map() { return *congestion_map_; }
   common::ObMysqlRandom &get_random_seed() { return *random_seed_; }

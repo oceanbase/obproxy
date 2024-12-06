@@ -123,6 +123,7 @@ multiplog_*
 src/lib/oberror
 src/liboblog/tests/oblog_tailf
 .ob-pretest.result
+/.obdev
 *.run.*
 *.reject
 unittest/sql/engine/expr/arithmatic.out

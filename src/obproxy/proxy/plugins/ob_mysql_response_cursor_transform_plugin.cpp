@@ -300,15 +300,39 @@ int ObMysqlResponseCursorTransformPlugin::add_cursor_id_pair(ObMysqlServerSessio
 int ObMysqlResponseCursorTransformPlugin::add_cursor_id_addr(ObMysqlClientSession *client_session, uint32_t client_cursor_id, const sockaddr &addr)
 {
   int ret = OB_SUCCESS;
-
+  const bool using_service_name = client_session->using_service_name();
+  ObString cluster_name;
+  ObString tenant_name;
   ObClientSessionInfo &cs_info = client_session->get_session_info();
+  ObServiceaNameSessionInfo *service_name_session_info = cs_info.get_service_name_session_info();
   ObCursorIdAddr *cursor_id_addr = NULL;
+
+  if (using_service_name) {
+    if (OB_FAIL(cs_info.get_cluster_name(cluster_name))) {
+      PROXY_API_LOG(WDIAG, "get cluster name failed", K(ret));
+    } else if (OB_FAIL(cs_info.get_tenant_name(tenant_name))) {
+      PROXY_API_LOG(WDIAG, "get tenant name failed", K(ret));
+    }
+  }
+
   if (OB_FAIL(ObCursorIdAddr::alloc_cursor_id_addr(client_cursor_id, addr, cursor_id_addr))) {
     PROXY_API_LOG(WDIAG, "fail to alloc cursor id addr", K(client_cursor_id), K(ret));
   } else if (OB_ISNULL(cursor_id_addr)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_API_LOG(WDIAG, "cursor_id_addr is null", K(cursor_id_addr), K(ret));
-  } else if (OB_FAIL(cs_info.add_cursor_id_addr(cursor_id_addr))) {
+  } else if (using_service_name) {
+    if (OB_ISNULL(service_name_session_info)) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_API_LOG(WDIAG, "unexcepted service_name_session_info is null, mayby out of memory", K(ret));
+    } else if (OB_FAIL(service_name_session_info->add_cursor_id_tenant_info(client_cursor_id, tenant_name, cluster_name))) {
+      PROXY_API_LOG(WDIAG, "fail to set cursor tenant info, will destory cursor_id_addr",
+                    K(tenant_name), K(cluster_name), KPC(cursor_id_addr), K(ret));
+      cursor_id_addr->destroy();
+      cursor_id_addr = NULL;
+    }
+  }
+
+  if (OB_FAIL(cs_info.add_cursor_id_addr(cursor_id_addr))) {
     PROXY_API_LOG(WDIAG, "fail to add cursor_id_addr", KPC(cursor_id_addr), K(ret));
     cursor_id_addr->destroy();
   }

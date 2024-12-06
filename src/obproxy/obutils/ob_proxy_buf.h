@@ -15,6 +15,7 @@
 #include "lib/ob_define.h"
 #include "iocore/eventsystem/ob_buf_allocator.h"
 #include "lib/utility/utility.h"
+#include "iocore/eventsystem/ob_io_buffer.h"
 
 namespace oceanbase
 {
@@ -42,6 +43,8 @@ public:
   int64_t total_len() const { return total_len_; }
   int64_t remain() const;
   int write(const char *data, const int64_t len);
+
+  int copy_from_buf_reader(event::ObIOBufferReader *reader, const int64_t len, int64_t &copy_len);
 
   char *pos();
   int consume(const int64_t consume_len);
@@ -193,6 +196,42 @@ inline int ObVariableLenBuffer<BUF_LEN>::write(const char *data, const int64_t l
   } else {
     MEMCPY(buf_ + valid_len_, data, len);
     valid_len_ += len;
+  }
+  return ret;
+}
+
+template <int64_t BUF_LEN>
+inline int ObVariableLenBuffer<BUF_LEN>::copy_from_buf_reader(
+  event::ObIOBufferReader *reader,
+  const int64_t len,
+  int64_t &copy_len)
+{
+  int ret = common::OB_SUCCESS;
+  copy_len = 0;
+  if (OB_NOT_NULL(reader)) {
+    event::ObIOBufferBlock *block = reader->get_start_offset_block();
+    if (block != NULL) {
+      char *data = NULL;
+      int64_t data_len = 0;
+      int64_t remain = len;
+      data = block->start() + reader->start_offset_;
+      data_len = block->read_avail() - reader->start_offset_;
+      do {
+        if (data_len > remain) {
+          data_len = remain;
+        }
+        copy_len += data_len;
+        remain -= data_len;
+        if (OB_FAIL(write(data, data_len))) {
+          PROXY_LOG(WDIAG, "fail to write data to variable len buffer", K(ret), K(data), K(data_len));
+        } else {
+          if (OB_NOT_NULL(block = block->next_)) {
+            data = block->start();
+            data_len = block->read_avail();
+          }
+        }
+      } while (block != NULL && remain != 0 && OB_SUCC(ret));
+    }
   }
   return ret;
 }

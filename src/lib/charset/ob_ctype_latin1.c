@@ -308,7 +308,7 @@ static int ob_wc_mb_latin1(const ObCharsetInfo *cs  __attribute__((unused)),
 
 static ObCharsetHandler ob_charset_latin1_handler=
 {
-  //NULL,			/* init */
+  NULL,			/* init */
   NULL,			/* ismbchar      */
   ob_mbcharlen_8bit,	/* mbcharlen     */
   ob_numchars_8bit,

@@ -39,8 +39,7 @@ function get_os_release() {
   if [[ "${OS_ARCH}x" == "x86_64x" ]]; then
     case "$ID" in
       alinux)
-        version_ge "3" && compat_centos8 && return
-        version_ge "2.1903" && compat_centos7 && return
+        version_ge "3" && OS_RELEASE=8 && return
         ;;
       alios)
         version_ge "8.0" && compat_centos8 && return
@@ -79,8 +78,11 @@ function get_os_release() {
     esac
   elif [[ "${OS_ARCH}x" == "aarch64x" ]]; then
     case "$ID" in
+      alinux)
+        version_ge "3" && OS_RELEASE=8 && return
+        ;;
       alios)
-	version_ge "8.0" && compat_centos8 && return
+        version_ge "8.0" && compat_centos8 && return
         version_ge "7.0" && compat_centos7 && return
         ;;
       centos)
@@ -108,7 +110,7 @@ fi
 mkdir "${PWD}/pkg" >/dev/null 2>&1
 
 echo -e "check repository address in profile... \c"
-REPO="$(grep -Po '(?<=repo=).*' "${DEP_FILE}" 2>/dev/null)"
+REPO="$(grep -v '^#' "${DEP_FILE}" | grep -Po '(?<=repo=).*'  2>/dev/null)"
 if [[ $? -eq 0 ]]; then
     echo "$REPO"
 else
@@ -134,6 +136,8 @@ do
       DOWNLOAD_URL="https://mirrors.aliyun.com/oceanbase/community/stable/el/$OS_RELEASE/$OS_ARCH/${pkg}"
     elif [[ $pkg == "devdeps-sqlite"* ]]; then
       DOWNLOAD_URL="https://mirrors.aliyun.com/oceanbase/development-kit/el/$OS_RELEASE/$OS_ARCH/${pkg}"
+    elif [[ $pkg == "babassl-ob-8.3.2-20240201152859.al8.aarch64.rpm"* ]]; then
+      DOWNLOAD_URL="https://ob-yum.oceanbase-dev.com/8/aarch64/test/babassl-ob/babassl-ob-8.3.7-20241023195738.al8.aarch64.rpm"
     fi
     wget "$DOWNLOAD_URL" -q -O "${PWD}/pkg/${TEMP}"
     if [[ $? -eq 0 ]]; then

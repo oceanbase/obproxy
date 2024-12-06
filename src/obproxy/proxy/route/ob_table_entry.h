@@ -43,8 +43,8 @@ class ObTableEntry : public ObRouteEntry
 public:
   ObTableEntry()
     : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_entry_from_rslist_(false),
-      is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), table_id_(common::OB_INVALID_ID),
-      table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
+      is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), tenant_id_(common::OB_INVALID_ID),
+      table_id_(common::OB_INVALID_ID), table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
       buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
       batch_mutex_(), batch_fetch_cont_(NULL)
   {
@@ -59,6 +59,7 @@ public:
   int init(char *buf_start, const int64_t buf_len);
   void set_part_num(const int64_t part_num) { part_num_ = part_num; }
   void set_replica_num(const int64_t replica_num) { replica_num_ = replica_num; }
+  void set_tenant_id(const uint64_t tenant_id) { tenant_id_ = tenant_id; }
   void set_table_id(const uint64_t table_id) { table_id_ = table_id; }
   void set_table_type(const int32_t table_type)
   {
@@ -98,6 +99,7 @@ public:
   void get_key(ObTableEntryKey &key) const;
   int64_t get_part_num() const { return part_num_; }
   int64_t get_replica_num() const { return replica_num_; }
+  uint64_t get_tenant_id() const { return tenant_id_; }
   uint64_t get_table_id() const { return table_id_; }
   share::schema::ObTableType get_table_type() const { return table_type_; }
   int get_random_servers(ObProxyPartitionLocation &location);
@@ -149,6 +151,7 @@ private:
   bool has_dup_replica_;
 
   // schema info, add more later
+  uint64_t tenant_id_;
   uint64_t table_id_;
   share::schema::ObTableType table_type_;
   int64_t part_num_;
@@ -176,6 +179,8 @@ private:
 
 inline bool ObTableEntry::is_valid() const
 {
+  // for ob 3.x
+  // common::OB_INVALID_ID == tenant_id_
   return (common::OB_INVALID_ID != table_id_
           && name_.is_valid()
           && common::OB_INVALID_CLUSTER_ID != cr_id_

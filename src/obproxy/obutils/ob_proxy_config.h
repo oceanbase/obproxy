@@ -326,7 +326,7 @@ public:
   DEF_STR(compression_algorithm, "", "format: <algorithm_name>:<compression_level>, only support zlib:[0-9] now, compression level for compressed protocol and oceanbase 2.0 protocol, 0 will disable compression for compressed protocol and oceanbase 2.0 protocol", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_single_leader_node_routing, "true", "if enabled, proxy detect tenant's single leader node and route strong-read request to leader node", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when server ", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
@@ -426,6 +426,7 @@ public:
 
   // standby
   DEF_BOOL(enable_standby, "true", "enable standby or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_standby_read_write_split, "false", "enable service name read write splite or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
 
   // primary zone
   DEF_STR(proxy_primary_zone_name, "", "primary zone name for proxy ldc route. If not empty, proxy only route to the zone", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
@@ -511,6 +512,9 @@ public:
 
   DEF_BOOL(enable_read_write_split, "false", "if enabled, use read write split mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_transaction_split, "false", "if enabled, support transaction split", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+#ifdef BUILD_OPENSOURCE
+  DEF_STR_LIST(weak_read_user_list, "", "weak read for list of users, format user1;user2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+#endif
 
   // binlog service
   DEF_STR(binlog_service_ip, "", "binlog service ip/hostname list, format ip1:sql_port1;hostname2:sql_port2, separate with ';'. prefer to use the forward", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);

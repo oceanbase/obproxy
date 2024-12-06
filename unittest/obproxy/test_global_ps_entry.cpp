@@ -107,8 +107,9 @@ void *op(void *arg) {
     if (global_ps_entry != NULL) {
       global_ps_entry->dec_ref();
     }
-    if (i % 100000 == 0) {
-      std::cout << "now " << i << std::endl;
+    if (i % 100 == 0) {
+      std::cout << "now:" << i << std::endl;
+      // std::cout << "error count:" << ps_entry_cache.ps_entry_global_map_.g_reorder_count << std::endl;
     }
   }
   return NULL;
@@ -121,6 +122,7 @@ void *op(void *arg) {
 int main(int argc, char **argv) {
   UNUSED(argc);
   UNUSED(argv);
+  OB_LOGGER.set_log_level("DEBUG");
   pthread_t tids_op[NUM_THREADS];
   for(int i = 0; i < NUM_THREADS; ++i) {
     pthread_create(&tids_op[i], NULL, oceanbase::obproxy::proxy::op, NULL);

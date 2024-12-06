@@ -324,20 +324,23 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
       || (ad_sub_str_match2 = std::regex_match(pattern, sm, AD_SUBSTR_PATTERN2))
       || (elastic_sub_str_match1 = std::regex_match(pattern, sm, ELASTIC_PATTERN1))
       || (elastic_sub_str_match2 = std::regex_match(pattern, sm, ELASTIC_PATTERN2))) {
-    int len = static_cast<int>(sm.str(1).length());
+    std::string std_str = sm.str(1);
+    int len = static_cast<int>(std_str.length());
     int copy_len = len > OB_PROXY_MAX_CONFIG_STRING_LENGTH - 1 ? OB_PROXY_MAX_CONFIG_STRING_LENGTH - 1 : len;
 
     ObString start_str;
     ObString end_str;
+    std::string start_std_str = sm.str(2);
+    std::string end_std_str = sm.str(3);
     int64_t start_pos = -1;
     int64_t end_pos = -1;
     
-    start_str.assign_ptr(sm.str(2).c_str(), static_cast<int32_t>(sm.str(2).length()));
+    start_str.assign_ptr(start_std_str.c_str(), static_cast<int32_t>(start_std_str.length()));
     if (OB_FAIL(get_int_value(start_str, start_pos))) {
       LOG_WDIAG("fail to get int value for sub_string_start_", K(start_str), K(ret));
     }
     
-    end_str.assign_ptr(sm.str(3).c_str(), static_cast<int32_t>(sm.str(3).length()));
+    end_str.assign_ptr(end_std_str.c_str(), static_cast<int32_t>(end_std_str.length()));
     if (OB_FAIL(ret)) {
       // nothing
     } else if (OB_FAIL(get_int_value(end_str, end_pos))) {
@@ -351,26 +354,27 @@ int ObProxyPbUtils::force_parse_groovy(const ObString &expr,
     } else {
       if (sub_str_match1) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld, %ld))",
-                 copy_len, sm.str(1).c_str(),
+                 copy_len, std_str.c_str(),
                  start_pos >= 0 ? (start_pos + 1) : start_pos, end_pos - start_pos + 1);
       } else if (sub_str_match2) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld, %ld))",
-                 copy_len, sm.str(1).c_str(),
+                 copy_len, std_str.c_str(),
                  start_pos, end_pos);
       } else if (ad_sub_str_match1 || elastic_sub_str_match1) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld, %ld))",
-                 copy_len, sm.str(1).c_str(),
+                 copy_len, std_str.c_str(),
                  start_pos, end_pos);
       } else if (ad_sub_str_match2 || elastic_sub_str_match2) {
         snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(substr(%.*s, %ld))",
-                  copy_len, sm.str(1).c_str(), start_pos);
+                  copy_len, std_str.c_str(), start_pos);
       }
       parse_sql.assign(sql, static_cast<ObString::obstr_size_t>(strlen(sql)));
     }
   } else if (std::regex_match(pattern, sm, INT_PATTERN)) {
-    int len = static_cast<int>(sm.str(1).length());
+    std::string std_str = sm.str(1);
+    int len = static_cast<int>(std_str.length());
     int copy_len = len > OB_PROXY_MAX_CONFIG_STRING_LENGTH - 1 ? OB_PROXY_MAX_CONFIG_STRING_LENGTH - 1 : len;
-    snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(%.*s)", copy_len, sm.str(1).c_str());
+    snprintf(sql, OB_PROXY_MAX_CONFIG_STRING_LENGTH + 100, "hash(%.*s)", copy_len, std_str.c_str());
     parse_sql.assign(sql, static_cast<ObString::obstr_size_t>(strlen(sql)));
   } else {
     parse_sql = expr;

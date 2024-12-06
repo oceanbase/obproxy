@@ -33,6 +33,7 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_ICMD_SHOW_STAT:
     case OBPROXY_T_ICMD_SHOW_TRACE:
     case OBPROXY_T_ICMD_SHOW_INFO:
+    case OBPROXY_T_ICMD_SHOW_PS:
     case OBPROXY_T_ICMD_SHOW_KV:
     case OBPROXY_T_ICMD_ALTER_CONFIG:
     case OBPROXY_T_ICMD_ALTER_RESOURCE:
@@ -323,6 +324,9 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_ICMD_SHOW_INFO:
       str_ret = "OBPROXY_T_ICMD_SHOW_INFO";
       break;
+    case OBPROXY_T_ICMD_SHOW_PS:
+      str_ret = "OBPROXY_T_ICMD_SHOW_PS";
+      break;
     case OBPROXY_T_ICMD_SHOW_KV:
       str_ret = "OBPROXY_T_ICMD_SHOW_KV";
       break;
@@ -573,6 +577,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       break;
     case OBPROXY_T_SUB_INFO_IDC:
       str_ret = "OBPROXY_T_SUB_INFO_IDC";
+      break;
+    case OBPROXY_T_SUB_PS_ALL:
+      str_ret = "OBPROXY_T_SUB_PS_ALL";
       break;
     case OBPROXY_T_SUB_STAT_REFRESH:
       str_ret = "OBPROXY_T_SUB_STAT_REFRESH";

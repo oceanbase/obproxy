@@ -212,7 +212,7 @@ public:
 
   void get_server_session_ids(uint32_t &server_sessid, int64_t &ss_id);
   bool need_update_non_login_config() { return need_update_non_login_config_; }
-  bool need_depend_last_session() { return need_depend_last_session_; }
+  bool need_depend_last_tenant() { return need_depend_last_tenant_; }
 
   const common::ObString &get_server_trace_id();
 
@@ -431,6 +431,12 @@ public:
   int handle_limit(bool &need_direct_response_for_client);
   int handle_ldg(bool &need_direct_response_for_client);
   int handle_service_name(bool &need_direct_response_for_client);
+  int handle_tenant_readwrite_split(const ObServiceNameInstance &instance,
+                                    const bool is_login,
+                                    const bool enable_standby_read_write_split,
+                                    ObProxyObInstance *&ob_instance);
+  ObProxyObInstance* get_standy_tenant_instance(const ObServiceNameInstance &instance,
+                                                const ObString &standby_cluster_name);
 
   void save_response_flt_result_to_sm(common::FLTObjManage &flt);
   int save_request_flt_result_to_sm(common::FLTObjManage &flt);
@@ -517,7 +523,7 @@ private:
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
   ObProxyProtocol server_protocol_; // server protocol configured by `enable_compression_protocol` or `enable_ob_protocol_v2`
   bool need_update_non_login_config_; // 默认false，登录时设置为true，然后刷新vip级别配置后，重新设置为false
-  bool need_depend_last_session_;
+  bool need_depend_last_tenant_;
 public:
   ObSingleLeader *single_leader_;
   bool enable_full_link_trace_;

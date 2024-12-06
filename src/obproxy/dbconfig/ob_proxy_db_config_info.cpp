@@ -4085,7 +4085,7 @@ int ObDbConfigLogicDb::get_single_table_info(const ObString &table_name,
           && (last_es_id < es_size)) {
         //多语句中，读请求可以使用上一个语句的有效es id
         es_id = last_es_id;
-      } if (OB_FAIL(gc_info.get_elastic_id_by_weight(es_id, is_read_stmt))) {
+      } else if (OB_FAIL(gc_info.get_elastic_id_by_weight(es_id, is_read_stmt))) {
         LOG_WDIAG("fail to get random eid", K(gc_info));
       }
     } else if (OB_UNLIKELY(es_id >= es_size)) {

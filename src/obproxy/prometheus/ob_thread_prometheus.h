@@ -39,6 +39,9 @@
 #include "obproxy/opsql/parser/ob_proxy_parse_result.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "share/config/ob_config_helper.h"
+#include "proxy/route/ob_route_diagnosis.h"
+#include "proxy/route/ob_ldc_struct.h"
+#include "lib/hash_func/murmur_hash.h"
 
 #define SQL_MONITOR_INFO_ARRAY_SIZE 10
 
@@ -59,10 +62,10 @@ enum ObProxyRequestType
 class SQLMonitorInfo {
 public:
   SQLMonitorInfo() : monitor_info_key_(), cluster_name_str_(), tenant_name_str_(), database_name_str_(),
-                        request_count_(0), request_total_time_(0),
-                        server_process_request_time_(0), prepare_send_request_to_server_time_(0),
-                        client_request_bytes_(0), server_request_bytes_(0), server_response_bytes_(0),
-                        client_response_bytes_(0) {
+                     request_count_(0), request_total_time_(0),
+                     server_process_request_time_(0), prepare_send_request_to_server_time_(0),
+                     client_request_bytes_(0), server_request_bytes_(0), server_response_bytes_(0),
+                     client_response_bytes_(0) {
   }
 
   ~SQLMonitorInfo() {}
@@ -91,44 +94,6 @@ public:
         return OBPROXY_T_INVALID;
     }
   };
-  struct MonitorInfoKey {
-    MonitorInfoKey() : is_slow_query_(false), is_error_resp_(false), is_partition_hit_(false),
-                       is_shard_(false),
-                       request_type_(), stmt_type_(), rpc_pkt_code_(), cluster_name_(),
-                       tenant_name_(), database_name_() {}
-    ~MonitorInfoKey() {}
-    inline uint64_t hash() const {
-      return hash_;
-    }
-    void set_hash() {
-      // start from 2, to avoid being mutually influenced by request_type_
-      uint64_t seed = (static_cast<uint64_t>(is_slow_query_) << 2)
-                      | (static_cast<uint64_t>(is_error_resp_) << 3)
-                      | (static_cast<uint64_t>(is_partition_hit_) << 4)
-                      | (static_cast<uint64_t>(is_shard_) << 5);
-      seed ^= static_cast<uint64_t>(request_type_) & (static_cast<uint64_t>(stmt_type_) << 32);
-      seed ^= rpc_pkt_code_;
-      seed = cluster_name_.hash(seed);
-      seed = tenant_name_.hash(seed);
-      seed = database_name_.hash(seed);
-      hash_ = seed;
-    }
-
-    int64_t to_string(char *buf, const int64_t buf_len) const;
-
-  public:
-    bool is_slow_query_;
-    bool is_error_resp_;
-    bool is_partition_hit_;
-    bool is_shard_; // used by obkv
-    uint64_t hash_;
-    ObProxyRequestType request_type_;
-    ObProxyBasicStmtType stmt_type_;
-    obrpc::ObRpcPacketCode rpc_pkt_code_;
-    common::ObString cluster_name_;
-    common::ObString tenant_name_;
-    common::ObString database_name_;
-  };
 
   SQLMonitorInfo(const SQLMonitorInfo& other) {
     if (OB_LIKELY(this != &other)) {
@@ -151,6 +116,7 @@ public:
     return *this;
   }
 
+  struct MonitorInfoKey;
   inline const MonitorInfoKey& key() const {
     return monitor_info_key_;
   }
@@ -158,6 +124,74 @@ public:
   void set_key(const MonitorInfoKey& key);
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
+
+  struct MonitorInfoKey {
+    MonitorInfoKey() : request_type_(), stmt_type_(), rpc_pkt_code_(),
+                       route_type_(proxy::ObRouteInfoType::INVALID),
+                       route_policy_(proxy::ObRoutePolicyEnum::MERGE_IDC_ORDER),
+                       cluster_name_(), tenant_name_(), database_name_() {
+      flag_info_.flag_value_ = 0;
+    }
+    ~MonitorInfoKey() {}
+    inline uint64_t hash() const {
+      return hash_;
+    }
+    void set_hash() {
+      uint64_t len = reinterpret_cast<uint64_t>(&route_policy_) - reinterpret_cast<uint64_t>(this)
+                     + sizeof(route_policy_);
+      uint64_t seed = murmurhash(this, static_cast<int32_t>(len), 0);
+      seed = cluster_name_.hash(seed);
+      seed = tenant_name_.hash(seed);
+      seed = database_name_.hash(seed);
+      hash_ = seed;
+    }
+
+
+    void set_is_slow_query(bool is_slow_query) { flag_info_.flag_.IS_SLOW_QUERY = is_slow_query; }
+    void set_is_error_resp(bool is_err_resp) { flag_info_.flag_.IS_ERROR_RESP = is_err_resp; }
+    void set_is_partition_hit(bool is_partition_hit) { flag_info_.flag_.IS_PARTITION_HIT = is_partition_hit; }
+    void set_is_shard(bool is_shard) { flag_info_.flag_.IS_SHARD = is_shard; }
+    void set_is_rerouted(bool is_rerouted) { flag_info_.flag_.IS_REROUTED = is_rerouted; }
+    void set_is_partition_calc_fail(bool is_partition_calc_fail) { flag_info_.flag_.IS_PARTITION_CALC_FAIL = is_partition_calc_fail; }
+    void set_is_trans_internal_routing(bool is_trans_internal_routing) { flag_info_.flag_.IS_TRANS_INTERNAL_ROUTING = is_trans_internal_routing; }
+
+    bool is_slow_query() const { return flag_info_.flag_.IS_SLOW_QUERY; }
+    bool is_error_resp() const { return flag_info_.flag_.IS_ERROR_RESP; }
+    bool is_partition_hit() const { return flag_info_.flag_.IS_PARTITION_HIT; }
+    bool is_shard() const { return flag_info_.flag_.IS_SHARD; }
+    bool is_rerouted() const { return flag_info_.flag_.IS_REROUTED; }
+    bool is_partition_calc_fail() const { return flag_info_.flag_.IS_PARTITION_CALC_FAIL; }
+    bool is_trans_internal_routing() const { return flag_info_.flag_.IS_TRANS_INTERNAL_ROUTING; }
+    int64_t to_string(char *buf, const int64_t buf_len) const;
+
+  public:
+    union {
+      uint32_t flag_value_;
+      struct {
+        uint32_t IS_SLOW_QUERY:                         1;
+        uint32_t IS_ERROR_RESP:                         1;
+        uint32_t IS_PARTITION_HIT:                      1;
+        uint32_t IS_SHARD:                              1; // used by obkv
+        uint32_t IS_REROUTED:                           1;
+        uint32_t IS_PARTITION_CALC_FAIL:                1;
+        uint32_t IS_TRANS_INTERNAL_ROUTING:             1;
+        uint32_t :                                      0;
+      } flag_;
+    } flag_info_;
+
+  public:
+    ObProxyRequestType request_type_;
+    ObProxyBasicStmtType stmt_type_;
+    obrpc::ObRpcPacketCode rpc_pkt_code_;
+    proxy::ObRouteInfoType route_type_;
+    proxy::ObRoutePolicyEnum route_policy_;
+
+    // value before cluster_name_ in MonitorInfoKey will be used to calc seed
+    common::ObString cluster_name_;
+    common::ObString tenant_name_;
+    common::ObString database_name_;
+    uint64_t hash_;
+  };
 
 private:
   MonitorInfoKey monitor_info_key_;
@@ -233,11 +267,10 @@ private:
     static bool equal(Key lhs, Key rhs) {
       return lhs.hash_ == rhs.hash_
              && lhs.stmt_type_ == rhs.stmt_type_
-             && lhs.is_slow_query_ == rhs.is_slow_query_
-             && lhs.is_error_resp_ == rhs.is_error_resp_
-             && lhs.is_partition_hit_ == rhs.is_partition_hit_
-             && lhs.is_shard_ == rhs.is_shard_
+             && lhs.flag_info_.flag_value_ == rhs.flag_info_.flag_value_
              && lhs.database_name_ == rhs.database_name_
+             && lhs.route_type_ == rhs.route_type_
+             && lhs.route_policy_ == rhs.route_policy_
              && lhs.tenant_name_ == rhs.tenant_name_
              && lhs.cluster_name_ == rhs.cluster_name_
              && lhs.request_type_ == rhs.request_type_

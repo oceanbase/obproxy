@@ -153,6 +153,8 @@ int ObPartDescRange::get_part(ObNewRange &range,
     ret = OB_INVALID_ARGUMENT;
     COMMON_LOG(DEBUG, "invalid argument", K_(part_array), K_(part_array_size), K(range), K(ret));
     // use the fisrt range as the type to cast
+  } else if (range.start_key_.is_min_row() && range.end_key_.is_max_row()) {
+    COMMON_LOG(DEBUG, "need to be randomly routed with (min : max) range");
   } else if (OB_FAIL(cast_key(range.start_key_, part_array_[0].high_bound_val_, allocator, ctx))) {
     COMMON_LOG(DEBUG, "fail to cast start key ",
                      K(range), K(part_array_[0].high_bound_val_), K(ret));

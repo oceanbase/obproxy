@@ -179,9 +179,9 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
                  || !client_session.is_proxy_enable_cross_shard_txn())) {
         ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
         LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
-                  K(trans_state.is_auth_request_),
-                  K(trans_state.is_hold_start_trans_),
-                  K(trans_state.is_hold_xa_start_),
+                  K(trans_state.is_handshake_req_phase()),
+                  K(trans_state.is_hold_start_trans()),
+                  K(trans_state.is_hold_xa_start()),
                   KPC(prev_shard_conn),
                   KPC(shard_conn), K(ret));
       } else {
@@ -227,9 +227,9 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
           // && !allow_cross_shards
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
           LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
-                  K(trans_state.is_auth_request_),
-                  K(trans_state.is_hold_start_trans_),
-                  K(trans_state.is_hold_xa_start_),
+                  K(trans_state.is_handshake_req_phase()),
+                  K(trans_state.is_hold_start_trans()),
+                  K(trans_state.is_hold_xa_start()),
                   KPC(prev_shard_conn),
                   KPC(shard_conn),
                   KPC(txn_shard_conn), K(ret));
@@ -1515,9 +1515,9 @@ int ObProxyShardUtils::do_handle_single_shard_request(ObMysqlClientSession &clie
           && !allow_cross_shards) {
         ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
         LOG_WDIAG("not support distributed transaction", K(trans_state.current_.state_),
-                  K(trans_state.is_auth_request_),
-                  K(trans_state.is_hold_start_trans_),
-                  K(trans_state.is_hold_xa_start_),
+                  K(trans_state.is_handshake_req_phase()),
+                  K(trans_state.is_hold_start_trans()),
+                  K(trans_state.is_hold_xa_start()),
                   KPC(prev_shard_conn),
                   KPC(shard_conn), K(ret));
       }
@@ -3034,8 +3034,8 @@ int ObProxyShardUtils::get_real_info(ObClientSessionInfo &session_info,
 int ObProxyShardUtils::is_sharding_in_trans(ObClientSessionInfo &session_info, ObMysqlTransact::ObTransState &trans_state)
 {
   return 0 == session_info.get_cached_variables().get_autocommit()
-         || trans_state.is_hold_start_trans_
-         || trans_state.is_hold_xa_start_
+         || trans_state.is_hold_start_trans()
+         || trans_state.is_hold_xa_start()
          || ObMysqlTransact::is_in_trans(trans_state);
 }
 

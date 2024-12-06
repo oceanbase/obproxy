@@ -27,9 +27,9 @@ class ObProxyParseResultWapper
 public:
   ObProxyParseResultWapper() : expected_parsed_length_(0) { reset(); }
   ~ObProxyParseResultWapper() {}
-  int load_result(ObProxyParseResult *orig_result)
+  int load_result(ObProxyParseResult *orig_result, bool is_sharding_req)
   {
-    int ret = parse_result_.load_result(*orig_result);
+    int ret = parse_result_.load_result(*orig_result, false, false, is_sharding_req);
     if (OB_LIKELY(NULL != orig_result->table_info_.table_name_.str_)
         && OB_LIKELY(orig_result->table_info_.table_name_.str_len_ > 0)) {
       if (OB_LIKELY(NULL != orig_result->table_info_.alias_name_.str_)
@@ -74,6 +74,7 @@ public:
 
   // variables
   bool is_verbose_;
+  bool is_sharding_req_;
   // total/succ count in a file
   int64_t total_count_;
   int64_t succ_count_;

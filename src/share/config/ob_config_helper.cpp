@@ -16,6 +16,8 @@
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/alloc/alloc_assist.h"
 #include "lib/hash_func/murmur_hash.h"
+#include "utils/ob_proxy_utils.h"
+
 
 using namespace oceanbase::obproxy;
 
@@ -121,6 +123,11 @@ ObConfigVariableString::ObConfigVariableString(const ObConfigVariableString& oth
   rewrite(other.ptr(), other.size());
 }
 
+ObConfigVariableString::ObConfigVariableString(const ObString& other): used_len_(0)
+{
+  rewrite(other);
+}
+
 void ObConfigVariableString::reset()
 {
   if (OB_UNLIKELY(used_len_ > VARIABLE_BUF_LEN)) {
@@ -218,6 +225,14 @@ int ObConfigVariableString::rewrite(const char *ptr, const int64_t len)
 
   return ret;
 }
+
+void ObConfigVariableString::to_lower_case()
+{
+  char * const real_ptr = used_len_ > VARIABLE_BUF_LEN ?
+                                        data_union_.ptr_ : data_union_.buf_;
+  string_to_lower_case(real_ptr, size());
+}
+
 
 int64_t ObConfigVariableString::to_string(char *buf, const int64_t len) const
 {

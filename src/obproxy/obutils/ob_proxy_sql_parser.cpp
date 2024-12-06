@@ -246,42 +246,72 @@ inline int ObSqlParseResult::set_call_prarms(const ObProxyCallParseInfo &call_pa
   return ret;
 }
 
-inline int ObSqlParseResult::set_simple_route_info(const ObProxyParseResult &parse_result)
+inline int ObSqlParseResult::set_hint_route_info(const ObProxyParseResult &parse_result,
+                                                   bool use_lower_case_name)
 {
   int ret = OB_SUCCESS;
-  const ObProxySimpleRouteParseInfo &info = parse_result.simple_route_info_;
-  if (NULL != info.table_name_.str_
-      && info.table_name_.str_len_ > 0
-      && info.table_name_.str_len_ <= OB_MAX_TABLE_NAME_LENGTH) {
-    if (info.table_start_ptr_ > parse_result.start_pos_
-        && info.table_start_ptr_ < info.table_name_.end_ptr_
-        && info.table_name_.end_ptr_ < parse_result.end_pos_) {
-      route_info_.table_offset_ = info.table_start_ptr_ - parse_result.start_pos_;
-      route_info_.table_len_ = info.table_name_.end_ptr_ - info.table_start_ptr_;
-      if (OBPROXY_QUOTE_T_INVALID != info.table_name_.quote_type_) {
-        ++route_info_.table_len_;
+
+  const ObProxySimpleRouteParseInfo &info = parse_result.hint_route_info_;
+  const ObProxyParseString& table_name = info.table_name_;
+  const ObProxySetParseInfo & part_key_info = parse_result.hint_route_info_.part_key_info_;
+  if (NULL != table_name.str_) {
+    if (OB_UNLIKELY(table_name.str_len_ < 0
+            || table_name.str_len_ > OB_MAX_TABLE_NAME_LENGTH)) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("invalid argument", K(table_name.str_len_), K(ret));
+    } else if (0 == table_name.str_len_) {
+      LOG_DEBUG("empty hint table name, ignore it");
+    } else {
+      hint_route_info_.table_len_ = table_name.str_len_;
+      MEMCPY(hint_route_info_.table_name_buf_, table_name.str_, table_name.str_len_);
+      if (use_lower_case_name) {
+        string_to_lower_case(hint_route_info_.table_name_buf_, table_name.str_len_);
       }
-      MEMCPY(route_info_.table_name_buf_, info.table_name_.str_, info.table_name_.str_len_);
-      route_info_.table_name_buf_[info.table_name_.str_len_] = '\0';
-      if (NULL != info.part_key_.str_
-          && info.part_key_.str_len_ > 0
-          && info.part_key_.str_len_ <= OBPROXY_MAX_STRING_VALUE_LENGTH) {
-        if (info.part_key_start_ptr_ > parse_result.start_pos_
-            && info.part_key_start_ptr_ < info.part_key_.end_ptr_
-            && info.part_key_.end_ptr_ < parse_result.end_pos_) {
-          route_info_.part_key_offset_ = info.part_key_start_ptr_ - parse_result.start_pos_;
-          route_info_.part_key_len_ = info.part_key_.end_ptr_ - info.part_key_start_ptr_;
-          if (OBPROXY_QUOTE_T_INVALID != info.part_key_.quote_type_) {
-            ++route_info_.part_key_len_;
-          }
-          MEMCPY(route_info_.part_key_buf_, info.part_key_.str_, info.part_key_.str_len_);
-          route_info_.part_key_buf_[info.part_key_.str_len_] = '\0';
+      hint_route_info_.table_name_buf_[table_name.str_len_] = '\0';
+      table_name_.assign_ptr(hint_route_info_.table_name_buf_, table_name.str_len_);
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (part_key_info.node_count_ <= 0) {
+    // nothing
+  } else if (OB_FAIL(hint_route_info_.part_key_values_.prepare_allocate(part_key_info.node_count_))) {
+    LOG_WDIAG("fail to prepare allocate part_key_values_", K(ret));
+  } else {
+    int64_t index = 0;
+    ObString tmp_str;
+    ObProxySetVarNode *tmp_node = part_key_info.head_;
+    while(OB_SUCC(ret) && tmp_node) {
+      if (OB_UNLIKELY(index >= hint_route_info_.part_key_values_.count())) {
+        ret = OB_INDEX_OUT_OF_RANGE;
+        LOG_WDIAG("part key over flow", K(index), "bound", hint_route_info_.part_key_values_.count(), K(ret));
+      } else {
+        PartVarNode& part_key_val= hint_route_info_.part_key_values_.at(index++);
+        part_key_val.var_type_ = tmp_node->type_;
+        tmp_str.assign_ptr(tmp_node->name_.str_, tmp_node->name_.str_len_);
+        part_key_val.var_name_.set_value(tmp_str);
+
+        part_key_val.value_type_ = tmp_node->value_type_;
+        if (SET_VALUE_TYPE_INT == tmp_node->value_type_) {
+          part_key_val.int_value_ = tmp_node->int_value_;
+          //浮点数会在计算时转成换 double 类型
+        } else if (SET_VALUE_TYPE_NUMBER == tmp_node->value_type_) {
+          tmp_str.assign_ptr(tmp_node->str_value_.str_, tmp_node->str_value_.str_len_);
+          part_key_val.str_value_.set_value(tmp_str);
+        } else if (SET_VALUE_TYPE_STR == tmp_node->value_type_) {
+          tmp_str.assign_ptr(tmp_node->str_value_.str_, tmp_node->str_value_.str_len_);
+          part_key_val.str_value_.set_value(tmp_str);
+        } else {
+          // SET_VALUE_TYPE_NONE, nothing
         }
+        tmp_node = tmp_node->next_;
       }
     }
   }
-  if (OB_SUCC(ret) && route_info_.is_valid()) {
-    has_simple_route_info_ = true;
+
+  if (OB_SUCC(ret) && hint_route_info_.is_valid()) {
+    has_hint_route_info_ = true;
   }
   return ret;
 }
@@ -698,9 +728,9 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
         LOG_WDIAG("failed to set_call_prarms", K(ret));
       }
     }
-    if (OB_SUCC(ret) && parse_result.has_simple_route_info_) {
-      if (OB_FAIL(set_simple_route_info(parse_result))) {
-        LOG_WDIAG("failed to set_simple_route_info", K(ret));
+    if (OB_SUCC(ret) && parse_result.has_hint_route_info_) {
+      if (OB_FAIL(set_hint_route_info(parse_result, use_lower_case_name))) {
+        LOG_WDIAG("failed to set_hint_route_info", K(ret));
       }
     }
     if (OB_SUCC(ret) && parse_result.part_name_.str_len_ > 0) {
@@ -816,7 +846,7 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        K_(has_explain),
        K_(has_explain_route),
        K_(has_shard_comment),
-       K_(has_simple_route_info),
+       K_(has_hint_route_info),
        K_(parsed_length),
        K_(is_binlog_related),
        K_(is_dblink_name),
@@ -836,7 +866,7 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        "part_name", get_part_name());
   J_KV(K_(cmd_info),
        K_(call_info),
-       K_(route_info),
+       K_(hint_route_info),
        K_(dbmesh_route_info),
        K_(set_info),
        K_(dbp_route_info),
@@ -975,9 +1005,7 @@ int64_t ObProxySimpleRouteInfo::to_string(char *buf, const int64_t buf_len) cons
   int64_t pos = 0;
   J_OBJ_START();
   J_KV("table_name", table_name_buf_,
-       "part_key", part_key_buf_,
-       K_(table_offset), K_(table_len),
-       K_(part_key_offset), K_(part_key_len));
+       K_(table_len), K_(part_key_values));
   J_OBJ_END();
   return pos;
 }

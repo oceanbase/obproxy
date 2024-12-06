@@ -291,12 +291,13 @@ public:
     }
     #endif
   }
-  bool is_in_trans() { return !is_waiting_trans_first_request_; }
+  bool is_in_trans() { return !is_waiting_trans_first_request(); }
 
   void cancel_inactivity_timeout();
 
   int reset_read_buffer();
   event::ObIOBufferReader *get_reader() { return buffer_reader_; }
+  event::ObMIOBuffer *get_buffer() { return read_buffer_; }
   event::ObEThread *get_create_thread() { return create_thread_; }
 
   int64_t get_cluster_id() const { return session_info_.get_cluster_id(); }
@@ -312,41 +313,53 @@ public:
   int swap_mutex(void *data);
   void close_last_used_ss();
 
-  void set_need_delete_cluster() { need_delete_cluster_ = true; }
-  void set_proxy_mysql_client() { is_proxy_mysql_client_ = true; }
-  void set_can_send_request() { can_direct_send_request_ = true; }
+  void set_need_delete_cluster(bool val = true) { session_states_.need_delete_cluster_ = val; }
+  bool is_need_delete_cluster() const { return session_states_.need_delete_cluster_; }
+  void set_proxy_mysql_client() { session_states_.is_proxy_mysql_client_ = true; }
+  bool is_proxy_mysql_client() const { return session_states_.is_proxy_mysql_client_; }
+  void set_can_send_request() { session_states_.can_direct_send_request_ = true; }
+  bool is_can_send_request() const { return session_states_.can_direct_send_request_; }
+  void set_can_server_session_release(bool val) { session_states_.can_server_session_release_ = val; }
+  bool is_can_server_session_release() const { return session_states_.can_server_session_release_; }
+  void set_vc_ready_killed(bool val) { session_states_.vc_ready_killed_ = val; }
+  bool is_vc_ready_killed() const { return session_states_.vc_ready_killed_; }
+  void set_is_waiting_trans_first_request(bool val) { session_states_.is_waiting_trans_first_request_ = val; }
+  bool is_waiting_trans_first_request() const { return session_states_.is_waiting_trans_first_request_; }
+
   void set_session_pool_client(bool is_session_pool_client) {
     session_info_.is_session_pool_client_ = is_session_pool_client;
   }
   inline bool is_session_pool_client() { return session_info_.is_session_pool_client_; }
   void set_server_addr(proxy::ObCommonAddr addr) {common_addr_ = addr;}
-  void set_first_dml_sql_got() { is_first_dml_sql_got_ = true; }
-  bool is_first_dml_sql_got() const { return is_first_dml_sql_got_; }
+  void set_first_dml_sql_got(bool val = true) { session_states_.is_first_dml_sql_got_ = val; }
+  bool is_first_dml_sql_got() const { return session_states_.is_first_dml_sql_got_; }
 
   uint8_t get_compressed_seq() const { return compressed_seq_; }
   void set_compressed_seq(const uint8_t seq) { compressed_seq_ = seq; }
 
-  void set_need_send_trace_info(bool is_need_send_trace_info) { is_need_send_trace_info_ = is_need_send_trace_info; }
-  bool is_need_send_trace_info() const { return is_need_send_trace_info_; }
-  void set_already_send_trace_info(bool is_already_send_trace_info) { is_already_send_trace_info_ = is_already_send_trace_info; }
-  bool is_already_send_trace_info() const { return is_already_send_trace_info_; }
+  void set_need_send_trace_info(bool is_need_send_trace_info) { session_states_.is_need_send_trace_info_ = is_need_send_trace_info; }
+  bool is_need_send_trace_info() const { return session_states_.is_need_send_trace_info_; }
+  void set_already_send_trace_info(bool is_already_send_trace_info) { session_states_.is_already_send_trace_info_ = is_already_send_trace_info; }
+  bool is_already_send_trace_info() const { return session_states_.is_already_send_trace_info_; }
 
-  void set_first_handle_request(bool is_first_handle_request) { is_first_handle_request_ = is_first_handle_request; }
-  bool is_first_handle_request() const { return is_first_handle_request_; }
-  void set_in_trans_for_close_request(bool is_in_trans_for_close_request) { is_in_trans_for_close_request_ = is_in_trans_for_close_request; }
-  bool is_in_trans_for_close_request() const { return is_in_trans_for_close_request_; }
-  void set_last_request_in_trans(bool is_in_trans) { is_last_request_in_trans_ = is_in_trans; }
-  bool is_last_request_in_trans() { return is_last_request_in_trans_; }
-  void set_trans_internal_routing(bool is_internal_routing) { is_trans_internal_routing_ = is_internal_routing; }
-  bool is_trans_internal_routing() const { return is_trans_internal_routing_; }
-  void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
-  bool is_need_return_last_bound_ss() const { return is_need_return_last_bound_ss_; }
-  void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
+  void set_first_handle_ps_close_reset_request(bool is_first_handle_request) { session_states_.is_first_handle_ps_close_reset_request_ = is_first_handle_request; }
+  bool is_first_handle_ps_close_reset_request() const { return session_states_.is_first_handle_ps_close_reset_request_; }
+  void set_first_send_ps_close_reset_request(bool is_first_send) { session_states_.is_first_send_ps_close_reset_request_ = is_first_send; }
+  bool is_first_send_ps_close_reset_request() const { return session_states_.is_first_send_ps_close_reset_request_; }
+  void set_in_trans_for_close_request(bool is_in_trans_for_close_request) { session_states_.is_in_trans_for_close_request_ = is_in_trans_for_close_request; }
+  bool is_in_trans_for_close_request() const { return session_states_.is_in_trans_for_close_request_; }
+  void set_last_request_in_trans(bool is_in_trans) { session_states_.is_last_request_in_trans_ = is_in_trans; }
+  bool is_last_request_in_trans() { return session_states_.is_last_request_in_trans_; }
+  void set_trans_internal_routing(bool is_internal_routing) { session_states_.is_trans_internal_routing_ = is_internal_routing; }
+  bool is_trans_internal_routing() const { return session_states_.is_trans_internal_routing_; }
+  void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { session_states_.is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
+  bool is_need_return_last_bound_ss() const { return session_states_.is_need_return_last_bound_ss_; }
+  void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { session_states_.is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
   // treat disable_trans_internal_routeing where shard_conn change for sharding
-  bool is_proxy_enable_trans_internal_routing() const { return is_proxy_enable_trans_internal_routing_
+  bool is_proxy_enable_trans_internal_routing() const { return session_states_.is_proxy_enable_trans_internal_routing_
                                                                && !this->get_session_info().is_sharding_user(); }
-  void set_proxy_enable_cross_shard_txn(bool is_proxy_enable_cross_shard_txn) { is_proxy_enable_cross_shard_txn_ = is_proxy_enable_cross_shard_txn; }
-  bool is_proxy_enable_cross_shard_txn() const { return is_proxy_enable_cross_shard_txn_; }
+  void set_proxy_enable_cross_shard_txn(bool is_proxy_enable_cross_shard_txn) { session_states_.is_proxy_enable_cross_shard_txn_ = is_proxy_enable_cross_shard_txn; }
+  bool is_proxy_enable_cross_shard_txn() const { return session_states_.is_proxy_enable_cross_shard_txn_; }
   bool enable_analyze_internal_cmd() const { return session_info_.enable_analyze_internal_cmd(); }
   bool is_metadb_user() const { return session_info_.is_metadb_user(); }
   bool is_proxysys_user() const { return session_info_.is_proxysys_user(); }
@@ -373,8 +386,8 @@ public:
     select_plan_ = plan;
   }
 
-  bool can_direct_ok() const { return can_direct_ok_; }
-  void set_can_direct_ok(bool val) { can_direct_ok_ = val; }
+  bool can_direct_ok() const { return session_states_.can_direct_ok_; }
+  void set_can_direct_ok(bool val) { session_states_.can_direct_ok_ = val; }
 
   // ps cache
   uint32_t inc_and_get_ps_id() {
@@ -394,10 +407,13 @@ public:
     return cursor_id;
   }
 
-  void set_using_ldg(const bool using_ldg) { using_ldg_ = using_ldg; }
-  bool using_ldg() const { return using_ldg_; }
-  void set_using_service_name(const bool using_service_name) { using_service_name_ = using_service_name; }
-  bool using_service_name() const { return using_service_name_; }
+  void set_using_ldg(const bool using_ldg) { session_states_.using_ldg_ = using_ldg; }
+  bool using_ldg() const { return session_states_.using_ldg_; }
+  void set_using_service_name(const bool using_service_name) { session_states_.using_service_name_ = using_service_name; }
+  bool using_service_name() const { return session_states_.using_service_name_; }
+  void set_standby_read_write_split(const bool standby_read_write_split) { session_states_.enable_standby_read_write_split_ = standby_read_write_split; }
+  bool is_standby_read_write_split() const { return session_states_.enable_standby_read_write_split_; }
+
   obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() const { return timeout_event_;}
   ObHRTime get_timeout_record() const { return timeout_record_; }
   bool is_request_transferring() const { return is_request_transferring_; }
@@ -430,36 +446,47 @@ private:
 public:
   static const int64_t OP_LOCAL_NUM = 32;
   static const int64_t SCRAMBLE_SIZE = 20;
-
-  bool can_direct_ok_;
-  bool is_proxy_mysql_client_; // used for ObMysqlClient
-  bool can_direct_send_request_; // used for ObMysqlClient
-  bool can_server_session_release_;  //used for session release
-  proxy::ObCommonAddr common_addr_; // session pool server_addr
-
   // An active connection is one that a request has been
   // successfully parsed (PARSE_DONE) and it remains to be
   // active until the transaction goes through or the client
   // aborts.
   bool active_;
-
   // store tests_server_addr in client session, so we can use same test_server during the connection
   net::ObIpEndpoint test_server_addr_;
-  // when kill self's session, it is true
-  bool vc_ready_killed_;
-  bool is_waiting_trans_first_request_;
-  bool is_need_send_trace_info_;
-  bool is_already_send_trace_info_;
-  bool is_first_handle_request_;
-  bool is_in_trans_for_close_request_;
-  bool is_last_request_in_trans_;
-  bool is_trans_internal_routing_;
-  bool is_need_return_last_bound_ss_;
-  bool need_delete_cluster_;
-  bool is_first_dml_sql_got_;//default false, will route with merge status careless
-                             //it is true after user first dml sql arrived.
-  bool is_proxy_enable_trans_internal_routing_; // from config, update each tranasction start
-  bool is_proxy_enable_cross_shard_txn_; // from config, update each tranasction start
+  proxy::ObCommonAddr common_addr_; // session pool server_addr
+  struct {
+    uint32_t can_direct_ok_:                                1;
+    uint32_t is_proxy_mysql_client_:                        1; // used for ObMysqlClient
+    uint32_t can_direct_send_request_:                      1; // used for ObMysqlClient
+    uint32_t can_server_session_release_:                   1;  //used for session release
+
+
+    // when kill self's session, it is true
+    uint32_t vc_ready_killed_:                              1;
+    uint32_t is_waiting_trans_first_request_:               1;
+    uint32_t is_need_send_trace_info_:                      1;
+    uint32_t is_already_send_trace_info_:                   1;
+    // 第一次进handle_ps_close_reset为true，第二次进fasle。用于判断ps多次跳转
+    uint32_t is_first_handle_ps_close_reset_request_:       1;
+    // service name在handle_request()处理ps相关命令，会跳转切换租户，所以跳转后才send request
+    uint32_t is_first_send_ps_close_reset_request_:         1;
+    uint32_t is_in_trans_for_close_request_:                1;
+    uint32_t is_last_request_in_trans_:                     1;
+    // means current client session has the ability to free routing in trans or not
+    uint32_t is_trans_internal_routing_:                    1;
+    uint32_t is_need_return_last_bound_ss_:                 1;
+    uint32_t need_delete_cluster_:                          1;
+    //default false, will route with merge status careless
+    //it is true after user first dml sql arrived.
+    uint32_t is_first_dml_sql_got_:                         1;
+    uint32_t is_proxy_enable_trans_internal_routing_:       1; // from config, update each tranasction start
+    uint32_t is_proxy_enable_cross_shard_txn_:              1; // from config, update each tranasction start
+    uint32_t using_ldg_:                                    1;
+    uint32_t using_service_name_:                           1;
+    uint32_t enable_standby_read_write_split_:              1;
+    uint32_t :                                              0;
+  } session_states_;
+
   uint8_t compressed_seq_;   // seq management between client & proxy
 
   obutils::ObClusterResource *cluster_resource_;
@@ -561,8 +588,6 @@ private:
   optimizer::ObShardingSelectLogPlan *select_plan_;
   uint32_t ps_id_;
   uint32_t cursor_id_;
-  bool using_ldg_;
-  bool using_service_name_;
   ObClientSessionIDVersion cs_id_version_;
   int64_t connected_time_;
 private:
@@ -573,7 +598,7 @@ private:
 
 inline void ObMysqlClientSession::set_local_connection()
 {
-  if (is_proxy_mysql_client_ || RUN_MODE_CLIENT == g_run_mode) {
+  if (is_proxy_mysql_client() || RUN_MODE_CLIENT == g_run_mode) {
     is_local_connection_ = true;
   } else {
     if (OB_NOT_NULL(client_vc_)) {
@@ -595,7 +620,7 @@ inline uint32_t ObMysqlClientSession::get_next_ps_stmt_id()
 inline common::ObAddr ObMysqlClientSession::get_real_client_addr(net::ObNetVConnection *server_vc)
 {
   common::ObAddr ret_addr;
-  if (is_proxy_mysql_client_ || RUN_MODE_CLIENT == g_run_mode) {
+  if (is_proxy_mysql_client() || RUN_MODE_CLIENT == g_run_mode) {
     if (OB_NOT_NULL(server_vc)) {
       ret_addr.set_sockaddr(server_vc->get_local_addr());
     }

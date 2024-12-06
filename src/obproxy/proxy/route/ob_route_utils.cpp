@@ -73,9 +73,10 @@ static const char *PROXY_PLAIN_SCHEMA_SQL_RPC =
 
 static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4 =
     //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
-    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port, C.tenant_id as tenant_id "
     "FROM oceanbase.%s A inner join oceanbase.%s B "
     "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
+    "left join oceanbase.%s C on A.tenant_name = C.tenant_name "
     "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
     "AND A.tablet_id = %ld "
     "ORDER BY A.role ASC LIMIT %ld";
@@ -117,9 +118,10 @@ static const char *PROXY_TENANT_SCHEMA_SQL_RPC =
 
 static const char *PROXY_TENANT_SCHEMA_SQL_RPC_V4 =
     //svr_ip, sql_port, table_id, role, part_num, replica_num, svr_port
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ A.*, B.svr_port as svr_port "
+    "SELECT /*+READ_CONSISTENCY(WEAK)*/ A.*, B.svr_port as svr_port, C.tenant_id as tenant_id "
     "FROM oceanbase.%s A inner join oceanbase.%s B "
     "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
+    "left join oceanbase.%s C on A.tenant_name = C.tenant_name "
     "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' AND A.sql_port > 0 "
     "ORDER BY A.tablet_id ASC, role ASC LIMIT %ld";
 
@@ -262,6 +264,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
         len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_TENANT_SCHEMA_SQL_RPC_V4,
                                             OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
                                             DBA_OB_SERVERS_VNAME,
+                                            DBA_OB_TENANTS_VNAME,
                                             new_tenant_name.length(), new_tenant_name.ptr(),
                                             name.database_name_.length(), name.database_name_.ptr(),
                                             name.table_name_.length(), name.table_name_.ptr(),
@@ -272,6 +275,7 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
                                             is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
                                             OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
                                             DBA_OB_SERVERS_VNAME,
+                                            DBA_OB_TENANTS_VNAME,
                                             new_tenant_name.length(), new_tenant_name.ptr(),
                                             name.database_name_.length(), name.database_name_.ptr(),
                                             name.table_name_.length(), name.table_name_.ptr(),
@@ -461,6 +465,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
   ip_str[0] = '\0';
   int64_t port = 0;
   int64_t svr_port = 0;
+  uint64_t tenant_id = OB_INVALID_ID;
   uint64_t table_id = OB_INVALID_ID;
   int64_t part_num = 0;
   int64_t replica_num = 0;
@@ -507,6 +512,12 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "spare1", replica_type, int32_t);
       } else {
         PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "replica_type", replica_type, int32_t);
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "tenant_id", tenant_id, uint64_t);
+        if (OB_UNLIKELY(OB_INVALID_ID == tenant_id)) {
+          // don`t stem the construction of table entry
+          // it just potentially result in route problems for part table
+          LOG_WDIAG("observer return invalid tenant_id", K(tenant_id), K(table_id), K(ret));
+        }
       }
       if (OB_ERR_COLUMN_NOT_FOUND == ret) {
         LOG_DEBUG("can not find spare1, maybe is old server, ignore", K(replica_type), K(ret));
@@ -644,6 +655,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         entry.set_part_num(part_num);
         entry.set_replica_num(replica_num);
         entry.set_schema_version(schema_version);
+        entry.set_tenant_id(tenant_id);
         entry.set_table_id(table_id);
         entry.set_table_type(table_type);
         if (has_dup_replica) {
@@ -1615,6 +1627,7 @@ int ObRouteUtils::get_partition_entry_sql(char *sql_buf, const int64_t buf_len,
                                           is_need_force_flush ? ", FORCE_REFRESH_LOCATION_CACHE" : "",
                                           OB_ALL_VIRTUAL_PROXY_SCHEMA_TNAME,
                                           DBA_OB_SERVERS_VNAME,
+                                          DBA_OB_TENANTS_VNAME,
                                           new_tenant_name.length(), new_tenant_name.ptr(),
                                           name.database_name_.length(), name.database_name_.ptr(),
                                           name.table_name_.length(), name.table_name_.ptr(),
@@ -1830,7 +1843,8 @@ int ObRouteUtils::fetch_one_partition_entry_info(
         LOG_INFO("mark this table entry dirty succ", K(table_entry));
       }
     } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, partition_id,
-            table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
+            table_entry.get_cr_version(), table_entry.get_cr_id(), table_entry.get_tenant_id(),
+            replicas, part_entry))) {
       LOG_WDIAG("fail to alloc and init partition entry", K(ret));
     } else {
       part_entry->set_schema_version(schema_version); // do not forget
@@ -1945,7 +1959,8 @@ int ObRouteUtils::fetch_more_partition_entrys_info(obproxy::ObResultSetFetcher &
               LOG_INFO("mark this table entry dirty succ", K(table_entry));
             }
           } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, last_partition_id,
-                  table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
+                     table_entry.get_cr_version(), table_entry.get_cr_id(), table_entry.get_tenant_id(),
+                     replicas, part_entry))) {
             LOG_WDIAG("fail to alloc and init partition entry", K(ret));
           } else {
             part_entry->set_schema_version(schema_version); // do not forget
@@ -2015,7 +2030,8 @@ int ObRouteUtils::fetch_more_partition_entrys_info(obproxy::ObResultSetFetcher &
         LOG_INFO("mark this table entry dirty succ", K(table_entry));
       }
     } else if (OB_FAIL(ObPartitionEntry::alloc_and_init_partition_entry(table_id, partition_id,
-            table_entry.get_cr_version(), table_entry.get_cr_id(), replicas, part_entry))) {
+            table_entry.get_cr_version(), table_entry.get_cr_id(), table_entry.get_tenant_id(),
+            replicas, part_entry))) {
       LOG_WDIAG("fail to alloc and init partition entry", K(ret));
     } else {
       part_entry->set_schema_version(schema_version); // do not forget

@@ -608,6 +608,8 @@ static const char *const OB_MYSQL_JAVA_CLIENT_MODE_NAME     = "__ob_java_client"
 // conn attr which transparent transit to observer
 static const char *const OB_MYSQL_OB_CLIENT = "__ob_client";
 
+static const char *const OB_AUTH_DATA_AB = "aaaaaaaabbbbbbbbbbbb";
+
 // for obproxy and observer compatibility
 enum ObCapabilityFlagShift
 {

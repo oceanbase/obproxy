@@ -80,12 +80,11 @@ inline int ObMysqlPacketReader::get_buf(ObIOBufferReader &buf_reader, const int6
     LOG_WDIAG("buf not enough", K(offset), K(buf_len), K(all_data_size), K(ret));
   } else {
     // skip the offset, find the right IOBufferBlock
-    buf_reader.skip_empty_blocks(); // must be at the beginning
+    ObIOBufferBlock *target_block = buf_reader.get_start_offset_block(); // must be at the beginning
     int64_t outer_offset = offset;
     int64_t start_offset = buf_reader.start_offset_;
     int64_t total_offset = outer_offset + start_offset;
     int64_t len = -1;
-    ObIOBufferBlock *target_block = buf_reader.block_;
     while ((NULL != target_block) && (len <= 0)) {
       len = target_block->read_avail();
       len -= total_offset;

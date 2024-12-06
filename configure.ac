@@ -1,22 +1,11 @@
     AC_INIT([OceanBase],
-            [4.3.2.0],
+            [4.3.3.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.3.2.0"
+    obapi_version="4.3.3.0"
     AC_SUBST(obapi_version)
-
-    AC_DISABLE_STATIC
-    AC_PROG_RANLIB
-    AC_PROG_LIBTOOL
-    AM_INIT_AUTOMAKE([subdir-objects silent-rules])
-    ac_default_prefix=${HOME}/oceanbase_bin # for convenience
-    AC_PROG_CXX
-    AC_LANG([C++])
-    AC_SUBST([host_cpu])
-    AC_PROG_CC
-    AC_CANONICAL_HOST
 
     AC_ARG_VAR([TOPDIR], [The path of the project])
     TOPDIR="$(dirname $(readlink -f "$0"))"
@@ -30,6 +19,7 @@
     TOOLS_DIR=${TOPDIR}/deps/3rd/usr/local/oceanbase/devtools
     AC_SUBST(TOOLS_DIR)
 
+
     AC_ARG_VAR([RUNTIME_DIR], [the path of runtime])
     RUNTIME_DIR=${TOPDIR}/deps/3rd/usr
     AC_SUBST(RUNTIME_DIR)
@@ -40,13 +30,25 @@
     AC_SUBST(PATH)
 
     # 设置 CC 和 CXX 变量的值
-    AC_ARG_VAR([CC], [set gcc executable path])
-    CC="$TOOLS_DIR/bin/gcc"
+    AC_ARG_VAR([CC], [set clang executable path])
+    CC="$TOOLS_DIR/bin/clang"
     AC_SUBST(CC)
 
-    AC_ARG_VAR([CXX], [set g++ executable path])
-    CXX="$TOOLS_DIR/bin/g++"
+    AC_ARG_VAR([CXX], [set clang++ executable path])
+    CXX="$TOOLS_DIR/bin/clang++"
     AC_SUBST(CXX)
+
+    AC_DISABLE_STATIC
+    AC_PROG_LIBTOOL()
+    AC_PROG_RANLIB
+    AM_INIT_AUTOMAKE([subdir-objects silent-rules])
+    ac_default_prefix=${HOME}/oceanbase_bin # for convenience
+    AC_LANG([C++])
+    AC_PROG_CC([clang])
+    AC_PROG_CXX([clang++])
+    AC_SUBST([host_cpu])
+
+    AC_CANONICAL_HOST
 
     dnl configure compiler flags
     AC_ARG_WITH([release],
@@ -56,19 +58,46 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -fno-reorder-blocks-and-partition -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
-+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=generic -Wno-psabi -Wno-sign-compare -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=generic -Wno-psabi -Wno-sign-compare -fPIC"
         ;;
         * )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wall -Wextra -Wunused-parameter -Wformat -Wconversion -Wno-deprecated -Wno-invalid-offsetof -fno-reorder-blocks-and-partition -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -fno-omit-frame-pointer -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -Wall -mtune=core2 -Wno-psabi -Wno-sign-compare -Wl,--emit-relocs,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-address-of-packed-member -fno-omit-frame-pointer -fPIC"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare -fPIC"
         ;;
       esac
     fi
     ],
-    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wall -Wextra -Wno-unused-parameter -Wformat -Wno-conversion -Wno-invalid-offsetof -Wno-unused-result -Wno-format-security -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi  -Wno-sign-compare -Wno-class-memaccess -Wno-deprecated-copy -Wno-ignored-qualifiers -Wno-aligned-new -Wno-format-truncation -Wno-literal-suffix -Wno-format-overflow -Wno-stringop-truncation -Wno-memset-elt-size -Wno-cast-function-type -Wno-address-of-packed-member -Wl,-z,noexecstack,-z,relro,-z,now"
-      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wall -Wno-psabi  -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now"
+    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wformat -Wno-invalid-offsetof -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi -Wno-sign-compare -Wno-address-of-packed-member -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
+      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wno-psabi  -Wno-sign-compare -Wl,-z,noexecstack,-z,relro,-z,now,-z,notext -fPIC"
         ]
+    )
+
+    AC_ARG_WITH([opt],
+    AS_HELP_STRING([--with-opt],
+    [use clang's compile optimize (default is NO)]),
+    [
+    if test "$withval" = "yes"; then
+      case "$host_cpu" in
+        *aarch64* )
+        # do nothing
+        ;;
+        * )
+          # AutoFDO
+          AM_CXXFLAGS="${AM_CXXFLAGS} -fprofile-sample-use=${TOPDIR}/fdo/obproxy.prof -funique-internal-linkage-names -fdebug-info-for-profiling -Wl,--no-rosegment"
+          AM_CFLAGS="${AM_CFLAGS} -fprofile-sample-use=${TOPDIR}/fdo/obproxy.prof -funique-internal-linkage-names -fdebug-info-for-profiling -Wl,--no-rosegment"
+
+          # BOLT
+          AM_CXXFLAGS="${AM_CXXFLAGS} -Wl,--emit-relocs"
+          AM_CFLAGS="${AM_CFLAGS} -Wl,--emit-relocs"
+
+          # LTO
+          # AM_CXXFLAGS="${AM_CXXFLAGS} -flto"
+          # AM_CFLAGS="${AM_CFLAGS} -flto"
+        ;;
+      esac
+    fi
+    ]
     )
 
     # 设置依赖的库和头文件路径
@@ -92,32 +121,31 @@
 
     AM_CONDITIONAL([HAVE_SO], test x$support_so = xyes )
 
-    #check el9, add -DEL9_PlATFORM for el9
+    #check el9, add -DEL9_PLATFORM for el9
     is_el9=`cat /proc/version | grep el9`
     if test "$is_el9" != ""; then
         AM_CXXFLAGS="${AM_CXXFLAGS} -DEL9_PLATFORM"
         AM_CFLAGS="${AM_CFLAGS} -DEL9_PLATFORM"
     fi
 
-    #check gcc version, add -Wno-ignored-qualifiers flag for gcc version greater than 4.3.0
-    GCC_VERSION=`$CC -dumpfullversion`
+    #check el9, add -DAL8_PLATFORM for al8
+    is_al8=`cat /proc/version | grep al8`
+    if test "$is_al8" != ""; then
+        AM_CXXFLAGS="${AM_CXXFLAGS} -DAL8_PLATFORM"
+        AM_CFLAGS="${AM_CFLAGS} -DAL8_PLATFORM"
+    fi
+
+    CLANG_VERSION=$(echo `$CC --version` | awk '{print $3}')
     if test $? -eq 0; then
-        major=`echo $GCC_VERSION | cut -d. -f1`
-        minor=`echo $GCC_VERSION | cut -d. -f2`
-    fi
-    if test $major -eq 4 -a $minor -ge 3 ; then
-        AM_CXXFLAGS="${AM_CXXFLAGS} -Wno-ignored-qualifiers"
-    else test $major -eq 5 -a $minor -eq 2;
-        AM_CXXFLAGS="${AM_CXXFLAGS} -DGCC_52"
+        major=`echo $CLANG_VERSION | cut -d. -f1`
+        minor=`echo $CLANG_VERSION | cut -d. -f2`
     fi
 
-    echo "now gcc is: $GCC_VERSION"
+    echo "now clang is: $CLANG_VERSION"
 
-    AM_CXXFLAGS="${AM_CXXFLAGS} -D_GLIBCXX_USE_CXX11_ABI=0"
-    AM_CXXFLAGS="${AM_CXXFLAGS} -DBUILD_OPENSOURCE"
     AM_CONDITIONAL([BUILD_OPENSOURCE], [true])
-    AM_CONDITIONAL([HAVE_BEYONDTRUST], [false])
-    AM_CONDITIONAL([HAVE_MINIDUMP], [false])
+    AM_CXXFLAGS="${AM_CXXFLAGS} -DBUILD_OPENSOURCE"
+    AM_CFLAGS="${AM_CFLAGS} -DBUILD_OPENSOURCE"
 
     OSVER=`cat /etc/issue|head -1|awk -F. '{print $1}' | awk '{print $NF}'`
     if test $OSVER -le 6; then
@@ -153,8 +181,8 @@
                           [with asan (default is NO)]),
                           [
                             if test "$withval" = "yes"; then
-                                AM_CXXFLAGS="${AM_CXXFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libasan -fno-var-tracking-assignments -fno-optimize-sibling-calls -fno-inline -DUSING_ASAN"
-                                AM_CFLAGS="${AM_CFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libasan -fno-var-tracking-assignments -fno-optimize-sibling-calls -fno-inline -DUSING_ASAN"
+                                AM_CXXFLAGS="${AM_CXXFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libsan -fno-inline -fsanitize-recover=address -DUSING_ASAN"
+                                AM_CFLAGS="${AM_CFLAGS} -fsanitize=address -fstack-protector-strong -fno-optimize-sibling-calls -fno-omit-frame-pointer -static-libsan -fno-inline -fsanitize-recover=address -DUSING_ASAN"
                             fi
                           ],
                           [with_asan=no]
@@ -221,10 +249,21 @@
     fi
     AM_CONDITIONAL([MEMDEBUG], test x$memdebug = xyes )
 
+    if test "X${DEP_DIR}" = "X"; then
+       DEP_DIR=${ac_abs_confdir}/rpm/.dep_create
+       echo "use default DEP_DIR=${DEP_DIR}"
+       AC_SUBST([DEP_DIR])
+    fi
+
+    # if test ! -f "${DEP_DIR}/lib/libmysqlclient_r.so.18.1.1" ; then
+    #    echo "can't find libmysqlclient_r.so.18.1.1 in ${DEP_DIR}/lib/; maybe you need use 'cd rpm; dep_create obproxy.deps'"
+    #    exit 127
+    # fi
+
     AM_LDFLAGS="${AM_LDFLAGS} -L${DEP_DIR}/lib -L${DEP_DIR}/lib/mysql"
 
     dnl global default INCLUDES
-    AM_CXXFLAGS="${AM_CXXFLAGS} -I${DEP_DIR}/include -I${DEP_DIR}/include/mariadb -I${RUNTIME_DIR}/include"
+    AM_CPPFLAGS="${AM_CPPFLAGS} -I${DEP_DIR}/include -I${DEP_DIR}/include/mysql"
 
     if test "X${CXXFLAGS}" = "X-g -O2"; then
         CXXFLAGS=""
@@ -251,6 +290,19 @@
         AM_CFLAGS="${AM_CFLAGS} -fprofile-arcs -ftest-coverage -DTEST_COVER"
         AM_LDFLAGS="${AM_LDFLAGS} -lgcov"
     fi
+
+    dnl condition WITH_BEYONDTRUST
+    AC_ARG_WITH([beyondtrust],
+        AS_HELP_STRING([--with-beyondtrust],
+                       [whether use beyondtrust feature (default is NO)]),
+                       [
+                           if test "$withval" == "yes"; then
+                               beyondtrust=yes
+                               AM_CXXFLAGS="${AM_CXXFLAGS} -DHAVE_BEYONDTRUST"
+                           fi
+                       ],
+                       [beyondtrust=no])
+    AM_CONDITIONAL([HAVE_BEYONDTRUST], test x$beyondtrust = xyes )
 
     dnl define global flags
     AC_SUBST([AM_CPPFLAGS])
@@ -335,14 +387,10 @@
            )
     dnl use git to record the current repository revision only if
     dnl git is installed and we are in a working copy
-    if test "X$use_svnfile" = "Xyes"; then
+    if test "X$svnversioncommand" = "X" || test "X$use_svnfile" = "Xyes"; then
         revision="cat \$(top_srcdir)/svn_dist_version"
         build_num="$($revision)"
         AM_CONDITIONAL([HAVESVNWC], false)
-    elif test "X$svnversioncommand" = "X"; then
-        revision="-"
-        build_num="$($revision)"
-        AM_CONDITIONAL([HAVESVNWC], true)
     elif test "X$AONE_BUILD_NUMBER" != "X"; then
         build_num="$AONE_BUILD_NUMBER"
         revision="(cd \$(top_srcdir) && echo $AONE_BUILD_NUMBER-$(git rev-parse HEAD))"
@@ -363,14 +411,11 @@
     AC_DEFINE_UNQUOTED([RELEASEID], "$RELEASEID")
 
     dnl LDADD
-    AM_LDFLAGS="${AM_LDFLAGS} -Wl,--emit-relocs,--allow-multiple-definition"
     BIN_LDFLAGS="-lc -lrt -pie"
 
-    if test "X9.3.0" = "X$GCC_VERSION"; then
-        AM_LDFLAGS="${AM_LDFLAGS} -static-libstdc++ -static-libgcc"
-        BIN_LDFLAGS="${BIN_LDFLAGS} ${TOOLS_DIR}/lib64/libstdc++.a"
-        postdeps_CXX=`echo " $postdeps_CXX " | sed 's, -lstdc++ ,,g'`
-    fi
+    AM_LDFLAGS="${AM_LDFLAGS} -static-libstdc++"
+    BIN_LDFLAGS="${BIN_LDFLAGS} ${TOOLS_DIR}/lib64/libstdc++.a"
+    postdeps_CXX=`echo " $postdeps_CXX " | sed 's, -lstdc++ ,,g'`
 
     AC_SUBST(BIN_LDFLAGS)
 
@@ -393,6 +438,19 @@
                  [with_mysqltest="no"])
     AM_CONDITIONAL([WITH_MYSQLTEST], test x$with_mysqltest = xyes)
 
+    dnl condition WITH_OBPROXY_MINIDUMP
+    AC_ARG_WITH([obproxy-minidump],
+        AS_HELP_STRING([--with-obproxy-minidump],
+                       [whether use obproxy minidump feature (default is NO)]),
+                       [
+                           if test "$withval" == "yes"; then
+                               obproxy_minidump=yes
+                               AM_CXXFLAGS="${AM_CXXFLAGS} -DHAVE_MINIDUMP"
+                           fi
+                       ],
+                       [obproxy_minidump="no"])
+    AM_CONDITIONAL([HAVE_MINIDUMP], test x$obproxy_minidump = xyes )
+
     dnl condition 7U_SUPPORT
     AC_ARG_WITH([7u-support],
         AS_HELP_STRING([--with-7u-support],
@@ -412,14 +470,16 @@
                      unittest/obproxy/Makefile
     ])
 
+    # warnings todo
+    AM_CXXFLAGS="${AM_CXXFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-overloaded-virtual -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
+    AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-overloaded-virtual -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
+
+    # gcc toolchain
+    AM_CXXFLAGS="${AM_CXXFLAGS} --gcc-toolchain=$TOOLS_DIR"
+    AM_CFLAGS="${AM_CFLAGS} --gcc-toolchain=$TOOLS_DIR"
+
     AM_CXXFLAGS_WITH_ARCH="${AM_CXXFLAGS}"
     AM_CFLAGS_WITH_ARCH="${AM_CFLAGS}"
-    if test $OSVER -gt 6; then
-      AM_CXXFLAGS_WITH_ARCH="${AM_CXXFLAGS_WITH_ARCH} -Werror"
-      AM_CFLAGS_WITH_ARCH="${AM_CFLAGS_WITH_ARCH} -Werror"
-    fi
-    AM_CXXFLAGS="${AM_CXXFLAGS} -Werror"
-    AM_CFLAGS="${AM_CFLAGS} -Werror"
 
     AC_OUTPUT
 
