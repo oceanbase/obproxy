@@ -3137,7 +3137,7 @@ int ObMysqlTransact::init_protocol_diagnosis(ObTransState &s)
     } else if (OB_ISNULL(protocol_diagnosis) && OB_FAIL(ObProtocolDiagnosis::alloc(protocol_diagnosis))) {
       LOG_WDIAG("fail to alloc memory for protocol diagnosis", K(ret));
     } else {
-      INC_SHARED_REF(s.sm_->resp_analyzer_.get_protocol_diagnosis_ref(), protocol_diagnosis);
+      DEC_AND_INC_SHARED_REF(s.sm_->resp_analyzer_.get_protocol_diagnosis_ref(), protocol_diagnosis);
       LOG_DEBUG("succ to enable protocol diagnosis", K(level));
     }
   } else {
@@ -3462,7 +3462,7 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
             } // else
           } else {
             ObCompressedHeaderParam param(next_compress_seq, s.sm_->is_checksum_on(), s.sm_->compression_algorithm_.level_);
-            INC_SHARED_REF(param.get_protocol_diagnosis_ref(), s.sm_->protocol_diagnosis_);
+            DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), s.sm_->protocol_diagnosis_);
             if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(request_buffer_reader, write_buffer,
                                                                         client_request_len, param))) {
               LOG_WDIAG("fail to consume and compress mysql compress data", K(ret));
@@ -3593,7 +3593,7 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
                                         server_session->get_session_info().is_new_extra_info_supported(),
                                         client_session->is_trans_internal_routing(), is_proxy_switch_route,
                                         is_compressed_ob20, zlib_compression_level);
-        INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), s.sm_->protocol_diagnosis_);
+        DEC_AND_INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), s.sm_->protocol_diagnosis_);
         if (OB_FAIL(ObProto20Utils::consume_and_compress_data(&request_buffer_reader, &write_buffer,
                                                               curr_req_len, ob20_head_param, &extra_info))) {
           LOG_WDIAG("fail to consume and compress ob20 data", K(ret));
@@ -4448,7 +4448,6 @@ void ObMysqlTransact::handle_text_ps_prepare_succ(ObTransState &s)
 void ObMysqlTransact::handle_send_init_sql_succ(ObTransState &s)
 {
   int ret = OB_SUCCESS;
-  get_client_session_info(s).clear_init_sql();
   int64_t pkt_len = s.trans_info_.resp_result_.get_last_ok_pkt_len();
   if (pkt_len > ObProxySessionInfoHandler::OB_SIMPLE_OK_PKT_LEN) {
     ObMysqlPacketReader pkt_reader;
@@ -5416,7 +5415,6 @@ inline void ObMysqlTransact::handle_resultset_resp(ObTransState &s, bool &is_use
 
   if (OB_UNLIKELY(SERVER_SEND_INIT_SQL == s.current_.send_action_)) {
     LOG_WDIAG("init sql should not get resultset resp, just do defence");
-    get_client_session_info(s).clear_init_sql();
   }
 
   if (OB_UNLIKELY(SERVER_SEND_REQUEST != s.current_.send_action_)) {
@@ -7133,7 +7131,7 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
           s.current_.send_action_ = SERVER_SEND_TEXT_PS_PREPARE;
         } else if (!s.is_proxysys_tenant()
             && !s.sm_->client_session_->is_proxy_mysql_client()
-            && !client_info.get_init_sql().empty()) {
+            && client_info.can_send_init_sql()) {
             s.current_.send_action_ = SERVER_SEND_INIT_SQL;
           } else {
           s.current_.send_action_ = SERVER_SEND_REQUEST;
@@ -8095,13 +8093,10 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
         }
       }
       LOG_DEBUG("succ to config compression algorithm", K(algor), K(level));
-
+      session_info.set_login_config(sm_->multi_level_config_);
       sm_->get_client_session()->set_standby_read_write_split(sm_->multi_level_config_->enable_standby_read_write_split_);
       LOG_DEBUG("succ to get enable_standby_read_write_split",
                 "enable_standby_read_write_split", sm_->get_client_session()->is_standby_read_write_split());
-
-      session_info.set_init_sql(sm_->multi_level_config_->init_sql_.ptr(),
-                                sm_->multi_level_config_->init_sql_.size());
     } else {  // 设置session上变量
       sm_->set_need_update_non_login_config(false);
       // obproxy_read_only
@@ -8250,9 +8245,6 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
           PROXY_LOG(WDIAG, "fail to load target db server from multi level config", K(ret));
         }
       }
-      // !is_auth_request_, old_config may be invalid
-      // init_sql_ is pointer to old_config, should reset it
-      session_info.clear_init_sql();
     }
   }
   if (OB_SUCC(ret)) {

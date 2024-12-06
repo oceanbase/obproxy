@@ -22,6 +22,7 @@
 #include "obutils/ob_resource_pool_processor.h"
 #include "rpc/obmysql/ob_mysql_util.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
+#include "omt/ob_proxy_config_table_processor.h"
 
 using namespace oceanbase::sql;
 using namespace oceanbase::common;
@@ -239,7 +240,8 @@ ObClientSessionInfo::ObClientSessionInfo()
       text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
       service_name_session_info_(NULL), ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
-      last_server_sess_id_(0), sync_conf_sys_var_(false), init_sql_()
+      last_server_sess_id_(0), sync_conf_sys_var_(false),
+      login_config_(NULL), has_send_init_sql_(false)
 {
   // const int BUCKET_SIZE = 8;
   is_session_pool_client_ = true;
@@ -267,7 +269,7 @@ int64_t ObClientSessionInfo::to_string(char *buf, const int64_t buf_len) const
        K_(proxy_route_policy), K_(user_identity), K_(global_vars_version),
        K_(is_read_only_user), K_(is_request_follower_user), K_(obproxy_force_parallel_query_dop),
        K_(ob20_request), K_(client_cap), K_(server_cap), K_(last_server_addr), K_(last_server_sess_id),
-       K_(init_sql), K_(lock_session_num));
+       K_(has_send_init_sql), K_(lock_session_num));
   J_OBJ_END();
   return pos;
 }
@@ -1391,6 +1393,29 @@ ObServiceaNameSessionInfo* ObClientSessionInfo::get_service_name_session_info()
   return service_name_session_info_;
 }
 
+void ObClientSessionInfo::set_login_config(omt::ObProxyMultiLevelConfig *login_config)
+{
+  if (OB_NOT_NULL(login_config)) {
+    DEC_AND_INC_SHARED_REF(login_config_, login_config);
+  }
+}
+
+ObString ObClientSessionInfo::get_init_sql()
+{
+  ObString init_sql;
+  if (OB_NOT_NULL(login_config_)) {
+    init_sql = login_config_->init_sql_;
+  }
+  return init_sql;
+}
+
+bool ObClientSessionInfo::can_send_init_sql()
+{
+  return OB_NOT_NULL(login_config_)
+         && !login_config_->init_sql_.is_empty()
+         && !has_send_init_sql_;
+}
+
 
 void ObClientSessionInfo::destroy()
 {
@@ -1410,7 +1435,8 @@ void ObClientSessionInfo::destroy()
     var_set_processor_ = NULL;
   }
   reset_start_trans_sql();
-  clear_init_sql();
+  DEC_SHARED_REF(login_config_);
+  set_has_send_init_sql(false);
 
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();

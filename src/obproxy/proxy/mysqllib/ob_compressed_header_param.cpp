@@ -24,7 +24,7 @@ ObCompressedHeaderParam::ObCompressedHeaderParam(const ObCompressedHeaderParam &
   compression_level_ = param.compression_level_;
   is_checksum_on_ = param.is_checksum_on_;
   protocol_diagnosis_ = NULL;
-  INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
+  DEC_AND_INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
 }
 
 ObCompressedHeaderParam &ObCompressedHeaderParam::operator=(const ObCompressedHeaderParam &param) {
@@ -32,7 +32,7 @@ ObCompressedHeaderParam &ObCompressedHeaderParam::operator=(const ObCompressedHe
     compressed_seq_ = param.compressed_seq_;
     compression_level_ = param.compression_level_;
     is_checksum_on_ = param.is_checksum_on_;
-    INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
+    DEC_AND_INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
   }
   return *this;
 }

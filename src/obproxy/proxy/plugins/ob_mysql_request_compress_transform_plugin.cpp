@@ -339,7 +339,7 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
                                       server_session->get_session_info().is_new_extra_info_supported(),
                                       client_session->is_trans_internal_routing(), is_proxy_switch_route,
                                       is_compressed_ob20, compression_level);
-      INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
+      DEC_AND_INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
       if (OB_FAIL(ObProto20Utils::consume_and_compress_data(local_reader_, mio_buffer_, to_compress_len,
                                                             ob20_head_param, &extra_info))) {
         PROXY_API_LOG(WDIAG, "fail to consume and compress data with OB20", K(ret));
@@ -356,7 +356,7 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
     }
   } else {
     ObCompressedHeaderParam param(next_compressed_seq_, is_checksum_on, compression_level);
-    INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlAnalyzerUtils::consume_and_compress_data(local_reader_, mio_buffer_, to_compress_len, param))) {
       PROXY_API_LOG(WDIAG, "fail to consume and compress data", K(ret));
     } else {

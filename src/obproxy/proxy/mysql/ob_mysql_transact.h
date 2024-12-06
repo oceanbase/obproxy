@@ -501,6 +501,8 @@ enum ObServerRespErrorType
     int64_t request_content_length_;
     int64_t transform_request_cl_;
     int64_t transform_response_cl_;
+    // sql_cmd在进入analyze_mysql_request时重置为OB_MYSQL_COM_MAX_NUM
+    // 所以在analyze_mysql_request前，sql_cmd是上一个命令的状态
     obmysql::ObMySQLCmd sql_cmd_; // current executing command includes sync ps/xa/begin/login etc.
 
   private:

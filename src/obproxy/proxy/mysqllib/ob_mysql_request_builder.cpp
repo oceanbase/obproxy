@@ -53,7 +53,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
                                             /* is_need_reroute */ false, server_info.is_new_extra_info_supported(),
                                             sm->get_client_session()->is_trans_internal_routing(), is_proxy_switch_route,
                                             is_compressed_ob20, compression_level);
-    INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (OB_FAIL(ObProxyTraceUtils::build_related_extra_info_all(extra_info, sm,
                                                                 client_ip_buf, MAX_IP_BUFFER_LEN,
                                                                 flt_info_buf, SERVER_FLT_INFO_BUF_MAX_LEN,
@@ -69,7 +69,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
   } else {
     const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
     ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
-    INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, need_compress, param))) {
       LOG_WDIAG("fail to write request packet in mysql/compressed mysql", K(ob_proxy_protocol), K(ret));
     } else {
@@ -271,7 +271,7 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
                                     /* is_need_reroute */ false, server_info.is_new_extra_info_supported(),
                                     sm->get_client_session()->is_trans_internal_routing(), is_proxy_switch_route,
                                     is_compressed_ob20, compression_level);
-    INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlOB20PacketWriter::write_raw_packet(mio_buf, packet, ob20_head_param))) {
       LOG_WDIAG("fail to write request packet in ob20", K(ret));
     } else {
@@ -280,7 +280,7 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
   } else {
     const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
     ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
-    INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (need_compress) {
       if (OB_FAIL(ObMysqlPacketWriter::write_compressed_raw_packet(mio_buf, packet, param))) {
         LOG_WDIAG("fail to write request packet in compressed mysql", K(ob_proxy_protocol), K(ret));
@@ -384,9 +384,9 @@ int ObMysqlRequestBuilder::build_init_sql_request_packet(ObMysqlSM *sm,
   if (OB_FAIL(build_request_packet(client_info.get_init_sql(), cmd, sm, mio_buf, server_session, ob_proxy_protocol))) {
     LOG_WDIAG("fail to build init sql packet", K(client_info.get_init_sql()), K(cmd), K(ret));
   } else {
+    client_info.set_has_send_init_sql(true);
     LOG_DEBUG("will sync init sql", K(client_info.get_init_sql()), K(cmd));
   }
-
   return ret;
 }
 

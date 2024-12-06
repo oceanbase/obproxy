@@ -7806,7 +7806,8 @@ inline int ObMysqlSM::do_internal_observer_open()
       } else if (!trans_state_.is_proxysys_tenant()
                 && !client_session_->is_proxy_mysql_client()
                 && !trans_state_.is_handshake_req_phase()
-                && !client_info.get_init_sql().empty()) {
+                && !trans_state_.is_login_auth_switch_resp_phase()
+                && client_info.can_send_init_sql()) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_INIT_SQL;
       } else {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_REQUEST;
@@ -11667,7 +11668,7 @@ void ObMysqlSM::build_basic_connection_diagnosis_info()
     }
     fill_disconnect_message();
     // to print protocol diagnosis info with connection diagnosis
-    INC_SHARED_REF(connection_diagnosis_trace_->protocol_diagnosis_, protocol_diagnosis_);
+    DEC_AND_INC_SHARED_REF(connection_diagnosis_trace_->protocol_diagnosis_, protocol_diagnosis_);
   } else if (connection_diagnosis_trace_ == NULL) {
     LOG_WDIAG("unexpected connection diagnosis trace state", K(sm_id_));
   }

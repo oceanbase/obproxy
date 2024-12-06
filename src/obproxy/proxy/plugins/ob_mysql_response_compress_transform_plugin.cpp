@@ -44,7 +44,7 @@ ObMysqlResponseCompressTransformPlugin::ObMysqlResponseCompressTransformPlugin(O
   server_sessid_ = server_session->get_server_sessid();
   is_compressed_ob20_ = server_session->get_session_info().is_server_ob20_compress_supported()
                         && 0 != sm_->compression_algorithm_.level_;
-  INC_SHARED_REF(resp_analyzer_.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
+  DEC_AND_INC_SHARED_REF(resp_analyzer_.get_protocol_diagnosis_ref(), sm_->protocol_diagnosis_);
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCompressTransformPlugin born", K(protocol_), K_(req_seq),
                 K_(request_id), K_(server_sessid), K(this));
 }

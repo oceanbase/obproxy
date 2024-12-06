@@ -36,7 +36,7 @@ namespace common
     } \
   } while(0)
 
-#define INC_SHARED_REF(des_ref_ptr, src_ref_ptr) \
+#define DEC_AND_INC_SHARED_REF(des_ref_ptr, src_ref_ptr) \
   do {  \
     if (OB_NOT_NULL(des_ref_ptr)) { \
       des_ref_ptr->dec_ref(); \

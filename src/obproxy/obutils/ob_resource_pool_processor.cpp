@@ -2228,7 +2228,7 @@ int ObClusterResource::get_and_update_single_leader_info(
     }
     DEC_SHARED_REF(info);
   } else {
-    INC_SHARED_REF(info, value);
+    DEC_AND_INC_SHARED_REF(info, value);
   }
   return ret;
 }

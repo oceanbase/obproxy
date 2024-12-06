@@ -33,7 +33,7 @@ Ob20HeaderParam::Ob20HeaderParam(const Ob20HeaderParam &param) {
   is_compressed_ob20_ = param.is_compressed_ob20_;
   compression_level_ = param.compression_level_;
   protocol_diagnosis_ = NULL;
-  INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
+  DEC_AND_INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
 }
 
 Ob20HeaderParam &Ob20HeaderParam::operator=(const Ob20HeaderParam &param) {
@@ -50,7 +50,7 @@ Ob20HeaderParam &Ob20HeaderParam::operator=(const Ob20HeaderParam &param) {
     is_switch_route_ = param.is_switch_route_;
     is_compressed_ob20_ = param.is_compressed_ob20_;
     compression_level_ = param.compression_level_;
-    INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
+    DEC_AND_INC_SHARED_REF(protocol_diagnosis_, const_cast<ObProtocolDiagnosis*>(param.get_protocol_diagnosis()));
   }
   return *this;
 }

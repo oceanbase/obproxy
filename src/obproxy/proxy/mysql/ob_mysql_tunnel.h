@@ -431,7 +431,7 @@ inline int ObMysqlTunnelProducer::set_request_packet_analyzer(
   packet_analyzer_.packet_type_ = packet_type;
   packet_analyzer_.resp_result_ = NULL;
   packet_analyzer_.request_analyzer_ = analyzer;
-  INC_SHARED_REF(packet_analyzer_.protocol_diagnosis_, protocol_diagnosis);
+  DEC_AND_INC_SHARED_REF(packet_analyzer_.protocol_diagnosis_, protocol_diagnosis);
   if (NULL != analyzer && NULL != buffer_start_) {
     // request also need analyzer
     packet_analyzer_.packet_reader_ = buffer_start_->clone();
