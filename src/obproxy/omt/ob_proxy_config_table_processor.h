@@ -156,11 +156,13 @@ public:
   ObProxyMultiLevelConfig(): proxy_route_policy_(), proxy_idc_name_(), proxy_primary_zone_name_(),
                              mysql_version_(), binlog_service_ip_(), init_sql_(),
                              target_db_server_(), compression_algorithm_(),
-                             rootservice_cluster_name_(), enable_cloud_full_username_(false),
+                             rootservice_cluster_name_(), proxy_tenant_name_(),
+                             enable_cloud_full_username_(false),
                              enable_client_ssl_(false), enable_server_ssl_(false),
                              enable_read_write_split_(false), enable_transaction_split_(false),
                              enable_weak_reroute_(false), enable_single_leader_node_routing_(false),
-                             enable_standby_read_write_split_(false), read_stale_retry_interval_(0),
+                             enable_standby_read_write_split_(false), enable_check_cluster_name_(false),
+                             read_stale_retry_interval_(0),
                              ssl_attributes_(), weakread_weight_zone_(), limit_config_(), route_target_replica_type_(),
                              observer_query_timeout_delta_(0), query_digest_time_threshold_(0),
                              route_diagnosis_level_(0), slow_query_time_threshold_(0),
@@ -183,6 +185,7 @@ public:
   ObConfigVariableString target_db_server_;
   ObConfigVariableString compression_algorithm_;
   ObConfigVariableString rootservice_cluster_name_;
+  ObConfigVariableString proxy_tenant_name_;
   bool enable_cloud_full_username_;
   bool enable_client_ssl_;
   bool enable_server_ssl_;
@@ -191,6 +194,7 @@ public:
   bool enable_weak_reroute_;
   bool enable_single_leader_node_routing_;
   bool enable_standby_read_write_split_;
+  bool enable_check_cluster_name_;
   int64_t read_stale_retry_interval_;
   int64_t obproxy_read_only_;
   int64_t obproxy_read_consistency_;

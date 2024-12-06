@@ -1878,10 +1878,12 @@ void ObMysqlSM::setup_get_cluster_resource()
       const ObHSRResult &hsr = session_info.get_login_req().get_hsr_result();
       const ObString &cluster_name = hsr.cluster_name_;
 
-      // Attention! if login via vip and vip tenant cluster is valid, we think its cluster is not from default
+      // Attention! if login via vip and vip tenant cluster is valid, or enable_cloud_full_username is true, we think its cluster is not from default
       // and no need to tell whether it is multi clusters or not
       const bool is_clustername_from_default = (client_session_->is_need_convert_vip_to_tname()
-                                                && client_session_->is_vip_lookup_success())
+                                                && (client_session_->is_vip_lookup_success()
+                                                    || (OB_NOT_NULL(multi_level_config_)
+                                                        && multi_level_config_->enable_cloud_full_username_)))
                                                ? false : hsr.is_clustername_from_default_;
       int64_t cluster_id = hsr.cluster_id_;
       ObProxyConfigString real_meta_cluster_name;
@@ -2145,7 +2147,12 @@ inline int ObMysqlSM::init_request_content(ObRequestAnalyzeCtx &ctx, const bool 
   if (OB_UNLIKELY(trans_state_.is_handshake_req_phase())) {
     ObMysqlAuthRequest &orig_auth_req = client_session_->get_session_info().get_login_req();
     orig_auth_req.reset();
-    if (client_session_->is_need_convert_vip_to_tname() && client_session_->is_vip_lookup_success()) {
+    // 配置了enable_cloud_full_username=true，走多级配置，否则云上拿VIP级别
+    if (OB_NOT_NULL(multi_level_config_) && multi_level_config_->enable_cloud_full_username_) {
+      ctx.vip_tenant_name_ = multi_level_config_->proxy_tenant_name_;
+      ctx.vip_cluster_name_ = multi_level_config_->rootservice_cluster_name_;
+    } else if (client_session_->is_need_convert_vip_to_tname()
+               && client_session_->is_vip_lookup_success()) {
       ctx.vip_tenant_name_ = client_session_->get_vip_tenant_name();
       ctx.vip_cluster_name_ = client_session_->get_vip_cluster_name();
     } else {
@@ -2355,7 +2362,7 @@ inline int ObMysqlSM::check_user_identity(const ObString &user_name,
   const ObHotUpgraderInfo &hu_info = get_global_hot_upgrade_info();
   ObHSRResult &hsr = client_session_->get_session_info().get_login_req().get_hsr_result();
   const bool is_current_cloud_user = is_cloud_user();
-  if (need_reject_user_login(user_name, tenant_name, hsr.has_tenant_username_, hsr.has_cluster_username_, is_current_cloud_user)) {
+  if (need_reject_user_login(user_name, tenant_name, hsr.has_tenant_username_, hsr.has_cluster_username_, is_current_cloud_user, cluster_name)) {
     ret = OB_USER_NOT_EXIST;
     LOG_WDIAG("access denied for this user", K(hsr), K(is_current_cloud_user), K(ret));
   } else if (tenant_name == OB_PROXYSYS_TENANT_NAME) {
@@ -4275,7 +4282,8 @@ bool ObMysqlSM::is_cloud_user() const
 
 bool ObMysqlSM::need_reject_user_login(const ObString &user, const ObString &tenant,
                                        const bool has_tenant_username, const bool has_cluster_username,
-                                       const bool is_cloud_user) const
+                                       const bool is_cloud_user,
+                                       const ObString &cluster) const
 {
   // 以下几种场景需要拒绝用户连接
   // proxysys 为proxy内部租户，不会访问 ob
@@ -4318,6 +4326,21 @@ bool ObMysqlSM::need_reject_user_login(const ObString &user, const ObString &ten
       bret = true;
     } else {
       // do nothing
+    }
+    if (!bret) {
+      if (has_cluster_username && multi_level_config_->enable_check_cluster_name_) {
+        bret = (0 != static_cast<ObString>(
+                         multi_level_config_->rootservice_cluster_name_)
+                         .case_compare(cluster));
+      }
+      if (bret) {
+        COLLECT_LOGIN_DIAGNOSIS(connection_diagnosis_trace_,
+                                OB_LOGIN_DISCONNECT_TRACE, "",
+                                OB_PROXY_INVALID_USER,
+                                "connection rejected while enable_check_cluster_name_=true, "
+                                "config_cluster_name=%s",
+                                multi_level_config_->rootservice_cluster_name_.ptr());
+      }
     }
   }
 

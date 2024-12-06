@@ -299,7 +299,7 @@ public:
   DEF_BOOL(enable_get_rslist_remote, "false", "enable direct get rootservice list from remote", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // without config server url
-  DEF_STR(rootservice_cluster_name, "undefined", "default cluster name for rootservice_list", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(rootservice_cluster_name, "undefined", "1. default cluster name for rootservice_list; 2. default cluster name for cloud user", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_STR_LIST(rootservice_list, "", "a list of servers against which election candidate is checked for validation, format ip1:sql_port1;ip2:sql_port2", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // default tenant
@@ -406,6 +406,7 @@ public:
   DEF_INT(sql_table_cache_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire sql table cache base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_CAP(sql_table_cache_mem_limited, "128MB", "[1KB,100G]", "max size of proxy sql table cache size. [1KB, 100G]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_cloud_full_username, "false", "used for cloud user, if set false, treat all login user as username", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_check_cluster_name, "false", "if set true, will checking cluster_name is euql to default cluster_name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_full_username, "false", "used for non-cloud user, if set true, username must have tenant and cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(skip_proxyro_check, "false", "used for proxro@sys, if set false, access denied", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 

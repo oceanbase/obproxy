@@ -243,7 +243,8 @@ public:
                               const common::ObString &tenant,
                               const bool has_tenant_username,
                               const bool has_cluster_username,
-                              const bool is_cloud_user) const;
+                              const bool is_cloud_user,
+                              const common::ObString &cluster) const;
   inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
   void set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time);
   int build_error_packet_for_connection_diagnosis(bool &is_packet_build);

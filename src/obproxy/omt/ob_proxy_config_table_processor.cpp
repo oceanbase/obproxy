@@ -418,6 +418,7 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   GetProxyConfigBool(enable_server_ssl);
   GetProxyConfigBool(enable_read_write_split);
   GetProxyConfigBool(enable_transaction_split);
+  GetProxyConfigBool(enable_check_cluster_name);
   GetProxyConfigTime(read_stale_retry_interval);
   GetProxyConfigInt(obproxy_read_only);
   GetProxyConfigInt(obproxy_read_consistency);
@@ -438,6 +439,17 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
       PROXY_LOG(WDIAG, "fail to get rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(ret));
     } else if ((0 != strlen(item.str())) && OB_FAIL(rootservice_cluster_name_.rewrite(item.str(), strlen(item.str())))) {
       PROXY_LOG(WDIAG, "fail to rewrite rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(item), K(ret));
+    }
+  }
+  // proxy_tenant_name
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    // Get from metadb. If not found, will get global level config.
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, "", "", "proxy_tenant_name", item, false))) {
+      PROXY_LOG(WDIAG, "fail to get proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else if ((0 != strlen(item.str())) && OB_FAIL(proxy_tenant_name_.rewrite(item.str(), strlen(item.str())))) {
+      PROXY_LOG(WDIAG, "fail to rewrite proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(item), K(ret));
     }
   }
   // enable_standby_read_write_split
