@@ -7561,11 +7561,11 @@ inline int ObMysqlSM::use_set_pool_addr()
 {
   int ret = OB_SUCCESS;
   ObCommonAddr& common_addr = client_session_->common_addr_;
-  sockaddr sa;
-  if (OB_FAIL(common_addr.get_sockaddr(sa))) {
+  ObIpEndpoint addr;
+  if (OB_FAIL(common_addr.get_sockaddr(addr.sa_))) {
     LOG_WDIAG("get_sockaddr failed", K(common_addr), K(ret));
   } else {
-    trans_state_.server_info_.set_addr(sa);
+    trans_state_.server_info_.set_addr(addr.sa_);
     LOG_DEBUG("session pool client not use pool, will use set addr", K(client_session_->common_addr_),
             K_(sm_id));
   }

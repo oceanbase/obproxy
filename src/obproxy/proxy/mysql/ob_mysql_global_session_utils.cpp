@@ -112,11 +112,11 @@ int ObCommonAddr::assign(const common::ObString& ip_str, const int32_t port, boo
 {
   int ret = OB_SUCCESS;
   if (is_physical) {
-    sockaddr sa;
-    if (OB_FAIL(ObMysqlSessionUtils::get_sockaddr_by_ip_port(ip_str, port, true, sa))) {
+    ObIpEndpoint addr;
+    if (OB_FAIL(ObMysqlSessionUtils::get_sockaddr_by_ip_port(ip_str, port, true, addr.sa_))) {
       LOG_WDIAG("get_sockaddr_by_ip_port failed", K(ret));
     } else {
-      ip_endpoint_.assign(sa);
+      ip_endpoint_ = addr;
     }
   } else {
     addr_.set_value(ip_str);

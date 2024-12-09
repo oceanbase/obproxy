@@ -632,15 +632,15 @@ inline bool ObMysqlTransact::is_single_shard_db_table(ObTransState &s)
 int ObMysqlTransact::set_server_ip_by_shard_conn(ObTransState &s, ObShardConnector* shard_conn)
 {
   int ret = OB_SUCCESS;
-  sockaddr sa;
+  ObIpEndpoint addr;
   int64_t port = 0;
-  if (OB_FAIL(shard_conn->get_physic_ip(sa))) {
+  if (OB_FAIL(shard_conn->get_physic_ip(addr.sa_))) {
     LOG_WDIAG("fail to get ip", "physic_addr", shard_conn->physic_addr_.config_string_, K(ret));
   } else if (OB_FAIL(get_int_value(shard_conn->physic_port_.config_string_, port))) {
     LOG_WDIAG("fail to get port", "physic_port", shard_conn->physic_port_.config_string_, K(ret));
   } else {
-    ops_ip_port_cast(sa) = (htons)(static_cast<uint16_t>(port));
-    s.server_info_.set_addr(sa);
+    ops_ip_port_cast(addr.sa_) = (htons)(static_cast<uint16_t>(port));
+    s.server_info_.set_addr(addr.sa_);
     s.pll_info_.lookup_success_ = true;
     LOG_DEBUG("target server addr is set", "physic_addr", shard_conn->physic_addr_.config_string_,
               "physic_port", shard_conn->physic_port_.config_string_,
@@ -652,8 +652,7 @@ int ObMysqlTransact::set_server_ip_by_shard_conn(ObTransState &s, ObShardConnect
 void ObMysqlTransact::handle_mysql_request(ObTransState &s)
 {
   int ret = OB_SUCCESS;
-  sockaddr sa;
-  memset(&sa, 0, sizeof(sa));
+  ObIpEndpoint addr;
   bool need_pl_lookup = (ObMysqlTransact::need_pl_lookup(s) == NEED_PL_LOOKUP);
   ObMysqlServerSession *last_session = s.sm_->client_session_->get_server_session();
   if (need_pl_lookup) {
@@ -676,7 +675,7 @@ void ObMysqlTransact::handle_mysql_request(ObTransState &s)
       } else {
         //这里sa参数仅为了匹配函数参数，不会真正使用,连接池根据shard_conn的类型来设置从连接池获取的key信息。
         if (OB_FAIL(s.sm_->client_session_->init_session_pool_info()) ||
-              OB_FAIL(s.sm_->client_session_->acquire_svr_session_in_session_pool(sa, svr_session))) {
+              OB_FAIL(s.sm_->client_session_->acquire_svr_session_in_session_pool(addr.sa_, svr_session))) {
           ret = set_server_ip_by_shard_conn(s, shard_conn);
         } else if (NULL == svr_session) {
           ret = set_server_ip_by_shard_conn(s, shard_conn);
@@ -1321,7 +1320,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
     ObMysqlClientSession *client_session = s.sm_->get_client_session();
     ObMysqlServerSession *last_session = client_session->get_server_session();
     ObMysqlServerSession *lock_server_session = client_session->get_lock_server_session();
-    sockaddr target_addr{};
+    ObIpEndpoint target_addr;
 
     if (OB_UNLIKELY(s.pl_lookup_state_ == USE_SHARD_TXN_SESSION)) {
       LOG_DEBUG("use shard txn session");
@@ -1368,7 +1367,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
             TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
           }
         } else {
-          if (OB_SUCC(ret) && OB_UNLIKELY(!ops_ip_addr_port_eq(cursor_id_addr->get_addr(), target_addr))) {
+          if (OB_SUCC(ret) && OB_UNLIKELY(cursor_id_addr->get_addr() != target_addr)) {
             if (USE_COORDINATOR_SESSION == s.pl_lookup_state_) {
               // under internal routing transaction, OB_MYSQL_COM_STMT_FETCH may be routed to participant
               // don't need compare target server
@@ -1393,7 +1392,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           } else {
             TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
           }
-        } else if (OB_UNLIKELY(!ops_ip_addr_port_eq(cursor_id_addr->get_addr(), target_addr))) {
+        } else if (OB_UNLIKELY(cursor_id_addr->get_addr() != target_addr)) {
           if (USE_COORDINATOR_SESSION == s.pl_lookup_state_) {
             // under internal routing transaction, OB_MYSQL_COM_STMT_GET_PIECE_DATA may be routed to participant
             // don't need compare target server
@@ -1407,7 +1406,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
             } else {
               LOG_WDIAG("fetch cursor target server is not the trans server",
                       "fetch cursor target server", cursor_id_addr->get_addr(),
-                      "trans server", ObIpEndpoint(target_addr));
+                      "trans server", target_addr);
             }
 
             ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
@@ -1439,7 +1438,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("info is invalid", K(ret));
           TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
-        } else if (OB_UNLIKELY(!ops_ip_addr_port_eq(info->get_addr(), target_addr))) {
+        } else if (OB_UNLIKELY(info->get_addr() != target_addr)) {
           s.mysql_errcode_ = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
           s.mysql_errmsg_ = "send piece info target server is not the trans server";
           int tmp_ret = OB_SUCCESS;
@@ -1448,7 +1447,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
           } else {
             LOG_WDIAG("send piece/long data target server is not the trans server",
                      "target server", info->get_addr(),
-                     "trans server", ObIpEndpoint(target_addr));
+                     "trans server", target_addr);
           }
 
           ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
