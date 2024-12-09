@@ -1782,21 +1782,18 @@ bool ObMysqlTransact::is_sql_able_to_route_participant_in_trans(obutils::ObSqlPa
       able_to_route = false;
       break;
   }
-  if (able_to_route) {
-    if (base_sql_parse_result.is_dual_request()) {
-      able_to_route = false;
-    } else {
-      able_to_route = (base_sql_parse_result.is_text_ps_prepare_stmt()
-                      && base_sql_parse_result.is_text_ps_inner_dml_stmt()
-                      && !base_sql_parse_result.is_text_ps_call_stmt()
-                      && !base_sql_parse_result.is_multi_semicolon_in_stmt()
-                      && base_sql_parse_result.get_table_name_length() > 0)
-                    || (base_sql_parse_result.is_dml_stmt()
-                        && !base_sql_parse_result.is_multi_stmt()
-                        && !base_sql_parse_result.is_multi_semicolon_in_stmt()
-                        && base_sql_parse_result.get_table_name_length() > 0);
-    }
-  }
+
+  able_to_route = able_to_route
+                  && base_sql_parse_result.get_table_name_length() > 0
+                  && !base_sql_parse_result.is_multi_semicolon_in_stmt()
+                  && !base_sql_parse_result.is_multi_stmt()
+                  && !base_sql_parse_result.is_dual_request()
+                  && !base_sql_parse_result.has_anonymous_block()
+                  && !base_sql_parse_result.is_text_ps_call_stmt()
+                  && (base_sql_parse_result.is_dml_stmt()
+                      || (base_sql_parse_result.is_text_ps_prepare_stmt()
+                          && base_sql_parse_result.is_text_ps_inner_dml_stmt()));
+
   return able_to_route;
 }
 

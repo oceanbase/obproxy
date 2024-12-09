@@ -847,6 +847,7 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        K_(has_explain_route),
        K_(has_shard_comment),
        K_(has_hint_route_info),
+       K_(has_anonymous_block),
        K_(parsed_length),
        K_(is_binlog_related),
        K_(is_dblink_name),
