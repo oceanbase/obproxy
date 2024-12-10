@@ -514,7 +514,7 @@ public:
   DEF_BOOL(enable_read_write_split, "false", "if enabled, use read write split mode", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_transaction_split, "false", "if enabled, support transaction split", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 #ifdef BUILD_OPENSOURCE
-  DEF_STR_LIST(weak_read_user_list, "", "weak read for list of users, format user1;user2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
+  DEF_STR_LIST(weak_read_user_list, "", "weak read for list of users, format user1@tenant1;user2@tenant2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER);
 #endif
 
   // binlog service
