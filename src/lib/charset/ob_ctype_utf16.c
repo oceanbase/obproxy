@@ -45,7 +45,7 @@ ob_tosort_utf16(ObUnicaseInfo *uni_plane, ob_wc_t *wc)
 static unsigned int ob_mbcharlen_utf16(const ObCharsetInfo *cs  __attribute__((unused)),
                    unsigned int c __attribute__((unused)))
 {
-  ob_charset_assert(0);
+  ob_int_charset_assert(0);
   return OB_UTF16_HIGH_HEAD(c) ? 4 : 2;
 }
 
@@ -198,7 +198,7 @@ ob_caseup_utf16(const ObCharsetInfo *cs, char *src, size_t srclen,
   int res;
   char *srcend= src + srclen;
   ObUnicaseInfo *uni_plane= cs->caseinfo;
-  ob_charset_assert(src == dst && srclen == dst_len);
+  ob_int_charset_assert(src == dst && srclen == dst_len);
 
   while ((src < srcend) &&
          (res= cs->cset->mb_wc(cs, &wc, (unsigned char *) src, (unsigned char *) srcend)) > 0) {
@@ -221,7 +221,7 @@ ob_casedn_utf16(const ObCharsetInfo *cs, char *src, size_t srclen,
   int res;
   char *srcend= src + srclen;
   ObUnicaseInfo *uni_plane= cs->caseinfo;
-  ob_charset_assert(src == dst && srclen == dst_len);
+  ob_int_charset_assert(src == dst && srclen == dst_len);
 
   while ((src < srcend) &&
          (res= cs->cset->mb_wc(cs, &wc, (unsigned char *) src, (unsigned char *) srcend)) > 0) {
@@ -239,12 +239,12 @@ ob_fill_mb2(const ObCharsetInfo *cs, char *str, size_t s_len, int fill)
   char buf[10];
   int buf_len;
 
-  ob_charset_assert((s_len % 2) == 0);
+  ob_void_charset_assert((s_len % 2) == 0);
 
   buf_len= cs->cset->wc_mb(cs, (ob_wc_t) fill, (unsigned char*) buf,
                           (unsigned char*) buf + sizeof(buf));
 
-  ob_charset_assert(buf_len > 0);
+  ob_void_charset_assert(buf_len > 0);
 
   while (s_len >= (size_t) buf_len) {
     memcpy(str, buf, (size_t) buf_len);
@@ -767,8 +767,8 @@ ob_strnncollsp_utf16_bin(const ObCharsetInfo *cs,
   const unsigned char *se= str + s_len, *te= t + t_len;
 
   if (!diff_if_only_endspace_difference) {
-    ob_charset_assert((s_len % 2) == 0);
-    ob_charset_assert((t_len % 2) == 0);
+    ob_int_charset_assert((s_len % 2) == 0);
+    ob_int_charset_assert((t_len % 2) == 0);
   }
 
   while (str < se && t < te) {
@@ -887,8 +887,8 @@ ob_strnncollsp_utf16(const ObCharsetInfo *cs,
   const unsigned char *se= str + s_len, *te= t + t_len;
   ObUnicaseInfo *uni_plane= cs->caseinfo;
 
-  ob_charset_assert((s_len % 2) == 0);
-  ob_charset_assert((t_len % 2) == 0);
+  ob_int_charset_assert((s_len % 2) == 0);
+  ob_int_charset_assert((t_len % 2) == 0);
 
   while (str < se && t < te) {
     int s_res= cs->cset->mb_wc(cs, &s_wc, str, se);
@@ -926,7 +926,7 @@ ob_strnncollsp_utf16(const ObCharsetInfo *cs,
 
     while (str < se) {
       if ((s_res= cs->cset->mb_wc(cs, &s_wc, str, se)) < 0) {
-        ob_charset_assert(0);
+        ob_int_charset_assert(0);
         return 0;
       } else if (s_wc != ' ') {
         return (s_wc < ' ') ? -swap : swap;

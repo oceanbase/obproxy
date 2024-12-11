@@ -125,11 +125,14 @@ void init_gb18030_2022();
 #define	_MY_B	0100	/* Blank */
 #define	_MY_X	0200	/* heXadecimal digit */
 
-#define ob_charset_assert(condition) \
+#define ob_int_charset_assert(condition) \
   if (!(condition)) {\
-    while(1) {\
-      sleep(120);\
-    }\
+    return 0;\
+  }
+
+#define ob_void_charset_assert(condition) \
+  if (!(condition)) {\
+    return;\
   }
 
 struct ObCharsetInfo;

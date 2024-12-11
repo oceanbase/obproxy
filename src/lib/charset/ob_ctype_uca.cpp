@@ -20050,7 +20050,7 @@ ALWAYS_INLINE int uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::next_raw() {
       return -1;
     }
     sbeg += mblen;
-    ob_charset_assert(wc <= uca->level[0].maxchar);
+    ob_int_charset_assert(wc <= uca->level[0].maxchar);
     /* uca相关属性为false
     if (ob_uca_have_contractions(uca)) {
       const uint16_t *cweight;
@@ -20146,10 +20146,10 @@ ALWAYS_INLINE void uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE>::for_each_weight(
       const int s_res1 = ascii_wpage[sbeg_local[1]];
       const int s_res2 = ascii_wpage[sbeg_local[2]];
       const int s_res3 = ascii_wpage[sbeg_local[3]];
-      ob_charset_assert(s_res0 != 0);
-      ob_charset_assert(s_res1 != 0);
-      ob_charset_assert(s_res2 != 0);
-      ob_charset_assert(s_res3 != 0);
+      ob_void_charset_assert(s_res0 != 0);
+      ob_void_charset_assert(s_res1 != 0);
+      ob_void_charset_assert(s_res2 != 0);
+      ob_void_charset_assert(s_res3 != 0);
       func(s_res0, false);
       func(s_res1, false);
       func(s_res2, false);
@@ -20245,7 +20245,7 @@ static void ob_hash_sort_uca_900(const ObCharsetInfo *cs, const unsigned char *s
         return ob_hash_sort_uca_900_tmpl<Mb_wc_utf8mb4, 2>(cs, Mb_wc_utf8mb4(),
                                                            s, slen, n1);
       default:
-        ob_charset_assert(false);
+        ob_void_charset_assert(false);
       case 3:
         return ob_hash_sort_uca_900_tmpl<Mb_wc_utf8mb4, 3>(cs, Mb_wc_utf8mb4(),
                                                            s, slen, n1);
@@ -20263,7 +20263,7 @@ static void ob_hash_sort_uca_900(const ObCharsetInfo *cs, const unsigned char *s
       return ob_hash_sort_uca_900_tmpl<decltype(mb_wc), 2>(cs, mb_wc, s, slen,
                                                            n1);
     default:
-      ob_charset_assert(false);
+      ob_void_charset_assert(false);
     case 3:
       return ob_hash_sort_uca_900_tmpl<decltype(mb_wc), 3>(cs, mb_wc, s, slen,
                                                            n1);
@@ -20283,7 +20283,7 @@ static size_t ob_strnxfrm_uca_900_tmpl(const ObCharsetInfo *cs,
   unsigned char *d0 = dst;
   unsigned char *dst_end = dst + dstlen;
   uca_scanner_900<Mb_wc, LEVELS_FOR_COMPARE> scanner(mb_wc, cs, src, srclen);
-  ob_charset_assert((dstlen % 2) == 0);
+  ob_int_charset_assert((dstlen % 2) == 0);
   if ((dstlen % 2) == 1) {
     // Emergency workaround for optimized mode.
     --dst_end;
@@ -20292,8 +20292,8 @@ static size_t ob_strnxfrm_uca_900_tmpl(const ObCharsetInfo *cs,
     scanner.for_each_weight(
         [&dst, dst_end](
             int s_res, ob_bool is_level_separator __attribute__((unused))) -> ob_bool {
-          ob_charset_assert(is_level_separator == (s_res == 0));
-          if (LEVELS_FOR_COMPARE == 1) ob_charset_assert(!is_level_separator);
+          ob_int_charset_assert(is_level_separator == (s_res == 0));
+          if (LEVELS_FOR_COMPARE == 1) ob_int_charset_assert(!is_level_separator);
           dst = reinterpret_cast<unsigned char*>(store16be(reinterpret_cast<char*>(dst), s_res));
           return (dst < dst_end);
         },
@@ -20324,7 +20324,7 @@ static size_t ob_strnxfrm_uca_900(const ObCharsetInfo *cs, unsigned char *dst,
         return ob_strnxfrm_uca_900_tmpl<Mb_wc_utf8mb4, 2>(
             cs, Mb_wc_utf8mb4(), dst, dstlen, src, srclen, flags);
       default:
-        ob_charset_assert(false);
+        ob_int_charset_assert(false);
       case 3:
         return ob_strnxfrm_uca_900_tmpl<Mb_wc_utf8mb4, 3>(
             cs, Mb_wc_utf8mb4(), dst, dstlen, src, srclen, flags);
@@ -20342,7 +20342,7 @@ static size_t ob_strnxfrm_uca_900(const ObCharsetInfo *cs, unsigned char *dst,
         return ob_strnxfrm_uca_900_tmpl<decltype(mb_wc), 2>(
             cs, mb_wc, dst, dstlen, src, srclen, flags);
       default:
-        ob_charset_assert(false);
+        ob_int_charset_assert(false);
       case 3:
         return ob_strnxfrm_uca_900_tmpl<decltype(mb_wc), 3>(
             cs, mb_wc, dst, dstlen, src, srclen, flags);
@@ -20410,7 +20410,7 @@ static int ob_strnncoll_uca_900(const ObCharsetInfo *cs, const unsigned char *s,
         return ob_strnncoll_uca<uca_scanner_900<Mb_wc_utf8mb4, 2>, 2>(
             cs, Mb_wc_utf8mb4(), s, slen, t, tlen, t_is_prefix);
       default:
-        ob_charset_assert(false);
+        ob_int_charset_assert(false);
       case 3:
         return ob_strnncoll_uca<uca_scanner_900<Mb_wc_utf8mb4, 3>, 3>(
             cs, Mb_wc_utf8mb4(), s, slen, t, tlen, t_is_prefix);
@@ -20428,7 +20428,7 @@ static int ob_strnncoll_uca_900(const ObCharsetInfo *cs, const unsigned char *s,
       return ob_strnncoll_uca<uca_scanner_900<decltype(mb_wc), 2>, 2>(
           cs, mb_wc, s, slen, t, tlen, t_is_prefix);
     default:
-      ob_charset_assert(false);
+      ob_int_charset_assert(false);
     case 3:
       return ob_strnncoll_uca<uca_scanner_900<decltype(mb_wc), 3>, 3>(
           cs, mb_wc, s, slen, t, tlen, t_is_prefix);

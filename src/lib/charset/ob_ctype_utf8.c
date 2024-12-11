@@ -4484,7 +4484,7 @@ ObUnicaseInfo ob_unicase_unicode520 = {0x10FFFF, ob_unicase_pages_unicode520};
 static int ob_valid_mbcharlen_utf8mb3(const uchar *s, const uchar *e)
 {
   uchar c;
-  ob_charset_assert(s < e);
+  ob_int_charset_assert(s < e);
   c= s[0];
   if (c < 0x80)
     return 1;
@@ -4498,7 +4498,7 @@ static int ob_valid_mbcharlen_utf8mb3(const uchar *s, const uchar *e)
       return OB_CS_ILSEQ;
     return 2;
   }
-  ob_charset_assert(c < 0xf0);
+  ob_int_charset_assert(c < 0xf0);
   if (s+3 > e) /* We need 3 characters */
     return OB_CS_TOOSMALL3;
   if (!(IS_CONTINUATION_BYTE(s[1]) && IS_CONTINUATION_BYTE(s[2]) && (c >= 0xe1 || s[1] >= 0xa0)))
@@ -4722,7 +4722,7 @@ static size_t ob_caseup_utf8mb4(const ObCharsetInfo *cs, char *src, size_t srcle
   int srcres, dstres;
   char *srcend= src + srclen, *dstend= dst + dstlen, *dst0= dst;
   ObUnicaseInfo *uni_plane= cs->caseinfo;
-  ob_charset_assert(src != dst || cs->caseup_multiply == 1);
+  ob_int_charset_assert(src != dst || cs->caseup_multiply == 1);
   while ((src < srcend) &&
          (srcres= ob_mb_wc_utf8mb4(cs, &wc,
                                    (uchar *) src, (uchar*) srcend)) > 0)
@@ -4744,7 +4744,7 @@ static size_t ob_casedn_utf8mb4(const ObCharsetInfo *cs,
   int srcres, dstres;
   char *srcend= src + srclen, *dstend= dst + dstlen, *dst0= dst;
   ObUnicaseInfo *uni_plane= cs->caseinfo;
-  ob_charset_assert(src != dst || cs->casedn_multiply == 1);
+  ob_int_charset_assert(src != dst || cs->casedn_multiply == 1);
   while ((src < srcend) &&
          (srcres= ob_mb_wc_utf8mb4(cs, &wc,
                                    (uchar*) src, (uchar*) srcend)) > 0)
@@ -4966,7 +4966,7 @@ static int ob_strnncollsp_utf8mb4(const ObCharsetInfo *cs,
 static size_t ob_strxfrm_pad_nweights_unicode(uchar *str, uchar *strend, size_t nweights)
 {
   uchar *str0;
-  ob_charset_assert(str && str <= strend);
+  ob_int_charset_assert(str && str <= strend);
   for (str0= str; str < strend && nweights; nweights--)
   {
     *str++= 0x00;
@@ -4993,7 +4993,7 @@ static size_t ob_strxfrm_pad_nweights_unicode(uchar *str, uchar *strend, size_t 
 static size_t ob_strxfrm_pad_unicode(uchar *str, uchar *strend)
 {
   uchar *str0= str;
-  ob_charset_assert(str && str <= strend);
+  ob_int_charset_assert(str && str <= strend);
   for ( ; str < strend ; )
   {
     *str++= 0x00;
@@ -5036,7 +5036,7 @@ size_t ob_strnxfrm_unicode(const ObCharsetInfo *cs,
   const uchar *se= src + srclen;
   ObUnicaseInfo *uni_plane= (cs->state & OB_CS_BINSORT) ? NULL : cs->caseinfo;
   wc = 0;
-  ob_charset_assert(src);
+  ob_int_charset_assert(src);
   *is_valid_unicode = 1;
   for (; dst < de && nweights; nweights--)
   {
@@ -5387,8 +5387,8 @@ size_t ob_strnxfrm_unicode_full_bin(const ObCharsetInfo *cs,
   uchar *de= dst + dstlen;
   const uchar *se = src + srclen;
   wc = 0;
-  ob_charset_assert(src);
-  ob_charset_assert(cs->state & OB_CS_BINSORT);
+  ob_int_charset_assert(src);
+  ob_int_charset_assert(cs->state & OB_CS_BINSORT);
   *is_valid_unicode = 1;
   for ( ; dst < de && nweights; nweights--)
   {

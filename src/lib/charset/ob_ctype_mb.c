@@ -41,7 +41,7 @@ static void pad_max_char(const ObCharsetInfo *cs, char *str, char *end)
     buf_len= cs->cset->wc_mb(cs, cs->max_sort_char, (unsigned char*) buf,
                             (unsigned char*) buf + sizeof(buf));
   }
-  ob_charset_assert(buf_len > 0);
+  ob_void_charset_assert(buf_len > 0);
   pad_max_char_help(str, end ,buf, buf_len);
 }
 

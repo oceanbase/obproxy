@@ -778,7 +778,7 @@ const uchar *skip_trailing_space(const uchar *ptr,size_t len)
       (((ulonglong)(int_ptr)end) / SIZEOF_INT * SIZEOF_INT);
     const unsigned char *start_words= (const unsigned char *)(int_ptr)
        ((((ulonglong)(int_ptr)ptr) + SIZEOF_INT - 1) / SIZEOF_INT * SIZEOF_INT);
-    ob_charset_assert(((ulonglong)(int_ptr)ptr) >= SIZEOF_INT);
+    ob_int_charset_assert(((ulonglong)(int_ptr)ptr) >= SIZEOF_INT);
     if (end_words > ptr) {
       while (end > end_words && end[-1] == 0x20) {
         end--;
@@ -814,7 +814,7 @@ size_t ob_caseup_8bit(const ObCharsetInfo *cs __attribute__((unused)),
     char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
     char* dst __attribute__((unused)), size_t dstlen __attribute__((unused))){
   const char *end = src + srclen;
-  ob_charset_assert(src == dst && srclen == dstlen);
+  ob_int_charset_assert(src == dst && srclen == dstlen);
   for (; src != end; src++) *src = ob_toupper(cs,*src);
   return srclen;
 }
@@ -823,7 +823,7 @@ size_t ob_casedn_8bit(const ObCharsetInfo *cs __attribute__((unused)),
     char* src __attribute__((unused)), size_t srclen __attribute__((unused)),
     char* dst __attribute__((unused)), size_t dstlen __attribute__((unused))){
   char *end = src + srclen;
-  ob_charset_assert(src == dst && srclen == dstlen);
+  ob_int_charset_assert(src == dst && srclen == dstlen);
   for (; src != end; src++) *src = ob_tolower(cs,*src);
   return srclen;
 }

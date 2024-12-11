@@ -19142,7 +19142,7 @@ enum CASESENSITIVITY {
 };
 
 static uint diff_to_gb18030_4(uchar *dst, uint dstlen, uint diff) {
-  ob_charset_assert(dstlen >= 4);
+  ob_int_charset_assert(dstlen >= 4);
 
   if (diff > MAX_GB18030_DIFF || dstlen < 4) return 0;
 
@@ -19159,16 +19159,16 @@ static uint diff_to_gb18030_4(uchar *dst, uint dstlen, uint diff) {
 static uint gb18030_4_code_to_diff(uint code) {
   uint diff = 0;
 
-  ob_charset_assert(is_mb_odd((code >> 24) & 0xFF));
+  ob_int_charset_assert(is_mb_odd((code >> 24) & 0xFF));
   diff += ((code >> 24) & 0xFF) - MIN_MB_ODD_BYTE;
   diff *= 10;
-  ob_charset_assert(is_mb_even_4((code >> 16) & 0xFF));
+  ob_int_charset_assert(is_mb_even_4((code >> 16) & 0xFF));
   diff += ((code >> 16) & 0xFF) - MIN_MB_EVEN_BYTE_4;
   diff *= 126;
-  ob_charset_assert(is_mb_odd((code >> 8) & 0xFF));
+  ob_int_charset_assert(is_mb_odd((code >> 8) & 0xFF));
   diff += ((code >> 8) & 0xFF) - MIN_MB_ODD_BYTE;
   diff *= 10;
-  ob_charset_assert(is_mb_even_4(code & 0xFF));
+  ob_int_charset_assert(is_mb_even_4(code & 0xFF));
   diff += (code & 0xFF) - MIN_MB_EVEN_BYTE_4;
 
   return diff;
@@ -19176,7 +19176,7 @@ static uint gb18030_4_code_to_diff(uint code) {
 
 static uint ob_ismbchar_gb18030(const ObCharsetInfo *cs __attribute__((unused)),
                                 const char *p, const char *e) {
-  ob_charset_assert(e > p);
+  ob_int_charset_assert(e > p);
 
   if (e - p <= 1 || !is_mb_odd(p[0])) return 0;
 
@@ -19192,7 +19192,7 @@ static uint ob_ismbchar_gb18030(const ObCharsetInfo *cs __attribute__((unused)),
 static inline uint gb18030_chs_to_code(const uchar *src, size_t srclen) {
   uint r = 0;
 
-  ob_charset_assert(srclen == 1 || srclen == 2 || srclen == 4);
+  ob_int_charset_assert(srclen == 1 || srclen == 2 || srclen == 4);
 
   switch (srclen) {
     case 1:
@@ -19205,7 +19205,7 @@ static inline uint gb18030_chs_to_code(const uchar *src, size_t srclen) {
       r = (src[0] << 24) + (src[1] << 16) + (src[2] << 8) + src[3];
       break;
     default:
-      ob_charset_assert(0);
+      ob_int_charset_assert(0);
   }
 
   return r;
@@ -19217,7 +19217,7 @@ static size_t code_to_gb18030_chs(uchar *dst, size_t dstlen, uint code) {
   uchar r[4];
   for (i = 0; code != 0; i++, code >>= 8) r[i] = (uchar)(code & 0xFF);
 
-  ob_charset_assert(i == 1 || i == 2 || i == 4);
+  ob_int_charset_assert(i == 1 || i == 2 || i == 4);
   for (; i > 0 && dst < dst_end; --i, ++len) *dst++ = r[i - 1];
 
   return len;
@@ -19336,7 +19336,7 @@ static int ob_mb_wc_gb18030(const ObCharsetInfo *cs __attribute__((unused)),
       /* (GB+8431A439, GB+90308130) and (GB+E3329A35, GB+FE39FE39) */
       cp = 0x003F;
     else
-      ob_charset_assert(0);
+      ob_int_charset_assert(0);
 
     *pwc = cp;
     return 4;
@@ -19413,12 +19413,12 @@ static int ob_wc_mb_gb18030_chs(const ObCharsetInfo *cs __attribute__((unused)),
       if (s + 4 > e) return OB_CS_TOOSMALL4;
 
       err = diff_to_gb18030_4(s, 4, idx);
-      ob_charset_assert(err != 0);
+      ob_int_charset_assert(err != 0);
 
       return err != 0 ? len : OB_CS_ILUNI;
   }
 
-  ob_charset_assert(0);
+  ob_int_charset_assert(0);
   return OB_CS_ILUNI;
 }
 
@@ -19428,7 +19428,7 @@ static const ObUnicaseInfoChar *get_case_info(const ObCharsetInfo *cs,
   const ObUnicaseInfoChar *p = NULL;
   uint diff, code;
 
-  ob_charset_assert(cs != NULL);
+  ob_int_charset_assert(cs != NULL);
 
   switch (srclen) {
     case 1:
@@ -19455,7 +19455,7 @@ static const ObUnicaseInfoChar *get_case_info(const ObCharsetInfo *cs,
       return p ? &p[code & 0xFF] : NULL;
   }
 
-  ob_charset_assert(0);
+  ob_int_charset_assert(0);
   return NULL;
 }
 
@@ -19473,10 +19473,10 @@ static uint case_info_code_to_gb18030(uint code) {
              code <= (MAX_3_BYTE_FROM_UNI & 0xFFFF))
       code += (MIN_3_BYTE_FROM_UNI & 0xFF0000);
     else
-      ob_charset_assert(0);
+      ob_int_charset_assert(0);
 
     r = diff_to_gb18030_4(gbchs, 4, code);
-    ob_charset_assert(r == 4);
+    ob_int_charset_assert(r == 4);
 
     return r == 4 ? gb18030_chs_to_code(gbchs, 4) : 0;
   }
@@ -19486,7 +19486,7 @@ static uint get_casefolded_code(const ObCharsetInfo *cs, const uchar *src,
                                 size_t srclen, size_t is_upper) {
   const ObUnicaseInfoChar *ch = get_case_info(cs, src, srclen);
 
-  ob_charset_assert(srclen == 1 || srclen == 2 || srclen == 4);
+  ob_int_charset_assert(srclen == 1 || srclen == 2 || srclen == 4);
 
   return ch ? case_info_code_to_gb18030(is_upper ? ch->toupper : ch->tolower)
             : 0;
@@ -19502,7 +19502,7 @@ static size_t ob_casefold_gb18030(const ObCharsetInfo *cs, char *src,
   while (src < srcend) {
     uint mblen = ob_ismbchar_gb18030(cs, src, srcend);
 
-    ob_charset_assert(dst < dst_end);
+    ob_int_charset_assert(dst < dst_end);
     if (mblen) {
       uint code = get_casefolded_code(cs, (uchar *)src, mblen, is_upper);
 
@@ -19510,12 +19510,12 @@ static size_t ob_casefold_gb18030(const ObCharsetInfo *cs, char *src,
         size_t mblen_dst =
             code_to_gb18030_chs((uchar *)dst, dst_end - dst, code);
 
-        ob_charset_assert(dst + mblen_dst <= dst_end);
+        ob_int_charset_assert(dst + mblen_dst <= dst_end);
         src += mblen;
         dst += mblen_dst;
       } else {
-        ob_charset_assert(mblen == 2 || mblen == 4);
-        ob_charset_assert(dst + mblen <= dst_end);
+        ob_int_charset_assert(mblen == 2 || mblen == 4);
+        ob_int_charset_assert(dst + mblen <= dst_end);
 
         if (mblen == 4) {
           *dst++ = *src++;
@@ -19534,17 +19534,17 @@ static size_t ob_casefold_gb18030(const ObCharsetInfo *cs, char *src,
 
 static size_t ob_caseup_gb18030(const ObCharsetInfo *cs, char *src,
                                 size_t srclen, char *dst, size_t dstlen) {
-  ob_charset_assert(cs != NULL);
-  ob_charset_assert(src != dst || cs->caseup_multiply == 1);
-  ob_charset_assert(dstlen >= srclen * cs->caseup_multiply);
+  ob_int_charset_assert(cs != NULL);
+  ob_int_charset_assert(src != dst || cs->caseup_multiply == 1);
+  ob_int_charset_assert(dstlen >= srclen * cs->caseup_multiply);
   return ob_casefold_gb18030(cs, src, srclen, dst, dstlen, cs->to_upper, 1);
 }
 
 static size_t ob_casedn_gb18030(const ObCharsetInfo *cs, char *src,
                                 size_t srclen, char *dst, size_t dstlen) {
-  ob_charset_assert(cs != NULL);
-  ob_charset_assert(src != dst || cs->casedn_multiply == 1);
-  ob_charset_assert(dstlen >= srclen * cs->casedn_multiply);
+  ob_int_charset_assert(cs != NULL);
+  ob_int_charset_assert(src != dst || cs->casedn_multiply == 1);
+  ob_int_charset_assert(dstlen >= srclen * cs->casedn_multiply);
   return ob_casefold_gb18030(cs, src, srclen, dst, dstlen, cs->to_lower, 0);
 }
 
@@ -19634,7 +19634,7 @@ static int ob_mb_wc_gb18030_2022(const ObCharsetInfo *cs __attribute__((unused))
       /* (GB+8431A439, GB+90308130) and (GB+E3329A35, GB+FE39FE39) */
       cp = 0x003F;
     else
-      ob_charset_assert(0);
+      ob_int_charset_assert(0);
 
     *pwc = cp;
     return 4;
@@ -19711,12 +19711,12 @@ static int ob_wc_mb_gb18030_2022_chs(const ObCharsetInfo *cs __attribute__((unus
       if (s + 4 > e) return OB_CS_TOOSMALL4;
 
       err = diff_to_gb18030_4(s, 4, idx);
-      ob_charset_assert(err != 0);
+      ob_int_charset_assert(err != 0);
 
       return err != 0 ? len : OB_CS_ILUNI;
   }
 
-  ob_charset_assert(0);
+  ob_int_charset_assert(0);
   return OB_CS_ILUNI;
 }
 
@@ -19725,7 +19725,7 @@ static uint get_weight_for_mbchar(const ObCharsetInfo *cs, const uchar *src,
                                   size_t mblen) {
   uint weight, caseup_code, code = gb18030_chs_to_code(src, mblen);
 
-  ob_charset_assert(mblen == 2 || mblen == 4);
+  ob_int_charset_assert(mblen == 2 || mblen == 4);
 
   /* Make sure the max 4-byte gb18030 code has the max weight */
   if (code == 0xFE39FE39) return 0xFFFFFFFF;
@@ -19753,7 +19753,7 @@ static int ob_strnncoll_gb18030_internal(const ObCharsetInfo *cs,
   const uchar *se = s + s_length;
   const uchar *te = t + t_length;
 
-  ob_charset_assert(cs != NULL);
+  ob_int_charset_assert(cs != NULL);
 
   while (s < se && t < te) {
     uint mblen_s = ob_ismbchar_gb18030(cs, (char *)s, (char *)se);
@@ -19836,7 +19836,7 @@ static size_t ob_strnxfrm_gb18030(const ObCharsetInfo *cs, uchar *dst,
   const uchar *sort_order;
   *is_valid_unicode = 1;
 
-  ob_charset_assert(cs != NULL);
+  ob_int_charset_assert(cs != NULL);
   sort_order = cs->sort_order;
 
   for (; dst < de && src < se && nweights; nweights--) {
@@ -19865,7 +19865,7 @@ size_t ob_varlen_encoding_gb18030_for_memcmp(const struct ObCharsetInfo* cs,
   const uchar *se = src + src_len;		
   const uchar *sort_order;		
   *is_valid_unicode = 1;		
-  ob_charset_assert(cs != NULL);		
+  ob_int_charset_assert(cs != NULL);
   sort_order = cs->sort_order;		
   for (; *is_valid_unicode && dst < de && src < se && nweights; nweights--) {		
     uint mblen = cs->cset->ismbchar(cs, (const char *)src, (const char *)se);		
@@ -19905,7 +19905,7 @@ size_t ob_varlen_encoding_gb18030_for_spacecmp(const struct ObCharsetInfo* cs,
   const uchar *se = src + src_len;		
   const uchar *sort_order;		
   *is_valid_unicode = 1;		
-  ob_charset_assert(cs != NULL);		
+  ob_int_charset_assert(cs != NULL);
   sort_order = cs->sort_order;		
   uint16_t space_cnt = 0xFFFF;		
   for (; *is_valid_unicode && dst < de && src < se && nweights; nweights--) {		
@@ -19970,11 +19970,11 @@ static uint unicode_to_gb18030_code(const ObCharsetInfo *cs, int unicode) {
   uint dst_len;
   int res;
 
-  ob_charset_assert(cs != NULL);
+  ob_int_charset_assert(cs != NULL);
 
   res = cs->cset->wc_mb(cs, unicode, dst, dst + 4);
 
-  ob_charset_assert(res == 1 || res == 2 || res == 4);
+  ob_int_charset_assert(res == 1 || res == 2 || res == 4);
 
   dst_len = (uint)res;
   return gb18030_chs_to_code(dst, dst_len);
@@ -19993,7 +19993,7 @@ static size_t get_code_and_length(const ObCharsetInfo *cs, const char *s,
 
   if ((len = ob_ismbchar_gb18030(cs, s, e)) == 0) return 0;
 
-  ob_charset_assert(len == 2 || len == 4);
+  ob_int_charset_assert(len == 2 || len == 4);
   *code = gb18030_chs_to_code((const uchar *)s, len);
   return len;
 }
@@ -20001,10 +20001,10 @@ static size_t get_code_and_length(const ObCharsetInfo *cs, const char *s,
 template <GET_CHS_WEIGHT_FUNC GET_CHS_WEIGHT, CASESENSITIVITY CASESENSITIVE>
 static uint get_weight_for_gb18030_chs(const ObCharsetInfo *cs, const char *s,
                                        size_t s_len) {
-  ob_charset_assert(s_len == 1 || s_len == 2 || s_len == 4);
+  ob_int_charset_assert(s_len == 1 || s_len == 2 || s_len == 4);
 
   if (s_len == 1) {
-    ob_charset_assert(is_mb_1(*s));
+    ob_int_charset_assert(is_mb_1(*s));
     return cs->sort_order[(uchar)*s];
   }
 
@@ -20392,44 +20392,44 @@ static uint gb18030_2_idx(const uchar *s)
 
 static uint gb18030_2022_4_idx(const uchar *s)
 {
-  ob_charset_assert(is_mb_even_4(s[1]));
-  ob_charset_assert(is_mb_odd(s[2]) && is_mb_even_4(s[3]));
+  ob_int_charset_assert(is_mb_even_4(s[1]));
+  ob_int_charset_assert(is_mb_odd(s[2]) && is_mb_even_4(s[3]));
   uint idx = gb18030_4_chs_to_diff(s);
   if (idx < 0x334) {
     /* [GB+81308130, GB+8130D330) */
     return idx;
   } else if (idx <= 0x1D20) {
     /* [GB+8130D330, GB+8135F436] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (idx < 0x2403) {
     /* (GB+8135F436, GB+8137A839) */
     return idx - 6637;
   } else if (idx <= 0x2C40) {
     /* [GB+8137A839, GB+8138FD38] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (idx < 0x4A63 + GB_2022_CNT_PART_1) {
     /* (GB+8138FD38, GB+82359135) */
     return idx - 6637 - 2110;
   } else if (idx <= 0x82BC) {
     /* [GB+82359135, GB+8336C738] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (idx < 0x830E) {
     /* (GB+8336C738, GB+8336D030) */
     return idx - 6637 - 2110 + GB_2022_CNT_PART_1 - 14426;
   } else if (idx <= 0x93D4) {
     /* [GB+8336D030, GB+84308534] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (idx < 0x94BE) {
     /* (GB+84308534, GB+84309C38) */
     return idx - 6637 - 2110 + GB_2022_CNT_PART_1 - 14426 - 4295;
   } else if (idx <= 0x98C3 - GB_2022_CNT_PART_2) {
     /* [GB+84309C38, GB+84318235] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (idx <= 0x99fb) {
     /* (GB+84318235, GB+8431A439] */
     return idx - 6637 - 2110 + GB_2022_CNT_PART_1 - 14426 - 4295 - 1030 + GB_2022_CNT_PART_2;
   } else {
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   }
 
   return OB_CS_ILUNI;
@@ -20441,19 +20441,19 @@ static uint unicode_2022_idx(uint wc)
     /* [0x80, 0x9FBC) */
     return wc - 0x80;
     /* [0x9FBC, 0xE000) */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (wc < 0xE865) {
     /* [0xE000, 0xE865) */
     return wc - 0xE000;
   } else if (wc <= 0xF92B) {
     /* [0xE865, 0xF92B] */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   } else if (wc <= 0XFFFF) {
     /* (0xF92B, 0xFFFF] */
     return wc - 0xE000 - 4295;
   } else {
     /* Other */
-    ob_charset_assert(0);
+    ob_int_charset_assert(0);
   }
   return OB_CS_ILUNI;
 }
@@ -20468,13 +20468,13 @@ static void swap_code_for_gb18030_2022(const char *char_GB_2, const char *char_G
   /* set 2-byte GB18030-2022 tab */
   {
     uint idx = gb18030_2_idx(GB_2);
-    ob_charset_assert(tab_gb18030_2022_2_uni[idx] == OLD_UNI_2);
+    ob_void_charset_assert(tab_gb18030_2022_2_uni[idx] == OLD_UNI_2);
     tab_gb18030_2022_2_uni[idx] = OLD_UNI_4;
   }
   /* set 4-byte GB18030-2022 tab */
   {
     uint idx = gb18030_2022_4_idx(GB_4);
-    ob_charset_assert(tab_gb18030_2022_4_uni[idx] == OLD_UNI_4);
+    ob_void_charset_assert(tab_gb18030_2022_4_uni[idx] == OLD_UNI_4);
     tab_gb18030_2022_4_uni[idx] = OLD_UNI_2;
   }
 
@@ -20485,7 +20485,7 @@ static void swap_code_for_gb18030_2022(const char *char_GB_2, const char *char_G
     uint16 *tab_uni_gb18030_2022 = in_tab_p1 ? tab_uni_gb18030_2022_p1 : tab_uni_gb18030_2022_p2;
     uchar s[4];
     diff_to_gb18030_4(s, 4, in_tab_p1 ? tab_uni_gb18030_2022_p1[idx] : (tab_uni_gb18030_2022_p2[idx] + UNI2_TO_GB4_DIFF));
-    ob_charset_assert(gb18030_chs_to_code(GB_4, 4) == gb18030_chs_to_code(s, 4));
+    ob_void_charset_assert(gb18030_chs_to_code(GB_4, 4) == gb18030_chs_to_code(s, 4));
     tab_uni_gb18030_2022[idx] = (uint16)gb18030_chs_to_code(GB_2, 2);
   }
   /* set 4-byte UNICODE tab */
@@ -20494,9 +20494,9 @@ static void swap_code_for_gb18030_2022(const char *char_GB_2, const char *char_G
     uint idx = unicode_2022_idx(OLD_UNI_2);
     uint gb_code = gb18030_chs_to_code(GB_4, 4);
     uint16 *tab_uni_gb18030_2022 = in_tab_p1 ? tab_uni_gb18030_2022_p1 : tab_uni_gb18030_2022_p2;
-    ob_charset_assert(gb18030_chs_to_code(GB_2, 2) == tab_uni_gb18030_2022[idx]);
+    ob_void_charset_assert(gb18030_chs_to_code(GB_2, 2) == tab_uni_gb18030_2022[idx]);
     tab_uni_gb18030_2022[idx] = static_cast<uint16>(in_tab_p1 ? gb18030_4_code_to_diff(gb_code) : gb18030_4_code_to_diff(gb_code) - UNI2_TO_GB4_DIFF);
-    ob_charset_assert((uint)((tab_uni_gb18030_2022[idx] >> 8) & 0xFF) < MIN_MB_ODD_BYTE);
+    ob_void_charset_assert((uint)((tab_uni_gb18030_2022[idx] >> 8) & 0xFF) < MIN_MB_ODD_BYTE);
   }
 }
 
