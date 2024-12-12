@@ -89,7 +89,7 @@ int ObRpcTableLoginRequest::calc_partition_id(ObArenaAllocator &allocator,
 {
   UNUSEDx(allocator, ob_rpc_req, part_info, partition_id);
   LOG_WDIAG("try to calculate partition id of login request", K(lbt()));
-  return OB_SUCCESS;
+  return OB_NOT_SUPPORTED;
 }
 
 int ObRpcTableLoginRequest::encode(char *buf, int64_t &buf_len, int64_t &pos)
@@ -906,20 +906,16 @@ int ObRpcTableDirectLoadRequest::calc_partition_id(ObArenaAllocator &allocator,
   return OB_SUCCESS;
 }
 
-ObRpcTableLSOperationRequest::ObRpcTableLSOperationRequest() : ls_request_(), tablet_id_index_map_(),
-                                   ls_id_tablet_id_map_() {
-  tablet_id_index_map_.create(common::OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
-                              ObModIds::OB_HASH_ALIAS_TABLE_MAP);
-  ls_id_tablet_id_map_.create(common::OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM,
-                              ObModIds::OB_HASH_ALIAS_TABLE_MAP);
+ObRpcTableLSOperationRequest::ObRpcTableLSOperationRequest()
+    : ls_request_(), tablet_id_index_map_(), ls_id_tablet_id_map_(), first_partition_id_(ObTabletID::INVALID_TABLET_ID)
+{
+  tablet_id_index_map_.create(common::OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM, ObModIds::OB_HASH_ALIAS_TABLE_MAP);
+  ls_id_tablet_id_map_.create(common::OB_ALIAS_TABLE_MAP_MAX_BUCKET_NUM, ObModIds::OB_HASH_ALIAS_TABLE_MAP);
 }
 
 int ObRpcTableLSOperationRequest::analyze_request(const char *buf, const int64_t buf_len, int64_t &pos)
 {
   int ret = OB_SUCCESS;
-  // set entity factory for deserialize
-  //ls_request_.ls_op_.set_entity_factory(&request_entity_factory_);
-  //ls_request_.ls_op_.set_deserialize_allocator(&allocator_);
   if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version_)) {
     ret = OB_NOT_SUPPORTED;
     LOG_WDIAG("not supported handle LSOps in ob-cluster which less than 4.0.0", K(ret), K(cluster_version_));
@@ -940,49 +936,56 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
                                                     int64_t &partition_id)
 {
   int ret = OB_SUCCESS;
-  int64_t tablet_id;
-  int64_t ls_id;
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
-
-  tablet_id_index_map_.reuse(); // clear before calc
-  ls_id_tablet_id_map_.reuse();
-  int offset = 0;
-  ObSEArray<ObTableTabletOp, SUB_REQ_COUNT> &tablet_ops = get_operation().get_tablet_ops();
-  if (tablet_ops.count() > 1) {
-    LOG_DEBUG("received multi tablet ops request, maybe retrying inner request", K(rpc_trace_id), K(&ob_rpc_req),
-              "is_inner_request_retrying", obkv_info.is_inner_req_retrying());
-  }
-  for (int64_t i = 0; i < tablet_ops.count() && OB_SUCC(ret); ++i) {
-    int64_t single_ops_count = tablet_ops.at(i).get_single_ops().count();
-    for (int64_t j = 0; j < single_ops_count && OB_SUCC(ret); j++) {
-      // partition id calculation depends on op_type
-      if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, offset, tablet_id, ls_id))) {
-        LOG_WDIAG("fail to calc tablet id for single operation", K(ret), K(offset), K(rpc_trace_id));
-      } else if (OB_FAIL(record_ls_tablet_index(ls_id, tablet_id, offset))) {
-        LOG_WDIAG("fail to record log stream id/ tablet_id/ index", K(ls_id), K(tablet_id), "tablet_index", i,
-                  "single_index", j, "offset", offset, K(ret));
-      } else {
-        offset++;
-        LOG_DEBUG("log stream operation partition calc succ log stream id/tablet_id/index", K(ls_id), K(tablet_id),
-                  "tablet_index", i, "single_index", j, "offset", offset, K(rpc_trace_id));
-      }
+  if (obkv_info.is_rpc_request_with_partition_id_) {
+    obkv_info.set_definitely_single(true);
+    partition_id = obkv_info.get_partition_id();
+  } else {
+    int64_t tablet_id;
+    int64_t ls_id;
+    tablet_id_index_map_.reuse(); // clear before calc
+    ls_id_tablet_id_map_.reuse();
+    int offset = 0;
+    ObSEArray<ObTableTabletOp, SUB_REQ_COUNT> &tablet_ops = get_operation().get_tablet_ops();
+    if (tablet_ops.count() > 1) {
+      LOG_DEBUG("received multi tablet ops request, maybe retrying inner request", K(rpc_trace_id), K(&ob_rpc_req),
+                "is_inner_request_retrying", obkv_info.is_inner_req_retrying());
     }
-    if (OB_SUCC(ret)) {
-      // we still use tablet id to determine whether this is a single partition req
-      // because if one ls_id contians multi tabelt_id, we have to rewrite whole req
-      if (tablet_id_index_map_.size() == 1) {
-        obkv_info.set_definitely_single(true);
-        obkv_info.set_ls_id(ls_id);
-        obkv_info.set_partition_id(tablet_id);
-        partition_id = tablet_id;
-      } else if (tablet_id_index_map_.size() > 1) {
-        obkv_info.set_shard(true);
-        partition_id = common::OB_INVALID_INDEX;
-      } else {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("unexpected log stream partition id calculation result", K(ret), K(rpc_trace_id), "part_id_count",
-                  tablet_id_index_map_.size(), KP(this));
+    for (int64_t i = 0; i < tablet_ops.count() && OB_SUCC(ret); ++i) {
+      int64_t single_ops_count = tablet_ops.at(i).get_single_ops().count();
+      for (int64_t j = 0; j < single_ops_count && OB_SUCC(ret); j++) {
+        // partition id calculation depends on op_type
+        if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, offset, tablet_id, ls_id))) {
+          LOG_WDIAG("fail to calc tablet id for single operation", K(ret), K(offset), K(rpc_trace_id));
+        } else if (OB_FAIL(record_ls_tablet_index(ls_id, tablet_id, offset))) {
+          LOG_WDIAG("fail to record log stream id/ tablet_id/ index", K(ls_id), K(tablet_id), "tablet_index", i,
+                    "single_index", j, "offset", offset, K(ret));
+        } else {
+          if (OB_UNLIKELY(i == 0 && j == 0)) {
+            set_partition_id(tablet_id);
+          }
+          offset++;
+          LOG_DEBUG("log stream operation partition calc succ log stream id/tablet_id/index", K(ls_id), K(tablet_id),
+                    "tablet_index", i, "single_index", j, "offset", offset, K(rpc_trace_id));
+        }
+      }
+      if (OB_SUCC(ret)) {
+        // we still use tablet id to determine whether this is a single partition req
+        // because if one ls_id contians multi tabelt_id, we have to rewrite whole req
+        if (tablet_id_index_map_.size() == 1) {
+          obkv_info.set_definitely_single(true);
+          obkv_info.set_ls_id(ls_id);
+          obkv_info.set_partition_id(tablet_id);
+          partition_id = tablet_id;
+        } else if (tablet_id_index_map_.size() > 1) {
+          obkv_info.set_shard(true);
+          partition_id = common::OB_INVALID_INDEX;
+        } else {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("unexpected log stream partition id calculation result", K(ret), K(rpc_trace_id), "part_id_count",
+                    tablet_id_index_map_.size(), KP(this));
+        }
       }
     }
   }
@@ -993,9 +996,9 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
   return ret;
 }
 
-int ObRpcTableLSOperationRequest::record_ls_tablet_index(const int ls_id,
-                                                         const int tablet_id,
-                                                         const int index)
+int ObRpcTableLSOperationRequest::record_ls_tablet_index(int64_t ls_id,
+                                                         int64_t tablet_id,
+                                                         int64_t index)
 {
   int ret = OB_SUCCESS;
   ObSEArray<int64_t, 4> *p_tablet_index_batch = const_cast<ObSEArray<int64_t, 4> *>(tablet_id_index_map_.get(tablet_id));

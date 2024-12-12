@@ -29,6 +29,8 @@
 #include "obkv/table/ob_table_rpc_request.h"
 #include "obkv/table/ob_table_rpc_response.h"
 #include "stat/ob_rpc_req_stats.h"
+#include "obkv/redis/ob_redis_rpc_request.h"
+#include "obkv/redis/ob_redis_rpc_response.h"
 
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::optimizer;
@@ -81,7 +83,7 @@ ObRpcReq::ObRpcReq() :
                rpc_response_(NULL), rpc_request_len_(0), rpc_response_len_(0), 
                client_net_timeout_us_(0), server_net_timeout_us_(0),
                root_rpc_req_(NULL), sub_rpc_req_array_(NULL), sub_rpc_req_array_size_(0),
-               current_sub_rpc_req_count_(0), obkv_info_(), config_info_(), is_sub_req_inited_(false)
+               current_sub_rpc_req_count_(0), obkv_info_(), config_info_(), is_sub_req_inited_(false), request_info_(NULL)
 {
   static bool scatter_inited = false;
 
@@ -135,6 +137,7 @@ int ObRpcReq::init(obkv::ObProxyRpcType rpc_type, ObRpcRequestSM *sm, ObRpcClien
   } else {
     obkv_info_.client_info_.set_addr(rpc_net_vc->get_remote_addr());
   }
+  obkv_info_.client_info_.set_obproxy_addr(rpc_net_vc->get_local_addr());
 
   obkv_info_.set_rpc_trace_id(trace_id2, trace_id1);
 
@@ -286,6 +289,7 @@ void ObRpcReq::destroy()
     free_inner_request_allocator(); // free inner request allocator
     free_response_inner_buf();
     free_sub_rpc_req_array();
+    free_rpc_redis_info();
     obkv_info_.reset();
 
     magic_ = RPC_REQ_SM_MAGIC_DEAD;
@@ -316,7 +320,7 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
           set_cnet_state(params.cnet_state_);
         } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
           set_snet_state(params.snet_state_);
-        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
+        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_REQUEST_SM) {
           set_sm_state(params.sm_state_);
         } else {
           // error
@@ -334,7 +338,7 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
           set_cnet_state(params.cnet_state_);
         } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
           set_snet_state(params.snet_state_);
-        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_SERVER_NET) {
+        } else if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_REQUEST_SM) {
           set_sm_state(params.sm_state_);
         } else {
           // error
@@ -483,6 +487,10 @@ int ObRpcReq::alloc_rpc_response()
       }
       case obrpc::OB_TABLE_API_LS_EXECUTE : {
         rpc_response_ = new (buf) ObRpcTableLSOperationResponse;
+        break;
+      }
+      case obrpc::OB_REDIS_EXECUTE : {
+        rpc_response_ = new (buf) ObRpcRedisOperationResponse;
         break;
       }
       case obrpc::OB_GET_PARTITIONS: {
@@ -663,7 +671,7 @@ int ObRpcOBKVInfo::set_dummy_entry(ObTableEntry *dummy_entry)
 
   if (OB_ISNULL(dummy_entry) || OB_UNLIKELY(!dummy_entry->is_tenant_servers_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    PROXY_CS_LOG(WDIAG, "dummy_entry is not avail", KPC(dummy_entry), K(ret));
+    PROXY_LOG(WDIAG, "dummy_entry is not avail", KPC(dummy_entry), K(ret));
   } else {
     if (OB_NOT_NULL(dummy_entry_)) {
       dummy_entry_->dec_ref();

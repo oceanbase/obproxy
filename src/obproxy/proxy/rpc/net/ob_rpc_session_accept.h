@@ -34,6 +34,23 @@ union ObIpEndpoint;
 namespace proxy
 {
 
+// Value for OBKV  for rpc_service_mode. 1 << 0
+static const uint32_t PRC_SERVICE_OBKV_MODE = 1;
+
+// Value for OB-Redis for rpc_service_mod. 1 << 1
+static const uint32_t RPC_SERVICE_REDIS_MODE = 2;
+
+inline uint32_t get_count_bit_flag(uint32_t value)
+{
+  uint32_t count = 0;
+  while (value) {
+    value &= (value -1);
+    count++;
+  }
+
+  return count;
+}
+
 // The continuation mutex is NULL to allow parallel accepts. No
 // state is recorded by the handler and values are required to be set
 // during construction via the Options struct and never changed. So

@@ -146,6 +146,7 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_batch_request(proxy::ObRpcRe
             cont_index_++;
             param.partition_id_ = partition_id; //not have any used
             param.request_ = sub_rpc_req;
+            request_sm->set_execute_thread(NULL); //not set root ethread to root request, for scheduled error when cleanup
             LOG_DEBUG("handle_shard_rpc_obkv_batch_request ", K(sub_rpc_req), "table_id", sub_obkv_info.get_table_id(), "partition_id", sub_obkv_info.get_partition_id(), K_(rpc_trace_id));
             parallel_param.push_back(param);
             rpc_reqs.push_back(sub_rpc_req);
@@ -246,6 +247,7 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_ls_request(
           cont_index_++;
           param.partition_id_ = tablet_id; //not have any used
           param.request_ = sub_rpc_req;
+          request_sm->set_execute_thread(NULL); //not set root ethread to root request, for scheduled error when cleanup
           LOG_DEBUG("handle_shard_rpc_obkv_ls_request ", K(*sub_ls_req), K(sub_rpc_req), "table_id", sub_obkv_info.get_table_id(),
                     "partition_id", sub_obkv_info.get_partition_id(), K_(rpc_trace_id));
           parallel_param.push_back(param);
@@ -335,6 +337,7 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_query_request(
           executor::ObProxyRpcParallelParam param;
           param.partition_id_ = partition_id;
           param.request_ = sub_rpc_req;
+          request_sm->set_execute_thread(NULL); //not set root ethread to root request, for scheduled error when cleanup
 
           LOG_DEBUG("sub rpc_req init done", KPC(rpc_req), KPC(sub_rpc_req), K_(rpc_trace_id));
           cont_index_++;
@@ -405,6 +408,11 @@ int ObProxyRpcReqTableScanOp::execute_rpc_request()
       if (OB_NOT_NULL(parallel_param_.at(i).request_)) {
         LOG_DEBUG("init sub req", "req", parallel_param_.at(i).request_, K_(rpc_trace_id));
         parallel_param_.at(i).request_->set_sub_req_inited(true);
+        /* forbidden that sub request and request_sm cleanup before the ObProxyRpcReqParallelExecuteCont
+         * scheduled in queue but not called, because the snet will not be rewrite when root request cleanup
+         * cnet_state / sm_state will be reset when cleanup sub request by root request. So just use snet_state
+         * to forbiden that, and will be canceled when scheduled in ObProxyRpcReqParallelExecuteCont. */
+        parallel_param_.at(i).request_->set_snet_state(proxy::ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL);
       }
       LOG_DEBUG("sub_rpc before send", K(i), "rpc request", parallel_param_.at(i).request_,
                 "info", parallel_param_.at(i).request_->get_rpc_request()->get_packet_meta(), K_(timeout_ms), K_(rpc_trace_id));

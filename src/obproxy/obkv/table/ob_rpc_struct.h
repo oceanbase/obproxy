@@ -14,10 +14,12 @@
 #define OBPROXY_OBRPC_STRUCT_H
 
 #include "lib/ob_define.h"
+#include "lib/utility/ob_ls_id.h"
 #include "ob_proxy_rpc_serialize_utils.h"
 #include "proxy/route/obproxy_part_info.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "rpc/obrpc/ob_rpc_result_code.h"
+#include "proxy/rpc/redis/ob_rpc_redis_info.h"
 #include "common/ob_common_types.h"
 
 namespace oceanbase
@@ -27,6 +29,7 @@ namespace obproxy
 namespace proxy
 {
 class ObRpcReq;
+class ObRpcRedisCommandMeta;
 }
 namespace event
 {
@@ -37,9 +40,13 @@ namespace obkv
 enum class ObTableEntityType;
 
 using namespace oceanbase::obrpc;
+using namespace oceanbase::obproxy::proxy;
 
 static const int64_t SUB_REQ_COUNT = 2;
 static const int64_t ROWKEY_COLUMNS_COUNT = 2;
+
+typedef common::ObIArray<common::ObObj> ROWKEY_VALUE_PARAM;
+typedef common::ObIArray<common::ObString> ROWKEY_COLUMN_PARAM;
 
 typedef common::ObSEArray<common::ObObj, ROWKEY_COLUMNS_COUNT> ROWKEY_VALUE;
 typedef common::ObSEArray<common::ObString, ROWKEY_COLUMNS_COUNT> ROWKEY_COLUMN;
@@ -66,7 +73,8 @@ public:
 enum ObProxyRpcType {
   OBPROXY_RPC_OBRPC = 0,
   OBPROXY_RPC_HBASE,
-  OBPROXY_RPC_UNKOWN
+  OBPROXY_RPC_REDIS,
+  OBPROXY_RPC_UNKOWN = 100
 };
 
 class ObRpcEzHeader
@@ -74,6 +82,7 @@ class ObRpcEzHeader
 public:
   static const uint8_t API_VERSION = 1;
   static const uint8_t MAGIC_HEADER_FLAG[4];
+  static const char    REDIS_AUTH_FLAG[9];
   static const uint8_t EZ_HEADER_LEN = 16;
   static const int64_t RPC_PKT_CHANNEL_ID_POS = 8;
   static const int64_t RPC_PKT_CHANNEL_ID_LEN = 4;
@@ -107,6 +116,43 @@ public:
 
   NEED_SERIALIZE_AND_DESERIALIZE;
 };
+
+// magic number
+const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
+const char ObRpcEzHeader::REDIS_AUTH_FLAG[9] = {'$', '4', '\r', '\n', 'A', 'U', 'T', 'H', 0}; // $4\r\nAUTH
+
+ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
+{
+  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+
+  if (OB_ISNULL(buffer)) {
+    // do nothing
+  } else if (buffer_len >= sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG)
+    && 0x01 == (uint8_t)buffer[0]
+    && 0 == memcmp(buffer, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+    rpc_type = OBPROXY_RPC_OBRPC;
+  } else if (buffer_len >= 14
+    && '*' == buffer[0] && OB_NOT_NULL(strcasestr(buffer, (const char*)ObRpcEzHeader::REDIS_AUTH_FLAG))) {
+    rpc_type = OBPROXY_RPC_REDIS;
+  } else {
+    // do nothing
+  }
+
+  return rpc_type;
+}
+
+ObProxyRpcType ObRpcEzHeader::get_rpc_magic_type()
+{
+  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+
+  if (0 == memcmp(magic_header_flag_, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+    rpc_type = OBPROXY_RPC_OBRPC;
+  } else {
+    // do nothing
+  }
+
+  return rpc_type;
+}
 
 class ObRpcPacketMeta
 {
@@ -152,6 +198,7 @@ public:
   NEED_SERIALIZE_AND_DESERIALIZE;
 };
 
+// todo : abstract interface of rpc request and redis request
 class ObRpcRequest
 {
 public:
@@ -168,6 +215,7 @@ public:
   const ObRpcRequest &operator =(const ObRpcRequest &other);
 
   const ObRpcPacketMeta &get_packet_meta() const {return rpc_packet_meta_;}
+  ObRpcPacketMeta &get_packet_meta() {return rpc_packet_meta_;}
   int64_t get_rpc_timeout() const { return rpc_packet_meta_.rpc_header_.timeout_ ;}
 
   ObRpcPacketMeta &get_packet_meta_no_const() {return rpc_packet_meta_;}
@@ -207,13 +255,16 @@ public:
 
   virtual uint64_t get_table_id() const { return 0; }
   virtual uint64_t get_partition_id() const { return 0; }
+  virtual int64_t get_ls_id() const { return ObLSID::INVALID_LS_ID; } // for lsop
   virtual void set_table_id(uint64_t table_id) {
     UNUSED(table_id);
   }
   virtual void set_partition_id(uint64_t part_id) {
     UNUSED(part_id);
   }
-
+  virtual void set_ls_id(int64_t ls_id) {
+    UNUSED(ls_id);
+  }
   virtual common::ObString get_credential() const { return common::ObString(); };
   virtual common::ObString get_table_name() const { return common::ObString(); };
   virtual bool is_hbase_request() const { return false; }
@@ -307,6 +358,8 @@ public:
   ObArenaAllocator allocator_;
   ObRpcPacketCode pcode_;
 
+  // table request info
+  // todo : try to remove these fields
   ObIArray<ObString> *all_rowkey_names_;
   ObString index_name_;
   int32_t batch_size_; 
@@ -379,7 +432,62 @@ private:
   ObRpcResultCodeSimplified rpc_result_code_;
 };
 
-} // end of namespace proxy
+class ObRpcRedisRequest
+{
+public:
+  ObRpcRedisRequest() : redis_args_(NULL), meta_info_(NULL), partition_ids_(), rowkey_(), redis_db_(0) {}
+  virtual ~ObRpcRedisRequest() {};
+  virtual int decode(ObSEArray<ObString, COMMON_REDIS_ARGS_COUNT> *redis_args, uint64_t redis_db) = 0;
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) const = 0;
+  virtual int64_t get_encode_size() const = 0;
+  virtual int calc_partition_id(common::ObArenaAllocator &allocator,
+                                proxy::ObRpcReq &ob_rpc_req,
+                                proxy::ObProxyPartInfo &part_info,
+                                int64_t &partition_id);
+
+  void set_redis_args(ObSEArray<ObString, COMMON_REDIS_ARGS_COUNT> *redis_arg) { redis_args_ = redis_arg; }
+  void set_redis_db(uint64_t db) { redis_db_ = db; }
+  ObSEArray<ObString, COMMON_REDIS_ARGS_COUNT> *get_redis_args() { return redis_args_; };
+  const uint64_t get_redis_db() const { return redis_db_; }
+  const ObRpcRedisCommandMeta* get_redis_command_meta() const { return meta_info_; }
+  const ROWKEY_VALUE_PARAM &get_rowkey_value() { return rowkey_; }
+  int decode_rowkey_value();
+  //int get_redis_meta_table_name(ObString &table_name);
+  int get_redis_cmd_type(RedisCommandType &type);
+  VIRTUAL_TO_STRING_KV(KPC_(redis_args), K_(redis_db));
+public:
+  ObSEArray<ObString, COMMON_REDIS_ARGS_COUNT> *redis_args_;
+  ObRpcRedisCommandMeta *meta_info_;
+  ObSEArray<int64_t, ROWKEY_COLUMNS_COUNT> partition_ids_;
+  ROWKEY_VALUE rowkey_;
+  uint64_t redis_db_;
+};
+
+class ObRpcRedisResponse
+{
+public:
+  ObRpcRedisResponse() : redis_result_buf_(NULL), redis_result_len_(0) {}
+  virtual ~ObRpcRedisResponse() {}
+
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos);
+  virtual int64_t get_encode_size() const { return redis_result_len_; }
+  virtual int analyze_response(const char *buf, const int64_t len, int64_t &pos) = 0;
+  void set_redis_result(char *redis_result_buf, int64_t redis_result_len)
+  {
+    redis_result_buf_ = redis_result_buf;
+    redis_result_len_ = redis_result_len;
+  }
+  char *get_redis_result_ptr() { return redis_result_buf_; }
+  int64_t get_redis_result_len() { return redis_result_len_; }
+
+  TO_STRING_KV(KP_(redis_result_buf), K_(redis_result_len));
+
+public:
+  char *redis_result_buf_;
+  int64_t redis_result_len_;
+};
+
+} // end of namespace obkv
 } // end of namespace obproxy
 } // end of namespace oceanbase
 

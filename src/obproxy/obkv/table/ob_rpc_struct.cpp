@@ -18,6 +18,7 @@
 #include "share/part/ob_part_mgr_util.h"
 #include "lib/hash/ob_hashset.h"
 #include "proxy/route/obproxy_expr_calculator.h"
+#include "proxy/rpc/redis/ob_rpc_redis_command_factory.h"
 
 using namespace oceanbase::obproxy::obkv;
 using namespace oceanbase::obproxy::proxy;
@@ -34,7 +35,7 @@ namespace obproxy
 namespace obkv
 {
   // magic number
-const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
+// const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
 
 void inline shrink_copy_char_buf(char *dst, char *src, int64_t n)
 {
@@ -128,34 +129,34 @@ DEFINE_GET_SERIALIZE_SIZE(ObRpcPacketMeta)
   return len;
 }
 
-ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
-{
-  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+// ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
+// {
+//   ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
 
-  if (OB_ISNULL(buffer)) {
-    // do nothing
-  } else if (buffer_len >= sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG)
-    && 0 == memcmp(buffer, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
-    rpc_type = OBPROXY_RPC_OBRPC;
-  } else {
-    // do nothing
-  }
+//   if (OB_ISNULL(buffer)) {
+//     // do nothing
+//   } else if (buffer_len >= sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG)
+//     && 0 == memcmp(buffer, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+//     rpc_type = OBPROXY_RPC_OBRPC;
+//   } else {
+//     // do nothing
+//   }
 
-  return rpc_type;
-}
+//   return rpc_type;
+// }
 
-ObProxyRpcType ObRpcEzHeader::get_rpc_magic_type()
-{
-  ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
+// ObProxyRpcType ObRpcEzHeader::get_rpc_magic_type()
+// {
+//   ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
 
-  if (0 == memcmp(magic_header_flag_, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
-    rpc_type = OBPROXY_RPC_OBRPC;
-  } else {
-    // do nothing
-  }
+//   if (0 == memcmp(magic_header_flag_, ObRpcEzHeader::MAGIC_HEADER_FLAG, sizeof(ObRpcEzHeader::MAGIC_HEADER_FLAG))) {
+//     rpc_type = OBPROXY_RPC_OBRPC;
+//   } else {
+//     // do nothing
+//   }
 
-  return rpc_type;
-}
+//   return rpc_type;
+// }
 
 const ObRpcRequest &ObRpcRequest::operator =(const ObRpcRequest &other)
 {
@@ -366,7 +367,7 @@ int ObRpcRequest::init_rowkey_info(int64_t sub_req_count)
   int ret = OB_SUCCESS;
   if (request_info_inited_) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("rpc request already inited", K(ret));
+    LOG_WDIAG("rpc request already inited", K(sub_req_count), K(ret));
   } else if (sub_req_count == 0) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("empty request to init", K(sub_req_count), K(ret));
@@ -506,7 +507,7 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
       if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids,
                                                                    ls_ids))) {
         LOG_WDIAG("fail to calc partition id for table", K(ret));
-      } else if (partition_ids.count() != 1 || ls_ids.count() != 1) {
+      } else if (partition_ids.count() != 1 || ls_ids.count() > 1) {
         // client_info.
         // TODO RPC need update it is a shard request
         ret = OB_ERR_UNEXPECTED;
@@ -795,6 +796,63 @@ int64_t ObRpcResponse::get_encode_size() const
   return len;
 }
 
-} // end of namespace proxy
-} // end of namespace obproxy
+int ObRpcRedisRequest::decode_rowkey_value()
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(meta_info_) || OB_ISNULL(meta_info_->get_rowkey_iterator())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected meta info", K(ret), KPC(meta_info_));
+  } else {
+    RedisRowkeyIterator iter = meta_info_->get_rowkey_iterator();
+    if OB_FAIL(iter(redis_args_, rowkey_)) {
+      LOG_WDIAG("fail to iterate rowkuy", K(ret));
+    }
+  }
+  return ret;
+}
+
+/*int ObRpcRedisRequest::get_redis_meta_table_name(ObStirng &table_name)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(meta_info_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected redis meta info");
+  } else {
+    table_name = meta_info_.get_table_name();
+  }
+}*/
+
+int ObRpcRedisRequest::get_redis_cmd_type(RedisCommandType &type)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(meta_info_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected meta info", K(ret), KPC(meta_info_));
+  } else {
+    type = meta_info_->get_redis_cmd_type();
+  }
+  return type;
+}
+int ObRpcRedisRequest::calc_partition_id(ObArenaAllocator &allocator,
+                                         ObRpcReq &ob_rpc_req,
+                                         ObProxyPartInfo &part_info,
+                                         int64_t &partition_id)
+{
+  int ret = OB_ERR_UNEXPECTED;
+  UNUSEDx(allocator, ob_rpc_req, part_info, partition_id);
+  LOG_WDIAG("unexpected partition id calculation", KPC(this), K(ret), K(lbt()));
+  return ret;
+}
+
+int ObRpcRedisResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(serialization::encode_raw_buf(buf, buf_len, pos, redis_result_buf_, redis_result_len_))) {
+    LOG_WDIAG("fail to encode redis common response", K(ret));
+  }
+  return ret;
+}
+
+} // namespace obkv
+} // namespace obproxy
 } // end of namespace oceanbase

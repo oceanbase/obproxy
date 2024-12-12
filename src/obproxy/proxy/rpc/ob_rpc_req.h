@@ -71,6 +71,9 @@ class ObTableQueryAsyncEntry;
 class ObTableGroupEntry;
 class ObIndexEntry;
 class ObRpcReqCtx;
+class ObRpcRedisInfo;
+
+typedef common::ObSEArray<common::ObString, COMMON_REDIS_ARGS_COUNT> ARR_ARGS;
 
 enum ObRpcReqMagic
 {
@@ -128,6 +131,8 @@ struct ObConnectionAttributes
 
   uint32_t get_ipv4() { return net::ops_ip4_addr_host_order(addr_.sa_); }
   uint16_t get_port() { return net::ops_ip_port_host_order(addr_); }
+
+  uint16_t get_obproxy_port() {return net::ops_ip_port_host_order(obproxy_addr_);}
 
   net::ObIpEndpoint addr_;    // use function below to get/set ip and port
   net::ObIpEndpoint sql_addr_;    // sql service addr used to congestion info
@@ -246,7 +251,8 @@ public:
   TO_STRING_KV(K_(config_version), K_(proxy_route_policy), K_(enable_cloud_full_username), K_(rpc_support_key_partition_shard_request),
                K_(rpc_enable_force_srv_black_list), K_(rpc_enable_direct_expire_route_entry),
                K_(rpc_enable_reroute), K_(rpc_enable_congestion), K_(rpc_enable_global_index), K_(rpc_enable_retry_request_info_log),
-               K_(rpc_request_max_retries), K_(rpc_request_timeout), K_(rpc_request_timeout_delta), K_(rpc_request_retry_waiting_time));
+               K_(rpc_request_max_retries), K_(rpc_request_timeout), K_(rpc_request_timeout_delta), K_(rpc_request_retry_waiting_time),
+               K_(rpc_redis_default_database_name), K_(rpc_redis_default_user_name));
 
 public:
   uint64_t config_version_;
@@ -267,6 +273,8 @@ public:
   int64_t rpc_request_timeout_;
   int64_t rpc_request_timeout_delta_;
   int64_t rpc_request_retry_waiting_time_;
+  char rpc_redis_default_database_name_[OB_MAX_DATABASE_NAME_LENGTH];
+  char rpc_redis_default_user_name_[OB_PROXY_FULL_USER_NAME_MAX_LEN];
 };
 
 
@@ -306,8 +314,9 @@ public:
   };
 public:
   ObRpcOBKVInfo() :request_id_(0), server_request_id_(0), is_first_direct_load_request_(false), is_inner_request_(false),
+                   is_internal_rpc_request_(false), is_internal_rpc_request_has_done_(false),
                    cluster_name_(), tenant_name_(), user_name_(), table_name_(), database_name_(), full_username_(),
-                   cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), client_info_(),
+                   cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), ls_id_(common::ObLSID::INVALID_LS_ID), client_info_(),
                    server_info_(), route_policy_(1), cs_read_consistency_(0), is_proxy_route_policy_set_(false),
                    is_read_consistency_set_(false), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY), pcode_(obrpc::OB_INVALID_RPC_CODE),
                    flags_(0), rpc_origin_error_code_(0), rpc_request_retry_last_begin_(0), rpc_request_retry_times_(0),
@@ -459,6 +468,7 @@ public:
   bool is_first_direct_load_request_; //direct load request need
   bool is_inner_request_;             // 内部拆分的子请求
   bool is_internal_rpc_request_;       // obproxy收到的rpc request，该flag表示obproxy内部执行完返回
+  bool is_internal_rpc_request_has_done_; //
   bool is_rpc_request_with_partition_id_;
 
   common::ObString cluster_name_;
@@ -552,6 +562,7 @@ public:
     RPC_REQ_SERVER_RESPONSE_READING,
     RPC_REQ_SERVER_RESPONSE_READED,
     RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING,
+    RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL,
     RPC_REQ_SERVER_DONE,
     RPC_REQ_SERVER_SHARDING_REQUEST_DONE,
     RPC_REQ_SERVER_DESTROY,
@@ -700,6 +711,7 @@ public:
   void  set_server_channel_id(uint32_t channel_id) { s_channel_id_ = channel_id; }
   void  set_inner_request(bool flag) { obkv_info_.is_inner_request_ = flag; }
   void  set_internal_rpc_request(bool flag) { obkv_info_.is_internal_rpc_request_ = flag; }
+  void  set_internal_rpc_request_has_done(bool flag) { obkv_info_.is_internal_rpc_request_has_done_ = flag; }
   void  set_rpc_request_with_partition_id(bool flag) { obkv_info_.is_rpc_request_with_partition_id_ = flag; }
   void  set_use_request_inner_buf(bool flag) { is_use_request_inner_buf_ = flag; }
   void  set_use_response_inner_buf(bool flag) { is_use_response_inner_buf_ = flag; }
@@ -722,6 +734,13 @@ public:
   uint32_t get_server_channel_id() { return s_channel_id_; }
   int64_t get_server_entry_send_retry_times() { return server_entry_send_retry_times_; }
 
+  ObRpcRedisInfo *get_redis_info() const {
+    return rpc_type_ == obkv::ObProxyRpcType::OBPROXY_RPC_REDIS ? reinterpret_cast<ObRpcRedisInfo *>(request_info_) : NULL;
+  }
+
+  int init_rpc_redis_info();
+  int free_rpc_redis_info();
+
   int alloc_request_buf(uint64_t len);
   int alloc_request_inner_buf(uint64_t len);
   int alloc_response_buf(uint64_t len);
@@ -738,6 +757,7 @@ public:
   bool canceled() const { return is_canceled_; }
   // obproxy侧执行的请求、不用发到observer
   bool is_internal_rpc_request() const { return obkv_info_.is_internal_rpc_request_; }
+  bool is_internal_rpc_request_has_done() const { return obkv_info_.is_internal_rpc_request_has_done_; }
   bool is_rpc_request_with_partition_id() const { return obkv_info_.is_rpc_request_with_partition_id_; }
   // 内部子请求
   bool is_inner_request() const { return obkv_info_.is_inner_request_; }
@@ -875,6 +895,8 @@ private:
   ObRpcOBKVInfo obkv_info_;
   ObRpcRequestConfigInfo config_info_;
   bool is_sub_req_inited_;
+
+  void *request_info_;
 
   DISALLOW_COPY_AND_ASSIGN(ObRpcReq);
 
@@ -1295,6 +1317,9 @@ inline common::ObString get_rpc_type_string(const obkv::ObProxyRpcType type)
   case obkv::OBPROXY_RPC_OBRPC:
     str = "OB_RPC";
     break;
+  case obkv::OBPROXY_RPC_REDIS:
+    str = "OB_REDIS";
+    break;
   case obkv::OBPROXY_RPC_HBASE:
     str = "OB_HBASE";
     break;
@@ -1303,6 +1328,77 @@ inline common::ObString get_rpc_type_string(const obkv::ObProxyRpcType type)
     break;
   }
   return common::ObString::make_string(str);
+}
+
+inline int ObRpcReq::init_rpc_redis_info()
+{
+
+  int ret = common::OB_SUCCESS;
+  int64_t len = sizeof(ObRpcRedisInfo);
+  ObRpcRedisInfo *redis_info = NULL;
+  ARR_ARGS *redis_arr_args = NULL;
+
+  if (rpc_type_ != obkv::OBPROXY_RPC_REDIS) {
+    rpc_type_ = obkv::OBPROXY_RPC_REDIS;
+  }
+
+  char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(sizeof(ObRpcRedisInfo)));
+  char *xbuf = reinterpret_cast<char *>(op_fixed_mem_alloc(sizeof(ARR_ARGS)));
+
+  if (OB_UNLIKELY(NULL == buf || NULL == xbuf)) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_LOG(EDIAG, "fail to alloc mem for rpc_redis_info", K(len), K(buf), K(xbuf), K(ret));
+  } else if (OB_ISNULL(redis_info = new (buf) ObRpcRedisInfo())) {
+    ret = common::OB_ERR_UNEXPECTED;
+    PROXY_LOG(EDIAG, "fail to init rpc_redis_info", K(len), K(ret), K(buf));
+  } else if (OB_FAIL(redis_info->alloc_request_buf(OB_RPC_REDIS_DEFAULT_BUF_SIZE))) {
+    PROXY_LOG(WDIAG, "fail to init rpc_redis_info request buf", K(len), K(ret), K(buf));
+  } else if (OB_ISNULL(redis_arr_args = new (xbuf) ARR_ARGS())) {
+    ret = common::OB_ERR_UNEXPECTED;
+    PROXY_LOG(EDIAG, "fail to init redis_arr_args", K(len), K(ret), K(xbuf));
+  } else {
+    redis_info->set_redis_args(redis_arr_args);
+    request_info_ = redis_info;
+    PROXY_LOG(DEBUG, "succ to init rpc_redis_info request buf", K(redis_info), K(ret), K(buf), K_(rpc_type));
+  }
+
+  if (OB_FAIL(ret)) {
+    if (OB_NOT_NULL(redis_info)) {
+      if (OB_NOT_NULL(redis_arr_args)) {
+        redis_arr_args->reset();
+        redis_info->set_redis_args(NULL);
+      }
+      redis_info->~ObRpcRedisInfo();
+      redis_info = NULL;
+    }
+    if (OB_NOT_NULL(buf)) {
+      op_fixed_mem_free(buf, sizeof(ObRpcRedisInfo));
+      buf = NULL;
+    }
+    if (OB_NOT_NULL(xbuf)) {
+      op_fixed_mem_free(xbuf, sizeof(ARR_ARGS));
+      xbuf = NULL;
+    }
+  }
+  return ret;
+}
+
+inline int ObRpcReq::free_rpc_redis_info()
+{
+  int ret = common::OB_SUCCESS;
+  ObRpcRedisInfo *redis_info = NULL;
+  ARR_ARGS *redis_args_arr = NULL;
+  if (OB_NOT_NULL(redis_info = get_redis_info())) {
+    if (OB_NOT_NULL(redis_args_arr = redis_info->get_redis_args())) {
+      redis_args_arr->reset();
+      op_fixed_mem_free(redis_args_arr, sizeof(ARR_ARGS));
+      redis_info->set_redis_args(NULL);
+    }
+    redis_info->~ObRpcRedisInfo();
+    op_fixed_mem_free(redis_info, sizeof(ObRpcRedisInfo));
+    request_info_ = NULL;
+  }
+  return ret;
 }
 }
 }

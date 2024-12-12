@@ -39,8 +39,6 @@ friend class ObRpcReq;
 friend class ObRpcOBKVInfo;
 friend class ObRpcRequestSM;
 public:
-  static const int SCHEMA_LENGTH = 100;
-public:
   enum ObRpcCtxState
   {
     RC_BORN = 0,
@@ -56,7 +54,7 @@ public:
 
   ObRpcReqCtx()
     : common::ObSharedRefCount(), rc_state_(RC_BORN), credential_(),
-      cluster_name_(), tenant_name_(), user_name_(), database_name_(), full_name_(),
+      cluster_name_(), tenant_name_(), user_name_(), database_name_(), full_name_(), rpc_password_str_(),
       is_clustername_from_default_(false), name_len_(0), name_buf_(NULL),
       last_access_time_ns_(0), lock_(), cluster_resource_(NULL), cache_cluster_resource_state_(CACHE_ENTRY_UPDATING),
       dummy_entry_(NULL), dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0), cache_dummy_entry_state_(CACHE_ENTRY_UPDATING),
@@ -72,12 +70,16 @@ public:
   void set_credential(const obkv::ObTableApiCredential &credential) { credential_ = credential; }
 
   int set_full_name(const ObString &full_name);
+  int set_rpc_password_str(const ObString &pwd);
   void set_clustername_from_default(bool flag) { is_clustername_from_default_ = flag; }
   bool is_clustername_from_default() const { return is_clustername_from_default_; }
 
   ObString get_tenant_name() const { return tenant_name_; }
   ObString get_cluster_name() const { return cluster_name_; }
   ObString get_user_name() const { return user_name_; }
+  // ObString get_database_name() const { return ObString(MAX_DATABASE_COMMENT_LENGTH, schema_name_buf_); }
+  ObString get_database_name() const { return ObString(strlen(schema_name_buf_), schema_name_buf_); }
+  ObString get_rpc_password_str() const { return rpc_password_str_; }
 
   int  get_analyze_name_buf(char *&buf_start, int64_t len);
   void assign_user_name(char *buf, int64_t length) { user_name_.assign_ptr(buf, length); }
@@ -151,12 +153,14 @@ private:
   common::ObString user_name_;
   common::ObString database_name_;
   common::ObString full_name_;
+  common::ObString rpc_password_str_;
 
   bool is_clustername_from_default_;
   int64_t name_len_;
   char *name_buf_;
   char full_name_buf_[OB_PROXY_FULL_USER_NAME_MAX_LEN];
-  char schema_name_buf_[SCHEMA_LENGTH];
+  char schema_name_buf_[OB_MAX_DATABASE_NAME_LENGTH];
+  char rpc_password_str_buf_[OB_MAX_PASSWORD_LENGTH]; //only used by redis
 
   int64_t last_access_time_ns_;
   //  下面的数据访问都需要获取lock, TODO：考虑是否多个lock

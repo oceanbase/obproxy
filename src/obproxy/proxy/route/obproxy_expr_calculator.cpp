@@ -854,7 +854,6 @@ int ObExprCalcTool::build_dtc_params(ObClientSessionInfo *session_info,
                                                          
 int ObProxyExprCalculator::calculate_partition_id_for_rpc(common::ObArenaAllocator &allocator,
                                                   ObRpcReq &ob_rpc_req,
-                                                  // ObRpcClientSessionInfo &client_info,
                                                   ObProxyPartInfo &part_info,
                                                   int64_t &partition_id)
 {
@@ -862,8 +861,10 @@ int ObProxyExprCalculator::calculate_partition_id_for_rpc(common::ObArenaAllocat
 
   switch (ob_rpc_req.get_rpc_type()) {
   case OBPROXY_RPC_OBRPC:
-    // ret = calculate_partition_id_for_obkv(allocator, client_request, client_info, part_info, partition_id);
     ret = calculate_partition_id_for_obkv(allocator, ob_rpc_req, part_info, partition_id);
+    break;
+  case OBPROXY_RPC_REDIS:
+    ret = calculate_partition_id_for_redis(allocator, ob_rpc_req, part_info, partition_id);
     break;
   case OBPROXY_RPC_HBASE:
   default:
@@ -872,6 +873,45 @@ int ObProxyExprCalculator::calculate_partition_id_for_rpc(common::ObArenaAllocat
     break;
   }
 
+  return ret;
+}
+
+int ObProxyExprCalculator::calculate_partition_id_for_redis(common::ObArenaAllocator &allocator,
+                                                            ObRpcReq &ob_rpc_req,
+                                                            ObProxyPartInfo &part_info,
+                                                            int64_t &partition_id)
+{
+  int ret = OB_SUCCESS;
+
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  ObRpcRedisRequest *redis_request = NULL;
+  ObRpcRedisInfo *redis_info = NULL;
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  int pcode = obkv_info.pcode_;
+  if (OB_ISNULL(redis_info = ob_rpc_req.get_redis_info()) || OB_ISNULL(redis_request = redis_info->get_redis_request())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("calculate_partition_id_for_redis get a invalid rpc_req", K(ret), K(ob_rpc_req), KP(redis_request), KP(redis_info), K(rpc_trace_id));
+  } else if (obkv_info.partition_id_ != common::OB_INVALID_INDEX) {
+    partition_id = obkv_info.partition_id_; // not need calc it again
+    LOG_DEBUG("calculate_partition_id_for_redis use partition id user set", K(partition_id), K(rpc_trace_id));
+  } else { // calc partition id by redis request
+    if (OB_FAIL(redis_request->calc_partition_id(allocator, ob_rpc_req, part_info, partition_id))) {
+      LOG_WDIAG("fail to calc_partition_id for redis_request", K(ret), K(rpc_trace_id), K(pcode), KP(redis_request));
+    } else {
+      LOG_DEBUG("redis partition id has done", K(ret), K(pcode), K(partition_id), "shard request", obkv_info.is_shard(),
+                K(rpc_trace_id));
+    }
+    #ifdef ERRSIM
+    if (OB_SUCC(ret) && OB_FAIL(OB_E(EventTable::EN_RPC_SET_SHARD) OB_SUCCESS)) {
+      ret = OB_SUCCESS;
+      obkv_info.set_definitely_single(false);
+      obkv_info.set_partition_id(common::OB_INVALID_INDEX);
+      obkv_info.set_ls_id(ObLSID::INVALID_LS_ID);
+      obkv_info.set_shard(true);
+      partition_id = common::OB_INVALID_INDEX;
+    }
+    #endif
+  }
   return ret;
 }
 
@@ -1020,6 +1060,73 @@ int ObRpcExprCalcTool::eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
   return ret;
 }
 
+int ObRpcExprCalcTool::calculate_partition_id_with_rowkey(common::ObArenaAllocator &allocator,
+                                                          ROWKEY_VALUE_PARAM &rowkey_value,
+                                                          ROWKEY_COLUMN_PARAM &column_names,
+                                                          ObProxyPartInfo &part_info,
+                                                          int64_t &partition_id,
+                                                          int64_t &ls_id)
+{
+  int ret = OB_SUCCESS;
+
+  opsql::ObExprResolverResult resolve_result;
+  ObRowkey rowkey;
+  if (rowkey_value.count() > 0) {
+    rowkey.assign(&rowkey_value.at(0), rowkey_value.count());
+  }
+  ObSEArray<int64_t, 1> partition_ids;
+  ObSEArray<int64_t, 1> ls_ids;
+  ObSEArray<int64_t, 1> rowkey_index; // empty array
+  ObSEArray<int64_t, 1> part_info_index; // empty array
+  obkv::ObTableEntityType entity_type = obkv::ObTableEntityType::ET_DYNAMIC;
+  LOG_DEBUG("redis to calculate_partition_id_with_rowkey ", K(rowkey), K(rowkey_value));
+  if (part_info.has_first_part()) {
+    ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].start_key_;
+    if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, column_names,
+                                                      rowkey_index, part_info_index))) {
+      LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
+    } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index, part_info_index, eval_rowkey, entity_type))) {
+      LOG_WDIAG("fail to call eval rowkey for first part", K(rowkey), K(ret));
+    } else {
+      // for range part, end key must to be set
+      resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].end_key_ = eval_rowkey;
+      resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].border_flag_.set_inclusive_start();
+      resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].border_flag_.set_inclusive_end();
+    }
+  }
+  if (OB_SUCC(ret) && part_info.has_sub_part()) {
+    ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].start_key_;
+    if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, column_names,
+                                                      rowkey_index, part_info_index))) {
+      LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
+    } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index, part_info_index, eval_rowkey, entity_type))) {
+      LOG_WDIAG("fail to call eval rowkey for first part", K(rowkey), K(ret));
+    } else {
+      // for range part, end key must to be set
+      resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].end_key_ = eval_rowkey;
+      resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].border_flag_.set_inclusive_start();
+      resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].border_flag_.set_inclusive_end();
+    }
+  }
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids,
+                                                                  ls_ids))) {
+      LOG_WDIAG("fail to calc partition id for table", K(ret));
+    } else if (partition_ids.count() != 1 || ls_ids.count() > 1) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("obkv single rowkey get part ids/ log stream ids is not one", K(partition_ids), K(ls_ids),
+                K(ret));
+    } else {
+      partition_id = partition_ids.at(0);
+      ls_id = ls_ids.at(0);
+    }
+  } else {
+    LOG_WDIAG("fail to calc partition id for table", K(ret));
+  }
+
+  return ret;
+}
+
 // eval part key from rowkey, stored in eval_rowkey
 int ObRpcExprCalcTool::eval_rowkey_values(ObProxyPartInfo &proxy_part_info,
                                           const ObRowkey &rowkey,
@@ -1061,7 +1168,10 @@ int ObRpcExprCalcTool::eval_rowkey_values(ObProxyPartInfo &proxy_part_info,
           eval_obj[i] = src_obj[index];
           // index of generated key
           int64_t generated_col_idx = part_key_info.part_keys_[part_info_idx].generated_col_idx_;
-          if (generated_col_idx >= 0) {
+          if (src_obj[index].is_max_value() || src_obj[index].is_min_value()) {
+            src_obj = rowkey.get_obj_ptr();
+            eval_obj[i] = src_obj[index];
+          } else if (generated_col_idx >= 0) {
             if (generated_col_idx >= part_key_info.key_num_) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("unexpected generated col idx", K(ret), K(generated_col_idx));

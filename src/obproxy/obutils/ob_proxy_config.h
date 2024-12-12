@@ -562,15 +562,19 @@ public:
   DEF_INT(rpc_async_pull_batch_max_size, "10", "[2,50]", "max batch size for async pull, [2, 50]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_async_pull_batch_max_times, "0", "[0,)", "max batch fetch times for single entry cont", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_async_pull_batch_wait_interval, "10ms", "[1ms, 1s]", "wait interval for async batch pull, [1ms, 1s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(rpc_sub_req_max_retries, "10", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_req_max_retries, "0", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_rpc_throttle, "false", "if enabled, will be able to limit rpc req", CFG_NO_NEED_REBOOT,  CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_throttle_trigger_percentage, "50", "[0, 100)", "begin throttle when reach the percentage of mem occupied by rpc req", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_throttle_limit_qps_qa, "0", "[0,)", "rpc req limit qps when throttle trigger", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_request_throttle_waiting_time, "1ms", "[0ms,10s]", "rpc request throttle waiting time, [0ms, 10s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_async_task_thread_num, "8", "[0,128]", "proxy rpc task thread num, default is 8, if 0, use (real work thread num/2), [0, 128]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(rpc_enable_async_analyze, "true", "if enabled, will async analyze large packet", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(rpc_sub_request_isolation_mode, "2", "[0,2]", "rpc sub req handle mode, 0: not isolate sub request, 1: isolate all sub req to async thread, 2: isolate sub req to part of async thread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_async_analyze, "false", "if enabled, will async analyze large packet", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_request_isolation_mode, "0", "[0,2]", "rpc sub req handle mode, 0: not isolate sub request, 1: isolate all sub req to async thread, 2: isolate sub req to part of async thread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_sub_request_weight, "10", "[0,]", "rpc sub request weight, recommended range [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_service_mode, "3", "[1, 3]","rpc service mode flag, option flag out, bit 1: OBKV service, bit 2: OB-Redis servcie", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(rpc_redis_default_database_name, "obkv_redis", "obkv-redis default database name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(rpc_redis_default_user_name, "default", "obkv-redis default user name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_redis_operation_timeout, "10000000",  "obkv redis request timeout us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // 以下是废弃、无用的配置，统一放在下面
   DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

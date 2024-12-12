@@ -1,0 +1,7 @@
+proxy_rpc_redis_sources:=\
+obproxy/proxy/rpc/redis/ob_rpc_redis_analyzer.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_analyzer.cpp\
+obproxy/proxy/rpc/redis/ob_rpc_redis_command_factory.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_command_factory.cpp\
+obproxy/proxy/rpc/redis/ob_rpc_redis_info.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_info.cpp

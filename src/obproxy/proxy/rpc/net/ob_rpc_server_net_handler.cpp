@@ -2107,7 +2107,7 @@ void ObRpcServerNetTableEntry::force_retry_waiting_link(bool server_failed)
       if ((request->canceled() || !obkv_info.is_rpc_req_can_retry())) {
         ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
         request->cleanup(cleanup_params);
-        PROXY_SS_LOG(INFO, "inner request can not retry, cancel directly", K(request), K(rpc_trace_id));
+        PROXY_SS_LOG(INFO, "inner request can not retry, cleanup directly", K(request), K(rpc_trace_id));
       } else {
         PROXY_SS_LOG(DEBUG, "setup_retry_request will retry pl lookup", K(this), K(request->get_cnet_state()), K(request->get_snet_state()), K_(server_ip),  K(request), K(rpc_trace_id));
         ObRpcRequestSM *request_sm = NULL;

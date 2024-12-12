@@ -21,6 +21,7 @@
 #include "proxy/route/ob_route_struct.h"
 #include "proxy/route/ob_server_route.h"
 #include "proxy/route/ob_ldc_location.h"
+#include "obkv/table/ob_rpc_struct.h"
 
 namespace oceanbase
 {
@@ -70,6 +71,8 @@ enum ObRpcRouteMode
 enum ObRpcRequestSMActionType
 {
   RPC_REQ_NEW_REQUEST = 0,
+  RPC_REQ_NEW_REDIS_REQUEST,
+  RPC_REQ_HANDLE_INTERNAL_REQUEST,
   RPC_REQ_REQUEST_DIRECT_ROUTING,
   RPC_REQ_CTX_LOOKUP,
   RPC_REQ_IN_CLUSTER_BUILD,
@@ -176,6 +179,7 @@ public:
   bool is_no_route_info_found() const { return route_.is_no_route_info_found(); }
   int64_t get_last_valid_time_us() const { return route_.get_last_valid_time_us(); }
   int64_t replica_size() const { return route_.replica_size(); }
+  void reset_cursor() { route_.reset_cursor(); }
   common::ObConsistencyLevel get_consistency_level() const { return route_.get_consistency_level(); }
   bool is_strong_read() const { return route_.is_strong_read(); }
   bool is_weak_read() const { return route_.is_weak_read(); }
@@ -318,6 +322,7 @@ public:
 
   int init(ObRpcReq *rpc_req, event::ObProxyMutex *mutex = NULL);
   int init_inner_request(event::ObContinuation *inner_cont, event::ObProxyMutex *mutex);
+  void init_inner_request_simple(event::ObContinuation *inner_cont, event::ObProxyMutex *mutex);
   static uint32_t get_next_sm_id();
   // Debugging routines to dump the SM history
   void dump_history_state();
@@ -337,6 +342,7 @@ public:
   bool get_retry_need_update_pl() { return retry_need_update_pl_; }
 
   int process_request(ObRpcReq *req);
+  int process_redis_request(ObRpcReq *req);
   int process_response(ObRpcReq *req);
 
   int handle_server_failed();
@@ -354,6 +360,7 @@ public:
   int setup_obrpc_req_inner_info_get();
 
   int setup_process_request();
+  int setup_process_redis_request();
   int setup_process_response();
   int setup_rpc_get_cluster();
   int setup_req_inner_info_get();
@@ -376,8 +383,11 @@ public:
   int setup_rpc_internal_execute_request();
   int setup_rpc_internal_get_partition();
   int setup_rpc_internal_build_response();
+  // int setup_rpc_quest_redis_handle_internal_request();
 
   int state_rpc_get_cluster(int event, void *data);
+  int state_handle_internal_request();
+  int state_handle_internal_redis_cmd();
   int state_rpc_analyze_request(int event, void *data);
   int state_table_query_async_info_get(int event, void *data);
   int state_rpc_partition_lookup(int event, void *data);
@@ -391,6 +401,7 @@ public:
   int state_congestion_control_lookup_done();
   int state_rpc_server_addr_searched();
   int state_rpc_server_request_rewrite();
+  int state_rpc_client_response_rewrite();
   int state_rpc_analyze_response(int event, void *data);
   int state_rpc_req_done();
   int state_rpc_req_cleanup();
@@ -411,6 +422,8 @@ public:
   bool is_inner_request() const ;
   bool is_need_convert_vip_to_tname() const ;
   bool is_valid_rpc_req() const ;
+  bool is_valid_redis_req() const ;
+  bool is_valid_obkv_req() const ;
   ObConsistencyLevel get_trans_consistency_level();
   ObRoutePolicyEnum get_route_policy(const bool need_use_dup_replica);
   void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy) const;
@@ -428,7 +441,9 @@ public:
   uint32_t get_rpc_req_origin_channel_id() { return rpc_req_origin_channel_id_; }
 
   bool check_connection_throttle();
+  int analyze_obkv_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
   int analyze_rpc_login_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status);
+  // analyze_login_request
   int keep_dummy_entry_and_update_ldc(ObMysqlRouteResult &result);
   int get_cached_cluster_resource();
   int update_cached_cluster_resource();
@@ -436,6 +451,10 @@ public:
   int update_cached_dummy_entry_and_ldc();
   int get_cached_config_info();
   int update_cached_config_info();
+  // For auth requests, assign an rpc_ctx, for other requests, get the rpc_ctx from the redis_client_net
+  int init_rpc_ctx_for_redis();
+  // int analyze_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
+  int analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
 
   bool retry_server_connection_not_open(); //found next addr or false
   void retry_reset();
@@ -454,6 +473,8 @@ public:
   int cancel_call_next_action();
 
   int cancel_sharding_action();
+
+  int cancel_child_callback_action();
 
   int get_proxy_primary_zone_array(common::ObString zone, common::ObSEArray<common::ObString, 5> &zone_array);
 
@@ -485,7 +506,9 @@ public:
   bool can_pass_white_list();
 
   int init_request_meta_info();
+  void refresh_config();
   void refresh_rpc_request_config();
+  void refresh_redis_request_config();
   int get_config_item(const common::ObString& cluster_name,
                         const common::ObString &tenant_name,
                         const obutils::ObVipAddr &addr,
@@ -525,6 +548,7 @@ private:
   event::ObAction *cleanup_action_;
   event::ObAction *sharding_action_;
   event::ObAction *sm_next_action_;
+  event::ObAction *child_callback_action_;
   event::ObContinuation *inner_cont_;
   int32_t reentrancy_count_;
 
@@ -561,8 +585,9 @@ private:
   ObRpcReqTraceId rpc_trace_id_;
 
   ObRpcRouteMode rpc_route_mode_;
+  obkv::ObProxyRpcType rpc_type_;
 
-  common::ObPtr<event::ObProxyMutex> inner_request_cleanup_mutex_;
+  common::ObPtr<event::ObProxyMutex> inner_request_cleanup_mutex_; //for child rpc_request to cleanup
 public:
   ObRouteDiagnosis *route_diagnosis_;
   obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;

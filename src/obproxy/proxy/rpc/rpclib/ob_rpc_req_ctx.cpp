@@ -106,6 +106,21 @@ int ObRpcReqCtx::set_full_name(const ObString &full_name)
   return ret;
 }
 
+int ObRpcReqCtx::set_rpc_password_str(const ObString &pwd)
+{
+  int ret = OB_SUCCESS;
+
+  if (pwd.empty() || pwd.length() > OB_MAX_PASSWORD_LENGTH) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("set_rpc_password_str get wrong password", K(pwd));
+  } else {
+    MEMCPY(rpc_password_str_buf_, pwd.ptr(), pwd.length());
+    rpc_password_str_.assign(rpc_password_str_buf_, pwd.length());
+  }
+
+  return ret;
+}
+
 int ObRpcReqCtx::get_analyze_name_buf(char *&buf_start, int64_t len)
 {
   int ret = OB_SUCCESS;

@@ -69,7 +69,8 @@ OB_DEF_SERIALIZE(ObITableEntity)
     }
   }
   if (OB_SUCC(ret)) {
-    if (OBKV_ENTITY_MODE == EntityMode::LAZY_MODE) {
+
+    if (OBKV_ENTITY_MODE == EntityMode::LAZY_MODE && is_lazy_mode()) {
       const ObRpcFieldBuf &properties_buf = get_properties_buf();
       if (properties_buf.buf_len_ <= 0 || OB_ISNULL(properties_buf.buf_)) {
         ret = OB_ERR_UNEXPECTED;
@@ -289,7 +290,22 @@ OB_DEF_SERIALIZE_SIZE(ObITableEntity)
     OB_UNIS_ADD_LEN(value);
   }
   if (OB_SUCC(ret)) {
-    OB_UNIS_ADD_LEN(get_properties_buf());
+    if (is_lazy_mode()) {
+      OB_UNIS_ADD_LEN(get_properties_buf());
+    } else {
+      ObSEArray<std::pair<ObString, ObObj>, 8> properties;
+      if (OB_FAIL(this->get_properties(properties))) {  // @todo optimize, use iterator
+        LOG_WARN("failed to get properties", K(ret));
+      } else {
+        const int64_t properties_count = properties.count();
+        OB_UNIS_ADD_LEN(properties_count);
+        for (int64_t i = 0; i < properties_count && OB_SUCCESS == ret; ++i) {
+          const std::pair<ObString, ObObj> &kv_pair = properties.at(i);
+          OB_UNIS_ADD_LEN(kv_pair.first);
+          OB_UNIS_ADD_LEN(kv_pair.second);
+        }
+      }
+    }
   }
   return len;
 }
@@ -372,7 +388,7 @@ int ObITableEntity::add_retrieve_property(const ObString &prop_name)
 }
 
 ////////////////////////////////////////////////////////////////
-ObTableEntity::ObTableEntity() : properties_buf_() {}
+ObTableEntity::ObTableEntity() : properties_buf_(), is_lazy_mode_(true) {}
 
 ObTableEntity::~ObTableEntity()
 {
@@ -383,6 +399,7 @@ ObTableEntity::~ObTableEntity()
 void ObTableEntity::reset()
 {
   rowkey_.reset();
+  rowkey_names_.reset();
   properties_names_.reset();
   properties_values_.reset();
   reset_properties_buf();
@@ -463,6 +480,8 @@ void ObTableEntity::set_is_same_properties_names(bool is_same_properties_names)
   UNUSED(is_same_properties_names);
   LOG_WDIAG("not surpport", K(ret));
 }
+
+bool ObTableEntity::is_lazy_mode() const { return is_lazy_mode_; }
 
 int ObTableEntity::set_rowkey_value(int64_t idx, const ObObj &value)
 {
@@ -706,6 +725,13 @@ DEF_TO_STRING(ObTableEntity)
   }
   J_OBJ_END();
   return pos;
+}
+
+int ObTableOperation::get_entity(ObITableEntity *&entity)
+{
+  int ret = OB_SUCCESS;
+  entity = dynamic_cast<ObTableEntity*>(&entity_);
+  return ret;
 }
 
 ////////////////////////////////////////////////////////////////
@@ -2461,13 +2487,13 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableLSOp)
 
     for (int64_t i = 0; OB_SUCC(ret) && i < tablet_op_size; ++i) {
       ObTableTabletOp &tablet_op = tablet_ops_.at(i); 
-      //tablet_op.set_entity_factory(entity_factory_);
-      //tablet_op.set_deserialize_allocator(deserialize_alloc_);
       rpc_request->set_all_rowkey_names(&rowkey_names_);
-      //tablet_op.set_dictionary(&rowkey_names_, &properties_names_);
-      //tablet_op.set_is_ls_same_prop_name(is_same_properties_names_);
       if (OB_FAIL(tablet_op.deserialize(buf, data_len, pos, rpc_request))) {
         LOG_WDIAG("fail to deserialize tablet op", K(ret));
+      } else if (i == 0 && ls_id_.id() != ObLSID::INVALID_LS_ID) {
+        // if client calculate ls id,
+        // we can record the first partition_id to find target server and transfer req to server immediately
+        rpc_request->set_partition_id(tablet_op.get_tablet_id());
       }
     }  // end for
   }

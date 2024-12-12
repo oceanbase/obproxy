@@ -38,9 +38,11 @@ struct ObCurNewTraceId
     inline bool is_invalid() { return id_.seq_ == 0 ? true : false; }
     inline void init(const ObAddr &ip_port)
     {
-      id_.seq_ = ATOMIC_AAF(&(SeqGenerator::seq_generator_), 1);
+      // id_.seq_ = ATOMIC_AAF(&(SeqGenerator::seq_generator_), 1);
+      id_.seq_ = 1;
       id_.is_user_request_ = 0;
-      id_.is_ipv6_ = ip_port.get_ipv6_high() != 0 || ip_port.get_ipv6_low() != 0; // not have ip_port.using_ipv6();
+      // id_.is_ipv6_ = ip_port.get_ipv6_high() != 0 || ip_port.get_ipv6_low() != 0; // not have ip_port.using_ipv6();
+      id_.is_ipv6_ = (ip_port.get_ipv6_high() != 0 && ip_port.get_ipv6_low() != 0); // not have ip_port.using_ipv6();
       id_.reserved_ = 0;
       id_.port_ = static_cast<uint16_t>(ip_port.get_port());
       if (id_.is_ipv6_) {

@@ -9,4 +9,8 @@ obproxy/obkv/table/ob_table_rpc_struct.cpp\
 obproxy/obkv/table/ob_table_rpc_request.h\
 obproxy/obkv/table/ob_table_rpc_request.cpp\
 obproxy/obkv/table/ob_table_rpc_response.h\
-obproxy/obkv/table/ob_table_rpc_response.cpp
+obproxy/obkv/table/ob_table_rpc_response.cpp\
+obproxy/obkv/redis/ob_redis_rpc_request.h\
+obproxy/obkv/redis/ob_redis_rpc_request.cpp\
+obproxy/obkv/redis/ob_redis_rpc_response.h\
+obproxy/obkv/redis/ob_redis_rpc_response.cpp

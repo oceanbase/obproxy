@@ -63,7 +63,6 @@ public:
   virtual int64_t get_encode_size() const;
   // rewrite this func to analyze table login response
   virtual int analyze_response(const char *buf, int64_t buf_len, int64_t &pos) override;
-
 private:
   ObTableLoginResult login_res_;
 };

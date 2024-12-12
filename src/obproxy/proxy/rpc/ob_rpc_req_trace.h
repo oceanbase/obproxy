@@ -69,6 +69,8 @@ public:
   }
   uint64_t get_rpc_sub_index_id() const { return sub_index_id_; }
 
+  common::ObString get_rpc_trace_id_buf() const { return trace_id_;}
+
   ObRpcReqTraceId &operator=(const ObRpcReqTraceId &other)
   {
     if (&other != this) {

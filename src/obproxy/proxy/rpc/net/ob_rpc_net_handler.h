@@ -26,6 +26,12 @@ namespace proxy
 #define  SERVER_ADDR_LOOKUP_EVENT_DONE   INTERNAL_CMD_EVENTS_START + 3
 #define  UINT24_MAX (16777215U)
 
+enum ObRpcClientNetMagic
+{
+  RPC_C_NET_MAGIC_ALIVE = 0x0123F00D,
+  RPC_C_NET_MAGIC_DEAD = 0xDEADF00D
+};
+
 static int64_t const RPC_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 // class ObRpcSM;
 // class ObRpcClientSession;
@@ -118,6 +124,10 @@ public:
   void set_server_sessid(const uint32_t server_sessid) { server_sessid_ = server_sessid; }
 
   uint32_t get_server_request_id() const { return request_id_; }
+
+  int get_vip_addr();
+  common::ObAddr get_real_client_addr(net::ObNetVConnection *server_vc = NULL);
+
   uint32_t get_next_server_request_id()
   {
     request_id_++;
@@ -216,6 +226,17 @@ inline void ObRpcNetHandler::cancel_inactivity_timeout()
   if (OB_LIKELY(NULL != rpc_net_vc_)) {
     rpc_net_vc_->cancel_inactivity_timeout();
   }
+}
+
+inline common::ObAddr ObRpcNetHandler::get_real_client_addr(net::ObNetVConnection *server_vc)
+{
+  UNUSED(server_vc);
+  common::ObAddr ret_addr;
+  if (OB_NOT_NULL(rpc_net_vc_)) {
+    ret_addr.set_sockaddr(rpc_net_vc_->get_real_client_addr());
+  }
+  PROXY_CS_LOG(DEBUG, "succ to get real client addr", K(ret_addr));
+  return ret_addr;
 }
 
 } // end of namespace proxy
