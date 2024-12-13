@@ -218,6 +218,14 @@ do { \
   }\
 } while (0);
 
+#define SET_XA_RELATED() \
+do { \
+  ObProxyParseResult *p = yyget_extra(yyscanner);\
+  if (OB_NOTNULL(p)) {\
+    p->is_xa_related_ = true;\
+  }\
+} while (0);
+
 #define SET_TABLE_LOCK_RELATED() \
 do { \
   ObProxyParseResult *p = yyget_extra(yyscanner);\
@@ -1256,6 +1264,7 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"@"                          { return yytext[0]; }
 <in_expr>{binlog_user_var_alias}       { return BINLOG_USER_VAR; }
 <in_expr>{binlog_sys_var_alias}        { return BINLOG_SYS_VAR; }
+<in_expr>"dbms_xa\."                   { SET_XA_RELATED(); }
 <in_expr>"gtid_subset"                 { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"gtid_subtract"               { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"wait_for_executed_gtid_set"  { SET_BINLOG_RELATED(); RETURN_IGNORED_WORD(); }

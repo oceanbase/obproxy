@@ -542,7 +542,7 @@ struct ObSqlParseResult
       has_ever_set_anonymous_block_(false),
       has_for_update_(false),
       has_trace_log_hint_(false),
-      is_xa_start_stmt_(false),
+      xa_stmt_{},
       is_binlog_related_(false),
       is_sharding_req_(false) {}
   ~ObSqlParseResult() { reset(); }
@@ -717,6 +717,7 @@ struct ObSqlParseResult
   bool has_connection_id() const { return has_connection_id_;}
   bool has_sys_context() const { return has_sys_context_; }
   bool is_binlog_related() const { return is_binlog_related_; }
+  bool is_xa_related() const { return xa_stmt_.is_xa_other_ || xa_stmt_.is_xa_start_; }
   bool is_dblink_name() const { return is_dblink_name_; }
   bool is_table_lock_related() const { return is_table_lock_related_; }
 
@@ -726,7 +727,7 @@ struct ObSqlParseResult
   bool has_show_warnings() const { return is_show_warnings_stmt(); }
 
   bool need_hold_start_trans() const { return is_start_trans_stmt(); }
-  bool need_hold_xa_start() const { return is_xa_start_stmt_; }
+  bool need_hold_xa_start() const { return xa_stmt_.is_xa_start_; }
   // has a function depend on the sql last executed, such as found_rows , row_count, etc.
   bool has_dependent_func() const;
   // whether a sql is not supported by PROXY (BUT it is supported by observer)
@@ -772,7 +773,7 @@ struct ObSqlParseResult
 
   void set_stmt_type(const ObProxyBasicStmtType type) { stmt_type_ = type; }
   void set_err_stmt_type(const ObProxyErrorStmtType type) { cmd_err_type_ = type; }
-  void set_xa_start_stmt(bool is_xa_start) { is_xa_start_stmt_ = is_xa_start; }
+  void set_xa_start_stmt(bool is_xa_start) { xa_stmt_.is_xa_start_ = is_xa_start; }
   int set_db_name(const ObProxyParseString &database_name,
                   const bool use_lower_case_name = false,
                   const bool drop_origin_db_table_name = false);
@@ -841,7 +842,7 @@ struct ObSqlParseResult
       has_trace_log_hint_ = other.has_trace_log_hint_;
       has_connection_id_ = other.has_connection_id_;
       has_sys_context_ = other.has_sys_context_;
-      is_xa_start_stmt_ = other.is_xa_start_stmt_;
+      xa_stmt_ = other.xa_stmt_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
       parsed_length_ = other.parsed_length_;
@@ -1038,7 +1039,11 @@ private:
   bool has_ever_set_anonymous_block_;
   bool has_for_update_;
   bool has_trace_log_hint_;
-  bool is_xa_start_stmt_;
+  struct {
+    uint8_t is_xa_start_:     1;
+    uint8_t is_xa_other_:     1;
+    uint8_t :                 0;
+  } xa_stmt_;
   bool is_binlog_related_;
   bool is_dblink_name_;
   bool is_sharding_req_;
@@ -1215,7 +1220,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_ever_set_anonymous_block_ = false;
   has_for_update_ = false;
   has_trace_log_hint_ = false;
-  is_xa_start_stmt_ = false;
+  xa_stmt_ = {};
   hint_query_timeout_ = 0;
   has_connection_id_ = false;
   has_sys_context_ = false;

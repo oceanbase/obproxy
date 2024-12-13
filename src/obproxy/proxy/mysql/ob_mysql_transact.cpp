@@ -7254,8 +7254,15 @@ int ObMysqlTransact::handle_retry_service_name(ObTransState &s)
       }
     }
   }
-
-  if (OB_SUCC(ret) && need_rewrite_login_req && OB_NOT_NULL(obinstance)) {
+  ObMySQLCmd cmd = s.trans_info_.sql_cmd_;
+  if (OB_FAIL(ret)) {
+  } else if ((obmysql::OB_MYSQL_COM_STMT_CLOSE == cmd
+                    || obmysql::OB_MYSQL_COM_STMT_RESET == cmd
+                    || s.trans_info_.client_request_.get_parse_result().is_text_ps_drop_stmt())) {
+    // ps close相关，发生了switch/fail over，直接发下一个observer即可
+    LOG_DEBUG("service name retry ps close, do internal processing", K(cmd));
+    TRANSACT_RETURN(SM_ACTION_API_READ_REQUEST, handle_request);
+  } else if (need_rewrite_login_req && OB_NOT_NULL(obinstance)) {
     LOG_INFO("will retry next service name tenant",
                   K(cluster_name), K(tenant_name), K(obinstance->ob_cluster_), K(obinstance->ob_tenant_), K_(s.current_.error_type));
     // 切换租户后，需要强制更新单机路由
@@ -7357,6 +7364,11 @@ bool ObMysqlTransact::is_in_service_name_trans(ObTransState &trans_state)
          || ObMysqlTransact::is_in_trans(trans_state);
 }
 
+bool ObMysqlTransact::is_xa_related(const ObSqlParseResult &sql_result)
+{
+  return sql_result.is_dual_request() && sql_result.is_xa_related();
+}
+
 bool ObMysqlTransact::need_route_standby_tenant(ObClientSessionInfo &session_info, ObTransState &trans_state)
 {
   bool bret = false;
@@ -7376,7 +7388,7 @@ bool ObMysqlTransact::need_route_standby_tenant(ObClientSessionInfo &session_inf
         sql = client_request.get_sql();
         is_for_update = client_request.is_for_update_sql();
       }
-      if (!is_for_update) {
+      if (!is_for_update && !is_xa_related(sql_result)) {
         bret = true;
       }
     }
@@ -8041,12 +8053,7 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
   // 获取service name值
   ObConfigVariableString service_name;
 
-  if (is_handshake_req_phase()) {
-    if (OB_FAIL(get_service_name_str(cluster_name, tenant_name, service_name))) {
-      LOG_WDIAG("fail to get service name", K(addr), K(cluster_name),
-                K(tenant_name), K(ret));
-    }
-  } else if (sm_->client_session_->using_service_name()) {
+  if (sm_->client_session_->using_service_name()) {
     ObString cs_service_name;
     // get_service_name获取的是service_name的值
     if (OB_FAIL(session_info.get_service_name(cs_service_name))) {
@@ -8055,6 +8062,11 @@ int ObMysqlTransact::ObTransState::get_multi_level_config_item(const ObString& c
     } else if (OB_FAIL(concate_service_name(cs_service_name, service_name))) {
       LOG_WDIAG("fail to concate service name to 'service:xxx' for non-cloud",
                 K(cluster_name), K(tenant_name), K(ret));
+    }
+  } else if (is_handshake_req_phase()) {
+    if (OB_FAIL(get_service_name_str(cluster_name, tenant_name, service_name))) {
+      LOG_WDIAG("fail to get service name", K(addr), K(cluster_name),
+                K(tenant_name), K(ret));
     }
   }
   // init_sql要通过multi_level_config进行生命周期管理，不由session管理内存

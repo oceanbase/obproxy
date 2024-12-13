@@ -667,6 +667,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
   is_binlog_related_ = parse_result.is_binlog_related_;
+  xa_stmt_.is_xa_other_ = parse_result.is_xa_related_;
   is_sharding_req_ = is_sharding_request;
   is_table_lock_related_ = parse_result.is_table_lock_related_;
 

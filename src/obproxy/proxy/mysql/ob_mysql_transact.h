@@ -1165,6 +1165,7 @@ enum ObServerRespErrorType
   static bool is_depend_last_tenant(ObTransState &s);
   static bool is_in_service_name_trans(ObTransState &trans_state);
   static bool need_route_standby_tenant(ObClientSessionInfo &session_info, ObTransState &trans_state);
+  static bool is_xa_related(const obutils::ObSqlParseResult &sql_result);
   static void record_trans_state(ObTransState &s, bool is_in_trans);
   static bool is_addr_logonly(const net::ObIpEndpoint &addr, const ObTenantServer *ts);
   static void build_read_stale_param(const ObTransState &s, obutils::ObReadStaleParam &param);

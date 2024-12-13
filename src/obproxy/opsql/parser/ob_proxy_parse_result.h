@@ -499,6 +499,7 @@ typedef struct _ObProxyParseResult
   ObDbMeshRouteInfo dbmesh_route_info_;
   ObDbpRouteInfo dbp_route_info_;
   bool is_binlog_related_;
+  bool is_xa_related_;
   bool has_ever_set_anonymous_block_;
   bool is_table_lock_related_;
   bool is_sharding_req_;
