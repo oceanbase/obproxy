@@ -117,9 +117,6 @@ public:
   NEED_SERIALIZE_AND_DESERIALIZE;
 };
 
-// magic number
-const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
-const char ObRpcEzHeader::REDIS_AUTH_FLAG[9] = {'$', '4', '\r', '\n', 'A', 'U', 'T', 'H', 0}; // $4\r\nAUTH
 
 ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
 {

@@ -1585,7 +1585,9 @@ namespace common
 // obproxy related error code
 #define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
 #define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
+#define OB_PROXY_SEND_LONG_DATA_PIECES_ERROR__USER_ERROR_MSG "Send long data pieces ERROR"
 #define OB_SQLITE3_EXEC_ERROR__USER_ERROR_MSG "Sqlite exec ERROR"
+#define OB_PROXY_COORDINATOR_CLOSED__USER_ERROR_MSG "OBProxy transaction coordinator is closed"
 
 // sharding related error code
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"
