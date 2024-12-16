@@ -152,8 +152,12 @@ int ObShowPSHandler::handle_ps_cache(int event, void* data)
       LOG_WDIAG("fail to handle_ps_cache_for_tenant", K(ret));
     }
   } else if (!enable_dump_all_ps_cache()) {
-    ret = OB_NOT_SUPPORTED;
-    LOG_WDIAG("fail to dump all ps cache for normal user", K(ret));
+    // show ps cache for current client session
+    need_callback = false;
+    cs_id_ = session_priv_.cs_id_;
+    if (OB_FAIL(handle_ps_cache_for_cs())) {
+      LOG_WDIAG("fail to handle_ps_cache_for_cs", K(ret));
+    }
   } else if (get_global_proxy_config().enable_global_ps_cache) {
     // all ps cache for global
     if (OB_FAIL(handle_ps_cache_all_for_global())) {
@@ -261,44 +265,44 @@ int ObShowPSHandler::dump_ps_cache_for_one_cs(ObMysqlClientSession &cs, bool nee
                          && cs.get_cs_id() != cs_id_)) {
     LOG_WDIAG("client session cs id not match cs id in SQL, ignore it",
               "client session cs_id", cs.get_cs_id(), K_(cs_id), K(ret));
-  }
-
-  if (OB_SUCC(ret)) {
-    ObPsIdEntryMap::iterator last = session_info.ps_id_entry_map_.end();
-    ObPsIdEntryMap::iterator tmp_iter;
-    for (ObPsIdEntryMap::iterator ps_iter = session_info.ps_id_entry_map_.begin();
-         OB_SUCC(ret) && ps_iter != last;) {
-      tmp_iter = ps_iter;
-      ++ps_iter;
-      const ObPsIdEntry& ps_id_entry = *tmp_iter;
-      if (OB_ISNULL(ps_id_entry.ps_entry_)) {
-        LOG_WDIAG("empty ps entry, ignore it", K(ps_id_entry));
-        if (OB_FAIL(dump_empty_ps_entry())) {
-          LOG_WDIAG("fail to dump_empty_ps_entry", K(ret));
+  } else {
+    {
+      ObPsIdEntryMap::iterator last = session_info.ps_id_entry_map_.end();
+      ObPsIdEntryMap::iterator tmp_iter;
+      for (ObPsIdEntryMap::iterator ps_iter = session_info.ps_id_entry_map_.begin();
+          OB_SUCC(ret) && ps_iter != last;) {
+        tmp_iter = ps_iter;
+        ++ps_iter;
+        const ObPsIdEntry& ps_id_entry = *tmp_iter;
+        if (OB_ISNULL(ps_id_entry.ps_entry_)) {
+          LOG_WDIAG("empty ps entry, ignore it", K(ps_id_entry));
+          if (OB_FAIL(dump_empty_ps_entry())) {
+            LOG_WDIAG("fail to dump_empty_ps_entry", K(ret));
+          }
+        } else if (OB_FAIL(dump_one_ps_entry(*ps_id_entry.ps_entry_, cs_cluster_name, cs_tenant_name,
+                                            cs.get_cs_id(), ps_id_entry.ps_id_, ""))) {
+          LOG_WDIAG("fail to dump text ps entry", K(ret));
         }
-      } else if (OB_FAIL(dump_one_ps_entry(*ps_id_entry.ps_entry_, cs_cluster_name, cs_tenant_name,
-                                           ps_id_entry.ps_id_, ""))) {
-        LOG_WDIAG("fail to dump text ps entry", K(ret));
       }
     }
-  }
 
-  if (OB_SUCC(ret)) {
-    ObTextPsNameEntryMap::iterator last = session_info.text_ps_name_entry_map_.end();
-    ObTextPsNameEntryMap::iterator tmp_iter;
-    for (ObTextPsNameEntryMap::iterator ps_iter = session_info.text_ps_name_entry_map_.begin();
-         OB_SUCC(ret) && ps_iter != last;) {
-      tmp_iter = ps_iter;
-      ++ps_iter;
-      const ObTextPsNameEntry& ps_name_entry = *tmp_iter;
-      if (OB_ISNULL(ps_name_entry.text_ps_entry_)) {
-        LOG_WDIAG("empty ps entry, ignore it", K(ps_name_entry));
-        if (OB_FAIL(dump_empty_ps_entry())) {
-          LOG_WDIAG("fail to dump_empty_ps_entry", K(ret));
+    if (OB_SUCC(ret)) {
+      ObTextPsNameEntryMap::iterator last = session_info.text_ps_name_entry_map_.end();
+      ObTextPsNameEntryMap::iterator tmp_iter;
+      for (ObTextPsNameEntryMap::iterator ps_iter = session_info.text_ps_name_entry_map_.begin();
+          OB_SUCC(ret) && ps_iter != last;) {
+        tmp_iter = ps_iter;
+        ++ps_iter;
+        const ObTextPsNameEntry& ps_name_entry = *tmp_iter;
+        if (OB_ISNULL(ps_name_entry.text_ps_entry_)) {
+          LOG_WDIAG("empty ps entry, ignore it", K(ps_name_entry));
+          if (OB_FAIL(dump_empty_ps_entry())) {
+            LOG_WDIAG("fail to dump_empty_ps_entry", K(ret));
+          }
+        } else if (OB_FAIL(dump_one_ps_entry(*ps_name_entry.text_ps_entry_, cs_cluster_name, cs_tenant_name,
+                                            cs.get_cs_id(), -1, ps_name_entry.text_ps_name_))) {
+          LOG_WDIAG("fail to dump text ps entry", K(ret));
         }
-      } else if (OB_FAIL(dump_one_ps_entry(*ps_name_entry.text_ps_entry_, cs_cluster_name, cs_tenant_name,
-                                           -1, ps_name_entry.text_ps_name_))) {
-        LOG_WDIAG("fail to dump text ps entry", K(ret));
       }
     }
   }
@@ -331,7 +335,9 @@ int ObShowPSHandler::handle_ps_cache_for_tenant(int event, void* data)
         LOG_DEBUG("succ to reschedule", K(next_id));
       }
     } else {
-      if (OB_FAIL(encode_eof_packet())) {
+      if (OB_FAIL(dump_cumulative_ps_entry())) {
+        LOG_WDIAG("fail to encode cumulative row", K(ret));
+      } else if (OB_FAIL(encode_eof_packet())) {
         LOG_WDIAG("fail to encode eof packet", K(ret));
       }
     }
@@ -382,9 +388,11 @@ int ObShowPSHandler::handle_ps_cache_all_for_global()
   const PsEntryMap& text_ps_entry_map = text_ps_entry_cache.get_ps_entry_map();
 
   if (OB_FAIL(ps_entry_map.traverse_map(ObShowPSHandler::dump_one_ps_entry, this))) {
-    LOG_WDIAG("fail to traverse ps_entry_map", K(ret));
+    LOG_WDIAG("fail to traverse ps entry map", K(ret));
   } else if (OB_FAIL(text_ps_entry_map.traverse_map(ObShowPSHandler::dump_one_ps_entry, this))) {
-    LOG_WDIAG("fail to traverse ps_entry_map", K(ret));
+    LOG_WDIAG("fail to traverse text ps entry map", K(ret));
+  } else if (OB_FAIL(dump_cumulative_ps_entry())) {
+    LOG_WDIAG("fail to encode cumulative row", K(ret));
   } else if (OB_FAIL(encode_eof_packet())) {
     LOG_WDIAG("fail to encode eof packet",  K(ret));
   } else {
@@ -453,8 +461,8 @@ int ObShowPSHandler::dump_ps_cache_all_in_thread(const ObEThread& ethread)
       tmp_iter = ps_iter;
       ++ps_iter;
       ObBasePsEntry& ps_entry = *tmp_iter;
-      if (OB_FAIL(dump_one_ps_entry(ps_entry, "", "", -1, ""))) {
-        LOG_WDIAG("fail to dump text ps entry", K(ret));
+      if (OB_FAIL(dump_one_ps_entry(ps_entry, "", "", -1, -1, ""))) {
+        LOG_WDIAG("fail to dump ps entry", K(ret));
       }
     }
   }
@@ -467,7 +475,7 @@ int ObShowPSHandler::dump_ps_cache_all_in_thread(const ObEThread& ethread)
       tmp_iter = ps_iter;
       ++ps_iter;
       ObBasePsEntry& ps_entry = *tmp_iter;
-      if (OB_FAIL(dump_one_ps_entry(ps_entry, "", "", -1, ""))) {
+      if (OB_FAIL(dump_one_ps_entry(ps_entry, "", "", -1, -1, ""))) {
         LOG_WDIAG("fail to dump text ps entry", K(ret));
       }
     }
@@ -477,7 +485,7 @@ int ObShowPSHandler::dump_ps_cache_all_in_thread(const ObEThread& ethread)
 }
 
 int ObShowPSHandler::dump_one_ps_entry(ObBasePsEntry& ps_entry, const ObString& cluster_name,
-                                       const ObString& tenant_name,
+                                       const ObString& tenant_name, int64_t cs_id,
                                        int64_t ps_id, const ObString& ps_name)
 {
   int ret = OB_SUCCESS;
@@ -488,7 +496,7 @@ int ObShowPSHandler::dump_one_ps_entry(ObBasePsEntry& ps_entry, const ObString& 
   } else {
     ObNewRow row;
     ObObj cells[OB_PC_MAX_COLUMN_ID];
-    cells[OB_PC_CS_ID].set_int(cs_id_);
+    cells[OB_PC_CS_ID].set_int(cs_id);
     cells[OB_PC_CLUSTER_NAME].set_varchar(cluster_name);
     cells[OB_PC_TENANT_NAME].set_varchar(tenant_name);
     cells[OB_PC_PS_ID].set_int(ps_id);
@@ -580,6 +588,33 @@ int ObShowPSHandler::dump_empty_ps_entry()
   cells[OB_PC_PREPARE_SQL].set_null();
   cells[OB_PC_PARSE_RESULT].set_null();
   cells[OB_PC_USED_MEM].set_int(0);
+  cells[OB_PC_USED_SESSION].set_int(0);
+
+  row.cells_ = cells;
+  row.count_ = OB_PC_MAX_COLUMN_ID;
+  if (OB_FAIL(encode_row_packet(row))) {
+    LOG_WDIAG("fail to encode row packet", K(row), K(ret));
+  }
+
+  return ret;
+}
+
+int ObShowPSHandler::dump_cumulative_ps_entry()
+{
+  int ret = OB_SUCCESS;
+
+  ObNewRow row;
+  ObObj cells[OB_PC_MAX_COLUMN_ID];
+  cells[OB_PC_CS_ID].set_int(get_global_ps_entry_cache().get_ps_entry_num()
+                             + get_global_text_ps_entry_cache().get_ps_entry_num());
+  cells[OB_PC_CLUSTER_NAME].set_varchar("");
+  cells[OB_PC_TENANT_NAME].set_varchar("");
+  cells[OB_PC_PS_ID].set_int(-1);
+  cells[OB_PC_PS_NAME].set_varchar("");
+  cells[OB_PC_PREPARE_SQL].set_null();
+  cells[OB_PC_PARSE_RESULT].set_null();
+  cells[OB_PC_USED_MEM].set_int(get_global_ps_entry_cache().get_ps_entry_mem_count()
+                                + get_global_text_ps_entry_cache().get_ps_entry_mem_count());
   cells[OB_PC_USED_SESSION].set_int(0);
 
   row.cells_ = cells;

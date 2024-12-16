@@ -48,10 +48,12 @@ private:
   int handle_ps_cache_all_for_thread(int event, void* data);
   int dump_ps_cache_all_in_thread(const event::ObEThread& ethread);
   int dump_one_ps_entry(proxy::ObBasePsEntry& ps_entry,  const ObString& cluster_name = "",
-                        const ObString& tenant_name = "",
+                        const ObString& tenant_name = "",  int64_t cs_id = -1,
                         int64_t ps_id = -1, const ObString& ps_name = "");
   static int dump_one_ps_entry(ObBasePsEntry& ps_entry, va_list args);
   int dump_empty_ps_entry();
+
+  int dump_cumulative_ps_entry();
   bool is_match_tenant(const proxy::ObMysqlClientSession &cs) const;
   bool enable_dump_ps_cache(const proxy::ObMysqlClientSession &cs) const;
   bool enable_dump_all_ps_cache() const;

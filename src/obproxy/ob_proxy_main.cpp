@@ -1056,8 +1056,10 @@ int ObProxyMain::do_monitor_mem()
   int64_t mem_used = get_memory_used();
   MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_HOLD, mem_hold);
   MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_USED, mem_used);
-  MEMORY_PROMETHEUS_STAT(PROMETHEUS_PS_COUNT, get_global_ps_entry_cache().get_ps_entry_num());
-  MEMORY_PROMETHEUS_STAT(PROMETHEUS_PS_MEMORY_USED, get_global_ps_entry_cache().get_ps_entry_mem_count());
+  MEMORY_PROMETHEUS_STAT(PROMETHEUS_PS_COUNT, get_global_ps_entry_cache().get_ps_entry_num()
+                                              + get_global_text_ps_entry_cache().get_ps_entry_num());
+  MEMORY_PROMETHEUS_STAT(PROMETHEUS_PS_MEMORY_USED, get_global_ps_entry_cache().get_ps_entry_mem_count()
+                                                    + get_global_text_ps_entry_cache().get_ps_entry_mem_count());
   LOG_DEBUG("MemoryMonitor", "current memory hold size", mem_hold,
             "current memory used size", mem_used, K(cur_pos));
   proxy_main->history_mem_size_[cur_pos] = mem_hold;
