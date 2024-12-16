@@ -250,11 +250,9 @@ int ObServerSessionPool::event_handler(int event, void *data)
       LOG_DEBUG("[session_pool] session received io notice ",
           K(event), "ss_id", ss->ss_id_, K(ss));
       
-      if (OB_UNLIKELY(ss->get_session_info().is_sharding_txn_session())) {
+      if (OB_UNLIKELY(ss->get_session_info().is_key_session())) {
         // close by client session, do nothing here
-        server_session_err_code = OB_PROXY_SHARD_TXN_SESSION_CLOSE;
-      } else if (OB_UNLIKELY(ss->get_session_info().is_lock_session())) {
-        server_session_err_code = OB_LOCK_SESSION_CLOSED_ERROR;
+        server_session_err_code = ss->get_session_info().get_key_session_code();
       } else if (OB_LIKELY(MSS_KA_SHARED == ss->state_)) {
         // Out of the pool! Now!
         if (OB_ISNULL(ip_pool_.remove(hash_key))) {

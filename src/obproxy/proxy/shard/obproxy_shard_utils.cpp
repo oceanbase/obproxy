@@ -195,7 +195,7 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
             LOG_WDIAG("last txn sever session is NULL", K(ret));
           } else {
             session_info.set_txn_shard_connector(client_session.get_server_session()->get_session_info().get_shard_connector());
-            client_session.get_server_session()->get_session_info().set_sharding_txn_session(true);
+            client_session.get_server_session()->get_session_info().set_is_sharding_txn_session(true);
             client_session.set_sharding_txn_ss_addr(
                            client_session.get_server_session()->get_netvc()->get_remote_addr());
             LOG_DEBUG("set shard txn shard", "remote addr",

@@ -549,7 +549,8 @@ int ObMysqlSM::state_client_request_read(int event, void *data)
 
     // record the config of enable_transaction_internal_routing
     client_session_->set_proxy_enable_trans_internal_routing(
-        trans_state_.mysql_config_params_->enable_transaction_internal_routing_
+        !client_session_->is_proxy_mysql_client()
+        && trans_state_.mysql_config_params_->enable_transaction_internal_routing_
         && (server_protocol_ == ObProxyProtocol::PROTOCOL_OB20));
     client_session_->set_proxy_enable_cross_shard_txn(get_global_proxy_config().enable_cross_shard_txn);
   }
@@ -6530,7 +6531,7 @@ int ObMysqlSM::handle_feedback_proxy_info(const Ob20ExtraInfo& extra_info)
       } else {
         LOG_DEBUG("set lock session", K(is_lock_session), "local lock session", server_info.is_lock_session());
       }
-      server_info.set_lock_session(is_lock_session);
+      server_info.set_is_lock_session(is_lock_session);
     }
   }
 
@@ -9192,8 +9193,7 @@ void ObMysqlSM::handle_server_setup_error(int event, void *data)
       // - is_sharding_txn_session_
       bool is_internal_send_process = ObMysqlTransact::is_in_internal_send_process(trans_state_);
       bool need_close_client_session = (OB_NOT_NULL(server_session_)
-                                          && (server_session_->get_session_info().is_sharding_txn_session()
-                                              || server_session_->get_session_info().is_lock_session()))
+                                          && (server_session_->get_session_info().is_key_session()))
                                        || !is_internal_send_process;
       switch (event) {
         case VC_EVENT_EOS: {

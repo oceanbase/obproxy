@@ -1009,16 +1009,13 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
         // Timeout - close it
-        if (bound_ss_->get_session_info().is_sharding_txn_session()) {
-          async_disconnect_code = OB_PROXY_SHARD_TXN_SESSION_CLOSE;
-          PROXY_CS_LOG(DEBUG, "client session closed because of sharding txn server session close");
-        } else if (bound_ss_->get_session_info().is_lock_session()) {
-          async_disconnect_code = OB_LOCK_SESSION_CLOSED_ERROR;
-          PROXY_CS_LOG(DEBUG, "client session closed because of lock server session close");
+        if (bound_ss_->get_session_info().is_key_session()) {
+          async_disconnect_code = bound_ss_->get_session_info().get_key_session_code();
+          PROXY_CS_LOG(WDIAG, "client session closed because of the bound key server session close");
         } else if (OB_MYSQL_COM_STMT_SEND_LONG_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_
                    || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_) {
           async_disconnect_code = OB_PROXY_SEND_LONG_DATA_PIECES_ERROR;
-          PROXY_CS_LOG(DEBUG, "client session closed because of send long data/pieces server session close");
+          PROXY_CS_LOG(WDIAG, "client session closed because of send long data/pieces server session close");
         }
         if (OB_UNLIKELY(OB_SUCCESS != async_disconnect_code)) {
           set_closed_key_server_session(bound_ss_);

@@ -233,9 +233,27 @@ public:
   bool is_server_ob20_compress_supported() const {
     return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_OB_PROTOCOL_V2_COMPRESS);
   }
+  // a server session with its is_key_session equal true means that
+  // the attached client session must be closed by obproxy when the server session close
+  bool is_key_session() const { return is_sharding_txn_session_
+                                       || is_lock_session_
+                                       || is_trans_coordinator_session_; }
+
+  int64_t get_key_session_code() const {
+    int ret = OB_ERR_UNEXPECTED;
+    if (is_sharding_txn_session_) {
+      ret = OB_PROXY_SHARD_TXN_SESSION_CLOSED;
+    } else if (is_lock_session_) {
+      ret = OB_LOCK_SESSION_CLOSED;
+    } else if (is_trans_coordinator_session_) {
+      ret = OB_PROXY_COORDINATOR_CLOSED;
+    } else { /* nothing */}
+    return ret;
+  }
 
   bool is_sharding_txn_session() const { return is_sharding_txn_session_; }
   bool is_lock_session() const { return is_lock_session_; }
+  bool is_trans_coordinator_session() const { return is_trans_coordinator_session_; }
   const obmysql::ObMySQLCapabilityFlags get_compatible_capability_flags() const {
     // for compatible, OBServer 1479 handshake return SESSION_TRACK = 0, but still return session state info in ok packet
     if (is_oceanbase_server()) {
@@ -274,9 +292,9 @@ public:
   void set_last_insert_id_version(const int64_t version) { version_.last_insert_id_version_ = version; }
   void set_sess_info_version(const int64_t version) { version_.sess_info_version_ = version; }
   int update_sess_info_field_version(int16_t type, int64_t version);
-  void set_sharding_txn_session(bool is_sharding_txn_session) { is_sharding_txn_session_ = is_sharding_txn_session; }
-  void set_lock_session(bool is_lock_session) { is_lock_session_ = is_lock_session; }
-
+  void set_is_sharding_txn_session(bool is_sharding_txn_session) { is_sharding_txn_session_ = is_sharding_txn_session; }
+  void set_is_lock_session(bool is_lock_session) { is_lock_session_ = is_lock_session; }
+  void set_is_trans_coordinator_session(bool is_trans_coordinator_session) { is_trans_coordinator_session_ = is_trans_coordinator_session; }
   ObProxyChecksumSwitch get_checksum_switch() const { return checksum_switch_; }
   void set_checksum_switch(const ObProxyChecksumSwitch checksum_switch) { checksum_switch_ = checksum_switch; }
   bool is_checksum_on() const { return CHECKSUM_ON == checksum_switch_;}
@@ -365,8 +383,10 @@ private:
   // don`t use lock session in global server session pool
   // - is_sharding_txn_session_ == true
   // - is_lock_session_ == true
+  // - is_trans_coordinator_session_ == true
   bool is_sharding_txn_session_;
   bool is_lock_session_;
+  bool is_trans_coordinator_session_;
   common::DBServerType server_type_;
   dbconfig::ObShardConnector *shard_conn_;
 

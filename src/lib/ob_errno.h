@@ -812,9 +812,10 @@ namespace common
   static const int OB_PROXY_RECONNECT_COORDINATOR = -10023;
   static const int OB_PROXY_INVALID_COORDINATOR = -10024;
   static const int OB_PROXY_PROXY_ID_OVER_LIMIT = -10025;
-  static const int OB_LOCK_SESSION_CLOSED_ERROR = -10026;
+  static const int OB_LOCK_SESSION_CLOSED = -10026;
   static const int OB_PROXY_SEND_LONG_DATA_PIECES_ERROR = -10027;
   static const int OB_SQLITE3_EXEC_ERROR = -10028;
+  static const int OB_PROXY_COORDINATOR_CLOSED = -10029;
 
   // obproxy related error code
   static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
@@ -824,7 +825,7 @@ namespace common
   // sharding related error code
   static const int OB_PROXY_SHARD_HINT_NOT_SUPPORTED = -10304;
   static const int OB_PROXY_SHARD_INVALID_CONFIG = -10305;
-  static const int OB_PROXY_SHARD_TXN_SESSION_CLOSE = -10306;
+  static const int OB_PROXY_SHARD_TXN_SESSION_CLOSED = -10306;
 
   // kv related error code
 
@@ -1580,7 +1581,7 @@ namespace common
 #define OB_PROXY_RECONNECT_COORDINATOR__USER_ERROR_MSG "OBProxy try to reconnect coordinator in transaction"
 #define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy transaction coordinator is invalid"
 #define OB_PROXY_PROXY_ID_OVER_LIMIT__USER_ERROR_MSG "When changing proxy_id or client_session_id_version and client_session_id_version is version 1, proxy_id must be set to less than 255"
-#define OB_LOCK_SESSION_CLOSED_ERROR__USER_ERROR_MSG "A server session with table lock closed"
+#define OB_LOCK_SESSION_CLOSED__USER_ERROR_MSG "A server session with table lock closed"
 // obproxy related error code
 #define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
 #define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"

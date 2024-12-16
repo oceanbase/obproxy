@@ -3016,18 +3016,23 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_INVALID_COORDINATOR] = "HY000";
     STR_ERROR[-OB_PROXY_INVALID_COORDINATOR] = "OBProxy transaction coordinator is invalid";
     STR_USER_ERROR[-OB_PROXY_INVALID_COORDINATOR] = "OBProxy transaction coordinator is invalid";
-    MYSQL_ERRNO[-OB_PROXY_INVALID_COORDINATOR] = -1;
-    SQLSTATE[-OB_PROXY_INVALID_COORDINATOR] = "HY000";
+    MYSQL_ERRNO[-OB_PROXY_PROXY_ID_OVER_LIMIT] = -1;
+    SQLSTATE[-OB_PROXY_PROXY_ID_OVER_LIMIT] = "HY000";
     STR_ERROR[-OB_PROXY_PROXY_ID_OVER_LIMIT] = "When reset client_session_id_version to v1, proxy_id must be set to less than 255";
     STR_USER_ERROR[-OB_PROXY_PROXY_ID_OVER_LIMIT] = "When reset client_session_id_version to v1, proxy_id must be set to less than 255";
-    MYSQL_ERRNO[-OB_LOCK_SESSION_CLOSED_ERROR] = -1;
-    SQLSTATE[-OB_LOCK_SESSION_CLOSED_ERROR] = "HY000";
-    STR_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
-    STR_USER_ERROR[-OB_LOCK_SESSION_CLOSED_ERROR] = "A server session with table lock closed";
+    MYSQL_ERRNO[-OB_LOCK_SESSION_CLOSED] = -1;
+    SQLSTATE[-OB_LOCK_SESSION_CLOSED] = "HY000";
+    STR_ERROR[-OB_LOCK_SESSION_CLOSED] = "A server session with table lock closed";
+    STR_USER_ERROR[-OB_LOCK_SESSION_CLOSED] = "A server session with table lock closed";
     MYSQL_ERRNO[-OB_SQLITE3_EXEC_ERROR] = -1;
     SQLSTATE[-OB_SQLITE3_EXEC_ERROR] = "HY000";
     STR_ERROR[-OB_SQLITE3_EXEC_ERROR] = "Sqlite exec ERROR";
     STR_USER_ERROR[-OB_SQLITE3_EXEC_ERROR] = "Sqlite exec ERROR";
+    MYSQL_ERRNO[-OB_PROXY_COORDINATOR_CLOSED] = -1;
+    SQLSTATE[-OB_PROXY_COORDINATOR_CLOSED] = "HY000";
+    STR_ERROR[-OB_PROXY_COORDINATOR_CLOSED] = "OBProxy transaction coordinator is closed";
+    STR_USER_ERROR[-OB_PROXY_COORDINATOR_CLOSED] = "OBProxy transaction coordinator is closed";
+
     // obproxy related error code
     MYSQL_ERRNO[-OB_PROXY_FETCH_RSLIST_FAIL] = -1;
     SQLSTATE[-OB_PROXY_FETCH_RSLIST_FAIL] = "HY000";
@@ -3051,10 +3056,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_SHARD_INVALID_CONFIG] = "HY000";
     STR_ERROR[-OB_PROXY_SHARD_INVALID_CONFIG] = "ObProxy shard config is invalid";
     STR_USER_ERROR[-OB_PROXY_SHARD_INVALID_CONFIG] = "ObProxy shard config is invalid";
-    MYSQL_ERRNO[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = -1;
-    SQLSTATE[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "HY000";
-    STR_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "ObProxy shard txn server session is close";
-    STR_USER_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSE] = "ObProxy shard txn server session is close";
+    MYSQL_ERRNO[-OB_PROXY_SHARD_TXN_SESSION_CLOSED] = -1;
+    SQLSTATE[-OB_PROXY_SHARD_TXN_SESSION_CLOSED] = "HY000";
+    STR_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSED] = "ObProxy shard txn server session is close";
+    STR_USER_ERROR[-OB_PROXY_SHARD_TXN_SESSION_CLOSED] = "ObProxy shard txn server session is close";
 
     // kv related error code
 

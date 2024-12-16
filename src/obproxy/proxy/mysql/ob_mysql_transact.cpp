@@ -104,13 +104,16 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
   bool last_request_in_trans = client_session->is_last_request_in_trans();
 
-  if (client_session->is_proxy_enable_trans_internal_routing()) {
+  if (OB_ISNULL(client_session->get_server_session())) {
+    // nothing, it is likely handshare stage
+  } else if (client_session->is_proxy_enable_trans_internal_routing()) {
     // set distributed transaction route flag
     bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
     bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
 
     if (!last_request_in_trans && is_in_trans) {
       client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
+      client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(true);
       LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
       // to improve perfermence only log in debug level
       s.trace_log_.set_need_print(is_trans_internal_routing);
@@ -123,11 +126,13 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
       // close txn, refresh enable_transaction_internal_routing_
       LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
       client_session->get_trans_coordinator_ss_addr().reset();
+      client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(false);
     }
 
     client_session->set_trans_internal_routing(is_trans_internal_routing);
     LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing);
   }
+
   client_session->set_last_request_in_trans(is_in_trans);
 }
 
@@ -6634,15 +6639,27 @@ void ObMysqlTransact::handle_retry_server_connection(ObTransState &s)
   s.sm_->api_.txn_destroy_hook(OB_MYSQL_RESPONSE_TRANSFORM_HOOK);
 
   // binlog 请求也不支持重试
-  if (s.sm_->client_session_->get_session_info().is_oceanbase_server()
-      && !is_binlog_request(s)) {
-    handle_oceanbase_retry_server_connection(s);
-  } else {
+  if (OB_UNLIKELY(is_binlog_request(s))) {
     COLLECT_INTERNAL_DIAGNOSIS(
         s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
         OB_PROXY_NO_NEED_RETRY, "binlog request is unable to retry");
     handle_server_connection_break(s);
+  } else if (OB_UNLIKELY(OB_NOT_NULL(s.sm_->get_server_session())
+                         && s.sm_->get_server_session()->get_session_info().is_key_session())) {
+    const ObServerSessionInfo& server_info = s.sm_->get_server_session()->get_session_info();
+    COLLECT_INTERNAL_DIAGNOSIS(
+        s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
+        server_info.get_key_session_code(), "key session is unable to retry");
+    handle_server_connection_break(s);
+  } else if (OB_UNLIKELY(!s.sm_->client_session_->get_session_info().is_oceanbase_server())) {
+    COLLECT_INTERNAL_DIAGNOSIS(
+        s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
+        OB_PROXY_NO_NEED_RETRY, "non-observer server is unable to retry");
+    handle_server_connection_break(s);
+  } else {
+    handle_oceanbase_retry_server_connection(s);
   }
+
 }
 
 int ObMysqlTransact::attach_cached_dummy_entry(ObTransState &s, const ObAttachDummyEntryType type)
