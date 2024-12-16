@@ -419,6 +419,11 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
 
   if (OB_UNLIKELY(finished
                   && is_oceanbase_mode
+                  && (OK_PACKET_ENDING_TYPE == ending_type
+                      || EOF_PACKET_ENDING_TYPE == ending_type
+                      || ERROR_PACKET_ENDING_TYPE == ending_type
+                      || PREPARE_OK_PACKET_ENDING_TYPE == ending_type
+                      || STRING_EOF_ENDING_TYPE == ending_type)
                   && (0 == pkt_cnt_[OK_PACKET_ENDING_TYPE]))) {
     LOG_WDIAG("invalid pkt num, potential problems",
               "ok pkt num", pkt_cnt_[OK_PACKET_ENDING_TYPE]);
