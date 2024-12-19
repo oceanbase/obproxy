@@ -233,7 +233,6 @@ void ObRpcRedisInfo::set_rpc_credential(const common::ObString &credential)
   }
 }
 
-
 int ObRpcRedisInfo::init_error_redis_msg_buf(uint64_t size)
 {
   int ret = common::OB_SUCCESS;
@@ -247,6 +246,22 @@ int ObRpcRedisInfo::init_error_redis_msg_buf(uint64_t size)
     PROXY_LOG(WDIAG, "alloc error msg redis buf failed", K(ret), K(size), K(this));
   } else {
     MEMSET(error_redis_msg_buf_, '\0', size);
+  }
+  return ret;
+}
+
+int ObRpcRedisInfo::init_redis_inner_msg_buf(uint64_t size)
+{
+  int ret = common::OB_SUCCESS;
+  if (OB_NOT_NULL(redis_inner_msg_buf_)) {
+    allocator_.free(redis_inner_msg_buf_);
+    redis_inner_msg_buf_ = NULL;
+  }
+  if (OB_ISNULL(redis_inner_msg_buf_ = (char *)allocator_.alloc(size))) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_LOG(WDIAG, "alloc inner msg redis buf failed", K(ret), K(size), K(this));
+  } else {
+    MEMSET(redis_inner_msg_buf_, '\0', size);
   }
   return ret;
 }

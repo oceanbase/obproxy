@@ -68,6 +68,10 @@ int init_mysql_stats()
 
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "dummy_entry_expired_count",
                             RECD_INT, DUMMY_ENTRY_EXPIRED_COUNT, SYNC_SUM, RECP_PERSISTENT);
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "current_redis_client_connections",
+                            RECD_INT, CURRENT_REDIS_CLIENT_CONNECTIONS, SYNC_SUM, RECP_NULL);
+    MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_redis_client_connections",
+                            RECD_INT, TOTAL_REDIS_CLIENT_CONNECTIONS, SYNC_SUM, RECP_NULL);
 
     MYSQL_REGISTER_RAW_STAT(mysql_rsb, RECT_PROCESS, "total_client_connections",
                             RECD_INT, TOTAL_CLIENT_CONNECTIONS, SYNC_SUM, RECP_NULL);

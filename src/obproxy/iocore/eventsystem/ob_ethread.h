@@ -61,6 +61,7 @@ class ObIndexRefHashMap;
 class ObTableGroupRefHashMap;
 class ObTableQueryAsyncRefHashMap;
 class ObRpcReqCtxRefHashMap;
+class ObRpcRedisMonitorRefHashMap;
 class ObPartitionRefHashMap;
 class ObRoutineRefHashMap;
 class ObSqlTableRefHashMap;
@@ -349,6 +350,7 @@ public:
   proxy::ObTableGroupRefHashMap &get_tablegroup_map() { return *tablegroup_map_; }
   proxy::ObTableQueryAsyncRefHashMap &get_table_query_async_map() { return *table_query_async_map_; }
   proxy::ObRpcReqCtxRefHashMap &get_rpc_req_ctx_map() { return *rpc_req_ctx_map_; }
+  proxy::ObRpcRedisMonitorRefHashMap &get_rpc_redis_monitor_map() { return *rpc_redis_monitor_map_; }
   proxy::ObTableRefHashMap &get_table_map() { return *table_map_; }
   proxy::ObSqlTableRefHashMap &get_sql_table_map() { return *sql_table_map_; }
   proxy::ObPartitionRefHashMap &get_partition_map() { return *partition_map_; }
@@ -411,6 +413,7 @@ public:
   proxy::ObTableQueryAsyncRefHashMap *table_query_async_map_;
   proxy::ObTableGroupRefHashMap *tablegroup_map_;
   proxy::ObRpcReqCtxRefHashMap *rpc_req_ctx_map_;
+  proxy::ObRpcRedisMonitorRefHashMap *rpc_redis_monitor_map_;
   proxy::ObTableRefHashMap *table_map_;
   proxy::ObPartitionRefHashMap *partition_map_;
   proxy::ObRoutineRefHashMap *routine_map_;

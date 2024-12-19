@@ -32,6 +32,7 @@ class ObRandomNumUtils
 public:
   static int get_random_num(const int64_t min, const int64_t max, int64_t &random_num);
   // get the random value in the range [full_num/2, full_num]
+  static int get_random_bytes(unsigned char *digest, unsigned int &len);
   static int64_t get_random_half_to_full(const int64_t full_num);
 
   static int init_seed();

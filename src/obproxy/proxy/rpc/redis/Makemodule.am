@@ -4,4 +4,10 @@ obproxy/proxy/rpc/redis/ob_rpc_redis_analyzer.cpp\
 obproxy/proxy/rpc/redis/ob_rpc_redis_command_factory.h\
 obproxy/proxy/rpc/redis/ob_rpc_redis_command_factory.cpp\
 obproxy/proxy/rpc/redis/ob_rpc_redis_info.h\
-obproxy/proxy/rpc/redis/ob_rpc_redis_info.cpp
+obproxy/proxy/rpc/redis/ob_rpc_redis_info.cpp\
+obproxy/proxy/rpc/redis/ob_rpc_redis_ctx_cache.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_ctx_cache.cpp\
+obproxy/proxy/rpc/redis/ob_rpc_redis_monitor_cache.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_monitor_cache.cpp\
+obproxy/proxy/rpc/redis/ob_rpc_redis_stat.h\
+obproxy/proxy/rpc/redis/ob_rpc_redis_stat.cpp

@@ -13,23 +13,28 @@
 #define USING_LOG_PREFIX PROXY
 
 #include "proxy/rpc/redis/ob_rpc_redis_command_factory.h"
+#include "proxy/rpc/redis/ob_rpc_redis_stat.h"
 #include "obkv/redis/ob_redis_rpc_request.h"
 #include "obkv/redis/ob_redis_rpc_response.h"
 #include "obkv/table/ob_table_rpc_struct.h"
+#include "proxy/rpc/net/ob_rpc_redis_client_net_handler.h"
 #include "proxy/rpc/ob_rpc_req.h"
 #include "proxy/rpc/redis/ob_rpc_redis_analyzer.h"
+#include "proxy/rpc/redis/ob_rpc_redis_ctx_cache.h"
 
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::obkv;
 
-
-
+#define REDIS_MAX_INFO_LENGTH 2048
+#define REDIS_MAX_CLIENT_INFO_LENGTH 512
+//set mset psetex setex
 void ObRpcRedisCommandMetaMap::init()
 {
   int ret = OB_SUCCESS;
   redis_cmd_meta_map_.create(REDIS_COMMAND_MAX, ObModIds::OB_HASH_BUCKET);
   /* auth */
   REG_OB_REDIS_CMD("AUTH", REDIS_COMMAND_AUTH, REDIS_EMPTY_TABLE_NAME, 3, OB_REDIS_IS_AUTH, NULL);
+  REG_OB_REDIS_CMD("HELLO", REDIS_COMMAND_HELLO, REDIS_EMPTY_TABLE_NAME, 5, OB_REDIS_IS_AUTH, NULL);
 
   /* string */
   REG_OB_REDIS_CMD("APPEND",    REDIS_COMMAND_GET,        REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
@@ -288,11 +293,16 @@ int ObRpcRedisCommandFactory::gen_redis_request(ObRpcRedisInfo *redis_info,
       bool is_need_init_rowkey = false;
       if (redis_meta->is_auth()) {
         LOG_DEBUG("get an auth redis request", KPC(redis_meta));
-        if (OB_ISNULL(redis_request = op_reclaim_alloc(ObRpcRedisAuthRequest))) {
-          ret = OB_ALLOCATE_MEMORY_FAILED;
-          LOG_WDIAG("fail to alloc mem for redis auth request", K(ret));
+        if (OB_UNLIKELY(RedisCommandType::REDIS_COMMAND_HELLO == redis_meta->get_redis_cmd_type())) {
+          ret = OB_ERR_REDIS_UNKNOWN_COMMAND;
+          LOG_WDIAG("unsupport redis command hello", K(ret));
         } else {
-          redis_info->set_auth_request(true);
+          if (OB_ISNULL(redis_request = op_reclaim_alloc(ObRpcRedisAuthRequest))) {
+            ret = OB_ALLOCATE_MEMORY_FAILED;
+            LOG_WDIAG("fail to alloc mem for redis auth request", K(ret));
+          } else {
+            redis_info->set_auth_request(true);
+          }
         }
       } else if (redis_meta->is_internal()) {
         LOG_DEBUG("get an internal redis request", KPC(redis_meta));
@@ -458,7 +468,6 @@ char *ObRpcRedisCommandFactory::alloc_redis_table_request(uint32_t len)
 {
   char *ret = NULL;
   ret = static_cast<char *>(op_fixed_mem_alloc(len));
-  LOG_DEBUG("czl_test", K(ret));
   return ret;
 }
 
@@ -532,19 +541,196 @@ int ObRpcRedisCommandFactory::gen_redis_result(ObRpcRedisInfo *redis_info, Redis
 int ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_client(ObRpcReq &rpc_request)
 {
   int ret = OB_SUCCESS;
-  UNUSEDx(rpc_request);
-  //TODO support next
-  ret = OB_ERR_REDIS_UNKNOWN_COMMAND;
-
+  ObRpcRedisInfo *redis_info = rpc_request.get_redis_info();
+  ObRpcRedisClientNetHandler *redis_client = dynamic_cast<ObRpcRedisClientNetHandler *>(rpc_request.get_cnet_sm());
+  ObString param;
+  ObString upper_param;
+  common::ObSEArray<common::ObString, COMMON_REDIS_ARGS_COUNT> * redis_args = redis_info->get_redis_args();
+  if (OB_ISNULL(redis_args) || 2 > redis_args->count()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid args to handle", K(ret));
+  } else if (OB_ISNULL(redis_client)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("redis client net handler is null", K(ret), K(rpc_request));
+  } else {
+    upper_param = redis_args->at(1);
+    if (0 == upper_param.case_compare("LIST")) {
+      uint64_t size = REDIS_MAX_CLIENT_INFO_LENGTH * get_global_redis_info_stat().get_connected_clients();
+      if (OB_FAIL(redis_info->init_redis_inner_msg_buf(size))) {
+        LOG_WDIAG("fail to alloc msg buf for redis inner msg", K(redis_info), K(ret));
+      } else {
+        int64_t pos = 0;
+        char *buf = redis_info->get_redis_inner_msg_buf();
+        if (OB_FAIL(get_global_rpc_redis_ctx_cache().get_all_rpc_redis_ctx(buf, size, pos))) {
+          LOG_WDIAG("fail to format redis ctx", K(buf), K(ret));
+        } else {
+          ObString content;
+          content.assign(buf, strlen(buf));
+          ret = ObRpcRedisAnalyzer::build_common_resp(rpc_request, content);
+        }
+      }
+    } else if (0 == upper_param.case_compare("INFO")) {
+      uint64_t size = REDIS_MAX_CLIENT_INFO_LENGTH;
+      if (OB_FAIL(redis_info->init_redis_inner_msg_buf(size))) {
+        LOG_WDIAG("fail to alloc msg buf for redis inner msg", K(redis_info), K(ret));
+      } else {
+        int64_t pos = 0;
+        char *buf = redis_info->get_redis_inner_msg_buf();
+        if (OB_FAIL(redis_client->get_redis_ctx()->format_redis_client_ctx(buf, size, pos))) {
+          LOG_WDIAG("fail to format redis ctx", K(buf), K(ret));
+        } else {
+          int len = strlen(buf);
+          buf[len-2] = '\n';
+          ObString content;
+          content.assign(buf, len - 1);
+          ret = ObRpcRedisAnalyzer::build_common_resp(rpc_request, content);
+        }
+      }
+    } else if (0 == upper_param.case_compare("SETNAME")) {
+      if (redis_args->count() != 3) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("invalid args to handle", K(ret));
+      } else {
+        ObString &name = redis_args->at(2);
+        redis_client->get_redis_ctx()->set_client_name(name);
+        ret = ObRpcRedisAnalyzer::build_ok_resp(rpc_request);
+      }
+    } else if (0 == upper_param.case_compare("GETNAME")) {
+      if (redis_args->count() != 2) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("invalid args to handle", K(ret));
+      } else {
+        ObString content;
+        char *name = redis_client->get_redis_ctx()->get_client_name();
+        if (OB_NOT_NULL(name)) {
+          content.assign(name, strlen(name));
+        }
+        ret = ObRpcRedisAnalyzer::build_common_resp(rpc_request,content);
+      }
+    } else if (0 == upper_param.case_compare("ID")) {
+      if (redis_args->count() != 2) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("invalid args to handle", K(ret));
+      } else {
+        ret = ObRpcRedisAnalyzer::build_int_resp(rpc_request);
+      }
+    } else if (0 == upper_param.case_compare("SETINFO")) {
+      if (redis_args->count() != 4) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("invalid args to handle", K(ret));
+      } else {
+        if (0 == redis_args->at(2).case_compare("LIB-NAME")) {
+          ObString lib_name = redis_args->at(3);
+          redis_client->get_redis_ctx()->set_lib_name(lib_name);
+          ret = ObRpcRedisAnalyzer::build_ok_resp(rpc_request);
+        } else if (0 == redis_args->at(2).case_compare("LIB-VER")) {
+          ObString lib_ver = redis_args->at(3);
+          redis_client->get_redis_ctx()->set_lib_ver(lib_ver);
+          ret = ObRpcRedisAnalyzer::build_ok_resp(rpc_request);
+        } else {
+          ret = OB_NOT_SUPPORTED;
+        }
+      }
+    } else {
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("not supported redis inner command", K(ret), K(upper_param));
+    }
+  }
   return ret;
 }
 
 int ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_info(ObRpcReq &rpc_request)
 {
   int ret = OB_SUCCESS;
-  UNUSEDx(rpc_request);
-  //TODO support next
-  ret = OB_ERR_REDIS_UNKNOWN_COMMAND;
+  ObRpcRedisInfo *redis_info = rpc_request.get_redis_info();
+  ObArenaAllocator &allocator = redis_info->get_allocator();
+  common::ObSEArray<common::ObString, COMMON_REDIS_ARGS_COUNT> * redis_args = redis_info->get_redis_args();
+  bool all_sections = false;
+  int sections = 0;
+  ObString section;
+  ObString upper_section;
+  if (OB_ISNULL(redis_args) || redis_args->count() > 2) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid args to handle", K(ret));
+  } else if (redis_args->count() == 1) {
+    all_sections = true;
+  } else {
+    section = redis_args->at(1);
+    if (OB_FAIL(ob_simple_low_to_up(allocator, section, upper_section))) {
+      LOG_WDIAG("fail to convert section str to uppercase", K(ret));
+    } else if (0 == upper_section.case_compare("DEFAULT") || 0 == upper_section.case_compare("ALL")) {
+      all_sections = true;
+    }
+  }
+    if (OB_FAIL(redis_info->init_redis_inner_msg_buf(REDIS_MAX_INFO_LENGTH))){
+      LOG_WDIAG("fail to alloc msg_buf for redis inner request", K(redis_info), K(ret));
+    } else{
+      int64_t pos = 0;
+      char *info_buf = redis_info->get_redis_inner_msg_buf();
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("SERVER"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections += 1;
+        ObRpcRedisInfoFactory::format_redis_server_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("Clients"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_clients_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("MEMORY"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_memory_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("PERSISTENCE"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_persistence_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("STATS"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_stats_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) && (all_sections || 0 == upper_section.case_compare("CPU"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_cpu_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      if (OB_SUCC(ret) &&(all_sections || 0 == upper_section.case_compare("CLUSTER"))) {
+        if (0 != sections) {
+          int len = snprintf(info_buf + pos, REDIS_MAX_INFO_LENGTH , "\r\n");
+          pos += len;
+        }
+        sections +=1;
+        ObRpcRedisInfoFactory::format_redis_cluster_info(info_buf, REDIS_MAX_INFO_LENGTH, pos);
+      }
+      ObString content;
+      content.assign(info_buf, strlen(info_buf));
+      ret = ObRpcRedisAnalyzer::build_common_resp(rpc_request, content);
+    }
+
+  if (OB_LIKELY(!upper_section.empty())) {
+    allocator.free(upper_section.ptr());
+  }
 
   return ret;
 }
@@ -552,10 +738,9 @@ int ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_info(ObRpcReq &rpc_requ
 int ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_monitor(ObRpcReq &rpc_request)
 {
   int ret = OB_SUCCESS;
-  UNUSEDx(rpc_request);
-
-  //TODO support next
-  ret = OB_ERR_REDIS_UNKNOWN_COMMAND;
+  ObRpcRedisInfo *redis_info = rpc_request.get_redis_info();
+  redis_info->set_monitor_cmd(true);
+  ret = ObRpcRedisAnalyzer::build_ok_resp(rpc_request);
 
   return ret;
 }

@@ -106,6 +106,15 @@ public:
     return ret_value;
   }
 
+  V get(EntryIterator &it)
+  {
+    V ret_value = *it;
+    if (NULL != ret_value) {
+      ret_value->inc_ref();
+    }
+    return ret_value;
+  }
+
   // remove from map, and dec_ref;
   int erase(const K &key)
   {

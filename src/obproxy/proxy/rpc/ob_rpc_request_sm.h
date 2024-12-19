@@ -483,6 +483,7 @@ public:
   void set_inner_cont(event::ObContinuation *cont) { inner_cont_ = cont; }
   ObRpcReqCmdTimeStat &get_cmd_time_stat() { return cmd_time_stats_; }
   void update_cmd_stats();
+  void update_redis_stats();
   void update_monitor_log();
   void get_monitor_error_info(int32_t &error_code, ObString &error_msg, bool &is_error_resp);
   void update_monitor_stats(const ObString &logic_tenant_name,

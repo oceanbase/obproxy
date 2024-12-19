@@ -575,6 +575,7 @@ public:
   DEF_STR(rpc_redis_default_database_name, "obkv_redis", "obkv-redis default database name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(rpc_redis_default_user_name, "default", "obkv-redis default user name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_redis_operation_timeout, "10000000",  "obkv redis request timeout us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_redis_max_monitor_num, "10", "[0,)", "obkv-redis max monitor num", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // 以下是废弃、无用的配置，统一放在下面
   DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

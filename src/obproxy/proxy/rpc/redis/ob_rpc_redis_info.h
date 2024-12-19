@@ -33,6 +33,8 @@ class ObRpcRedisCmdInfo;
 #define COMMON_REDIS_ARGS_COUNT 4
 #define OB_RPC_REDIS_DEFAULT_BUF_SIZE 1024
 #define OB_RPC_REDIS_COMMAND_MAX_LEN 50
+#define OB_RPC_REDIS_MONITOR_MAX_LEN 128
+#define REDIS_CLIENT_NAME_LEN 512
 
 //static const common::ObString REDIS_STRING_TABLE_NAME = "modis_string_table";
 // static const common::ObString REDIS_LIST_TABLE_NAME = "modis_list_table";
@@ -53,7 +55,7 @@ enum RedisCommandType {
   REDIS_COMMAND_INVALID = 0,
   // Auth
   REDIS_COMMAND_AUTH,
-
+  REDIS_COMMAND_HELLO,
   // List
   REDIS_COMMAND_LINDEX,
   REDIS_COMMAND_LSET,
@@ -198,17 +200,18 @@ class ObRpcRedisInfo
 public:
   ObRpcRedisInfo() : redis_cmd_info_(),
                      request_buf_(NULL), request_inner_buf_(NULL), response_buf_(NULL), response_inner_buf_(NULL), response_server_ptr_(NULL),
-                     lower_redis_cmd_buf_(NULL), error_redis_msg_buf_(NULL), request_buf_len_(0), request_inner_buf_len_(0), response_buf_len_(0), response_inner_buf_len_(0),
+                     lower_redis_cmd_buf_(NULL), error_redis_msg_buf_(NULL), redis_inner_msg_buf_(NULL), request_buf_len_(0), request_inner_buf_len_(0), response_buf_len_(0), response_inner_buf_len_(0),
                      req_buf_repeat_times_(0), request_len_(0), response_len_(0),
                      redis_db_(0), tenant_id_(1), redis_args_(NULL), use_default_name_(false),
-                     is_auth_request_(false), is_inner_request_(false), is_error_response_(false), is_inner_response_(false),
+                     is_auth_request_(false), is_inner_request_(false), is_monitor_cmd_(false), is_error_response_(false), is_inner_response_(false),
                      is_use_response_inner_buf_(false), is_need_quit_(false), is_redis_msg_init_(false),
                      redis_cmd_type_(REDIS_COMMAND_MAX), redis_request_(NULL),
                     //  rewrited_request_(NULL), redis_response_(NULL), redis_table_response_(NULL),
                     //  rewrited_request_(NULL), redis_table_response_(NULL),
                      redis_table_response_(NULL),
-                     rpc_credential_(), rpc_redis_msg_(), credential_(),
-                     allocator_() {}
+                     rpc_credential_(), rpc_redis_msg_(), rpc_redis_monitor_msg_(), credential_(),
+                     allocator_() {
+                     }
   ~ObRpcRedisInfo() { reset(); };
   void reset();
   bool inner_redis_cmd() const;
@@ -256,6 +259,7 @@ public:
   void set_request_len(uint64_t len) { request_len_ = len; }
   void set_auth_request(bool value) { is_auth_request_ = value; }
   void set_inner_request(bool value) { is_inner_request_ = value; }
+  void set_monitor_cmd(bool value) { is_monitor_cmd_ = value; }
   void set_error_response(bool value) { is_error_response_ = value; }
   void set_inner_response(bool value) { is_inner_response_ = value; }
   void set_use_response_inner_buf(bool value) { is_use_response_inner_buf_ = value; }
@@ -267,6 +271,7 @@ public:
 
   bool is_auth_request() { return is_auth_request_; }
   bool is_inner_request() { return is_inner_request_; }
+  bool is_monitor_cmd() { return is_monitor_cmd_;}
   bool is_error_response() { return is_error_response_; }
   bool is_inner_response() { return is_inner_response_; }
   bool is_use_response_inner_buf() const { return is_use_response_inner_buf_; }
@@ -277,7 +282,10 @@ public:
   char *get_lower_command_name();
   int init_error_redis_msg_buf(uint64_t size);
   char *get_error_redis_msg_buf() {return error_redis_msg_buf_; }
+  int init_redis_inner_msg_buf(uint64_t size);
+  char *get_redis_inner_msg_buf() {return redis_inner_msg_buf_; }
   char *get_redis_msg();
+  char *get_redis_monitor_msg();
   void inc_req_buf_repeat_times() { req_buf_repeat_times_++; }
 
   TO_STRING_KV(KPC_(redis_args), KP_(redis_request));
@@ -295,6 +303,7 @@ private:
 
   char *lower_redis_cmd_buf_;           //lower redis command info
   char *error_redis_msg_buf_;           //inited when need error msg in obproxy
+  char *redis_inner_msg_buf_;           //inited when need inner msg in obproxy
 
   int64_t request_buf_len_;             //buffer length for request_buf_
   int64_t request_inner_buf_len_;       //buffer length for request_inner_buf_
@@ -310,6 +319,7 @@ private:
   bool use_default_name_;
   bool is_auth_request_;
   bool is_inner_request_;
+  bool is_monitor_cmd_;
   bool is_error_response_;
   bool is_inner_response_;
   bool is_use_response_inner_buf_;
@@ -324,7 +334,9 @@ private:
 
   char rpc_credential_[50];
   char rpc_redis_msg_[OB_RPC_REDIS_COMMAND_MAX_LEN];
+  char rpc_redis_monitor_msg_[OB_RPC_REDIS_MONITOR_MAX_LEN];
   common::ObString credential_;
+  // common::ObString client_name_;
   common::ObArenaAllocator allocator_; // clear for each request done
 };
 
@@ -386,6 +398,40 @@ char *ObRpcRedisInfo::get_redis_msg()
     is_redis_msg_init_ = true;
   }
   return rpc_redis_msg_;
+}
+
+char *ObRpcRedisInfo::get_redis_monitor_msg()
+{
+  if (OB_NOT_NULL(redis_args_)) {
+    int64_t len = 0;
+    int i = 0;
+    int args_count = is_auth_request() ? 1 : redis_args_->count();
+    while (len < OB_RPC_REDIS_MONITOR_MAX_LEN - 1 && i < args_count) {
+      common::ObString &info = redis_args_->at(i);
+      int copy_len = info.length();
+      const char *ptr = info.ptr();
+      // just like "get"，for len+ "copy_len" + ""
+      if (copy_len + len + 4 >= OB_RPC_REDIS_MONITOR_MAX_LEN) {
+        copy_len = OB_RPC_REDIS_MONITOR_MAX_LEN - len - 5;
+      }
+      if(copy_len < 0) {
+        copy_len = 0;
+      }
+      rpc_redis_monitor_msg_[len++] = '\"';
+      MEMCPY(rpc_redis_monitor_msg_+ len, ptr, copy_len);
+      len += copy_len;
+      rpc_redis_monitor_msg_[len++] = '\"';
+      i++;
+      if (i != redis_args_->count() && len < OB_RPC_REDIS_MONITOR_MAX_LEN - 1) {
+        rpc_redis_monitor_msg_[len++] = ' ';
+      }
+    }
+    if (len >= OB_RPC_REDIS_MONITOR_MAX_LEN) {
+      len = OB_RPC_REDIS_MONITOR_MAX_LEN - 1;
+    }
+    rpc_redis_monitor_msg_[len] = 0;
+  }
+  return rpc_redis_monitor_msg_;
 }
 
 }

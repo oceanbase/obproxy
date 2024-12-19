@@ -46,6 +46,12 @@ int init_rpc_req_stats()
                           SYNC_SUM, RECP_NULL);
     RPC_REGISTER_RAW_STAT(rpc_req_rsb, RECT_PROCESS, "curent_handing_shard_rpc_req", RECD_INT, CURRENTLY_HANDLING_SHARD_RPC_REQ,
                           SYNC_SUM, RECP_NULL);
+    RPC_REGISTER_RAW_STAT(rpc_req_rsb, RECT_PROCESS, "redis_commands_processed", RECD_INT, REDIS_COMMAND_PROCESSED,
+                          SYNC_SUM, RECP_PERSISTENT);
+    RPC_REGISTER_RAW_STAT(rpc_req_rsb, RECT_PROCESS, "redis_total_net_input_bytes", RECD_INT, REDIS_TOTAL_NET_INPUT_BYTES,
+                          SYNC_SUM, RECP_PERSISTENT);
+    RPC_REGISTER_RAW_STAT(rpc_req_rsb, RECT_PROCESS, "redis_total_net_output_bytes", RECD_INT, REDIS_TOTAL_NET_OUTPUT_BYTES,
+                          SYNC_SUM, RECP_PERSISTENT);
   }
 
   return ret;

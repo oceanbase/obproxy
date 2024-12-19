@@ -11,6 +11,7 @@
  */
 
 #define USING_LOG_PREFIX PROXY
+#include <openssl/sha.h>
 #include "utils/ob_proxy_utils.h"
 #include "utils/ob_proxy_lib.h"
 #include "lib/file/ob_file.h"
@@ -41,6 +42,27 @@ int ObRandomNumUtils::get_random_num(const int64_t min, const int64_t max, int64
   }
   if (OB_SUCC(ret)) {
     random_num = min + random() % (max - min + 1);
+  }
+  return ret;
+}
+
+int ObRandomNumUtils::get_random_bytes(unsigned char* digest, unsigned int &len)
+{
+  int ret = OB_SUCCESS;
+  if (!is_seed_inited_) {
+    if (OB_FAIL(init_seed())) {
+      LOG_WDIAG("fail to init random seed", K(ret));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    const unsigned char* msg = reinterpret_cast<const unsigned char*>("0123456789abcdef");
+    const unsigned char* key = reinterpret_cast<const unsigned char*>(&seed_);
+    size_t key_len = sizeof(seed_);
+    size_t msg_len = strlen(reinterpret_cast<const char*>(msg));
+    unsigned char* result = HMAC(EVP_sha256(), key, key_len, msg, msg_len, digest, &len);
+    if (OB_UNLIKELY(OB_ISNULL(result))) {
+      LOG_WDIAG("HMAC calculation failed", K(ret), K(len));
+    }
   }
   return ret;
 }

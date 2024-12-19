@@ -45,6 +45,7 @@
 #include "proxy/rpc/ob_rpc_req_debug_names.h"
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
+#include "proxy/rpc/redis/ob_rpc_redis_stat.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_processor.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_processor.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_processor.h"
@@ -226,7 +227,7 @@ ObRpcRequestSM::ObRpcRequestSM()
     force_retry_congested_(false), congestion_lookup_success_(false), is_congestion_entry_updated_(false),
     already_get_async_info_(false), already_get_index_entry_(false), already_get_tablegroup_entry_(false),
     congestion_entry_not_exist_count_(0), congestion_entry_(NULL), pll_info_(), rpc_trace_id_(), rpc_route_mode_(RPC_ROUTE_FIND_LEADER),
-    rpc_type_(OBPROXY_RPC_UNKOWN), inner_request_cleanup_mutex_()
+    rpc_type_(OBPROXY_RPC_UNKOWN), inner_request_cleanup_mutex_() , connection_diagnosis_trace_(NULL)
 {
   static bool scatter_inited = false;
 
@@ -772,6 +773,7 @@ int ObRpcRequestSM::analyze_rpc_login_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRp
     ret = OB_ERR_TOO_MANY_SESSIONS;
     rpc_req_->set_rpc_req_error_code(ret);
     rpc_req_->set_need_terminal_client_net(true);
+    proxy::get_global_redis_info_stat().add_rejected_connections();
     LOG_WDIAG("failed to check_connection_throttle", K(ret), K_(rpc_trace_id));
   } else {
     ObRpcReqCtx &rpc_ctx = *prpc_ctx;
@@ -4873,6 +4875,8 @@ void ObRpcRequestSM::update_cmd_stats()
     cmd_time_stats_.request_total_time_ =
       milestone_diff_new(rpc_req_->client_timestamp_.client_begin_, rpc_req_->client_timestamp_.client_end_);
 
+    update_redis_stats();
+
     int64_t slow_time_threshold = mysql_config_params_->slow_query_time_threshold_;
     int64_t proxy_process_time_threshold = mysql_config_params_->slow_proxy_process_time_threshold_;
     const char *SLOW_QUERY = "Slow RPC Query: ";
@@ -5042,6 +5046,26 @@ void ObRpcRequestSM::update_cmd_stats()
     }
 
     update_monitor_log();
+  }
+}
+
+inline void ObRpcRequestSM::update_redis_stats()
+{
+  // 上层已经保证rpc_req_ not null
+  if (obkv::OBPROXY_RPC_REDIS == rpc_req_->get_rpc_type()) {
+    RPC_INCREMENT_DYN_STAT(REDIS_COMMAND_PROCESSED);
+    int64_t write_time = hrtime_to_sec(cmd_time_stats_.client_response_write_time_) * 1024; //for calc bytes Kb per sec
+    int64_t read_time = hrtime_to_sec(cmd_time_stats_.client_request_read_time_) * 1024; // for calc bytes Kb per sec
+    double output_bytes_per_hrtime = (0 == write_time) ? ((static_cast<double>(rpc_req_->get_response_len())))
+        : (static_cast<double>(rpc_req_->get_response_len()) / static_cast<double>(write_time));
+    double input_bytes_per_hrtime = (0 == read_time) ? (static_cast<double>(rpc_req_->get_redis_info()->get_request_len()))
+        : (static_cast<double>(rpc_req_->get_redis_info()->get_request_len()) / static_cast<double> (read_time));
+    proxy::get_global_redis_info_stat().set_instantaneous_output_kbps(output_bytes_per_hrtime);
+    proxy::get_global_redis_info_stat().set_instantaneous_input_kbps(input_bytes_per_hrtime);
+    RPC_SUM_DYN_STAT(REDIS_TOTAL_NET_INPUT_BYTES, rpc_req_->get_redis_info()->get_request_len());
+    RPC_SUM_DYN_STAT(REDIS_TOTAL_NET_OUTPUT_BYTES, rpc_req_->get_response_len());
+    proxy::get_global_redis_info_stat().set_max_input_buffer(rpc_req_->get_redis_info()->get_request_len());
+    proxy::get_global_redis_info_stat().set_max_output_buffer(rpc_req_->get_response_len());
   }
 }
 
@@ -5879,7 +5903,7 @@ int ObRpcRequestSM::init_rpc_ctx_for_redis()
       ObString credential = redis_info->get_rpc_credential();
       int64_t pos = 0;
       if (OB_UNLIKELY(credential.length() == 0 || OB_ISNULL(credential.ptr()))) {
-        ret = OB_ERR_UNEXPECTED;
+        ret = OB_PASSWORD_WRONG;
         LOG_WDIAG("failed to handle request without login for redis request", K(ret), K_(rpc_trace_id), K(credential));
       } else if (OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
         LOG_WDIAG("invalid to decode credential value", K(ret), K(credential), K_(rpc_trace_id));
@@ -5900,6 +5924,7 @@ int ObRpcRequestSM::analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx)
 
   ObRpcReqCtx *prpc_ctx = NULL;
   ObRpcRedisInfo *redis_info = NULL;
+  const bool is_current_cloud_user = is_need_convert_vip_to_tname();
 
   if (!is_valid_rpc_req()
       || OB_ISNULL(prpc_ctx = rpc_req_->get_rpc_ctx())
@@ -5916,8 +5941,9 @@ int ObRpcRequestSM::analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx)
       LOG_WDIAG("redis args invalid", K(ret), K_(rpc_trace_id));
     } else if (OB_UNLIKELY(redis_info->get_redis_args()->count() == 2)) {
       // redis use default name
-      ObString full_name(get_global_proxy_config().rpc_redis_default_user_name);
-      char separator = '\0';
+      ObString username(get_global_proxy_config().rpc_redis_default_user_name);
+      ObString full_name = redis_info->get_redis_args()->at(1);
+      char separator = '#';
       redis_info->set_use_default_name(true);
       // do nothing redis use default name
       // ctx.has_cluster_username_ = false;
@@ -5925,8 +5951,8 @@ int ObRpcRequestSM::analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx)
       // rpc_ctx.tenant_name_ = ctx.vip_tenant_name_;
       // rpc_ctx.cluster_name_ = ctx.vip_cluster_name_;
       // rpc_ctx.set_clustername_from_default(true);
-      rpc_ctx.set_rpc_password_str(redis_info->get_redis_args()->at(1)); //password
-      if (OB_FAIL(ObProxyRpcReqAnalyzer::do_parse_full_user_name(rpc_ctx, full_name, separator, ctx))) {
+      // rpc_ctx.set_rpc_password_str(redis_info->get_redis_args()->at(1)); //password
+      if (OB_FAIL(ObProxyRpcReqAnalyzer::do_parse_full_redis_auth_info(rpc_ctx, full_name, username, separator, ctx, is_current_cloud_user))) {
         LOG_WDIAG("client rpc parse full user name failed", K(ret), "full_username", full_name, K_(rpc_trace_id));
       } else {
         // init client session info
@@ -5934,10 +5960,11 @@ int ObRpcRequestSM::analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx)
         // client_net_handler->set_has_cluster_username(ctx.has_cluster_username_);
       }
     } else {
-      ObString full_name = redis_info->get_redis_args()->at(1); //username
-      rpc_ctx.set_rpc_password_str(redis_info->get_redis_args()->at(2)); //password
-      char separator = '\0'; //First just support standard format
-      if (OB_FAIL(ObProxyRpcReqAnalyzer::do_parse_full_user_name(rpc_ctx, full_name, separator, ctx))) {
+      ObString username = redis_info->get_redis_args()->at(1); //username
+      ObString full_name = redis_info->get_redis_args()->at(2);
+      // rpc_ctx.set_rpc_password_str(redis_info->get_redis_args()->at(2)); //password
+      char separator = '#'; //First just support standard format
+      if (OB_FAIL(ObProxyRpcReqAnalyzer::do_parse_full_redis_auth_info(rpc_ctx, full_name, username, separator, ctx, is_current_cloud_user))) {
         LOG_WDIAG("client rpc parse full user name failed", K(ret), "full_username", full_name, K_(rpc_trace_id));
       } else {
         // init client session info

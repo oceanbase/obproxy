@@ -571,7 +571,19 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
         }
       } else if (obrpc::OB_TABLE_API_LOGIN == obkv_info.pcode_) {
         LOG_DEBUG("handle_obkv_response for OB_TABLE_API_LOGIN", K(rpc_trace_id));
-        if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_login_response(ctx, ob_rpc_req))) {
+        if (OB_UNLIKELY(obkv_info.rpc_origin_error_code_ != 0) && ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) {
+          ObString err_content;
+          bool is_error_from_server = true;
+          if (OB_FAIL(ObRpcRedisAnalyzer::build_err_msg(ob_rpc_req, err_content, is_error_from_server))) {
+            LOG_WDIAG("failed to fmt error msg from server", K(ret), K(ob_rpc_req));
+          } else if (OB_FAIL(ObRpcRedisAnalyzer::build_err_resp(ob_rpc_req, err_content))) {
+            LOG_WDIAG("failed to build error pkt for redis response", K(ret), K(ob_rpc_req));
+          } else if(OB_FAIL(ObRpcRedisAnalyzer::handle_redis_serialize_response(ob_rpc_req))) {
+            LOG_WDIAG("invalid to serialize redis server error response", K(ret), K(ob_rpc_req));
+          }
+          LOG_DEBUG("get an error response from server, maybe need retry or directly to return error",
+                    "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id), "can_retry", obkv_info.is_rpc_req_can_retry());
+        } else if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_login_response(ctx, ob_rpc_req))) {
           LOG_WDIAG("fail to call handle_login_response", K(ret), K(rpc_trace_id));
         }  else if (ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) { //TODO
           LOG_DEBUG("handle_obkv_response for OBPROXY_RPC_REDIS", K(rpc_trace_id));
@@ -1256,6 +1268,118 @@ int ObProxyRpcReqAnalyzer::do_parse_full_user_name(ObRpcReqCtx &rpc_ctx,
         name_id_str = user;
         user = name_id_str.split_on(cluster_id_pos);
         cluster_id_str = name_id_str;
+      }
+    }
+  }
+  if (OB_SUCC(ret)) {
+    if (tenant.empty() && cluster.empty()) {
+      // if proxy start with specified tenant and cluster, just use them
+      obutils::ObProxyConfig &proxy_config = obutils::get_global_proxy_config();
+      obsys::CRLockGuard guard(proxy_config.rwlock_);
+      int64_t proxy_tenant_len = strlen(proxy_config.proxy_tenant_name.str());
+      int64_t proxy_cluster_len = strlen(proxy_config.rootservice_cluster_name.str());
+      if (proxy_tenant_len > 0 && proxy_cluster_len > 0) {
+        if (OB_UNLIKELY(proxy_tenant_len > OB_MAX_TENANT_NAME_LENGTH)
+            || OB_UNLIKELY(proxy_cluster_len > OB_PROXY_MAX_CLUSTER_NAME_LENGTH)) {
+          ret = OB_SIZE_OVERFLOW;
+          LOG_WDIAG("proxy_tenant or proxy_cluster is too long", K(proxy_tenant_len), K(proxy_cluster_len), K(ret));
+        } else {
+          memcpy(tenant_str, proxy_config.proxy_tenant_name.str(), proxy_tenant_len);
+          memcpy(cluster_str, proxy_config.rootservice_cluster_name.str(), proxy_cluster_len);
+          tenant.assign_ptr(tenant_str, static_cast<int32_t>(proxy_tenant_len));
+          cluster.assign_ptr(cluster_str, static_cast<int32_t>(proxy_cluster_len));
+        }
+      }
+    } else {
+      if (!tenant.empty()) {
+        ctx.has_tenant_username_ = true;
+      }
+      if (!cluster.empty()) {
+        ctx.has_cluster_username_ = true;
+      }
+    }
+  }
+  if (OB_SUCC(ret)) {
+    if (tenant.empty()) {
+      tenant = ctx.vip_tenant_name_;
+    }
+    if (cluster.empty()) {
+      rpc_ctx.set_clustername_from_default(true);
+      cluster = ctx.vip_cluster_name_;
+    }
+
+    if (OB_FAIL(ObProxyRpcReqAnalyzer::do_parse_auth_result(rpc_ctx,
+                                         FORMAL_USER_TENANT_SEPARATOR,
+                                         FORMAL_TENANT_CLUSTER_SEPARATOR,
+                                         CLUSTER_ID_SEPARATOR,
+                                         user, tenant, cluster, cluster_id_str))) {
+      LOG_WDIAG("fail to do parse auth result", K(rpc_ctx), K(ret));
+    }
+
+  }
+  return ret;
+}
+
+int ObProxyRpcReqAnalyzer::do_parse_full_redis_auth_info(ObRpcReqCtx &rpc_ctx,
+    const ObString &full_name, const ObString &user_name, const char separator,
+    ObProxyRpcReqAnalyzeCtx &ctx, bool is_cloud_user)
+{
+  int ret = OB_SUCCESS;
+  const char *tenant_pos = NULL;
+  const char *user_cluster_pos = NULL;
+  // const char *cluster_id_pos = NULL;
+  const char *password_pos = NULL;
+  ObString user;
+  ObString tenant;
+  ObString cluster;
+  ObString name_id_str;
+  ObString cluster_id_str;
+  char tenant_str[OB_MAX_TENANT_NAME_LENGTH];
+  char cluster_str[OB_PROXY_MAX_CLUSTER_NAME_LENGTH];
+
+  if (full_name.empty() && user_name.empty()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("no login request for auth", K(ret));
+  } else if (is_cloud_user) {
+    // auth user password
+    user = user_name;
+    rpc_ctx.set_rpc_password_str(full_name);
+  } else {
+    ObString full_user_name = full_name;
+    LOG_DEBUG("full user_name", K(full_user_name), K(user_name));
+    user_cluster_pos = full_user_name.find(separator);
+    user = user_name;
+    if (NULL == user_cluster_pos) {
+      // auth user@tenant_name#cluster_name password, for compatible with lower version (4.3.2 bp1)
+      rpc_ctx.set_rpc_password_str(full_name);
+      full_user_name =user_name;
+      tenant_pos = full_user_name.find(FORMAL_USER_TENANT_SEPARATOR);
+      user_cluster_pos = full_user_name.find(FORMAL_TENANT_CLUSTER_SEPARATOR);
+      if (NULL != tenant_pos && NULL != user_cluster_pos) {
+        user = full_user_name.split_on(tenant_pos);
+        tenant = full_user_name.split_on(user_cluster_pos);
+        cluster = full_user_name;
+      } else if (NULL != tenant_pos) {
+        user = full_user_name.split_on(tenant_pos);
+        tenant = full_user_name;
+      } else if (NULL != user_cluster_pos) {
+        user = full_user_name.split_on(user_cluster_pos);
+        cluster = full_user_name;
+      } else {
+        user = full_user_name;
+      }
+    } else {
+      // auth [user] auth_info
+      // auth info format as: tenant_name#cluster_name#password
+      tenant = full_user_name.split_on(user_cluster_pos);
+      password_pos = full_user_name.find(separator);
+      if (NULL == password_pos) {
+        cluster = full_user_name;
+        ObString passwd("");
+        rpc_ctx.set_rpc_password_str(passwd);
+      } else {
+        cluster = full_user_name.split_on(separator);
+        rpc_ctx.set_rpc_password_str(full_user_name);
       }
     }
   }

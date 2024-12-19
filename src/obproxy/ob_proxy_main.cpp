@@ -25,6 +25,7 @@
 #include "utils/ob_layout.h"
 #include "utils/ob_proxy_hot_upgrader.h"
 #include "obproxy/obutils/ob_hot_upgrade_processor.h"
+#include "obproxy/proxy/rpc/redis/ob_rpc_redis_stat.h"
 #include "obproxy/proxy/rpc/rpclib/ob_rpc_throttle.h"
 
 #include "stat/ob_proxy_warning_stats.h"
@@ -507,6 +508,8 @@ int ObProxyMain::start(const int argc, char *const argv[])
       init_proc_map_info();
       ObMemLeakChecker::init_all_mem_leak_checker();
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
+      proxy::get_global_redis_info_stat().set_rpc_port(opts.rpc_listen_port_);
+      proxy::get_global_redis_info_stat().gen_run_id();
       _LOG_INFO("%s-%s", app_info_.full_version_info_str_, build_version());
       if (info.is_inherited_) {
         LOG_INFO("obproxy will start by hot upgrade", "listen ipv4 fd", info.ipv4_fd_,
@@ -739,6 +742,7 @@ int ObProxyMain::do_start_work(ObProxyOptions &opts)
 {
   int ret = OB_SUCCESS;
   startup_time_us_ = hrtime_to_usec(get_hrtime_internal());
+  proxy::get_global_redis_info_stat().set_up_time(startup_time_us_);
   if (OB_FAIL(obproxy_.init(opts, app_info_))) {
     LOG_EDIAG("obproxy init failed", K(ret));
   } else if (OB_FAIL(obproxy_.start(app_info_))) {
@@ -1054,6 +1058,8 @@ int ObProxyMain::do_monitor_mem()
   uint64_t cur_pos = proxy_main->pos_ % HISTORY_MEMORY_RECORD_COUNT;
   LOG_DEBUG("MemoryMonitor", "current memory hold size", mem_hold, "current rpc memory hold size", rpc_req_mem_hold, K(cur_pos));
   int64_t mem_used = get_memory_used();
+  proxy::get_global_redis_info_stat().set_hold_memory(mem_hold);
+  proxy::get_global_redis_info_stat().set_used_memory(mem_used);
   MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_HOLD, mem_hold);
   MEMORY_PROMETHEUS_STAT(PROMETHEUS_MEMORY_USED, mem_used);
   MEMORY_PROMETHEUS_STAT(PROMETHEUS_PS_COUNT, get_global_ps_entry_cache().get_ps_entry_num()

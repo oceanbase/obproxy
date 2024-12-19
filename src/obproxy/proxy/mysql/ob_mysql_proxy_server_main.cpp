@@ -35,6 +35,7 @@
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "proxy/route/ob_index_cache.h"
+#include "proxy/rpc/redis/ob_rpc_redis_monitor_cache.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_cache.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"

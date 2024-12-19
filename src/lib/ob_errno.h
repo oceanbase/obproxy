@@ -1623,7 +1623,7 @@ namespace common
 #define OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST__USER_ERROR_MSG "ODP-OBKV key partition prohibits shard requests"
 #define OB_ERR_KV_ROWKEY_MISMATCH__USER_ERROR_MSG "ODP-OBKV the partition key cannot be parsed from rowkey"
 //for ob-redis [-10690, -10700)
-#define OB_ERR_REDIS_UNKNOWN_COMMAND__USER_ERROR_MS "unknown command '%.*s'"
+#define OB_ERR_REDIS_UNKNOWN_COMMAND__USER_ERROR_MS "ERR unknown command '%.*s'"
 
   const char* ob_strerror(int oberr);
   const char* ob_strerrorname(int oberr);

@@ -95,6 +95,8 @@ static int build_err_resp(proxy::ObRpcReq &rpc_req, common::ObString &err_conten
 
 static int build_ok_resp(proxy::ObRpcReq &rpc_req);
 
+static int build_int_resp(proxy::ObRpcReq &rpc_req);
+
 static int build_common_resp(proxy::ObRpcReq &rpc_req, const common::ObString &content);
 
 static int handle_redis_serialize_response(proxy::ObRpcReq &rpc_req);

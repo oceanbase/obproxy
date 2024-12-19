@@ -186,6 +186,29 @@ int ObRpcRedisAnalyzer::build_ok_resp(ObRpcReq &rpc_req)
   return ret;
 }
 
+int ObRpcRedisAnalyzer::build_int_resp(ObRpcReq &rpc_req)
+{
+  int ret = OB_SUCCESS;
+  ObRpcRedisRequest *redis_request = NULL;
+  ObRpcRedisResponse *redis_response = NULL;
+  ObRedisResult *redis_result = NULL;
+  ObRpcRedisInfo *redis_info = rpc_req.get_redis_info();
+  if (OB_ISNULL(redis_info)) {
+    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(ObRpcRedisCommandFactory::gen_redis_result(redis_info, OB_REDIS_INTEGER, redis_result))) {
+    LOG_WDIAG("invalid to init error redis result", K(ret));
+  } else if (OB_FAIL(ObRpcRedisCommandFactory::gen_redis_internal_response(redis_request, redis_response))) {
+    LOG_WDIAG("invalid to init error redis result response", K(ret));
+  } else {
+    LOG_DEBUG("to init integer redis result response", K(ret), K(redis_response), K(redis_result));
+    ((ObRedisIntegerResult *)redis_result)->return_value_ = rpc_req.cs_id_;
+    ((ObRpcRedisInternalResponse *)redis_response)->set_redis_result(redis_result);
+    redis_info->set_redis_response(redis_response);
+  }
+
+  return ret;
+}
+
 int ObRpcRedisAnalyzer::build_common_resp(proxy::ObRpcReq &rpc_req, const common::ObString &content)
 {
   int ret = OB_SUCCESS;
@@ -204,6 +227,9 @@ int ObRpcRedisAnalyzer::build_common_resp(proxy::ObRpcReq &rpc_req, const common
   } else {
     LOG_DEBUG("to init ok redis result response", K(ret), K(redis_response), K(redis_result), K(content));
     redis_result->set_redis_result(content.ptr(), content.length());
+    if (content.length() == 0) {
+      ((ObRedisBulkStringResult *)redis_result)-> is_null_ = true;
+    }
     ((ObRpcRedisInternalResponse *)redis_response)->set_redis_result(redis_result);
     redis_info->set_redis_response(redis_response);
   }
@@ -283,7 +309,7 @@ int ObRpcRedisAnalyzer::handle_redis_serialize_response(proxy::ObRpcReq &rpc_req
               redis_info->is_inner_response(), K(rpc_req), K(rpc_trace_id));
     if (OB_ISNULL(redis_info->get_response_buf())) {
       //alloc response buf
-      if (OB_FAIL(redis_info->alloc_response_buf(response_len + 8))) {
+      if (OB_FAIL(redis_info->alloc_response_buf(response_len + 32))) {
         LOG_WDIAG("fail to allocate rpc response buf", K(ret), K(rpc_trace_id));
       } else {
         buf = redis_info->get_response_buf();
@@ -291,7 +317,7 @@ int ObRpcRedisAnalyzer::handle_redis_serialize_response(proxy::ObRpcReq &rpc_req
       }
     } else {
       //need use inner buffer
-      if (OB_FAIL(redis_info->alloc_response_inner_buf(response_len + 8))) {
+      if (OB_FAIL(redis_info->alloc_response_inner_buf(response_len + 32))) {
         LOG_WDIAG("fail to allocate response inner buf", K(ret));
       } else {
         buf = redis_info->get_response_inner_buf();

@@ -17,6 +17,8 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_utils.h"
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
+#include "proxy/rpc/redis/ob_rpc_redis_ctx_cache.h"
+#include "proxy/rpc/redis/ob_rpc_redis_monitor_cache.h"
 
 namespace oceanbase
 {
@@ -27,7 +29,8 @@ namespace proxy
 
 class ObRpcRedisClientNetHandler;
 class ObRpcReq;
-
+class ObRpcRedisCtx;
+class ObRpcRedisMonitorMsg;
 class ObRpcRedisClientNetHandler : public ObRpcClientNetHandler
 {
 public:
@@ -37,11 +40,16 @@ public:
 
   void destroy();
   // int new_connection(net::ObNetVConnection &new_vc);
+  int new_connection(net::ObNetVConnection *new_vc, event::ObMIOBuffer *iobuf,
+                     event::ObIOBufferReader *reader);
   int main_handler(int event, void *data);
 
   // int handle_other_event(int event, void *data);
+  int schedule_period_task();
+  int handle_period_task();
+  int cancel_period_task();
 
-  // int cancel_pending_action();
+  int cancel_pending_action();
 
   // virtual event::ObVIO *do_io_write(
   //   ObContinuation *c, const int64_t nbytes, event::ObIOBufferReader *buf);
@@ -64,16 +72,23 @@ public:
 
   virtual int schedule_send_response_action();
 
+  int setup_monitor_msg_send();
   common::ObString get_rpc_credential() { return credential_; }
 
   void set_rpc_credential(const common::ObString &credential);
+  ObRpcRedisCtx *get_redis_ctx() { return redis_ctx_; }
+  int add_redis_monitor_msg();
 
 protected:
   ObRpcReq *cur_rpc_request_;
   bool is_in_handling_request_;
   uint64_t redis_db_;
+  int64_t last_monitor_time_us_;
   char rpc_credential_[50];
   common::ObString credential_;
+  event::ObAction *period_task_action_;
+  ObRpcRedisCtx *redis_ctx_;
+  common::ObList<ObRpcRedisMonitorMsg*> redis_monitor_list_;
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObRpcRedisClientNetHandler);

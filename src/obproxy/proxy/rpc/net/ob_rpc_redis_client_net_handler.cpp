@@ -20,6 +20,7 @@
 #include "omt/ob_white_list_table_processor.h"
 #include "proxy/rpc/net/ob_rpc_redis_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
+#include "obproxy/proxy/rpc/redis/ob_rpc_redis_stat.h"
 #include "proxy/rpc/ob_rpc_req_debug_names.h"
 #include "proxy/rpc/ob_rpc_request_sm.h"
 #include "proxy/rpc/ob_rpc_req.h"
@@ -51,11 +52,13 @@ namespace proxy
   PROXY_CS_LOG(DEBUG, "ENTER STATE "#state_name"", "event", ObRpcReqDebugNames::get_event_name(event), K_(cs_id)); \
 } while(0)
 
+#define RPC_REDIS_MONITOR_MAX_SEND_SIZE 32
 static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 
 ObRpcRedisClientNetHandler::ObRpcRedisClientNetHandler()
     : ObRpcClientNetHandler(), cur_rpc_request_(NULL), is_in_handling_request_(false),
-      redis_db_(0), rpc_credential_(), credential_()
+      redis_db_(0), last_monitor_time_us_(0), rpc_credential_(), credential_(), period_task_action_(NULL),
+      redis_ctx_(), redis_monitor_list_()
 {
   SET_HANDLER(&ObRpcRedisClientNetHandler::main_handler);
 }
@@ -72,6 +75,12 @@ void ObRpcRedisClientNetHandler::destroy()
 void ObRpcRedisClientNetHandler::do_io_close(const int alerrno)
 {
   int ret = OB_SUCCESS;
+  if (OB_FAIL(cancel_period_task())) {
+    PROXY_CS_LOG(WDIAG, "fail to cancel period task", K_(cs_id), K(ret));
+  }
+  if (OB_FAIL(cancel_pending_action())) {
+    PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id), K(ret));
+  }
   if (OB_NOT_NULL(cur_rpc_request_)) {
     cur_rpc_request_->client_net_cancel_request();
     if (OB_NOT_NULL(cur_rpc_request_->get_request_sm())) {
@@ -82,11 +91,179 @@ void ObRpcRedisClientNetHandler::do_io_close(const int alerrno)
     }
     cur_rpc_request_ = NULL;
   }
-  if (OB_FAIL(cancel_pending_action())) {
-    PROXY_CS_LOG(WDIAG, "fail to call cancel_pending_action", K_(cs_id), K(ret));
+  if (OB_NOT_NULL(redis_ctx_)) {
+    if (redis_ctx_->is_monitor_mode()) {
+      proxy::get_global_redis_info_stat().update_monitor_clients(-1);
+    }
+    get_global_rpc_redis_ctx_cache().remove_rpc_redis_ctx(cs_id_);
+    // redis_ctx_->dec_ref();
+    redis_ctx_ = NULL;
   }
+  get_global_rpc_redis_monitor_cache().remove_rpc_redis_monitor(cs_id_);
+  ObRpcRedisMonitorMsg *msg = NULL;
+  while(!redis_monitor_list_.empty()) {
+    if (OB_FAIL(redis_monitor_list_.pop_front(msg))) {
+      PROXY_CS_LOG(WDIAG, "fail to pop front redis monitor list", K_(cs_id), K(ret));
+    } else {
+      msg->dec_ref();
+      msg = NULL;
+    }
+  }
+  RPC_DECREMENT_DYN_STAT(CURRENT_REDIS_CLIENT_CONNECTIONS);
   ObRpcClientNetHandler::do_io_close(alerrno);
 
+}
+
+int ObRpcRedisClientNetHandler::new_connection(
+    ObNetVConnection *new_vc, ObMIOBuffer *iobuf, ObIOBufferReader *reader)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(new_vc) || OB_UNLIKELY(NULL != rpc_net_vc_)) {
+    ret = OB_INVALID_ARGUMENT;
+    PROXY_CS_LOG(WDIAG, "invalid client connection", K(new_vc), K(rpc_net_vc_), K(ret));
+  } else {
+    PROXY_CS_LOG(DEBUG, "ObRpcClientNetHandler::new_connection", K(new_vc), K(iobuf), K(reader),
+        "this_thread", this_ethread());
+    create_thread_ = this_ethread();
+    rpc_net_vc_ = new_vc;
+    magic_ = RPC_C_NET_MAGIC_ALIVE;
+    mutex_ = new_vc->mutex_;
+
+    MUTEX_TRY_LOCK(lock, mutex_, this_ethread());
+    if (OB_LIKELY(lock.is_locked())) {
+      current_tid_ = GETTID();
+      RPC_INCREMENT_DYN_STAT(CURRENT_CLIENT_CONNECTIONS);
+      RPC_INCREMENT_DYN_STAT(TOTAL_CLIENT_CONNECTIONS);
+      RPC_INCREMENT_DYN_STAT(TOTAL_REDIS_CLIENT_CONNECTIONS);
+      RPC_INCREMENT_DYN_STAT(CURRENT_REDIS_CLIENT_CONNECTIONS);
+
+      switch (new_vc->get_remote_addr().sa_family) {
+        case AF_INET:
+          RPC_INCREMENT_DYN_STAT(TOTAL_CLIENT_CONNECTIONS_IPV4);
+          break;
+        case AF_INET6:
+          RPC_INCREMENT_DYN_STAT(TOTAL_CLIENT_CONNECTIONS_IPV6);
+          break;
+        default:
+          break;
+      }
+
+#ifdef USE_MYSQL_DEBUG_LISTS
+      if (OB_SUCCESS == mutex_acquire(&g_debug_rpc_cs_list_mutex)) {
+        g_debug_rpc_cs_list.push(this);
+        if (OB_SUCCESS != mutex_release(&g_debug_rpc_cs_list_mutex)) {
+          PROXY_CS_LOG(EDIAG, "fail to release mutex", K_(cs_id));
+        }
+      }
+#endif
+
+      if (NULL != iobuf) {
+        read_buffer_ = iobuf;
+      } else if (OB_ISNULL(read_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        PROXY_CS_LOG(EDIAG, "fail to alloc memory for read_buffer", K(ret));
+      }
+
+      if (OB_SUCC(ret)) {
+        if (NULL != reader) {
+          // buffer_reader_ = reader;
+          buf_reader_ = reader;
+        } else if (OB_ISNULL(buf_reader_ = read_buffer_->alloc_reader())) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_CS_LOG(EDIAG, "fail to alloc buffer reader", K(ret));
+        }
+      }
+
+      if (OB_SUCC(ret)) {
+        /**
+         * we cache the request in the read io buffer, so the water mark of
+         * read io buffer must be larger than the reqeust packet size. we set
+         * RPC_NET_HEADER_LENGTH as the default water mark, when we read the
+         * header of request, we reset the water mark.
+         */
+        read_buffer_->water_mark_ = RPC_NET_HEADER_LENGTH; //TODO change water_mark
+        // start listen event on client vc
+        if (OB_FAIL(acquire_client_session_id())) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
+        } else if (OB_FAIL(acquire_conn_unique_id())) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire connection unique id", K_(conn_unique_id), K(ret));
+        } else if (OB_FAIL(add_to_list())) {
+          PROXY_CS_LOG(WDIAG, "fail to add cs to list", K_(cs_id), K(ret));
+        } else if (OB_FAIL(session_info_.init())) {
+          PROXY_CS_LOG(WDIAG, "fail to init session_info", K_(cs_id), K(ret));
+        } else if (OB_FAIL(get_vip_addr())) {
+          PROXY_CS_LOG(WDIAG, "get vip addr failed", K(ret));
+        } else if (OB_FAIL(ObRpcRedisCtx::alloc_and_init_redis_ctx(redis_ctx_))) {
+          PROXY_CS_LOG(WDIAG, "fail to alloc and init redis ctx", K(ret));
+        } else {
+          const ObAddr &client_addr = get_real_client_addr();
+          session_info_.set_client_host(client_addr);
+          set_local_connection();
+          PROXY_CS_LOG(INFO, "RPC client session born", K_(cs_id), K_(proxy_sessid), K_(is_local_connection), K_(rpc_net_vc),
+                       "client_fd", rpc_net_vc_->get_conn_fd(), K(client_addr));
+
+          // 1. first convert vip to tenant info, if needed.
+          if (is_need_convert_vip_to_tname()) {
+            //TODO add net
+            if (OB_FAIL(fetch_tenant_by_vip())) {
+              PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K_(cs_id), K(ret));
+              ret = OB_SUCCESS;
+            } else if (is_vip_lookup_success()) {
+              session_info_.set_is_read_only_user(ct_info_.vip_tenant_.is_read_only());
+              session_info_.set_is_request_follower_user(ct_info_.vip_tenant_.is_request_follower());
+              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+              ObString user_name;
+              if (!get_global_white_list_table_processor().can_ip_pass(
+                ct_info_.vip_tenant_.cluster_name_, ct_info_.vip_tenant_.tenant_name_,
+                user_name, rpc_net_vc_->get_real_client_addr())) {
+                ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
+                PROXY_CS_LOG(DEBUG, "can not pass white_list", K_(cs_id), K(ct_info_.vip_tenant_.cluster_name_),
+                              K(ct_info_.vip_tenant_.tenant_name_), K(client_addr), K(ret));
+              }
+            }
+          }
+
+          // set redis ctx
+          if (is_need_convert_vip_to_tname() && OB_SUCC(ret)) {
+            redis_ctx_->addr_.set_addr(rpc_net_vc_->get_real_client_addr());
+          } else {
+            redis_ctx_->addr_.set_addr(rpc_net_vc_->get_remote_addr());
+          }
+          redis_ctx_->obproxy_addr_.set_addr(rpc_net_vc_->get_local_addr());
+          redis_ctx_->set_cs_id(cs_id_);
+          redis_ctx_->set_fd(rpc_net_vc_->get_conn_fd());
+          redis_ctx_->set_start_time(hrtime_to_usec(get_hrtime_internal()));
+          if (OB_FAIL(get_global_rpc_redis_ctx_cache().add_rpc_redis_ctx_if_not_exist(*redis_ctx_, false))) {
+            PROXY_CS_LOG(WDIAG, "fail to add redis ctx", KPC(redis_ctx_), K(ret));
+            ret = OB_SUCCESS;
+          }
+
+          RPC_NET_SESSION_PROMETHEUS_STAT(get_session_info(), PROMETHEUS_CURRENT_SESSION, true, 1);
+          RPC_NET_SESSION_PROMETHEUS_STAT(get_session_info(), PROMETHEUS_NEW_CLIENT_CONNECTIONS, 1);
+          set_conn_prometheus_decrease(true);
+
+
+          if (OB_SUCC(ret)) {
+            // if (OB_FAIL(schedule_period_task())) { //TODO obkv need init period task
+            //   PROXY_CS_LOG(WDIAG, "fail to call schedule_period_task", K_(cs_id), K(ret));
+            // } else
+            if (OB_FAIL(setup_client_request_read())) {
+              PROXY_CS_LOG(WDIAG, "fail to call setup_client_request_read", K_(cs_id), K(ret));
+            }
+          }
+        }
+      } // end if (OB_SUCC(ret))
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_CS_LOG(WDIAG, "fail to try lock thread mutex, will close connection", K_(cs_id), K(ret));
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    PROXY_CS_LOG(WDIAG, "fail to do new connection, do_io_close itself", K_(cs_id), K(ret));
+    do_io_close();
+  }
+  return ret;
 }
 
 int ObRpcRedisClientNetHandler::main_handler(int event, void *data)
@@ -99,13 +276,20 @@ int ObRpcRedisClientNetHandler::main_handler(int event, void *data)
 
   if (OB_LIKELY(RPC_C_NET_MAGIC_ALIVE == magic_)) {
     if (RPC_CLIENT_NET_PERIOD_TASK == event) {
-      // event_ret = handle_period_task();
+      if (!is_in_handling_request_) {
+        // only for redis monitor
+        event_ret = handle_period_task();
+      }
       //do nothing now
     } else if (RPC_CLIENT_NET_SEND_RESPONSE == event) {
-      event_ret = setup_client_response_send();
+      if (OB_UNLIKELY(redis_ctx_->is_monitor_mode())) {
+        event_ret = setup_monitor_msg_send();
+      } else {
+        event_ret = setup_client_response_send();
+      }
     } else {
       if (NULL != data && data == net_entry_.read_vio_) { // from client vc
-        if (!(is_in_handling_request_ && (VC_EVENT_READ_COMPLETE == event || VC_EVENT_READ_READY == event))) {
+        if (!((is_in_handling_request_ || redis_ctx_->is_monitor_mode()) && (VC_EVENT_READ_COMPLETE == event || VC_EVENT_READ_READY == event))) {
           event_ret = state_keep_alive(event, data);
         }
       } else if (NULL != data && data == net_entry_.write_vio_) { // from client vc
@@ -428,6 +612,7 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
               if (OB_NOT_NULL(redis_info)) {
                 redis_info->set_rpc_credential(get_rpc_credential());
                 redis_info->set_redis_db(redis_db_);
+                // redis_info->set_client_name(redis_ctx_->get_client_name(), redis_ctx_->get_client_name_len());
               }
               if (OB_FAIL(request_sm->schedule_call_next_action(RPC_REQ_NEW_REDIS_REQUEST))) {
                 PROXY_CS_LOG(WDIAG, "fail to call schedule_call_next_action", K(ret), K_(cs_id), K(request_sm));
@@ -534,10 +719,21 @@ int ObRpcRedisClientNetHandler::setup_client_response_send()
 
       //for auth request, need save credential info in clientNet
       ObString rpc_credential = redis_info->get_rpc_credential();
+
       if (redis_info->is_auth_request()) {
         set_rpc_credential(rpc_credential); //set only credential.length > 0
+        redis_ctx_->set_user_name(cur_rpc_request_->get_obkv_info().user_name_);
       } else if (redis_info->get_redis_db() != redis_db_) {
         redis_db_ = redis_info->get_redis_db(); //select db executed
+        redis_ctx_->redis_db_ = redis_info->get_redis_db();
+      } else if (redis_info->is_monitor_cmd()) {
+        last_monitor_time_us_ = common::hrtime_to_usec(get_hrtime_internal());
+        redis_ctx_->set_monitor_flag();
+        proxy::get_global_redis_info_stat().update_monitor_clients(1);
+        if (OB_FAIL(get_global_rpc_redis_monitor_cache().add_rpc_redis_monitor_if_not_exist(redis_monitor_list_, cs_id_, false))) {
+          PROXY_CS_LOG(WDIAG, "fail to add redis monitor client", K(ret), K(cs_id_));
+          ret = OB_SUCCESS;
+        }
       }
 
       if (OB_FAIL(net_entry_.write_buffer_->write(buf, cur_rpc_request_->get_response_len(), written_len))) {
@@ -577,6 +773,7 @@ int ObRpcRedisClientNetHandler::state_client_response_send(int event, void *data
 {
   int ret = OB_SUCCESS;
   bool need_terminal = false;
+  bool need_start_period_task = false;
   ObRpcReq *rpc_req = cur_rpc_request_;
   if (OB_ISNULL(data)) {
     ret = OB_INNER_STAT_ERROR;
@@ -605,6 +802,30 @@ int ObRpcRedisClientNetHandler::state_client_response_send(int event, void *data
         if (OB_NOT_NULL(rpc_req)) {
           rpc_req->client_timestamp_.client_write_begin_ = write_begin_;
           rpc_req->client_timestamp_.client_end_ = write_done;
+
+          redis_ctx_->set_last_time(hrtime_to_usec(get_hrtime_internal()));
+          if (OB_NOT_NULL(rpc_req->get_redis_info())) {
+            redis_ctx_->set_last_cmd(rpc_req->get_redis_info()->get_lower_command_name());
+            redis_ctx_->argv_mem_ = rpc_req->get_redis_info()->get_request_len();
+          }
+
+          int64_t monitor_clients = proxy::get_global_redis_info_stat().get_monitor_clients();
+          int64_t max_monitor_clients = obutils::get_global_proxy_config().rpc_redis_max_monitor_num;
+          if (!redis_ctx_->is_monitor_mode() && 0 == rpc_req->get_rpc_req_error_code() && 0 < monitor_clients && OB_FAIL(add_redis_monitor_msg())) {
+            PROXY_LOG(WDIAG, "fail to add redis monitor msg", K(redis_ctx_));
+            //ignore error, do not affect main process
+            ret = OB_SUCCESS;
+          }
+          if (redis_ctx_->is_monitor_mode()) {
+            if (monitor_clients >= max_monitor_clients) {
+              PROXY_LOG(WDIAG, "monitor clients reach max_monitor_clients limit, just terminal this session", K(monitor_clients), K(max_monitor_clients));
+              ret = OB_ERR_TOO_MANY_SESSIONS;
+              need_terminal = true;
+            } else {
+              need_start_period_task = true;
+            }
+          }
+
           if (rpc_req->is_need_terminal_client_net()) {
             need_terminal = true;
           }
@@ -639,8 +860,14 @@ int ObRpcRedisClientNetHandler::state_client_response_send(int event, void *data
     PROXY_CS_LOG(WDIAG, "state_client_response_send failed or get need_terminal", K_(cs_id), K(ret), K(need_terminal), K(event));
     do_io_close();
   } else {
-    if (OB_FAIL(setup_client_request_read())) {
-      PROXY_CS_LOG(WDIAG, "fail to read next request", K_(cs_id), K(ret));
+    if (!need_start_period_task) {
+      if (OB_FAIL(setup_client_request_read())) {
+        PROXY_CS_LOG(WDIAG, "fail to read next request", K_(cs_id), K(ret));
+      }
+    } else {
+      if (OB_FAIL(schedule_period_task())) {
+        PROXY_CS_LOG(WDIAG, "fail to schedule period task for redis monitor", K_(cs_id), K(ret));
+      }
     }
   }
 
@@ -675,12 +902,200 @@ int ObRpcRedisClientNetHandler::schedule_send_response_action()
   return ret;
 }
 
+int ObRpcRedisClientNetHandler::setup_monitor_msg_send()
+{
+  int ret = OB_SUCCESS;
+  //set read trigger and read_reschedule. sometimes the data already is in the io buffer
+  PROXY_CS_LOG(DEBUG, "ObRpcRedisClientNetHandler::setup_monitor_msg send", K_(cs_id), "request_count", redis_monitor_list_.size());
+  static_cast<ObUnixNetVConnection *>(this->get_netvc())->set_read_trigger();
+  pending_action_ = NULL;
+
+  if (OB_LIKELY(!redis_monitor_list_.empty()) && !is_sending_response_) {
+    int64_t send_response = 0;
+    int64_t total_response_len = 0;
+    ObIOBufferReader *buf_start = NULL;
+    //avoid thread block in seed monitor msg
+    int64_t need_send_resp_count = redis_monitor_list_.size() >= RPC_REDIS_MONITOR_MAX_SEND_SIZE ? RPC_REDIS_MONITOR_MAX_SEND_SIZE : redis_monitor_list_.size();
+
+    if (OB_ISNULL(net_entry_.write_buffer_)) {
+      net_entry_.write_buffer_ = new_empty_miobuffer(MYSQL_BUFFER_SIZE);
+    } else {
+      net_entry_.write_buffer_->reset(); //cleanup
+      net_entry_.write_buffer_->dealloc_all_readers();
+    }
+
+    if (OB_ISNULL(buf_start = net_entry_.write_buffer_->alloc_reader())) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_CS_LOG(WDIAG, "setup_client_response_send failed to allocate iobuffer reader", K_(cs_id), K(ret));
+    } else {
+      int64_t written_len = 0;
+      int64_t response_len = 0;
+      char *buf = NULL;
+      ObRpcRedisMonitorMsg *monitor_msg = NULL;
+      common::hash::ObHashSet<int64_t> redis_monitor_set;
+      redis_monitor_set.create(need_send_resp_count);
+      while (OB_SUCC(ret) && !redis_monitor_list_.empty() && send_response < need_send_resp_count) {
+        written_len = 0;
+        if (OB_FAIL(redis_monitor_list_.pop_front(monitor_msg))) {
+          PROXY_CS_LOG(WDIAG, "fail to pop front monitor msg", K(ret), K_(cs_id));
+        } else if (OB_ISNULL(monitor_msg)) {
+          PROXY_CS_LOG(WDIAG, "monitor msg is null", K_(cs_id), K(ret));
+        } else if (OB_ISNULL(monitor_msg->get_monitor_msg())) {
+          PROXY_CS_LOG(WDIAG, "monitor msg is null", K_(cs_id), K(ret));
+        } else if (OB_HASH_EXIST == redis_monitor_set.exist_refactored(monitor_msg->get_generate_time())) {
+          monitor_msg->dec_ref();
+          monitor_msg = NULL;
+          // PROXY_CS_LOG(DEBUG, "monitor msg already exist", K(monitor_msg->get_generate_time()));
+        } else {
+          last_monitor_time_us_ = std::max(last_monitor_time_us_, monitor_msg->get_generate_time());
+          redis_monitor_set.set_refactored(monitor_msg->get_generate_time());
+          buf = monitor_msg->get_monitor_msg();
+          response_len = strlen(buf);
+          if (OB_FAIL(net_entry_.write_buffer_->write(buf, response_len, written_len))) {
+            PROXY_CS_LOG(WDIAG, "fail to write response", K_(cs_id), K(response_len), K(written_len), K(ret));
+          } else if (OB_UNLIKELY(response_len != written_len)) {
+            ret = OB_ERR_UNEXPECTED;
+            PROXY_CS_LOG(WDIAG, "fail to write response", K_(cs_id), K(response_len), K(written_len), K(ret));
+          } else {
+            PROXY_CS_LOG(DEBUG, "[REDIS]sending response...", K_(cs_id), K(this));
+            send_response ++;
+            total_response_len += response_len;
+            monitor_msg->dec_ref();
+            monitor_msg = NULL;
+          }
+        }
+      }
+      redis_monitor_set.destroy();
+    }
+    if (send_response > 0) {
+      if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+        write_begin_ = ObRpcRequestSM::static_get_based_hrtime(); /* record begin time to write */
+      }
+      // MUTEX_TRY_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);
+      // TODO: Using MUTEX_ LOCK may affect performance. In the future, consider using different mutexes for asynchronous tasks within RPC requests
+      // compared to client VC to prevent race conditions
+      MUTEX_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);    // TODO: check CLIENT_VC_SWAP_MUTEX_EVENT event
+      /* check mutex_->thread_holding_ is same with create_thread_ to avoid
+        writing failed with net_entry_.write_vio_ in not null */
+      if (create_thread_ != mutex_->thread_holding_ || OB_ISNULL(net_entry_.write_vio_ = do_io_write(this, total_response_len, buf_start))) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_CS_LOG(WDIAG, "client entry failed to do_io_write", K_(cs_id), K(send_response), K(total_response_len), KP_(create_thread), KP(this_ethread()),
+                    KP(mutex_->thread_holding_), K(mutex_.ptr_));
+      } else {
+        is_sending_response_ = true;
+      }
+    }
+  } else {
+    //do nothing
+    PROXY_CS_LOG(DEBUG, "client net is in sending state, need to wait complete for last", K_(cs_id), "waiting_count", redis_monitor_list_.size());
+  }
+
+  if (OB_FAIL(ret)) {
+    do_io_close();
+  }
+  return ret;
+}
+
+int ObRpcRedisClientNetHandler::schedule_period_task()
+{
+  int ret = OB_SUCCESS;
+  // TODO send monitor msg when monitor list is not null, not use period task
+  ObHRTime period_task_time = 100 * 1000; //us
+
+  if (OB_UNLIKELY(NULL != period_task_action_)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WDIAG, "period_task_action must be NULL here", K_(cs_id), K_(period_task_action), K(ret));
+  } else if (OB_ISNULL(create_thread_) || create_thread_ != this_ethread()) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WDIAG, "ObRpcRedisClientNetHandler::schedule_period_task get wrong thread", K_(cs_id), KP_(create_thread), K(this_ethread()));
+  } else if (OB_ISNULL(period_task_action_ = self_ethread().schedule_every(this, period_task_time, RPC_CLIENT_NET_PERIOD_TASK))) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(EDIAG, "fail to schedule monitor", K_(cs_id), K(period_task_action_), K(ret));
+  } else {
+    PROXY_LOG(DEBUG, "succ to schedule repeat task for ObRpcRedisClientNetHandler", K_(cs_id), K(period_task_time));
+  }
+  return ret;
+}
+
+int ObRpcRedisClientNetHandler::handle_period_task()
+{
+  int ret = OB_SUCCESS;
+
+  PROXY_LOG(DEBUG, "ObRpcRedisClientNetHandler::handle_period_task", K_(cs_id));
+
+  if (0 != redis_monitor_list_.size()) {
+    PROXY_LOG(DEBUG, "ObRpcRedisClientNetHandler get redis monitor msg succ", K(ret));
+    is_in_handling_request_ = true;
+    schedule_send_response_action();
+  }
+  return ret;
+}
+
+int ObRpcRedisClientNetHandler::cancel_period_task()
+{
+  int ret = OB_SUCCESS;
+
+  if (NULL != period_task_action_) {
+    if (OB_FAIL(period_task_action_->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel repeat task", K_(cs_id), K_(period_task_action), K(ret));
+    } else {
+      period_task_action_ = NULL;
+    }
+  }
+
+  return ret;
+}
+
+int ObRpcRedisClientNetHandler::cancel_pending_action()
+{
+  int ret = OB_SUCCESS;
+
+  if (NULL != pending_action_) {
+    if (OB_FAIL(pending_action_->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel pending task", K_(cs_id), K_(pending_action), K(ret));
+    } else {
+      pending_action_ = NULL;
+    }
+  }
+  return ret;
+}
+
 void ObRpcRedisClientNetHandler::set_rpc_credential(const common::ObString &credential)
 {
   if (credential.length() > 0 && credential.length() < 50) {
     MEMCPY(rpc_credential_, credential.ptr(), credential.length());
     credential_.assign(rpc_credential_, credential.length());
   }
+}
+
+int ObRpcRedisClientNetHandler::add_redis_monitor_msg() {
+  int ret = OB_SUCCESS;
+  ObRpcRedisMonitorMsg *monitor_msg = NULL;
+  if (OB_UNLIKELY(OB_ISNULL(redis_ctx_))) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WDIAG, "ctx is NULL", K(ret));
+  }
+  if (OB_SUCC(ret)) {
+    redis_ctx_->set_redis_monitor_msg(cur_rpc_request_->get_redis_info()->get_redis_monitor_msg());
+    int alloc_size = redis_ctx_->get_redis_monitor_msg_len() + 1;
+    if (OB_FAIL(ObRpcRedisMonitorMsg::alloc_and_init_redis_monitor_msg(monitor_msg, alloc_size))) {
+      PROXY_LOG(WDIAG, "fail to alloc and init monitor msg", K(ret));
+    } else {
+      monitor_msg->set_generate_time(redis_ctx_->last_time_us_);
+      monitor_msg->set_monitor_msg(redis_ctx_->get_redis_monitor_msg());
+      if (OB_FAIL(get_global_rpc_redis_monitor_cache().feed_all_rpc_redis_monitor(monitor_msg))) {
+        PROXY_LOG(WDIAG, "fail to add monitor msg", K(ret));
+      }
+    }
+  }
+  if (OB_FAIL(ret) && NULL != monitor_msg) {
+    monitor_msg->free();
+    monitor_msg = NULL;
+  } else {
+    monitor_msg->dec_ref();
+    monitor_msg = NULL;
+  }
+  return ret;
 }
 
 } // end of namespace proxy

@@ -39,7 +39,7 @@ static const uint32_t LOCAL_IPV4_ADDR = 0x100007F;
  * OBKV    : 01 DB DB CE   XX XX XX XX(data len)   XX XX XX XX(pkt id) XX XX XX XX（reserved)
  */
 static const int64_t RPC_NET_DETECT_HRD_LEN = 14;
-const char * OB_RPC_REDIS_FLAG = "$4\r\nauth";
+// const char * OB_RPC_REDIS_FLAG = "$4\r\nauth";
 
 typedef int (ObRpcClientNetHandler::*ClientNetHandler)(int event, void *data);
 

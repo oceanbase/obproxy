@@ -248,6 +248,7 @@ int ObRpcCacheCleaner::do_clean_job()
         stop = true;
         break;
       }
+
       default: {
         LOG_EDIAG("never reach here", "action", get_cleaner_action_name(next_action_));
         stop = true;

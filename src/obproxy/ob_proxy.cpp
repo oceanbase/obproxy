@@ -60,6 +60,8 @@
 #include "proxy/route/ob_route_utils.h"
 #include "proxy/mysqllib/ob_proxy_auth_parser.h"
 
+#include "proxy/rpc/redis/ob_rpc_redis_ctx_cache.h"
+#include "proxy/rpc/redis/ob_rpc_redis_monitor_cache.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_cache.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"
@@ -171,6 +173,8 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
     ObTableQueryAsyncCache &table_query_async_cache = get_global_table_query_async_cache();
     ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
     ObRpcReqCtxCache &rpc_ctx_cache = get_global_rpc_req_ctx_cache();
+    ObRpcRedisCtxCache &redis_ctx_cache = get_global_rpc_redis_ctx_cache();
+    ObRpcRedisMonitorCache &redis_monitor_cache = get_global_rpc_redis_monitor_cache();
     ObRoutineCache &routine_cache = get_global_routine_cache();
     ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
     ObTableProcessor &table_processor = get_global_table_processor();
@@ -193,6 +197,10 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init tablegroup cache", K(ret));
     } else if (OB_FAIL(rpc_ctx_cache.init(ObRpcReqCtxCache::RPC_REQ_CTX_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init rpc ctx cache", K(ret));
+    } else if (OB_FAIL(redis_ctx_cache.init(ObRpcRedisCtxCache::RPC_REDIS_CTX_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init redis ctx cache", K(ret));
+    } else if (OB_FAIL(redis_monitor_cache.init(ObRpcRedisMonitorCache::RPC_REDIS_MONITOR_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init redis monitor cache", K(ret));
     } else if (OB_FAIL(routine_cache.init(ObRoutineCache::ROUTINE_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init routine cache", K(ret));
     } else if (OB_FAIL(sql_table_cache.init(ObSqlTableCache::SQL_TABLE_CACHE_MAP_SIZE))) {

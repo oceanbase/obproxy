@@ -93,6 +93,7 @@ namespace event
 #define RPC_REQUEST_SM_EVENT_EVENTS_START         12700
 #define RPC_QUERY_ASYNC_ENTRY_EVENT_EVENTS_START  12800
 #define RPC_REQ_CTX_EVENT_EVENTS_START            12900
+#define RPC_REDIS_MONITOR_EVENT_EVENTS_START      13000
 #define API_EVENT_EVENTS_START                    60000
 
 typedef int32_t ObEventThreadType;

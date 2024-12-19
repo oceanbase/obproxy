@@ -83,6 +83,7 @@ public:
   static const uint8_t API_VERSION = 1;
   static const uint8_t MAGIC_HEADER_FLAG[4];
   static const char    REDIS_AUTH_FLAG[9];
+  static const char    REDIS_HELLO_FLAG[10];
   static const uint8_t EZ_HEADER_LEN = 16;
   static const int64_t RPC_PKT_CHANNEL_ID_POS = 8;
   static const int64_t RPC_PKT_CHANNEL_ID_LEN = 4;
@@ -117,7 +118,6 @@ public:
   NEED_SERIALIZE_AND_DESERIALIZE;
 };
 
-
 ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t buffer_len)
 {
   ObProxyRpcType rpc_type = OBPROXY_RPC_UNKOWN;
@@ -130,6 +130,9 @@ ObProxyRpcType ObRpcEzHeader::check_rpc_magic_type(const char *buffer, int64_t b
     rpc_type = OBPROXY_RPC_OBRPC;
   } else if (buffer_len >= 14
     && '*' == buffer[0] && OB_NOT_NULL(strcasestr(buffer, (const char*)ObRpcEzHeader::REDIS_AUTH_FLAG))) {
+    rpc_type = OBPROXY_RPC_REDIS;
+  } else if (buffer_len >= 14
+    && '*' == buffer[0] && OB_NOT_NULL(strcasestr(buffer, (const char*)ObRpcEzHeader::REDIS_HELLO_FLAG))) {
     rpc_type = OBPROXY_RPC_REDIS;
   } else {
     // do nothing

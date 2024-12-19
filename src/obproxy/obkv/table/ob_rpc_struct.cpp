@@ -34,8 +34,10 @@ namespace obproxy
 {
 namespace obkv
 {
+// magic number
 const uint8_t ObRpcEzHeader::MAGIC_HEADER_FLAG[4] = { ObRpcEzHeader::API_VERSION, 0xDB, 0xDB, 0xCE };
 const char ObRpcEzHeader::REDIS_AUTH_FLAG[9] = {'$', '4', '\r', '\n', 'A', 'U', 'T', 'H', 0}; // $4\r\nAUTH
+const char ObRpcEzHeader::REDIS_HELLO_FLAG[10] = {'$', '5', '\r', '\n', 'H', 'E', 'L', 'L', 'O', 0}; //$5\r\nHELLO
 
 void inline shrink_copy_char_buf(char *dst, char *src, int64_t n)
 {

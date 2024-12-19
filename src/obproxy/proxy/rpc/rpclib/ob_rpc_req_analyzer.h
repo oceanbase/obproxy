@@ -148,7 +148,12 @@ public:
                                      const common::ObString &user_name,
                                      const char separator,
                                      ObProxyRpcReqAnalyzeCtx &ctx);
-
+  static int do_parse_full_redis_auth_info(ObRpcReqCtx &rpc_ctx,
+                                               const common::ObString &full_name,
+                                               const common::ObString &user_name,
+                                               const char separator,
+                                               ObProxyRpcReqAnalyzeCtx &ctx,
+                                               bool is_cloud_user);
   static int do_parse_auth_result(ObRpcReqCtx &rpc_ctx,
                                   const char ut_separator,
                                   const char tc_separator,
