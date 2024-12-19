@@ -4350,15 +4350,22 @@ void ObMysqlTransact::handle_text_ps_prepare_succ(ObTransState &s)
           stored_text_ps_entry = NULL;
           cs_info.remove_ps_id_addrs(client_ps_id);
           cs_info.remove_service_name_ps_info(client_ps_id);
-          ObMysqlServerSession* server_session = cs->get_server_session();
-          if (OB_NOT_NULL(server_session)) {
-            server_session->get_session_info().remove_text_ps_version(client_ps_id);
-          }
-          int64_t svr_session_count = cs->get_session_manager().get_svr_session_count();
-          for (int64_t i = 0; i < svr_session_count; ++i) {
-            server_session = cs->get_session_manager().get_server_session(i);
-            if (OB_NOT_NULL(server_session)) {
-              server_session->get_session_info().remove_text_ps_version(client_ps_id);
+          ObMysqlServerSession* server_session = cs->get_cur_server_session();
+          if (OB_NOT_NULL(server_session)
+              && OB_FAIL(server_session->get_session_info().remove_text_ps_version(client_ps_id))) {
+            LOG_WDIAG("fail to remove_text_ps_version", K(client_ps_id), K(ret));
+          } else {
+            int64_t svr_session_count = cs->get_session_manager().get_svr_session_count();
+            for (int64_t i = 0; OB_SUCC(ret) && i < svr_session_count; ++i) {
+              server_session = cs->get_session_manager().get_server_session(i);
+              if (OB_NOT_NULL(server_session)
+                  && OB_FAIL(server_session->get_session_info().remove_text_ps_version(client_ps_id))) {
+                if (ret == OB_HASH_NOT_EXIST) {
+                  ret = OB_SUCCESS;
+                } else {
+                  LOG_WDIAG("fail to remove_text_ps_version", K(ret));
+                }
+              }
             }
           }
         }

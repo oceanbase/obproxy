@@ -867,6 +867,7 @@ int64_t ObSqlParseResult::to_string(char *buf, const int64_t buf_len) const
        "err_type", get_obproxy_err_stmt_name(cmd_err_type_),
        "part_name", get_part_name());
   J_KV(K_(cmd_info),
+       K_(text_ps_info),
        K_(call_info),
        K_(hint_route_info),
        K_(dbmesh_route_info),

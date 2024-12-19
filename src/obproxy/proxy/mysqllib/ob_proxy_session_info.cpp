@@ -154,28 +154,12 @@ void ObServerSessionInfo::destroy_cursor_id_pair_map()
 
 int ObServerSessionInfo::set_text_ps_version(const int64_t text_ps_version)
 {
-  int ret = OB_SUCCESS;
-
-  if (OB_FAIL(text_ps_version_set_.set_refactored(text_ps_version))) {
-    LOG_WDIAG("set refactored failed", K(ret), K(text_ps_version));
-  } else {
-    LOG_DEBUG("set refactored succed", K(text_ps_version));
-  }
-
-  return ret;
+  return text_ps_version_set_.set_refactored(text_ps_version);
 }
 
 int ObServerSessionInfo::remove_text_ps_version(const int64_t text_ps_version)
 {
-  int ret = OB_SUCCESS;
-
-  if (OB_FAIL(text_ps_version_set_.erase_refactored(text_ps_version))) {
-    LOG_WDIAG("remove refactored failed", K(ret), K(text_ps_version));
-  } else {
-    LOG_DEBUG("remove refactored succed", K(text_ps_version));
-  }
-
-  return ret;
+  return text_ps_version_set_.erase_refactored(text_ps_version);
 }
 
 
