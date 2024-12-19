@@ -132,6 +132,8 @@ int ObRpcReq::init(obkv::ObProxyRpcType rpc_type, ObRpcRequestSM *sm, ObRpcClien
   origin_channel_id_ = origin_channel_id;
   c_channel_id_ = client_channel_id;
   cs_id_ = cs_id;
+  is_canceled_ = false; // assure redis reuse
+  magic_ = RPC_REQ_MAGIC_ALIVE;
   if (obutils::get_global_proxy_config().need_convert_vip_to_tname) {
     obkv_info_.client_info_.set_addr(rpc_net_vc->get_real_client_addr());
   } else {
@@ -300,6 +302,75 @@ void ObRpcReq::destroy()
   }
 }
 
+// only used in redis
+void ObRpcReq::reset()
+{
+  if (RPC_REQ_MAGIC_ALIVE == magic_) {
+    PROXY_LOG(DEBUG, "ObRpcReq::reset", "rpc_req", *this, KP(this));
+
+    // first , clean sub request, redis not use
+    if (OB_NOT_NULL(execute_plan_)) {
+      optimizer::ObProxyShardRpcReqRequestPlan *plan = reinterpret_cast<optimizer::ObProxyShardRpcReqRequestPlan *>(execute_plan_);
+      plan->~ObProxyShardRpcReqRequestPlan();
+      get_global_optimizer_rpc_req_processor().free_allocator(plan->get_allocator());
+      execute_plan_ = NULL;
+    }
+    if (obkv_info_.is_rpc_req_stat_recorded_) {
+      ObRpcReqThreadQpsStat::dec_rpc_req_stat(obkv_info_.is_shard());
+    }
+    RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_RPC_REQ);
+
+    ObRpcRedisInfo *redis_info = NULL;
+    // free_rpc_request(); // just reuse
+    // free_rpc_response();// just reuse
+    // free_request_buf(); // just reuse request buf
+    free_response_buf(); // free response buffer
+    free_request_inner_buf(); // free inner buffer
+    free_inner_request_allocator(); // redis not use
+    free_response_inner_buf();
+    free_sub_rpc_req_array();// redis not use
+
+    if (OB_NOT_NULL(redis_info = get_redis_info())) {
+      redis_info->reuse();
+    }
+    obkv_info_.reset();
+    // sm_ = NULL;
+
+    rpc_type_ = obkv::ObProxyRpcType::OBPROXY_RPC_REDIS;
+    congest_status_ = STATE_COMMON;
+    cnet_state_ = RPC_REQ_CLIENT_INIT;
+    snet_state_ = RPC_REQ_SERVER_INIT;
+    sm_state_ = RPC_REQ_SM_INIT;
+    server_entry_send_retry_times_ = 0;
+    req_buf_repeat_times_ = 0;
+    s_channel_id_ = 0;
+    origin_channel_id_ = 0;
+    c_channel_id_ = 0;
+    cs_id_ = 0;
+    ss_id_ = 0;
+    inner_req_retry_times_ = 0;
+    cont_index_ = 0;
+    cluster_version_ = 0;
+
+    retry_times_ = 0;
+    inner_req_retry_times_ = 0;
+    server_net_timeout_us_ = 0;
+    client_net_timeout_us_ = 0;
+
+    is_canceled_ = false;
+    is_response_ = false;
+    is_finish_ = false;
+    is_server_addr_set_ = false;
+    is_use_request_inner_buf_ = false;
+    is_use_response_inner_buf_ = false;
+    is_server_failed_ = false;
+    is_need_terminal_client_net_ = false;
+    is_sub_req_inited_ = false;
+  } else {
+    PROXY_LOG(EDIAG, "ObRpcReq::reset but magic is error", "rpc_req", *this, KP(this));
+  }
+}
+
 void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
 {
   int ret = OB_SUCCESS;
@@ -348,13 +419,65 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
 
         if (OB_SUCC(ret)) {
           PROXY_LOG(DEBUG, "ObRpcReq::cleanup done", KP(this), KP(request_sm));
-          request_sm->schedule_cleanup_action();    // 调度异步任务释放
+          if (params.cnet_state_ == ObRpcReq::ClientNetState::REDIS_REQ_CLIENT_DONE) {
+            request_sm->set_state_and_call_next(RPC_REQ_REQUEST_CLEANUP);
+          } else {
+            request_sm->schedule_cleanup_action();    // 调度异步任务释放
+          }
         }
       }
     }
   } else {
     PROXY_LOG(EDIAG, "ObRpcReq::cleanup but magic is error", "rpc_req", *this, KP(this));
   }
+}
+
+int ObRpcReq::alloc_rpc_request_for_redis(obkv::ObRpcPacketCode pcode)
+{
+  int ret = OB_SUCCESS;
+  ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
+  char *table_req_buf = NULL;
+
+  if (pcode == obrpc::OB_TABLE_API_LOGIN) {
+    if (OB_FAIL(free_rpc_request())) {
+      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
+    } else if (OB_ISNULL(table_req_buf = (char *)op_fixed_mem_alloc(sizeof(ObRpcTableLoginRequest)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("alloc_redis_request alloc memory failed", K(ret), K(rpc_trace_id));
+    } else {
+      rpc_request_ = new (table_req_buf) ObRpcTableLoginRequest();
+      rpc_request_len_ = sizeof(ObRpcTableLoginRequest);
+    }
+  } else if (pcode == obrpc::OB_REDIS_EXECUTE) {
+    if (OB_NOT_NULL(rpc_request_) && (rpc_request_len_ == sizeof(ObRpcRedisOperationRequest))) {
+      ObRpcRedisOperationRequest *rpc_request = reinterpret_cast<ObRpcRedisOperationRequest *>(rpc_request_);
+      rpc_request->reset();
+      LOG_DEBUG("do not need to alloc redis_request,just reuse", K_(rpc_request_len), KPC(rpc_request),K(rpc_trace_id));
+    } else if (OB_FAIL(free_rpc_request())) {
+      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
+    } else if (OB_ISNULL(table_req_buf = (char *)op_fixed_mem_alloc(sizeof(ObRpcRedisOperationRequest)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("alloc_redis_request alloc memory failed", K(ret), K(rpc_trace_id));
+    } else {
+      rpc_request_ = new (table_req_buf) ObRpcRedisOperationRequest();
+      rpc_request_len_ = sizeof(ObRpcRedisOperationRequest);
+    }
+  } else if (pcode == obrpc::OB_REDIS_EXECUTE_V2) {
+    if (OB_NOT_NULL(rpc_request_) && (rpc_request_len_ == sizeof(ObRpcRedisOperationSimplifiedRequest))) {
+      ObRpcRedisOperationSimplifiedRequest *rpc_request = reinterpret_cast<ObRpcRedisOperationSimplifiedRequest *>(rpc_request_);
+      rpc_request->reset();
+      LOG_DEBUG("do not need to alloc redis_request,just reuse", K_(rpc_request_len), KPC(rpc_request),K(rpc_trace_id));
+    } else if (OB_FAIL(free_rpc_request())) {
+      LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
+    } else if (OB_ISNULL(table_req_buf = (char *)op_fixed_mem_alloc(sizeof(ObRpcRedisOperationSimplifiedRequest)))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("alloc_redis_request alloc memory failed", K(ret), K(rpc_trace_id));
+    } else {
+      rpc_request_ = new (table_req_buf) ObRpcRedisOperationSimplifiedRequest();
+      rpc_request_len_ = sizeof(ObRpcRedisOperationSimplifiedRequest);
+    }
+  }
+  return ret;
 }
 
 int ObRpcReq::alloc_rpc_request()
@@ -435,7 +558,15 @@ int ObRpcReq::alloc_rpc_response()
   if (OB_FAIL(ObProxyRpcReqAnalyzer::get_rpc_response_size(obkv_info_.pcode_, rpc_response_size))) {
     LOG_WDIAG("fail to get rpc response size", "pcode", obkv_info_.pcode_, K(rpc_response_size), K(ret), K(rpc_trace_id));
   } else {
-    if (OB_FAIL(free_rpc_response())) {
+    if (obrpc::OB_REDIS_EXECUTE == obkv_info_.pcode_ && OB_NOT_NULL(rpc_response_) && (rpc_response_len_ == rpc_response_size)) {
+      ObRpcRedisOperationResponse *rpc_response = reinterpret_cast<ObRpcRedisOperationResponse *>(rpc_response_);
+      rpc_response->reset();
+      LOG_DEBUG("do not need to alloc redis_response,just reuse", K(rpc_response_size), "pcode", obkv_info_.pcode_, KPC(rpc_response));
+    } else if (obrpc::OB_REDIS_EXECUTE_V2 == obkv_info_.pcode_ && OB_NOT_NULL(rpc_response_) && (rpc_response_len_ == rpc_response_size)) {
+      ObRpcRedisOperationSimplifiedResponse *rpc_response = reinterpret_cast<ObRpcRedisOperationSimplifiedResponse *>(rpc_response_);
+      rpc_response_->reset();
+      LOG_DEBUG("do not need to alloc redis_response, just reuse", K(rpc_response_size), "pcode", obkv_info_.pcode_, KPC(rpc_response));
+    } else if (OB_FAIL(free_rpc_response())) {
       LOG_WDIAG("fail to call free_rpc_request", K(ret), K(rpc_trace_id));
     } else {
       if (obkv_info_.is_inner_request_) {
@@ -453,7 +584,7 @@ int ObRpcReq::alloc_rpc_response()
       }
     }
     obkv::get_global_rpc_throttle().update_holding_resource(rpc_response_size);
-    if (OB_SUCC(ret)) {
+    if (OB_SUCC(ret) && OB_ISNULL(rpc_response_)) {
       rpc_response_len_ = rpc_response_size;
       switch (obkv_info_.pcode_) {
       case obrpc::OB_TABLE_API_LOGIN: {
@@ -491,6 +622,10 @@ int ObRpcReq::alloc_rpc_response()
       }
       case obrpc::OB_REDIS_EXECUTE : {
         rpc_response_ = new (buf) ObRpcRedisOperationResponse;
+        break;
+      }
+      case obrpc::OB_REDIS_EXECUTE_V2: {
+        rpc_response_ = new (buf) ObRpcRedisOperationSimplifiedResponse;
         break;
       }
       case obrpc::OB_GET_PARTITIONS: {

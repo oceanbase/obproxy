@@ -28,91 +28,171 @@ namespace obproxy
 {
 namespace obkv
 {
+// TODO use memcpy to reduce encode cost
+//---------------------------------ObRedisOperationSimplifiedRequest--------------------//
+OB_UNIS_DEF_SERIALIZE(ObRedisOperationSimplifiedRequest,
+                    credential_,
+                    redis_db_,
+                    ls_id_,
+                    tablet_id_,
+                    table_id_,
+                    reserved_,
+                    resp_str_);
 
-// OB_DEF_SERIALIZE(ObRedisOperationRequest)
-// {
-//   int ret = OB_SUCCESS;
-//   LST_DO_CODE(OB_UNIS_ENCODE, credential_, table_name_, table_id_, tablet_id_, entity_type_, operation_type_);
-//   int64_t rowkey_size = rowkey_.count();
-//   OB_UNIS_ENCODE(rowkey_size);
-//   for (int i = 0; i < rowkey_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_ENCODE(rowkey_.at(i));
-//   }
+OB_UNIS_DEF_SERIALIZE_SIZE(ObRedisOperationSimplifiedRequest,
+                    credential_,
+                    redis_db_,
+                    ls_id_,
+                    tablet_id_,
+                    table_id_,
+                    reserved_,
+                    resp_str_);
 
-//   if (properties_values_.count() != properties_names_.count()) {
-//     ret = OB_ERR_UNEXPECTED;
-//     LOG_WDIAG("unexpected properties count", K(ret));
-//   }
-//   int64_t properties_size = properties_values_.count();
-//   OB_UNIS_ENCODE(properties_size);
-//   for (int i = 0; i < properties_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_ENCODE(properties_names_.at(i));
-//     OB_UNIS_ENCODE(properties_values_.at(i));
-//   }
+int ObRedisOperationSimplifiedRequest::serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OK_;
+  int64_t len = get_serialize_size_v4_();
+  SERIALIZE_HEADER(UNIS_VERSION, len);
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(serialize_v4_(buf, buf_len, pos))) {
+      LOG_WDIAG("serialize fail", K(ret));
+    }
+  }
+  return ret;
+}
 
-//   LST_DO_CODE(OB_UNIS_ENCODE, consistency_level_, returning_rowkey_, returning_affected_entity_,
-//               returning_affected_rows_, binlog_row_image_type_);
-//   return ret;
-// }
+int ObRedisOperationSimplifiedRequest::serialize_v4_(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OK_;
+  UNF_UNUSED_SER;
+  BASE_SER(CLS);
+  LST_DO_CODE(OB_UNIS_ENCODE,
+              credential_,
+              redis_db_);
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(serialization::encode_i64(buf, buf_len, pos, static_cast<int64_t>(ls_id_)))) {
+      LOG_WDIAG("serialize tablet ID failed", K(ret), KP(buf), K(buf_len), K(pos));
+    } else if (OB_FAIL(serialization::encode_i64(buf, buf_len, pos, static_cast<int64_t>(tablet_id_)))) {
+      LOG_WDIAG("serialize tablet ID failed", K(ret), KP(buf), K(buf_len), K(pos));
+    }
+  }
+  LST_DO_CODE(OB_UNIS_ENCODE,
+              table_id_,
+              reserved_,
+              resp_str_);
+  return ret;
+}
 
-// OB_DEF_SERIALIZE_SIZE(ObRedisOperationRequest)
-// {
-//   int ret = OB_SUCCESS;
-//   int64_t len = 0;
-//   LST_DO_CODE(OB_UNIS_ADD_LEN, credential_, table_name_, table_id_, tablet_id_, entity_type_, operation_type_);
-//   int64_t rowkey_size = rowkey_.count();
-//   OB_UNIS_ADD_LEN(rowkey_size);
-//   for (int i = 0; i < rowkey_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_ADD_LEN(rowkey_.at(i));
-//   }
+int64_t ObRedisOperationSimplifiedRequest::get_serialize_size_v4(void) const
+{
+  int64_t len = get_serialize_size_v4_();
+  SERIALIZE_SIZE_HEADER(UNIS_VERSION, len);
+  return len;
+}
 
-//   int64_t properties_size = properties_values_.count();
-//   if (properties_values_.count() != properties_names_.count()) {
-//     ret = OB_ERR_UNEXPECTED;
-//     LOG_WDIAG("unexpected properties count", K(ret));
-//   }
-//   OB_UNIS_ADD_LEN(properties_size);
-//   for (int i = 0; i < properties_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_ADD_LEN(properties_names_.at(i));
-//     OB_UNIS_ADD_LEN(properties_values_.at(i));
-//   }
+int64_t ObRedisOperationSimplifiedRequest::get_serialize_size_v4_(void) const
+{
+  int64_t len = 0;
+  BASE_ADD_LEN(CLS);
+  LST_DO_CODE(OB_UNIS_ADD_LEN,
+              credential_,
+              redis_db_);
 
-//   LST_DO_CODE(OB_UNIS_ADD_LEN, consistency_level_, returning_rowkey_, returning_affected_entity_,
-//               returning_affected_rows_, binlog_row_image_type_);
-//   return ret;
-// }
+  len += 8;   // ls_id
+  len += 8;   // tablet_id
 
-// ODP_DEF_DESERIALIZE(ObRedisOperationRequest)
-// {
-//   UNUSED(rpc_request);
-//   int ret = OB_SUCCESS;
-//   int64_t rowkey_size = 0;
-//   int64_t properties_size = 0;
-//   LST_DO_CODE(OB_UNIS_DECODE, credential_, table_name_, table_id_, tablet_id_, entity_type_, operation_type_);
-//   OB_UNIS_DECODE(rowkey_size);
-//   if (OB_FAIL(rowkey_.prepare_allocate(rowkey_size))) {
-//     LOG_WDIAG("fail to prepare allcoate mem for rowkey", K(ret));
-//   }
-//   for (int i = 0; i < rowkey_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_DECODE(rowkey_.at(i));
-//   }
+  LST_DO_CODE(OB_UNIS_ADD_LEN,
+              table_id_,
+              reserved_,
+              resp_str_);
+  return len;
+}
 
-//   OB_UNIS_DECODE(properties_size);
-//   if (OB_FAIL(properties_names_.prepare_allocate(properties_size))) {
-//     LOG_WDIAG("fail to prepare allcoate mem for property names", K(ret));
-//   } else if (OB_FAIL(properties_values_.prepare_allocate(properties_size))) {
-//     LOG_WDIAG("fail to prepare allcoate mem for property values", K(ret));
-//   }
-//   for (int i = 0; i < properties_size && OB_SUCC(ret); i++) {
-//     OB_UNIS_DECODE(properties_names_.at(i));
-//     OB_UNIS_DECODE(properties_values_.at(i));
-//   }
+//-------------------------------ObRpcRedisOperationSimplifiedRequest--------------------//
+int ObRpcRedisOperationSimplifiedRequest::calc_partition_id(ObArenaAllocator &allocator,
+                                                  ObRpcReq &ob_rpc_req,
+                                                  ObProxyPartInfo &part_info,
+                                                  int64_t &partition_id)
+{
+  int ret = OB_ERR_UNEXPECTED;
+  UNUSEDx(allocator, ob_rpc_req, part_info, partition_id);
+  LOG_WDIAG("unexpected partition calculation called", KPC(this), K(ret), K(lbt()));
+  return ret;
+}
 
-//   LST_DO_CODE(OB_UNIS_DECODE, consistency_level_, returning_rowkey_, returning_affected_entity_,
-//               returning_affected_rows_, binlog_row_image_type_);
-//   return ret;
-// }
+int ObRpcRedisOperationSimplifiedRequest::analyze_request(const char *buf, const int64_t len, int64_t &pos)
+{
+  int ret = OB_ERR_UNEXPECTED;
+  UNUSEDx(buf, len , pos);
+  LOG_WDIAG("unexpected analyze request called", KPC(this), K(ret), K(lbt()));
+  return ret;
+}
 
+
+int ObRpcRedisOperationSimplifiedRequest::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+
+  LOG_DEBUG("ObRpcRedisOperationSimplifiedRequest::encode", K(buf), K(buf_len), K(pos));
+  int ret = OB_SUCCESS;
+  int64_t meta_size = rpc_packet_meta_.get_serialize_size();
+  int64_t origin_pos = pos;
+  int64_t check_sum_pos;
+
+  pos += meta_size;    // 将pos设置为meta之后
+  check_sum_pos = pos; // 后续做checksum需要从这个pos开始
+
+  if (pos > buf_len) {
+    ret = OB_SIZE_OVERFLOW;
+    LOG_WDIAG("fail to encode ObRpcTableOperationRequest", K(ret), KP(buf), K(buf_len), K(pos), K(meta_size));
+  } else {
+    // 序列化table_request
+    LOG_DEBUG("ObRpcRedisOperationSimplifiedRequest::encode",  K_(&redis_table_simplified_request), K(this), K_(redis_table_simplified_request), K(buf), K(buf_len), K(pos));
+    // if (OB_FAIL(redis_table_request_.serialize(buf, buf_len, pos))) {
+    //   LOG_WDIAG("fail to serialize for table request");
+    // }
+    if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version_)) {
+      LOG_DEBUG("ObRpcTableOperationRequest::encode less v4, can not come here", K(buf), K(buf_len), K(pos));
+      OB_UNIS_ENCODE(redis_table_simplified_request_);
+    } else {
+      LOG_DEBUG("ObRpcTableOperationRequest::encode v4", K(buf), K(buf_len), K(pos));
+      if (OB_FAIL(redis_table_simplified_request_.serialize_v4(buf, buf_len, pos))) {
+        LOG_WDIAG("fail to serialize for table request");
+      }
+    }
+    if (OB_SUCC(ret)) {
+      // 首先计算checksum
+      int64_t request_size = pos - check_sum_pos;
+      uint64_t check_sum = ob_crc64(static_cast<void *>(buf + check_sum_pos), request_size);
+      int64_t ez_payload_size = rpc_packet_meta_.rpc_header_.get_encoded_size() + request_size;
+
+      rpc_packet_meta_.ez_header_.ez_payload_size_ = static_cast<uint32_t>(ez_payload_size);
+      rpc_packet_meta_.rpc_header_.checksum_ = check_sum;
+
+      // 这里传入原始的pos, 序列化meta信息
+      // TODO 考虑header部分进行memcpy减少序列化流程
+      if (OB_FAIL(rpc_packet_meta_.serialize(buf, buf_len, origin_pos))) {
+        LOG_WDIAG("fail to encode meta", K_(rpc_packet_meta), K(ret));
+      } else if (origin_pos != check_sum_pos) {
+        // double check
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("origin pos is not equal to check sum pos, unexpected", K(ret), K(origin_pos), K(check_sum_pos));
+      } else {
+        LOG_DEBUG("ObRpcRedisOperationSimplifiedRequest::encode succ", K(buf), K(buf_len), K(pos));
+        // success
+      }
+    }
+  }
+  return ret;
+}
+
+int64_t ObRpcRedisOperationSimplifiedRequest::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcRequest::get_encode_size();
+  len += redis_table_simplified_request_.get_serialize_size();
+  return len;
+}
+//---------------------------------ObRedisOperationRequest------------------------------//
 // v3 cluster serialize
 OB_UNIS_DEF_SERIALIZE(ObRedisOperationRequest,
                     credential_,
@@ -141,6 +221,14 @@ OB_UNIS_DEF_SERIALIZE_SIZE(ObRedisOperationRequest,
                     returning_affected_rows_,
                     binlog_row_image_type_);
 
+void ObRedisOperationRequest::reset()
+{
+  credential_.reset();
+  table_name_.reset();
+  table_id_ = common::OB_INVALID_ID;
+  partition_id_ = common::OB_INVALID_ID;
+  table_operation_.reset();
+}
 int ObRedisOperationRequest::serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const
 {
   int ret = OK_;

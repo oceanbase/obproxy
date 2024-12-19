@@ -56,7 +56,7 @@ namespace proxy
 static int64_t const MYSQL_BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_8K);
 
 ObRpcRedisClientNetHandler::ObRpcRedisClientNetHandler()
-    : ObRpcClientNetHandler(), cur_rpc_request_(NULL), is_in_handling_request_(false),
+    : ObRpcClientNetHandler(), cur_rpc_request_(NULL), is_in_handling_request_(false),is_redis_new_protocol_(false),
       redis_db_(0), last_monitor_time_us_(0), rpc_credential_(), credential_(), period_task_action_(NULL),
       redis_ctx_(), redis_monitor_list_()
 {
@@ -289,7 +289,7 @@ int ObRpcRedisClientNetHandler::main_handler(int event, void *data)
       }
     } else {
       if (NULL != data && data == net_entry_.read_vio_) { // from client vc
-        if (!((is_in_handling_request_ || redis_ctx_->is_monitor_mode()) && (VC_EVENT_READ_COMPLETE == event || VC_EVENT_READ_READY == event))) {
+        if (!((is_in_handling_request() || redis_ctx_->is_monitor_mode()) && (VC_EVENT_READ_COMPLETE == event || VC_EVENT_READ_READY == event))) {
           event_ret = state_keep_alive(event, data);
         }
       } else if (NULL != data && data == net_entry_.write_vio_) { // from client vc
@@ -595,9 +595,8 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
             // request_id = current_ez_header_.chid_;
             client_channel_id = atomic_channel_id_++;
             trace_id2 = client_channel_id;
-
             PROXY_CS_LOG(DEBUG, "[RPC_REQUEST][OB_REDIS]recv a new rpc_req, to handle", K_(cs_id), K(rpc_trace_id), K(client_addr), K(new_trace_id), K(ret), KPC_(cur_rpc_request));
-            if (OB_ISNULL(cur_rpc_request_->get_request_sm()) && OB_ISNULL(request_sm = ObRpcRequestSM::allocate())) {
+            if (OB_ISNULL(request_sm = cur_rpc_request_->get_request_sm()) && OB_ISNULL(request_sm = ObRpcRequestSM::allocate())) {
               ret = OB_ERR_UNEXPECTED;
               PROXY_CS_LOG(WDIAG, "could not allocate request sm, net need abort connection", K_(cs_id), K(ret));
             } else if (OB_FAIL(cur_rpc_request_->init(rpc_type, request_sm, this, request_len, cluster_version_,
@@ -612,6 +611,7 @@ int ObRpcRedisClientNetHandler::state_client_request_read(int event, void *data)
               if (OB_NOT_NULL(redis_info)) {
                 redis_info->set_rpc_credential(get_rpc_credential());
                 redis_info->set_redis_db(redis_db_);
+                redis_info->set_redis_new_protocol(is_redis_new_protocol_);
                 // redis_info->set_client_name(redis_ctx_->get_client_name(), redis_ctx_->get_client_name_len());
               }
               if (OB_FAIL(request_sm->schedule_call_next_action(RPC_REQ_NEW_REDIS_REQUEST))) {
@@ -710,9 +710,6 @@ int ObRpcRedisClientNetHandler::setup_client_response_send()
         //response from server
         buf = redis_info->get_response_server_ptr();
         cur_rpc_request_->set_response_len(redis_info->get_response_len());
-      } else if (redis_info->is_use_response_inner_buf()){
-        //response from obproxy build
-        buf = redis_info->get_response_inner_buf();
       } else {
         buf = redis_info->get_response_buf();
       }
@@ -722,6 +719,7 @@ int ObRpcRedisClientNetHandler::setup_client_response_send()
 
       if (redis_info->is_auth_request()) {
         set_rpc_credential(rpc_credential); //set only credential.length > 0
+        is_redis_new_protocol_ = redis_info->is_redis_new_protocol();
         redis_ctx_->set_user_name(cur_rpc_request_->get_obkv_info().user_name_);
       } else if (redis_info->get_redis_db() != redis_db_) {
         redis_db_ = redis_info->get_redis_db(); //select db executed
@@ -829,12 +827,21 @@ int ObRpcRedisClientNetHandler::state_client_response_send(int event, void *data
           if (rpc_req->is_need_terminal_client_net()) {
             need_terminal = true;
           }
-          ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE);
-          rpc_req->cleanup(cleanup_params); //TODO just need stat and reset
-          rpc_req = NULL;
+          if (OB_UNLIKELY(redis_ctx_->is_monitor_mode())) {
+            ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE);
+            rpc_req->cleanup(cleanup_params);
+            rpc_req = NULL;
+            cur_rpc_request_ = NULL;
+          } else {
+            ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::REDIS_REQ_CLIENT_DONE);
+            // ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE);
+            rpc_req->cleanup(cleanup_params); //just need stat and reset
+            cur_rpc_request_ = rpc_req;
+            rpc_req = NULL;
+          }
         }
         write_begin_ = 0;
-        cur_rpc_request_ = NULL;
+        // cur_rpc_request_ = NULL;
         is_in_handling_request_ = false;
 
         break;
@@ -860,7 +867,7 @@ int ObRpcRedisClientNetHandler::state_client_response_send(int event, void *data
     PROXY_CS_LOG(WDIAG, "state_client_response_send failed or get need_terminal", K_(cs_id), K(ret), K(need_terminal), K(event));
     do_io_close();
   } else {
-    if (!need_start_period_task) {
+    if (!need_start_period_task && !redis_ctx_->is_monitor_mode()) {
       if (OB_FAIL(setup_client_request_read())) {
         PROXY_CS_LOG(WDIAG, "fail to read next request", K_(cs_id), K(ret));
       }
@@ -1066,6 +1073,12 @@ void ObRpcRedisClientNetHandler::set_rpc_credential(const common::ObString &cred
     MEMCPY(rpc_credential_, credential.ptr(), credential.length());
     credential_.assign(rpc_credential_, credential.length());
   }
+}
+
+bool ObRpcRedisClientNetHandler::is_in_handling_request() {
+  return is_in_handling_request_ || (OB_NOT_NULL(cur_rpc_request_)
+                       && OB_NOT_NULL(cur_rpc_request_->get_request_sm())
+                       && OB_NOT_NULL(cur_rpc_request_->get_request_sm()->get_cluster_resource()));
 }
 
 int ObRpcRedisClientNetHandler::add_redis_monitor_msg() {

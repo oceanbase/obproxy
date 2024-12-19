@@ -37,7 +37,7 @@ void ObRpcRedisCommandMetaMap::init()
   REG_OB_REDIS_CMD("HELLO", REDIS_COMMAND_HELLO, REDIS_EMPTY_TABLE_NAME, 5, OB_REDIS_IS_AUTH, NULL);
 
   /* string */
-  REG_OB_REDIS_CMD("APPEND",    REDIS_COMMAND_GET,        REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
+  REG_OB_REDIS_CMD("APPEND",    REDIS_COMMAND_APPEND,        REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
   REG_OB_REDIS_CMD("BITCOUNT",  REDIS_COMMAND_BITCOUNT,   REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
   REG_OB_REDIS_CMD("DECR",      REDIS_COMMAND_DECR,       REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
   REG_OB_REDIS_CMD("DECRBY",    REDIS_COMMAND_DECRBY,     REDIS_STRING_TABLE_NAME, 3, OB_REDIS_EMPTY_FLAG, ObRedisRowKeyIter::RedisSingleKeyIterator);
@@ -204,7 +204,7 @@ int ObRedisRowKeyIter::RedisSingleKeyIterator(const ObSEArray<ObString, COMMON_R
   int ret = OB_SUCCESS;
   ObObj ob_obj;
   if (OB_ISNULL(args) || OB_UNLIKELY(args->count() < 2)) {
-    ret = OB_ERR_UNEXPECTED;
+    ret = OB_INVALID_ARGUMENT_NUM;
   } else if (FALSE_IT(ob_obj.set_varchar(args->at(1)))) {
     //not to be here
   } else if (FALSE_IT(ob_obj.set_default_collation_type())) { //use defualt collation type utf8mb4
@@ -773,8 +773,8 @@ int ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_ping(ObRpcReq &rpc_requ
     //same as ECHO cmd
     ret = ObRpcRedisInnerRequestHandle::handle_redis_inner_cmd_echo(rpc_request);
   } else {
-    ObString content("PONG");
-    ret = ObRpcRedisAnalyzer::build_common_resp(rpc_request, content);
+    // ObString content("PONG");
+    ret = ObRpcRedisAnalyzer::build_pong_resp(rpc_request);
   }
   return ret;
 }

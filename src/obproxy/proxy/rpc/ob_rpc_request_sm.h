@@ -312,6 +312,7 @@ public:
   virtual ~ObRpcRequestSM() {}
 
   void cleanup();
+  void reuse();
   void inner_request_cleanup();   //Called when the subtask ends to clean up all subtask data
   void destroy();
   void kill_this();
@@ -439,7 +440,7 @@ public:
 
   void set_rpc_req_origin_channel_id(uint32_t id) { rpc_req_origin_channel_id_ = id; }
   uint32_t get_rpc_req_origin_channel_id() { return rpc_req_origin_channel_id_; }
-
+  obutils::ObClusterResource* get_cluster_resource() {return cluster_resource_;}
   bool check_connection_throttle();
   int analyze_obkv_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
   int analyze_rpc_login_request(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReqAnalyzeNewStatus &status);
@@ -554,6 +555,7 @@ private:
   int32_t reentrancy_count_;
 
   bool terminate_sm_;
+  bool is_need_reuse_sm_;
   ObRpcReq *rpc_req_;
   uint32_t rpc_req_origin_channel_id_;
   event::ObEThread *create_thread_;

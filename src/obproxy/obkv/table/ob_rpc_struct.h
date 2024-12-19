@@ -190,7 +190,7 @@ public:
 
   void reset() {
     ez_header_.reset();
-    memset(&rpc_header_, 0, sizeof(rpc_header_)); rpc_header_.flags_ |= (OB_LOG_LEVEL_NONE & 0x7);
+    memset(&rpc_header_, 0, sizeof(rpc_header_)); rpc_header_.flags_ |= (OB_LOG_LEVEL_NONE & 0x7); rpc_header_.dst_cluster_id_=-1;
   }
 
   TO_STRING_KV(K_(ez_header), K_(rpc_header));
@@ -234,7 +234,7 @@ public:
   // this function must be called after setting the rpc_packet_meta
   virtual int analyze_request(const char *buf, const int64_t len, int64_t &pos) = 0;
 
-  void reset();
+  virtual void reset();
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) = 0;
   virtual int64_t get_encode_size() const = 0;
   virtual int calc_partition_id(common::ObArenaAllocator &allocator,
@@ -389,7 +389,7 @@ public:
   const ObRpcResultCode &get_result_code() const {return rpc_result_code_;}
   ObRpcResultCode &get_result_code() {return rpc_result_code_;}
   // this function must be called after setting the rpc_packet_meta
-  void reset();
+  virtual void reset();
   // derived classes parse different rpc packets by overriding this function
   virtual int analyze_response(const char *buf, const int64_t len, int64_t &pos);
 

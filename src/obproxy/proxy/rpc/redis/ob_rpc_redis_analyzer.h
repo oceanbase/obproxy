@@ -76,6 +76,7 @@ static int build_redis_internal_response(ObRpcReq &rpc_req);
 
 static int build_redis_rpc_login_request(proxy::ObRpcReq &rpc_req, obkv::ObRpcTableLoginRequest *&rpc_login_req);
 static int build_redis_rpc_common_request(proxy::ObRpcReq &rpc_req, obkv::ObRpcRedisOperationRequest *&rpc_table_req);
+static int build_redis_rpc_common_simplified_request(proxy::ObRpcReq &rpc_req, obkv::ObRpcRedisOperationSimplifiedRequest *&rpc_table_req);
 static int build_packet_meta_for_table_request(proxy::ObRpcReq &rpc_req, obkv::ObRpcRequest *rpc_request, obrpc::ObRpcPacketCode pcode);
 
 static int build_bulk_string_resp(common::ObSEArray<common::ObString, COMMON_REDIS_ARGS_COUNT> &bulk_stirng,
@@ -95,6 +96,7 @@ static int build_err_resp(proxy::ObRpcReq &rpc_req, common::ObString &err_conten
 
 static int build_ok_resp(proxy::ObRpcReq &rpc_req);
 
+static int build_pong_resp(proxy::ObRpcReq &rpc_req);
 static int build_int_resp(proxy::ObRpcReq &rpc_req);
 
 static int build_common_resp(proxy::ObRpcReq &rpc_req, const common::ObString &content);
@@ -102,13 +104,10 @@ static int build_common_resp(proxy::ObRpcReq &rpc_req, const common::ObString &c
 static int handle_redis_serialize_response(proxy::ObRpcReq &rpc_req);
 
 static int check_redis_response(obkv::ObRedisOperationResult &table_redis_response, uint64_t &value_pos);
-static int get_real_redis_response(proxy::ObRpcReq &rpc_req, char *&buf_ptr, int64_t &len);
+static int get_real_redis_response(proxy::ObRpcReq &rpc_req, char *&buf_ptr, int64_t &len, obrpc::ObRpcPacketCode pcode);
 
-static int build_simple_String_resp(common::ObString content, const char *buf, const int64_t len, int64_t &pos)
-{
-  UNUSEDx(content, buf, len, pos);
-  return common::OB_SUCCESS;
-}
+static int build_simple_String_resp(proxy::ObRpcReq &rpc_req, const common::ObString &content);
+
 
 static int build_err_resp(common::ObString err_content, const char *buf, const int64_t len, int64_t &pos)
 {

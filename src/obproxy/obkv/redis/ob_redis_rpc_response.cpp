@@ -30,6 +30,39 @@ namespace obproxy
 namespace obkv
 {
 
+OB_SERIALIZE_MEMBER(ObRedisOperationSimplifiedResult, resp_ret_, redis_str_);
+
+void ObRpcRedisOperationSimplifiedResponse::reset()
+{
+  redis_operation_simplified_result_.reset();
+  ObRpcResponse::reset();
+}
+int ObRpcRedisOperationSimplifiedResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(buf);
+  UNUSED(buf_len);
+  UNUSED(pos);
+  return ret;
+}
+
+int64_t ObRpcRedisOperationSimplifiedResponse::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcResponse::get_encode_size();
+  len += redis_operation_simplified_result_.get_serialize_size();
+  return len;
+}
+
+int ObRpcRedisOperationSimplifiedResponse::analyze_response(const char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(redis_operation_simplified_result_.deserialize(buf, buf_len, pos))) {
+    LOG_WDIAG("deserialize login request wrong", K(buf), K(buf_len), K(ret));
+  }
+  return ret;
+}
+
 //// ====== table operation response for redis ======
 OB_DEF_SERIALIZE(ObRedisOperationResult)
 {
@@ -150,7 +183,11 @@ OB_DEF_DESERIALIZE(ObRedisOperationResult)
 
 // OB_SERIALIZE_MEMBER((ObRedisOperationResult, ObTableResult),
 //                     operation_type_, entity_, affected_rows_);
-
+void ObRpcRedisOperationResponse::reset()
+{
+  redis_operation_result_.reset();
+  ObRpcResponse::reset();
+}
 int ObRpcRedisOperationResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
 {
   int ret = OB_SUCCESS;

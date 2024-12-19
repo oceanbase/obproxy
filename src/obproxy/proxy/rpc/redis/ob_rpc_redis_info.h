@@ -184,6 +184,16 @@ public:
   valid_data_len_(0), data_pos_(0), redis_bulk_str_arr_(), redis_bulk_str_len_arr_()
   {}
   ~ObRpcRedisCmdInfo() {}
+  void reset() {
+    redis_cmd_arr_len_ = 0;
+    next_bulk_str_idx_ = 0;
+    data_len_ = 0;
+    valid_data_len_ = 0;
+    data_pos_ = 0;
+    redis_bulk_str_arr_.reuse();
+    redis_bulk_str_len_arr_.reuse();
+  }
+
 public:
   uint32_t redis_cmd_arr_len_;
   uint32_t next_bulk_str_idx_;
@@ -199,12 +209,12 @@ class ObRpcRedisInfo
 {
 public:
   ObRpcRedisInfo() : redis_cmd_info_(),
-                     request_buf_(NULL), request_inner_buf_(NULL), response_buf_(NULL), response_inner_buf_(NULL), response_server_ptr_(NULL),
-                     lower_redis_cmd_buf_(NULL), error_redis_msg_buf_(NULL), redis_inner_msg_buf_(NULL), request_buf_len_(0), request_inner_buf_len_(0), response_buf_len_(0), response_inner_buf_len_(0),
+                     request_buf_(NULL), response_buf_(NULL), response_server_ptr_(NULL),
+                     lower_redis_cmd_buf_(NULL), error_redis_msg_buf_(NULL), redis_inner_msg_buf_(NULL), request_buf_len_(0), response_buf_len_(0),
                      req_buf_repeat_times_(0), request_len_(0), response_len_(0),
                      redis_db_(0), tenant_id_(1), redis_args_(NULL), use_default_name_(false),
                      is_auth_request_(false), is_inner_request_(false), is_monitor_cmd_(false), is_error_response_(false), is_inner_response_(false),
-                     is_use_response_inner_buf_(false), is_need_quit_(false), is_redis_msg_init_(false),
+                     is_use_response_inner_buf_(false), is_need_quit_(false), is_redis_msg_init_(false), is_redis_new_protocol_(false),
                      redis_cmd_type_(REDIS_COMMAND_MAX), redis_request_(NULL),
                     //  rewrited_request_(NULL), redis_response_(NULL), redis_table_response_(NULL),
                     //  rewrited_request_(NULL), redis_table_response_(NULL),
@@ -214,31 +224,32 @@ public:
                      }
   ~ObRpcRedisInfo() { reset(); };
   void reset();
+  void reuse();
   bool inner_redis_cmd() const;
   bool use_default_name() const { return use_default_name_; };
   void set_use_default_name(bool flag) { use_default_name_ = flag; }
 
   char    *get_request_buf() { return request_buf_; }
-  char    *get_request_inner_buf() { return request_inner_buf_; }
-  char    *get_response_inner_buf() { return response_inner_buf_; }
+  // char    *get_request_inner_buf() { return request_inner_buf_; }
+  // char    *get_response_inner_buf() { return response_inner_buf_; }
   char    *get_response_buf() { return response_buf_; }
   char    *get_response_server_ptr() { return response_server_ptr_; }
   int64_t  get_request_buf_len() const { return request_buf_len_; }
-  int64_t  get_request_inner_buf_len() const { return request_inner_buf_len_; }
-  int64_t  get_response_inner_buf_len() const { return response_inner_buf_len_; }
+  // int64_t  get_request_inner_buf_len() const { return request_inner_buf_len_; }
+  // int64_t  get_response_inner_buf_len() const { return response_inner_buf_len_; }
   int64_t  get_response_buf_len() const { return response_buf_len_; }
   int64_t  get_request_len() const { return request_len_; }
   int64_t  get_response_len() const { return response_len_; }
 
   int alloc_request_buf(uint64_t len);
   int realloc_request_buf(uint64_t len);
-  int alloc_request_inner_buf(uint64_t len);
+  // int alloc_request_inner_buf(uint64_t len);
   int alloc_response_buf(uint64_t len);
-  int alloc_response_inner_buf(uint64_t len);
+  // int alloc_response_inner_buf(uint64_t len);
   int free_request_buf();
-  int free_request_inner_buf();
+  // int free_request_inner_buf();
   int free_response_buf();
-  int free_response_inner_buf();
+  // int free_response_inner_buf();
 
   common::ObArenaAllocator &get_allocator() { return allocator_; }
 
@@ -264,6 +275,7 @@ public:
   void set_inner_response(bool value) { is_inner_response_ = value; }
   void set_use_response_inner_buf(bool value) { is_use_response_inner_buf_ = value; }
   void set_need_quit(bool value) { is_need_quit_ = value; }
+  void set_redis_new_protocol(bool value) { is_redis_new_protocol_ = value; }
   void set_response_server_ptr(char *ptr) { response_server_ptr_ = ptr; }
   void set_response_len(uint64_t value) { response_len_ = value; }
   void set_redis_db(uint64_t db) { redis_db_ = db; }
@@ -276,6 +288,7 @@ public:
   bool is_inner_response() { return is_inner_response_; }
   bool is_use_response_inner_buf() const { return is_use_response_inner_buf_; }
   bool is_need_quit() { return is_need_quit_; }
+  bool is_redis_new_protocol() { return is_redis_new_protocol_; }
 
   void set_rpc_credential(const common::ObString &credential);
   common::ObString &get_rpc_credential() { return credential_; }
@@ -295,9 +308,9 @@ public:
 
 private:
   char *request_buf_;                   //byte data buffer received or to be send
-  char *request_inner_buf_;             //byte data buffer which need re-serialize(only used in)
+  // char *request_inner_buf_;             //byte data buffer which need re-serialize(only used in)
   char *response_buf_;                  //byte data buffer which is for response
-  char *response_inner_buf_;            //byte data buffer which is for need re-serialize(only used in)
+  // char *response_inner_buf_;            //byte data buffer which is for need re-serialize(only used in)
 
   char *response_server_ptr_;           //pointer to server response directly, not need to init RedisResponse again
 
@@ -306,9 +319,9 @@ private:
   char *redis_inner_msg_buf_;           //inited when need inner msg in obproxy
 
   int64_t request_buf_len_;             //buffer length for request_buf_
-  int64_t request_inner_buf_len_;       //buffer length for request_inner_buf_
+  // int64_t request_inner_buf_len_;       //buffer length for request_inner_buf_
   int64_t response_buf_len_;            //buffer lenght for response_buf_;
-  int64_t response_inner_buf_len_;      //buffer lenght for response_buf_;
+  // int64_t response_inner_buf_len_;      //buffer lenght for response_buf_;
   int64_t req_buf_repeat_times_;        //req_buf used times, need to release more than MAX_REPEATE_TIMES
   int64_t request_len_;                 //request bytes' length
   int64_t response_len_;                //response bytes' length
@@ -325,6 +338,7 @@ private:
   bool is_use_response_inner_buf_;
   bool is_need_quit_;
   bool is_redis_msg_init_;
+  bool is_redis_new_protocol_;
 
   RedisCommandType redis_cmd_type_;
   obkv::ObRpcRedisRequest *redis_request_;

@@ -1076,6 +1076,9 @@ inline void ObMysqlRoute::notify_caller()
       LOG_INFO("no caller, no need to notify caller");
     }
     terminate_route_ = true;
+  } else if (OB_UNLIKELY(OB_ISNULL(submit_thread_))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("submit_thread_ is null", K(ret));
   } else {
     MYSQL_ROUTE_SET_DEFAULT_HANDLER(&ObMysqlRoute::state_notify_caller);
     if (OB_ISNULL(pending_action_ = submit_thread_->schedule_imm(this))) {

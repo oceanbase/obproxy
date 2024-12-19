@@ -73,13 +73,13 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
     obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
     analyze_pos = meta.rpc_header_.hlen_ + RPC_NET_HEADER;
 
+    // analyze response meta
     if (OB_UNLIKELY(obkv_info.is_resp() != ctx.is_response_)) {
       ret = OB_ERR_UNEXPECTED;
       //maybe server return response without RESP flag for response
       LOG_WDIAG("invalid request or response to handle", K(ob_rpc_req), K(ret), K(rpc_trace_id),
                 "request_resp_flag", obkv_info.is_resp(), "ctx_is_response", ctx.is_response_);
     } else {
-      // analyze response meta
       if (obkv_info.is_resp()) {
         ObRpcResultCode result_code;
         ob_rpc_req.set_response(true);
@@ -110,14 +110,14 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
           }
 
           /**
-           * @brief
-           *   1. need_parse_response_fully
-           *     1.1. not error
-           *     1.2. shard request
-           *     1.3. async query request
-           *   2. OB_TABLE_API_MOVE
-           *   3. OB_REDIS_EXECUTE
-           */
+          * @brief
+          *   1. need_parse_response_fully
+          *     1.1. not error
+          *     1.2. shard request
+          *     1.3. async query request
+          *   2. OB_TABLE_API_MOVE
+          *   3. OB_REDIS_EXECUTE
+          */
           if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_) || (OB_REDIS_EXECUTE == obkv_info.pcode_ && obkv_info.rpc_origin_error_code_ == 0))) {
             // alloc response and full parse
             if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
@@ -538,6 +538,7 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
           ObRpcRedisInfo *redis_info = ob_rpc_req.get_redis_info();
           if (OB_NOT_NULL(redis_info)) {
             redis_info->set_rpc_credential(credential);
+            redis_info->set_redis_new_protocol(login_response->is_redis_new_protocol());
           }
         }
       }
@@ -599,7 +600,7 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
       } else if (obrpc::OB_TABLE_API_DIRECT_LOAD == obkv_info.pcode_) {
         ctx.need_retry_ = false;
         obkv_info.set_need_retry(false); //not do any retry for direct_load request(it will be errored if retry)
-      } else if (obrpc::OB_REDIS_EXECUTE == obkv_info.pcode_) {
+      } else if (obrpc::OB_REDIS_EXECUTE == obkv_info.pcode_ || obrpc::OB_REDIS_EXECUTE_V2 == obkv_info.pcode_) {
         if (OB_UNLIKELY(obkv_info.rpc_origin_error_code_ != 0)) {
           ObString err_content;
           bool is_error_from_server = true;
@@ -620,7 +621,7 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
           if (OB_ISNULL(redis_info)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("invalid redis request to handle", K(ret), K(redis_info), K(rpc_trace_id));
-          } else if (OB_FAIL(ObRpcRedisAnalyzer::get_real_redis_response(ob_rpc_req, real_response, response_len)) || OB_ISNULL(real_response)) {
+          } else if (OB_FAIL(ObRpcRedisAnalyzer::get_real_redis_response(ob_rpc_req, real_response, response_len, obkv_info.pcode_)) || OB_ISNULL(real_response)) {
             LOG_WDIAG("fail to get real response from server", K(ret), K(redis_info), K(rpc_trace_id));
           } else {
             redis_info->set_response_server_ptr(real_response);
@@ -848,8 +849,8 @@ int ObProxyRpcReqAnalyzer::handle_obkv_serialize_request(ObRpcReq &ob_rpc_req)
     request_len = request->get_encode_size();
     LOG_DEBUG("ObProxyRpcReqAnalyzer::handle_obkv_serialize_request", "inner_request", ob_rpc_req.is_inner_request(), K(ob_rpc_req), K(request_len), K(rpc_trace_id));
 
-    if (ob_rpc_req.is_inner_request() || OB_ISNULL(ob_rpc_req.get_request_buf())) { //need realloc req_buf, and set it to buf
-      if (OB_FAIL(ob_rpc_req.alloc_request_buf(request_len + ObProxyRpcReqAnalyzer::OB_RPC_ANALYZE_MORE_BUFF_LEN))) {
+    if (ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS || ob_rpc_req.is_inner_request() || OB_ISNULL(ob_rpc_req.get_request_buf())) { //need realloc req_buf, and set it to buf
+      if (OB_FAIL(ob_rpc_req.realloc_request_buf(request_len + ObProxyRpcReqAnalyzer::OB_RPC_ANALYZE_MORE_BUFF_LEN))) {
         LOG_WDIAG("fail to allocate rpc request buf", K(ret), K(rpc_trace_id));
       } else {
         buf = ob_rpc_req.get_request_buf();
@@ -1199,6 +1200,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_response_size(const ObRpcPacketCode pcode, in
   case obrpc::OB_REDIS_EXECUTE:
     size = sizeof(ObRpcRedisOperationResponse); //todo need replace it to  Redis response
     break;
+  case obrpc::OB_REDIS_EXECUTE_V2:
+    size = sizeof(ObRpcRedisOperationSimplifiedResponse);
+    break;
   case obrpc::OB_GET_PARTITIONS:
     size = sizeof(ObRpcTableGetRouteResponse);
     break;
@@ -1425,6 +1429,7 @@ int ObProxyRpcReqAnalyzer::do_parse_full_redis_auth_info(ObRpcReqCtx &rpc_ctx,
                                          FORMAL_TENANT_CLUSTER_SEPARATOR,
                                          CLUSTER_ID_SEPARATOR,
                                          user, tenant, cluster, cluster_id_str))) {
+      ret = OB_PASSWORD_WRONG;
       LOG_WDIAG("fail to do parse auth result", K(rpc_ctx), K(ret));
     }
 

@@ -26,6 +26,12 @@ namespace obkv
 class ObRpcTableLoginResponse : public ObRpcResponse
 {
 public:
+  enum ObTableLoginFlag
+  {
+    LOGIN_FLAG_NONE = 0,
+    REDIS_PROTOCOL_V2 = 1 << 0,
+    LOGIN_FLAG_MAX = 1 << 1,
+  };
   ObRpcTableLoginResponse() : login_res_() {}
   ~ObRpcTableLoginResponse() {}
   ObRpcTableLoginResponse(const ObRpcTableLoginResponse &response) : ObRpcResponse(response)
@@ -46,6 +52,7 @@ public:
   uint64_t get_tenant_id() {return login_res_.tenant_id_;}
   uint64_t get_user_id() {return login_res_.user_id_;}
   uint64_t get_database_id() {return login_res_.database_id_;}
+  bool is_redis_new_protocol () { return login_res_.reserved1_ == REDIS_PROTOCOL_V2; }
 
   void set_server_capabilities(uint32_t cap) {login_res_.server_capabilities_ = cap;}
   void set_server_version(const ObString &version) {login_res_.server_version_ = version;}

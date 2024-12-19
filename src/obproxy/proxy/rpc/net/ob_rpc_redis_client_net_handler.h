@@ -79,9 +79,12 @@ public:
   ObRpcRedisCtx *get_redis_ctx() { return redis_ctx_; }
   int add_redis_monitor_msg();
 
+  bool is_in_handling_request();
+
 protected:
   ObRpcReq *cur_rpc_request_;
   bool is_in_handling_request_;
+  bool is_redis_new_protocol_;
   uint64_t redis_db_;
   int64_t last_monitor_time_us_;
   char rpc_credential_[50];

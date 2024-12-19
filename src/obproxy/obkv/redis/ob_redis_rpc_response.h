@@ -25,6 +25,40 @@ namespace obkv
 {
 
 class ObRedisResult;
+
+// table operation response simplified for redis
+class ObRedisOperationSimplifiedResult
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObRedisOperationSimplifiedResult() : resp_ret_(common::OB_ERR_UNEXPECTED), redis_str_() {}
+  ~ObRedisOperationSimplifiedResult() = default;
+  void reset()
+  {
+    resp_ret_ = common::OB_ERR_UNEXPECTED;
+    redis_str_.reset();
+  }
+  TO_STRING_KV(K_(resp_ret), K_(redis_str));
+public:
+  int32_t resp_ret_;
+  ObString redis_str_;
+};
+
+class ObRpcRedisOperationSimplifiedResponse : public ObRpcResponse
+{
+public:
+  ObRpcRedisOperationSimplifiedResponse() : redis_operation_simplified_result_() {}
+  ~ObRpcRedisOperationSimplifiedResponse() {}
+  // ObRpcRedisOperationResponse(const ObRpcRedisOperationResponse &response) : ObRpcResponse(response) {}
+  TO_STRING_KV(K_(rpc_packet_meta), K_(redis_operation_simplified_result));
+  virtual void reset();
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const override;
+  virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
+  ObRedisOperationSimplifiedResult &get_table_operation_result() { return redis_operation_simplified_result_; }
+private:
+  ObRedisOperationSimplifiedResult redis_operation_simplified_result_;
+};
 // table operation response for redis
 class ObRedisOperationResult : public ObTableResult
 {
@@ -32,6 +66,16 @@ class ObRedisOperationResult : public ObTableResult
 public:
   ObRedisOperationResult() : operation_type_(), rowkey_(), properties_names_(), properties_values_(), affected_rows_(0), last_propertity_value_pos_(NULL), last_propertity_value_len_(0) {}
   ~ObRedisOperationResult() = default;
+
+  void reset()
+  {
+    operation_type_ = ObTableOperationType::Type::REDIS;
+    rowkey_.reuse();
+    properties_names_.reuse();
+    properties_values_.reuse();
+    last_propertity_value_len_ = 0;
+    last_propertity_value_pos_ = NULL;
+  }
 public:
    ObTableOperationType::Type operation_type_;
    ObSEArray<ObObj, ROWKEY_COLUMNS_COUNT> rowkey_;
@@ -67,6 +111,7 @@ public:
   ~ObRpcRedisOperationResponse() {}
   // ObRpcRedisOperationResponse(const ObRpcRedisOperationResponse &response) : ObRpcResponse(response) {}
   TO_STRING_KV(K_(rpc_packet_meta), K_(redis_operation_result));
+  virtual void reset();
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
   virtual int64_t get_encode_size() const override;
   virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;

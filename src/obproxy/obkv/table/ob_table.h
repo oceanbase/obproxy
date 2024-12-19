@@ -187,11 +187,14 @@ public:
   virtual int get_properties(ObIArray<std::pair<ObString, ObObj> > &properties) const = 0; // @todo property iterator
   virtual int get_properties_names(ObIArray<ObString> &properties) const = 0;
   virtual int get_properties_values(ObIArray<ObObj> &properties_values) const = 0;
+  virtual const ObString &get_properties_name(int64_t idx) const = 0;
   virtual const ObObj &get_properties_value(int64_t idx) const = 0;
   virtual int64_t get_properties_count() const = 0;
   virtual const ObRpcFieldBuf &get_properties_buf() const = 0;
   virtual void set_properties_buf(const ObRpcFieldBuf &buf) = 0;
   virtual void reset_properties_buf() = 0;
+  virtual const ObString &get_redis_text() const = 0;
+  virtual void set_redis_text(char *ptr, int64_t length) = 0;
 
   // properties optimize for ObTableLSOps
   // only implement for ObTableSingleOpEntity 
@@ -214,6 +217,8 @@ public:
   virtual int add_retrieve_property(const ObString &prop_name);
   virtual bool is_lazy_mode() const = 0;
   virtual void set_lazy_mode(bool value) = 0;
+  virtual bool is_redis_mode() const = 0;
+  virtual void set_redis_mode(bool value) = 0;
   //void set_allocator(common::ObIAllocator *alloc) { alloc_ = alloc; }
   //common::ObIAllocator *get_allocator() { return alloc_; }
   VIRTUAL_TO_STRING_KV("ITableEntity", "");
@@ -258,6 +263,7 @@ public:
   virtual ObRowkey get_rowkey() override;
   virtual void get_rowkey(ObRowkey &rowkey) override;
   virtual const ObObj &get_properties_value(int64_t idx) const override;
+  virtual const ObString &get_properties_name(int64_t idx) const override;
 
   const ObIArray<ObString> &get_properties_names() const { return properties_names_; }
   ObIArray<ObString> &get_properties_names() { return properties_names_; }
@@ -276,6 +282,9 @@ public:
   virtual void reset_properties_buf() override;
   virtual void set_properties_buf(const ObRpcFieldBuf &buf) override;
 
+  virtual const ObString &get_redis_text() const override { return redis_text_;}
+  virtual void set_redis_text(char *ptr, int64_t length) override;
+
   // properties optimie for ObTableLSOps
   virtual void set_dictionary(ObIArray<ObString> *all_rowkey_names, ObIArray<ObString> *all_properties_names) override;
   virtual int construct_names_bitmap(const ObITableEntity& req_entity) override;
@@ -288,7 +297,9 @@ public:
   virtual void set_is_same_properties_names(bool is_same_properties_names) override;
 
   virtual bool is_lazy_mode() const override;// { return is_lazy_mode_; }
+  virtual bool is_redis_mode() const override { return is_redis_mode_; }
   virtual void set_lazy_mode(bool value) override { is_lazy_mode_ = value; }
+  virtual void set_redis_mode(bool value) override { is_redis_mode_ = value; }
 
 
   DECLARE_TO_STRING;
@@ -300,7 +311,9 @@ protected:
   ObSEArray<ObObj, ROWKEY_COLUMNS_COUNT> properties_values_;
   ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> rowkey_names_;
   ObRpcFieldBuf properties_buf_;
+  ObString redis_text_;
   bool is_lazy_mode_;
+  bool is_redis_mode_; // for redis optimization
 };
 
 enum class ObTableEntityType
@@ -431,6 +444,12 @@ public:
   //void set_type(ObTableOperationType::Type op_type) { operation_type_ = op_type; }
   //int get_entity(const ObITableEntity *&entity) const;
   int get_entity(ObITableEntity *&entity);
+
+  void reset()
+  {
+    entity_.reset();
+    operation_type_ = ObTableOperationType::Type::INVALID;
+  }
   //uint64_t get_checksum();
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntityFactory &entity_factory, const ObTableOperation &other);
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntity &entity, const ObTableOperation &other);

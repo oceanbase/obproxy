@@ -22,9 +22,9 @@ using namespace oceanbase::obproxy;
 void ObRpcRedisInfo::reset()
 {
   free_request_buf();
-  free_request_inner_buf();
+  // free_request_inner_buf();
   free_response_buf();
-  free_response_inner_buf();
+  // free_response_inner_buf();
   if (OB_NOT_NULL(redis_request_)) {
     ObRpcRedisCommandFactory::free_redis_request(redis_request_);
     redis_request_ = NULL;
@@ -37,6 +37,40 @@ void ObRpcRedisInfo::reset()
 
   redis_cmd_type_ = REDIS_COMMAND_MAX;
   // TODO: free redis_request_
+}
+
+void ObRpcRedisInfo::reuse()
+{
+  //TODO 处理response_buf也用realloc
+  free_response_buf();
+  if (OB_NOT_NULL(redis_request_)) {
+    ObRpcRedisCommandFactory::free_redis_request(redis_request_);
+    redis_request_ = NULL;
+  }
+  allocator_.reset();
+  lower_redis_cmd_buf_ = NULL;
+  if (OB_NOT_NULL(redis_table_response_)) {
+    ObRpcRedisCommandFactory::free_redis_internal_response(redis_table_response_);
+    redis_table_response_ = NULL;
+  }
+  redis_args_->reuse();
+  redis_cmd_info_.reset();
+  response_server_ptr_ = NULL;
+  response_len_ = 0;
+
+  use_default_name_ = false;
+  is_auth_request_ = false;
+  is_inner_request_ = false;
+  is_error_response_ = false;
+  is_use_response_inner_buf_ = false;
+  is_need_quit_ = false;
+  is_redis_msg_init_ = false;
+
+  MEMSET(request_buf_, '\0', request_buf_len_);
+  rpc_credential_[0] = '\0';
+  rpc_redis_msg_ [0] = '\0';
+  credential_.reset();
+  redis_cmd_type_ = REDIS_COMMAND_MAX;
 }
 
 int ObRpcRedisInfo::alloc_request_buf(uint64_t len)
@@ -109,81 +143,81 @@ int ObRpcRedisInfo::free_request_buf()
   return ret;
 }
 
-int ObRpcRedisInfo::alloc_request_inner_buf(uint64_t len)
-{
-  int ret = common::OB_SUCCESS;
-  // free buf if has alloc
-  if (OB_UNLIKELY(NULL != request_inner_buf_)) {
-    if (OB_FAIL(free_request_inner_buf())) {
-      PROXY_LOG(EDIAG, "free request inner buf error", K(ret));
-    }
-  }
-  if (OB_SUCC(ret)) {
-    char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(len));
-    if (OB_UNLIKELY(NULL == buf)) {
-      ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
-    } else {
-      request_inner_buf_ = buf;
-      request_inner_buf_len_ = len;
-    }
-  }
-  return ret;
-}
+// int ObRpcRedisInfo::alloc_request_inner_buf(uint64_t len)
+// {
+//   int ret = common::OB_SUCCESS;
+//   // free buf if has alloc
+//   if (OB_UNLIKELY(NULL != request_inner_buf_)) {
+//     if (OB_FAIL(free_request_inner_buf())) {
+//       PROXY_LOG(EDIAG, "free request inner buf error", K(ret));
+//     }
+//   }
+//   if (OB_SUCC(ret)) {
+//     char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(len));
+//     if (OB_UNLIKELY(NULL == buf)) {
+//       ret = common::OB_ALLOCATE_MEMORY_FAILED;
+//       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
+//     } else {
+//       request_inner_buf_ = buf;
+//       request_inner_buf_len_ = len;
+//     }
+//   }
+//   return ret;
+// }
 
-int ObRpcRedisInfo::alloc_response_inner_buf(uint64_t len)
-{
-  int ret = common::OB_SUCCESS;
-  // free buf if has alloc
-  if (OB_UNLIKELY(NULL != response_inner_buf_)) {
-    if (OB_FAIL(free_response_inner_buf())) {
-      PROXY_LOG(EDIAG, "free response inner buf error", K(ret));
-    }
-  }
-  if (OB_SUCC(ret)) {
-    char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(len));
-    if (OB_UNLIKELY(NULL == buf)) {
-      ret = common::OB_ALLOCATE_MEMORY_FAILED;
-      PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
-    } else {
-      response_inner_buf_ = buf;
-      response_inner_buf_len_ = len;
-    }
-  }
-  return ret;
-}
+// int ObRpcRedisInfo::alloc_response_inner_buf(uint64_t len)
+// {
+//   int ret = common::OB_SUCCESS;
+//   // free buf if has alloc
+//   if (OB_UNLIKELY(NULL != response_inner_buf_)) {
+//     if (OB_FAIL(free_response_inner_buf())) {
+//       PROXY_LOG(EDIAG, "free response inner buf error", K(ret));
+//     }
+//   }
+//   if (OB_SUCC(ret)) {
+//     char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(len));
+//     if (OB_UNLIKELY(NULL == buf)) {
+//       ret = common::OB_ALLOCATE_MEMORY_FAILED;
+//       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
+//     } else {
+//       response_inner_buf_ = buf;
+//       response_inner_buf_len_ = len;
+//     }
+//   }
+//   return ret;
+// }
 
-int ObRpcRedisInfo::free_request_inner_buf()
-{
-  int ret = common::OB_SUCCESS;
-  if (NULL != request_inner_buf_) {
-    if (request_inner_buf_len_ <= 0) {
-      ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(EDIAG, "request_buf_len_ must > 0", K_(request_inner_buf_len), K_(request_inner_buf), K(ret));
-    } else {
-      op_fixed_mem_free(request_inner_buf_, request_inner_buf_len_);
-      request_inner_buf_ = NULL;
-      request_inner_buf_len_ = 0;
-    }
-  }
-  return ret;
-}
+// int ObRpcRedisInfo::free_request_inner_buf()
+// {
+//   int ret = common::OB_SUCCESS;
+//   if (NULL != request_inner_buf_) {
+//     if (request_inner_buf_len_ <= 0) {
+//       ret = common::OB_ERR_UNEXPECTED;
+//       PROXY_LOG(EDIAG, "request_buf_len_ must > 0", K_(request_inner_buf_len), K_(request_inner_buf), K(ret));
+//     } else {
+//       op_fixed_mem_free(request_inner_buf_, request_inner_buf_len_);
+//       request_inner_buf_ = NULL;
+//       request_inner_buf_len_ = 0;
+//     }
+//   }
+//   return ret;
+// }
 
-int ObRpcRedisInfo::free_response_inner_buf()
-{
-  int ret = common::OB_SUCCESS;
-  if (NULL != response_inner_buf_) {
-    if (response_inner_buf_len_ <= 0) {
-      ret = common::OB_ERR_UNEXPECTED;
-      PROXY_LOG(EDIAG, "response_inner_buf_len_ must > 0", K_(response_inner_buf_len), K_(response_inner_buf), K(ret));
-    } else {
-      op_fixed_mem_free(response_inner_buf_, response_inner_buf_len_);
-      response_inner_buf_ = NULL;
-      response_inner_buf_len_ = 0;
-    }
-  }
-  return ret;
-}
+// int ObRpcRedisInfo::free_response_inner_buf()
+// {
+//   int ret = common::OB_SUCCESS;
+//   if (NULL != response_inner_buf_) {
+//     if (response_inner_buf_len_ <= 0) {
+//       ret = common::OB_ERR_UNEXPECTED;
+//       PROXY_LOG(EDIAG, "response_inner_buf_len_ must > 0", K_(response_inner_buf_len), K_(response_inner_buf), K(ret));
+//     } else {
+//       op_fixed_mem_free(response_inner_buf_, response_inner_buf_len_);
+//       response_inner_buf_ = NULL;
+//       response_inner_buf_len_ = 0;
+//     }
+//   }
+//   return ret;
+// }
 
 int ObRpcRedisInfo::alloc_response_buf(uint64_t len)
 {

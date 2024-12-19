@@ -220,7 +220,7 @@ ObRpcRequestSM::ObRpcRequestSM()
   : ObContinuation(NULL), sm_id_(0), magic_(RPC_REQUEST_HANDLE_SM_MAGIC_DEAD), next_action_(RPC_REQ_NEW_REQUEST),
     history_pos_(0), default_handler_(NULL), pending_action_(NULL), timeout_action_(NULL), cleanup_action_(NULL),
     sharding_action_(NULL), sm_next_action_(NULL), child_callback_action_(NULL), inner_cont_(NULL), reentrancy_count_(0),
-    terminate_sm_(false), rpc_req_(NULL), rpc_req_origin_channel_id_(0), create_thread_(NULL), cmd_size_stats_(), cmd_time_stats_(),
+    terminate_sm_(false), is_need_reuse_sm_(false), rpc_req_(NULL), rpc_req_origin_channel_id_(0), create_thread_(NULL), cmd_size_stats_(), cmd_time_stats_(),
     milestones_(), mysql_config_params_(NULL), cluster_resource_(NULL), real_meta_cluster_name_(),
     real_meta_cluster_name_str_(NULL), cluster_id_(0), timeout_us_(0), retry_need_update_pl_(false),
     need_pl_lookup_(true), need_congestion_lookup_(false),
@@ -276,11 +276,68 @@ inline void ObRpcRequestSM::cleanup()
   }
 }
 
+inline void ObRpcRequestSM::reuse()
+{
+  mutex_.release();
+  inner_request_cleanup_mutex_.release();
+
+  magic_ = RPC_REQUEST_HANDLE_SM_MAGIC_ALIVE;
+
+  memset(&history_, 0, sizeof(history_));
+
+  //bool
+  terminate_sm_ = false;
+  is_need_reuse_sm_ = false;
+  retry_need_update_pl_ = false;
+  need_pl_lookup_ = true;
+  need_congestion_lookup_ = false;
+  force_retry_congested_ = false;
+  congestion_lookup_success_ = false;
+  is_congestion_entry_updated_ = false;
+  already_get_tablegroup_entry_ = false;
+  already_get_async_info_ = false;
+  already_get_index_entry_ = false;
+
+  rpc_req_origin_channel_id_ = 0;
+  congestion_entry_not_exist_count_ = 0;
+  // reentrancy_count_ = 0;
+  cluster_id_ = 0;
+  timeout_us_ = 0;
+
+  cmd_size_stats_.reset();
+  cmd_retry_stats_.reset();
+  cmd_time_stats_.reset();
+  milestones_.trans_reset();
+  pll_info_.reset();
+  real_meta_cluster_name_.reset();
+  // if (OB_NOT_NULL(rpc_req_)) {
+  //   rpc_req_->sm_ = NULL;    // set rpc_req request_sm to NULL
+  //   rpc_req_ = NULL;
+  // }
+  // todo, add new
+  if (OB_NOT_NULL(cluster_resource_)) {
+    cluster_resource_->dec_ref();
+    cluster_resource_ = NULL;
+  }
+  if (NULL != congestion_entry_) {
+    congestion_entry_->dec_ref();
+    congestion_entry_ = NULL;
+  }
+  rpc_route_mode_ = RPC_ROUTE_FIND_LEADER;
+
+  // SET_HANDLER(&ObRpcRequestSM::main_handler);
+ }
+
+
 void ObRpcRequestSM::destroy()
 {
   RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_DESTROYED);
-  cleanup();
-  op_thread_free(ObRpcRequestSM, this, get_rpc_request_handle_sm_allocator());
+  if (!is_need_reuse_sm_) {
+    cleanup();
+    op_thread_free(ObRpcRequestSM, this, get_rpc_request_handle_sm_allocator());
+  } else {
+    reuse();
+  }
 }
 
 inline void ObRpcRequestSM::kill_this()
@@ -390,6 +447,17 @@ int ObRpcRequestSM::schedule_cleanup_action()
     } else {
       LOG_DEBUG("succ to schedule cleanup_action in execute_thread", KP_(cleanup_action), K(this), KP_(rpc_req), KP_(execute_thread), K_(rpc_trace_id));
     }
+  // } else if (ObRpcReq::ClientNetState::REDIS_REQ_CLIENT_DONE == rpc_req_->get_cnet_state()) {
+  //   if (OB_ISNULL(create_thread_)) {
+  //     ret = OB_ERR_UNEXPECTED;
+  //     LOG_WDIAG("rpc_request_sm create_thread is NULL", KPC_(rpc_req), K_(rpc_trace_id));
+  //   } else if (OB_ISNULL(cleanup_action_ = create_thread_->schedule_imm(this, RPC_REQUEST_SM_REDIS_CLEANUP))) {
+  //     ret = OB_ERR_UNEXPECTED;
+  //     LOG_EDIAG("fail to schedule cleanup", K_(cleanup_action), K(ret), K_(rpc_trace_id));
+  //   } else {
+  //     LOG_DEBUG("succ to schedule cleanup_action in create_thread for redis", KP_(cleanup_action), K(this), KP_(rpc_req), KP_(create_thread), K_(rpc_trace_id));
+  //   }
+  // } else {
   } else {
     if (OB_ISNULL(create_thread_)) {
       ret = OB_ERR_UNEXPECTED;
@@ -4650,6 +4718,7 @@ int ObRpcRequestSM::state_rpc_req_done()
 {
   int ret = OB_SUCCESS;
   RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_REQUEST_DONE);
+  ObRpcReq::ClientNetState rpc_client_net_state = rpc_req_->get_cnet_state();
 
   // TODO：这里收集统计信息，整个请求结束, 将rpc_req返回给NetSM，请求结束
   update_cmd_stats();
@@ -4674,12 +4743,22 @@ int ObRpcRequestSM::state_rpc_req_done()
     } else {
       LOG_DEBUG("ObRpcRequestSM::state_rpc_req_done with normal request", K_(rpc_req), K_(rpc_trace_id));
     }
-
-    rpc_req_->destroy();
-    rpc_req_ = NULL;
+    if (ObRpcReq::ClientNetState::REDIS_REQ_CLIENT_DONE == rpc_client_net_state) {
+      // for redis just reset rpc_req
+      rpc_req_->reset();
+      is_need_reuse_sm_ = true;
+      kill_this();
+    } else {
+      rpc_req_->destroy();
+      rpc_req_ = NULL;
+    }
   }
 
-  terminate_sm_ = true;  // will call kill this in main_handler, this func must call by handle_event(RPC_REQUEST_SM_DONE)
+  if (ObRpcReq::ClientNetState::REDIS_REQ_CLIENT_DONE != rpc_client_net_state) {
+    terminate_sm_ = true;  // will call kill this in main_handler, this func must call by handle_event(RPC_REQUEST_SM_DONE)
+  }
+  // terminate_sm_ = true;  // will call kill this in main_handler, this func must call by handle_event(RPC_REQUEST_SM_DONE)
+
   return ret;
 }
 

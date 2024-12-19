@@ -70,7 +70,23 @@ OB_DEF_SERIALIZE(ObITableEntity)
   }
   if (OB_SUCC(ret)) {
 
-    if (OBKV_ENTITY_MODE == EntityMode::LAZY_MODE && is_lazy_mode()) {
+    if (is_redis_mode()) {
+      const int64_t properties_count = 1;
+      OB_UNIS_ENCODE(properties_count);
+
+      ObString redis_name = get_properties_name(0);
+      const ObString &redis_text = get_redis_text();
+      ObObjMeta meta;
+      meta.set_collation_level(CS_LEVEL_IMPLICIT);
+      meta.set_varchar();
+      OB_UNIS_ENCODE(redis_name);
+      if (redis_text.length() <= 0 || OB_ISNULL(redis_text.ptr())) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("unexpected redis properties buf", K(redis_text), K(ret));
+      }
+      OB_UNIS_ENCODE(meta);
+      OB_UNIS_ENCODE(redis_text);
+    } else if (OBKV_ENTITY_MODE == EntityMode::LAZY_MODE && is_lazy_mode()) {
       const ObRpcFieldBuf &properties_buf = get_properties_buf();
       if (properties_buf.buf_len_ <= 0 || OB_ISNULL(properties_buf.buf_)) {
         ret = OB_ERR_UNEXPECTED;
@@ -283,15 +299,31 @@ OB_DEF_SERIALIZE_SIZE(ObITableEntity)
   ObObj value;
   const int64_t rowkey_size = get_rowkey_size();
   OB_UNIS_ADD_LEN(rowkey_size);
-  for (int64_t i = 0; i < rowkey_size && OB_SUCCESS == ret; ++i) {
-    if (OB_FAIL(this->get_rowkey_value(i, value))) {
-      LOG_WDIAG("failed to get value", K(ret), K(i));
+  if (is_redis_mode()) {
+    len += 5; // db size
+    //just put first rowkey info to rowkey of redis request in OBKV
+    if (OB_FAIL(this->get_rowkey_value(1, value))) {
+      LOG_WDIAG("failed to get value", K(ret));
     }
     OB_UNIS_ADD_LEN(value);
+  } else {
+    for (int64_t i = 0; i < rowkey_size && OB_SUCCESS == ret; ++i) {
+      if (OB_FAIL(this->get_rowkey_value(i, value))) {
+        LOG_WDIAG("failed to get value", K(ret), K(i));
+      }
+      OB_UNIS_ADD_LEN(value);
+    }
   }
   if (OB_SUCC(ret)) {
     if (is_lazy_mode()) {
       OB_UNIS_ADD_LEN(get_properties_buf());
+    } else if (is_redis_mode()) {
+      const int64_t properties_count = 1;
+      OB_UNIS_ADD_LEN(properties_count);
+      len += 16; // REDIS_PROPERTY_NAME
+      len += 4; // obj meta
+      ObString redis_text = this->get_redis_text();
+      OB_UNIS_ADD_LEN(redis_text);
     } else {
       ObSEArray<std::pair<ObString, ObObj>, 8> properties;
       if (OB_FAIL(this->get_properties(properties))) {  // @todo optimize, use iterator
@@ -388,7 +420,7 @@ int ObITableEntity::add_retrieve_property(const ObString &prop_name)
 }
 
 ////////////////////////////////////////////////////////////////
-ObTableEntity::ObTableEntity() : properties_buf_(), is_lazy_mode_(true) {}
+ObTableEntity::ObTableEntity() : properties_buf_(), redis_text_(), is_lazy_mode_(true), is_redis_mode_(false) {}
 
 ObTableEntity::~ObTableEntity()
 {
@@ -402,6 +434,8 @@ void ObTableEntity::reset()
   rowkey_names_.reset();
   properties_names_.reset();
   properties_values_.reset();
+  redis_text_.reset();
+  is_redis_mode_ = false;
   reset_properties_buf();
 }
 
@@ -413,6 +447,11 @@ void ObTableEntity::reset_properties_buf()
 void ObTableEntity::set_properties_buf(const ObRpcFieldBuf &buf)
 {
   properties_buf_ = buf;
+}
+
+void ObTableEntity::set_redis_text(char *ptr, int64_t length)
+{
+  redis_text_.assign(ptr, length);
 }
 
 void ObTableEntity::set_dictionary(ObIArray<ObString> *all_rowkey_names, ObIArray<ObString> *all_properties_names)
@@ -654,6 +693,11 @@ int ObTableEntity::get_properties_values(ObIArray<ObObj> &properties_values) con
 const ObObj &ObTableEntity::get_properties_value(int64_t idx) const
 {
   return properties_values_.at(idx);
+}
+
+const ObString &ObTableEntity::get_properties_name(int64_t idx) const
+{
+  return properties_names_.at(idx);
 }
 
 int64_t ObTableEntity::get_properties_count() const

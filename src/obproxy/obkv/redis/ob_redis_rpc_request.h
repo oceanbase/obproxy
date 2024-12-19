@@ -32,53 +32,85 @@ const ObString REDIS_PROPERTY_NAME = "REDIS_CODE_STR";
 const ObString DB_PROPERTY_NAME = "db";
 const ObString RKEY_PROPERTY_NAME = "rkey";
 
-//class ObRedisOperationRequest
-//{
-//  OB_UNIS_VERSION_WITH_REWRITE_INFO(1);
-//
-//public:
-//  ObRedisOperationRequest()
-//      : credential_(), table_name_(), table_id_(common::OB_INVALID_ID), tablet_id_(),
-//        entity_type_(), rowkey_(), properties_names_(), properties_values_(), rowkey_names_(),
-//        operation_type_(ObTableOperationType::REDIS), consistency_level_(), returning_rowkey_(false),
-//        returning_affected_entity_(false), returning_affected_rows_(false),
-//        binlog_row_image_type_(ObBinlogRowImageType::FULL)
-//  {
-//  }
-//
-//  ~ObRedisOperationRequest() {}
-//
-//  TO_STRING_KV(K_(credential),
-//               K_(table_name),
-//               K_(table_id),
-//               K_(tablet_id),
-//               K_(entity_type),
-//               K_(rowkey),
-//               K_(properties_names),
-//               K_(properties_values),
-//               K_(rowkey_names),
-//               K_(consistency_level),
-//               K_(returning_rowkey),
-//               K_(returning_affected_entity),
-//               K_(returning_affected_rows));
-//
-//public:
-//  ObString credential_;
-//  ObString table_name_;
-//  uint64_t table_id_;
-//  common::ObTabletID tablet_id_;
-//  ObTableEntityType entity_type_;
-//  ObSEArray<ObObj, ROWKEY_COLUMNS_COUNT> rowkey_;
-//  ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> properties_names_;
-//  ObSEArray<ObObj, ROWKEY_COLUMNS_COUNT> properties_values_;
-//  ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> rowkey_names_;
-//  ObTableOperationType::Type operation_type_;
-//  ObTableConsistencyLevel consistency_level_;
-//  bool returning_rowkey_;
-//  bool returning_affected_entity_;
-//  bool returning_affected_rows_;
-//  ObBinlogRowImageType binlog_row_image_type_;
-//};
+class ObRedisOperationSimplifiedRequest final
+{
+  OB_UNIS_VERSION_WITH_REWRITE_INFO(1);
+public:
+  ObRedisOperationSimplifiedRequest() : credential_(), redis_db_(common::OB_INVALID_ID), ls_id_(common::OB_INVALID_ID),
+                                        tablet_id_(common::OB_INVALID_ID), table_id_(common::OB_INVALID_ID), reserved_(0), resp_str_()
+                                        {}
+  ~ObRedisOperationSimplifiedRequest() {}
+  void reset()
+  {
+    credential_.reset();
+    resp_str_.reset();
+    redis_db_ = common::OB_INVALID_ID;
+    ls_id_ = common::OB_INVALID_ID;
+    tablet_id_ = common::OB_INVALID_ID;
+    table_id_ = common::OB_INVALID_ID;
+    reserved_ = 0;
+  }
+  TO_STRING_KV(K_(credential),
+               K_(resp_str),
+               K_(table_id),
+               K_(tablet_id),
+               K_(ls_id),
+               K_(redis_db),
+               K_(reserved));
+   // FOR v4
+  int serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const;
+  int serialize_v4_(char *buf, const int64_t buf_len, int64_t &pos) const;
+
+  int64_t get_serialize_size_v4(void) const;
+  int64_t get_serialize_size_v4_(void) const;
+public:
+  ObString credential_;
+  uint64_t redis_db_;
+  int64_t ls_id_;
+  uint64_t tablet_id_;
+  uint64_t table_id_;
+  uint64_t reserved_; // reserved, fix 8 bytes
+  ObString resp_str_;
+};
+
+class ObRpcRedisOperationSimplifiedRequest : public ObRpcRequest
+{
+public:
+  ObRpcRedisOperationSimplifiedRequest() : redis_table_simplified_request_() {}
+  ~ObRpcRedisOperationSimplifiedRequest() {}
+  void reset()
+  {
+    redis_table_simplified_request_.reset();
+    ObRpcRequest::reset();
+  }
+  uint64_t get_table_id() const override { return redis_table_simplified_request_.table_id_; }
+  // uint64_t get_partition_id() const override { return redis_table_request_.tablet_id_.id(); }
+  uint64_t get_partition_id() const override { return redis_table_simplified_request_.tablet_id_; }
+  common::ObString get_credential() const override { return redis_table_simplified_request_.credential_; }
+  ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC; }
+  void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
+  bool is_hbase_request() const override { return false; }
+  bool is_read_weak() const override { return false; }
+  int calc_partition_id(common::ObArenaAllocator &allocator,
+                        proxy::ObRpcReq &ob_rpc_req,
+                        proxy::ObProxyPartInfo &part_info,
+                        int64_t &partition_id) override;
+
+  void set_table_id(uint64_t table_id) override {redis_table_simplified_request_.table_id_ = table_id; }
+  // void set_partition_id(uint64_t part_id) override { redis_table_request_.tablet_id_ = ObTabletID(part_id); }
+  void set_partition_id(uint64_t part_id) override { redis_table_simplified_request_.tablet_id_ = part_id; }
+
+  int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  int64_t get_encode_size() const override;
+  int analyze_request(const char *buf, const int64_t len, int64_t &pos) override;
+
+  ObRedisOperationSimplifiedRequest &get_redis_operation_request() { return redis_table_simplified_request_; }
+  // ObTableOperationRequest &get_redis_operation_request() { return redis_table_request_; }
+
+  INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(redis_table_simplified_request));
+private:
+  ObRedisOperationSimplifiedRequest redis_table_simplified_request_;
+};
 
 class ObRedisOperationRequest final
 {
@@ -102,6 +134,7 @@ public:
                K_(returning_rowkey),
                K_(returning_affected_entity),
                K_(returning_affected_rows));
+  void reset();
 
   // FOR v4
   int serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const;
@@ -141,6 +174,12 @@ class ObRpcRedisOperationRequest : public ObRpcRequest
 public:
   ObRpcRedisOperationRequest() : redis_table_request_() {}
   ~ObRpcRedisOperationRequest() {}
+
+  void reset()
+  {
+    redis_table_request_.reset();
+    ObRpcRequest::reset();
+  }
   uint64_t get_table_id() const override { return redis_table_request_.table_id_; }
   // uint64_t get_partition_id() const override { return redis_table_request_.tablet_id_.id(); }
   uint64_t get_partition_id() const override { return redis_table_request_.partition_id_; }

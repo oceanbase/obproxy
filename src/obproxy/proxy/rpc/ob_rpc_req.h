@@ -547,6 +547,7 @@ public:
     RPC_REQ_CLIENT_INNER_REQUEST,
     RPC_REQ_CLIENT_DONE,
     RPC_REQ_CLIENT_INNER_REQUEST_DONE,
+    REDIS_REQ_CLIENT_DONE,
     RPC_REQ_CLIENT_DESTROY,
     RPC_REQ_CLIENT_CANCLED
   };
@@ -648,6 +649,7 @@ public:
   // void reset();  // clear all buffer and state
   void cleanup(const ObRpcReqCleanupParams &params);
   void destroy(); //release this object
+  void reset(); //only reset not release this object
   void finish(); // update stat and clean request sm
   void inner_request_cleanup();   //Called when the subtask ends to clean up all subtask data
 
@@ -740,7 +742,7 @@ public:
 
   int init_rpc_redis_info();
   int free_rpc_redis_info();
-
+  int realloc_request_buf(uint64_t len);
   int alloc_request_buf(uint64_t len);
   int alloc_request_inner_buf(uint64_t len);
   int alloc_response_buf(uint64_t len);
@@ -790,6 +792,8 @@ public:
   int64_t get_cluster_version() { return cluster_version_; }
   obkv::ObRpcRequest *get_rpc_request() { return rpc_request_; }
   obkv::ObRpcResponse *get_rpc_response() { return rpc_response_; }
+
+  int alloc_rpc_request_for_redis(obkv::ObRpcPacketCode pcode);
   int alloc_rpc_request();
   int alloc_rpc_response();
   int free_rpc_request();
@@ -1088,6 +1092,36 @@ inline int ObRpcReq::alloc_request_buf(uint64_t len)
   return ret;
 }
 
+// used by inner request and redis request(for serialize)
+inline int ObRpcReq::realloc_request_buf(uint64_t len)
+{
+  int ret = common::OB_SUCCESS;
+  // free buf if has alloc
+  if (OB_UNLIKELY(NULL == request_buf_)) {
+    ret = alloc_request_buf(len);
+  } else if (len == 0) {
+    //to free
+    ret = free_request_buf();
+  } else {
+    // keep
+    char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(len));
+    if (OB_UNLIKELY(NULL == buf)) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
+    } else {
+      MEMSET(buf, '\0', len);
+      uint64_t data_len = len > request_buf_len_ ? request_buf_len_ : len;
+      MEMCPY(buf, request_buf_, data_len);
+      //free old buffer
+      op_fixed_mem_free(request_buf_, request_buf_len_);
+      //update
+      request_buf_ = buf;
+      request_buf_len_ = len;
+    }
+  }
+  return ret;
+}
+
 inline int ObRpcReq::free_request_buf()
 {
   int ret = common::OB_SUCCESS;
@@ -1306,7 +1340,8 @@ inline bool ObRpcOBKVInfo::need_parse_response_fully() const
 {
   return !is_error() 
     && (is_inner_request_ || pcode_ == obrpc::ObRpcPacketCode::OB_TABLE_API_EXECUTE_QUERY_SYNC
-                          || pcode_ == obrpc::ObRpcPacketCode::OB_TABLE_API_LOGIN);
+                          || pcode_ == obrpc::ObRpcPacketCode::OB_TABLE_API_LOGIN
+                          || pcode_ == obrpc::ObRpcPacketCode::OB_REDIS_EXECUTE_V2);
 }
 
 inline common::ObString get_rpc_type_string(const obkv::ObProxyRpcType type)
