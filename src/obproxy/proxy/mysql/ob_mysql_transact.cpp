@@ -104,16 +104,16 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
   bool last_request_in_trans = client_session->is_last_request_in_trans();
 
-  if (OB_ISNULL(client_session->get_server_session())) {
-    // nothing, it is likely handshare stage
-  } else if (client_session->is_proxy_enable_trans_internal_routing()) {
+  if (client_session->is_proxy_enable_trans_internal_routing()) {
     // set distributed transaction route flag
     bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
     bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
 
     if (!last_request_in_trans && is_in_trans) {
       client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
-      client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(true);
+      if (OB_NOT_NULL(client_session->get_server_session())) {
+        client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(true);
+      }
       LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
       // to improve perfermence only log in debug level
       s.trace_log_.set_need_print(is_trans_internal_routing);
@@ -126,7 +126,9 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
       // close txn, refresh enable_transaction_internal_routing_
       LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
       client_session->get_trans_coordinator_ss_addr().reset();
-      client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(false);
+      if (OB_NOT_NULL(client_session->get_server_session())) {
+        client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(false);
+      }
     }
 
     client_session->set_trans_internal_routing(is_trans_internal_routing);

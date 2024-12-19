@@ -255,7 +255,9 @@ int ObShowPSHandler::dump_ps_cache_for_one_cs(ObMysqlClientSession &cs, bool nee
 
   if (need_check_prvilige
       && !enable_dump_ps_cache(cs)) {
-    ret = OB_NOT_SUPPORTED;
+    // same error code as like not finding client session
+    // to avoid a user known the cs_id of other users.
+    ret = OB_UNKNOWN_CONNECTION;
     LOG_WDIAG("not support to dump this client session", K(ret));
   } else if (!tenant_name_.empty()
              && !is_match_tenant(cs)) {
@@ -335,9 +337,7 @@ int ObShowPSHandler::handle_ps_cache_for_tenant(int event, void* data)
         LOG_DEBUG("succ to reschedule", K(next_id));
       }
     } else {
-      if (OB_FAIL(dump_cumulative_ps_entry())) {
-        LOG_WDIAG("fail to encode cumulative row", K(ret));
-      } else if (OB_FAIL(encode_eof_packet())) {
+      if (OB_FAIL(encode_eof_packet())) {
         LOG_WDIAG("fail to encode eof packet", K(ret));
       }
     }
@@ -610,7 +610,7 @@ int ObShowPSHandler::dump_cumulative_ps_entry()
   cells[OB_PC_CLUSTER_NAME].set_varchar("");
   cells[OB_PC_TENANT_NAME].set_varchar("");
   cells[OB_PC_PS_ID].set_int(-1);
-  cells[OB_PC_PS_NAME].set_varchar("");
+  cells[OB_PC_PS_NAME].set_varchar("TOTAL PS CACHE INFO");
   cells[OB_PC_PREPARE_SQL].set_null();
   cells[OB_PC_PARSE_RESULT].set_null();
   cells[OB_PC_USED_MEM].set_int(get_global_ps_entry_cache().get_ps_entry_mem_count()
@@ -649,10 +649,12 @@ bool ObShowPSHandler::enable_dump_ps_cache(const ObMysqlClientSession &cs) const
   const ObProxySessionPrivInfo &other_priv_info = cs.get_session_info().get_priv_info();
   return  session_priv_.has_all_privilege_
           || session_priv_.tenant_name_ == OB_SYS_TENANT_NAME
-          || ((!cs.get_session_info().is_sharding_user() && session_priv_.is_same_tenant(other_priv_info))
-              && (session_priv_.cs_id_ == cs.get_cs_id())
-              && (session_priv_.is_same_user(other_priv_info) || session_priv_.has_process_privilege()))
-          || (cs.get_session_info().is_sharding_user() && session_priv_.is_same_logic_user(other_priv_info));
+          || ((!cs.get_session_info().is_sharding_user()
+              && session_priv_.is_same_tenant(other_priv_info))
+              && (session_priv_.is_same_user(other_priv_info)
+                  || session_priv_.has_process_privilege()))
+          || (cs.get_session_info().is_sharding_user()
+              && session_priv_.is_same_logic_user(other_priv_info));
 }
 
 bool ObShowPSHandler::enable_dump_all_ps_cache() const

@@ -2557,15 +2557,15 @@ void ObMysqlSM::analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool i
           status = ANALYZE_ERROR;
         }
       } else if (OB_MYSQL_COM_STMT_PREPARE == req_cmd) {
-        if (client_request.get_parse_result().is_start_trans_stmt()
-            || client_request.get_parse_result().is_text_ps_stmt()
-            || session_info.is_sharding_user()) {
+        if (client_request.get_parse_result().is_start_trans_stmt() || session_info.is_sharding_user()) {
           if (OB_FAIL(ObMysqlTransact::encode_error_message(trans_state_, OB_UNSUPPORTED_PS))) {
             LOG_WDIAG("fail to encode unsupport ps error message", K(ret));
           } else {
-            ObProxyBasicStmtType stmt_type = client_request.get_parse_result().get_stmt_type();
-            LOG_WDIAG("unsupported user type and stmt type", "user type", session_info.get_user_identity(),
-              "stmt type", get_obproxy_stmt_name(stmt_type), K(ret));
+            if (client_request.get_parse_result().is_start_trans_stmt()) {
+              LOG_WDIAG("begin statement is not supported in prepare stament", K(ret));
+            } else {
+              LOG_WDIAG("sharding user is not supported for prepare stament", K(ret));
+            }
           }
 
           status = ANALYZE_ERROR;
@@ -7824,8 +7824,8 @@ inline int ObMysqlSM::do_internal_observer_open()
                               || (OB_MYSQL_COM_STMT_SEND_LONG_DATA == cmd))
                              && client_info.need_do_prepare(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_PREPARE;
-      } else if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_execute_stmt()
-                             && client_info.need_do_text_ps_prepare(server_info))) {
+      } else if (OB_UNLIKELY(client_request.get_parse_result().is_text_ps_execute_stmt() &&
+        client_info.need_do_text_ps_prepare(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_TEXT_PS_PREPARE;
       } else if (!trans_state_.is_proxysys_tenant()
                 && !client_session_->is_proxy_mysql_client()
@@ -11048,8 +11048,8 @@ inline void ObMysqlSM::update_cmd_stats()
   trans_stats_.client_response_bytes_ += cmd_size_stats_.client_response_bytes_;
 
   // client_close will not be assigned properly in some exceptional situation.
-  // TODO: Assign client_close with suitable value when ObMysqlTunnel terminates abnormally.
-  if (0 == milestones_.client_.client_end_ && milestones_.client_.client_read_end_ > 0) {
+  // set client_end_ here if not set yet
+  if (0 == milestones_.client_.client_end_) {
     milestones_.client_.client_end_ = get_based_hrtime();
   }
 

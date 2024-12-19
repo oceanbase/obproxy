@@ -569,7 +569,7 @@ int ObPrometheusProcessor::init()
     MEMCPY(version_ + offset, "_", 1);
     offset ++;
 
-    static const size_t minimumVersionLength = 17;
+    static const size_t minimumVersionLength = 60;
     size_t version_len = strlen(version);
     if (version_len > minimumVersionLength) {
         version_len = minimumVersionLength;
