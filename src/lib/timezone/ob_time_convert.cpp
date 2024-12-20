@@ -4685,12 +4685,16 @@ int ObTimeConverter::ob_time_to_mdatetime(ObTime &ob_time, ObMySQLDateTime &valu
 
 int32_t ObTimeConverter::ob_time_to_date(ObTime &ob_time)
 {
-  int32_t value = ZERO_DATE;
+  int32_t value = 0;
   int32_t *parts = ob_time.parts_;
   if (ZERO_DATE == ob_time.parts_[DT_DATE] && !HAS_TYPE_ORACLE(ob_time.mode_)) {
     value = ZERO_DATE;
   } else {
-    parts[DT_YDAY] = DAYS_UNTIL_MON[IS_LEAP_YEAR(parts[DT_YEAR])][parts[DT_MON] - 1] + parts[DT_MDAY];
+    if (OB_UNLIKELY(parts[DT_MON] <= 0 || parts[DT_MON] > 13)) {
+      parts[DT_YDAY] = 0;
+    } else {
+      parts[DT_YDAY] = DAYS_UNTIL_MON[IS_LEAP_YEAR(parts[DT_YEAR])][parts[DT_MON] - 1] + parts[DT_MDAY];
+    }
     int32_t days_of_years = (parts[DT_YEAR] - EPOCH_YEAR4) * DAYS_PER_NYEAR;
     int32_t leap_year_count = LEAP_YEAR_COUNT(parts[DT_YEAR] - 1) - LEAP_YEAR_COUNT(EPOCH_YEAR4 - 1);
     value = static_cast<int32_t>(days_of_years + leap_year_count + parts[DT_YDAY] - 1);
