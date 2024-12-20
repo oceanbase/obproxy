@@ -289,6 +289,9 @@ const char *ObTableEntryCont::get_state_name(const ObTableEntryLookupState state
     case LOOKUP_BINLOG_HOSTNAME_STATE:
       name = "LOOKUP_BINLOG_HOSTNAME_STATE";
       break;
+    case LOOKUP_RETRY_STATE:
+      name = "LOOKUP_RETRY_STATE";
+      break;
     default:
       name = "Unknown State";
       LOG_WDIAG("Unknown State", K(state));

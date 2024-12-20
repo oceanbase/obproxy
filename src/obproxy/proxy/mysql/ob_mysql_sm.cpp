@@ -5933,6 +5933,9 @@ int ObMysqlSM::tunnel_handler_response_transfered(int event, void *data)
         release_server_session();
         if (OB_FAIL(ObMysqlTransact::return_last_bound_server_session(client_session_))) {
           LOG_WDIAG("fail to return last bound server session", K(ret));
+        // binlog请求不会返回事务，需要靠上一个sql记录事务状态
+        } else if (ObMysqlTransact::is_binlog_request(trans_state_)) {
+          trans_state_.current_.state_ = client_session_->is_last_request_in_trans() ? ObMysqlTransact::CMD_COMPLETE : ObMysqlTransact::TRANSACTION_COMPLETE;
         } else {
           trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
         }

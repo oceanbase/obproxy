@@ -104,38 +104,41 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
   bool last_request_in_trans = client_session->is_last_request_in_trans();
 
-  if (client_session->is_proxy_enable_trans_internal_routing()) {
-    // set distributed transaction route flag
-    bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
-    bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
+  // binlog不影响事务状态的记录
+  if (!ObMysqlTransact::is_binlog_request(s)) {
+    if (client_session->is_proxy_enable_trans_internal_routing()) {
+      // set distributed transaction route flag
+      bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
+      bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
 
-    if (!last_request_in_trans && is_in_trans) {
-      client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
-      if (OB_NOT_NULL(client_session->get_server_session())) {
-        client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(true);
+      if (!last_request_in_trans && is_in_trans) {
+        client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
+        if (OB_NOT_NULL(client_session->get_server_session())) {
+          client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(true);
+        }
+        LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
+        // to improve perfermence only log in debug level
+        s.trace_log_.set_need_print(is_trans_internal_routing);
+        s.trace_log_.log_it("[trans_start]",
+                            "proxy_sessid", static_cast<int64_t>(client_session->get_proxy_sessid()),
+                            "coordinator", s.server_info_.addr_,
+                            "sql_cmd", static_cast<int64_t>(s.trans_info_.sql_cmd_),
+                            "stmt_type", static_cast<int64_t>(s.trans_info_.client_request_.get_parse_result().get_stmt_type()));
+      } else if (last_request_in_trans && !is_in_trans) {
+        // close txn, refresh enable_transaction_internal_routing_
+        LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
+        client_session->get_trans_coordinator_ss_addr().reset();
+        if (OB_NOT_NULL(client_session->get_server_session())) {
+          client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(false);
+        }
       }
-      LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
-      // to improve perfermence only log in debug level
-      s.trace_log_.set_need_print(is_trans_internal_routing);
-      s.trace_log_.log_it("[trans_start]",
-                          "proxy_sessid", static_cast<int64_t>(client_session->get_proxy_sessid()),
-                          "coordinator", s.server_info_.addr_,
-                          "sql_cmd", static_cast<int64_t>(s.trans_info_.sql_cmd_),
-                          "stmt_type", static_cast<int64_t>(s.trans_info_.client_request_.get_parse_result().get_stmt_type()));
-    } else if (last_request_in_trans && !is_in_trans) {
-      // close txn, refresh enable_transaction_internal_routing_
-      LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
-      client_session->get_trans_coordinator_ss_addr().reset();
-      if (OB_NOT_NULL(client_session->get_server_session())) {
-        client_session->get_server_session()->get_session_info().set_is_trans_coordinator_session(false);
-      }
+
+      client_session->set_trans_internal_routing(is_trans_internal_routing);
+      LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing);
     }
-
-    client_session->set_trans_internal_routing(is_trans_internal_routing);
-    LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing);
+    client_session->set_last_request_in_trans(is_in_trans);
   }
 
-  client_session->set_last_request_in_trans(is_in_trans);
 }
 
 void ObMysqlTransact::handle_error_jump(ObTransState &s)
@@ -1505,7 +1508,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
                       is_trans_specified(s));
     }
   } // end of !s.need_pl_lookup
-  LOG_DEBUG("handle oceanbase request, is addr valid:", K(s.server_info_.addr_.is_valid()));
+  LOG_DEBUG("handle oceanbase request, is addr valid:", K_(s.server_info_.addr));
 }
 
 void ObMysqlTransact::handle_fetch_request(ObTransState &s)
@@ -8870,14 +8873,13 @@ bool ObMysqlTransact::is_binlog_request(const ObTransState &s)
 
 void ObMysqlTransact::handle_binlog_request(ObTransState &s)
 {
-  if (is_in_trans(s)) {
-    ObMysqlClientSession *client_session = s.sm_->get_client_session();
-    ObMysqlServerSession *last_session = client_session->get_server_session();
-    client_session->attach_server_session(NULL);
-    last_session->do_io_read(client_session, 0, NULL);
-    client_session->set_last_bound_server_session(last_session);
-    client_session->set_need_return_last_bound_ss(true);
-  }
+  ObMysqlClientSession *client_session = s.sm_->get_client_session();
+  ObMysqlServerSession *last_session = client_session->get_server_session();
+  client_session->attach_server_session(NULL);
+  last_session->do_io_read(client_session, 0, NULL);
+  client_session->set_last_bound_server_session(last_session);
+  client_session->set_need_return_last_bound_ss(true);
+
   ObClientSessionInfo &cs_info = get_client_session_info(s);
   ObString cluster_name = cs_info.get_priv_info().cluster_name_;
   ObString tenant_name = cs_info.get_priv_info().tenant_name_;
