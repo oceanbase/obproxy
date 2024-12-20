@@ -4356,7 +4356,11 @@ void ObMysqlTransact::handle_text_ps_prepare_succ(ObTransState &s)
           ObMysqlServerSession* server_session = cs->get_cur_server_session();
           if (OB_NOT_NULL(server_session)
               && OB_FAIL(server_session->get_session_info().remove_text_ps_version(client_ps_id))) {
-            LOG_WDIAG("fail to remove_text_ps_version", K(client_ps_id), K(ret));
+            if (ret == OB_HASH_NOT_EXIST) {
+              ret = OB_SUCCESS;
+            } else {
+              LOG_WDIAG("fail to remove_text_ps_version", K(ret));
+            }
           } else {
             int64_t svr_session_count = cs->get_session_manager().get_svr_session_count();
             for (int64_t i = 0; OB_SUCC(ret) && i < svr_session_count; ++i) {
