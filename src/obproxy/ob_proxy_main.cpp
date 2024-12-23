@@ -1127,9 +1127,6 @@ int ObProxyMain::do_monitor_mem()
       _LOG_WDIAG("history memory size, history_mem_size[%ld]=%ld", i,  proxy_main->history_mem_size_[i]);
     }
 
-    // clear mem leak check info
-    get_global_mem_leak_checker().reset();
-    get_global_objpool_leak_checker().reset();
     // print memory usage
     ObProxyMain::print_memory_usage();
     ObMemoryResourceTracker::dump();
