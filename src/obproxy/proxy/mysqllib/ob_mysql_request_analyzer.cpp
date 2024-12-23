@@ -241,7 +241,7 @@ int ObMysqlRequestAnalyzer::check_is_last_request_packet(obmysql::ObMySQLCmd cmd
         ++request_count_;
         if (request_count_ > 1) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("received two mysql packet, unexpected", K(total_packet_length_), K(payload_len_),
+          LOG_WDIAG("analyzed two mysql packet, unexpected", K(total_packet_length_), K(payload_len_),
                    K(packet_seq_), K(request_count_), K(ret));
         } else {
           is_last_request_packet_ = true;
@@ -282,17 +282,15 @@ int ObMysqlRequestAnalyzer::is_request_finished(
 
   if (0 != header_content_offset_) { // part of header length found in previous buffer
     int64_t need_length = header_len - header_content_offset_;
-    if (length < need_length) {
+    int64_t read_hdr_len = length < need_length ? length : need_length;
+    for (i = 0; i < read_hdr_len; ++i, ++header_content_offset_) {
+      header_length_buffer_[header_content_offset_] = *(data + i);
+    }
+    if (read_hdr_len == length) {
       // this buffer isn't enough to hold all rest payload length,
       // the rest will be found in next buffer
       found_next_payload_length = false;
-      for (i = 0; i < length; ++i, ++header_content_offset_) {
-        header_length_buffer_[header_content_offset_] = *(data + i);
-      }
     } else {
-      for (i = 0; i < need_length; ++i, ++header_content_offset_) {
-        header_length_buffer_[header_content_offset_] = *(data + i);
-      }
       if (OB_FAIL(get_payload_length(header_length_buffer_))) {
         LOG_WDIAG("fail to get_payload_length", K(ret));
       } else if (OB_LIKELY(MYSQL_NET_META_LENGTH == header_len)  &&
@@ -336,7 +334,8 @@ int ObMysqlRequestAnalyzer::is_request_finished(
   }
 
   if (OB_SUCC(ret)) {
-    if (total_packet_length_ < length + nbytes_analyze_ && is_last_request_packet_) {
+    if (total_packet_length_ < length + nbytes_analyze_ && is_last_request_packet_) { // buff contains two request
+      // only analyze the first request data
       analyze_len = total_packet_length_ - nbytes_analyze_;
       nbytes_analyze_ = total_packet_length_;
     } else {
@@ -344,7 +343,8 @@ int ObMysqlRequestAnalyzer::is_request_finished(
       nbytes_analyze_ += length;
     }
 
-    if (total_packet_length_ == nbytes_analyze_) {
+    // last request packet and all packets has been analyzed
+    if (total_packet_length_ == nbytes_analyze_ && is_last_request_packet_) {
       is_finish = true;
      } else {
       is_finish = false;
