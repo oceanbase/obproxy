@@ -187,6 +187,7 @@ inline void ObProxyParser::init_result_others(ObProxyParseResult &p)
   p.is_binlog_related_ = false;
   p.has_ever_set_anonymous_block_ = false;
   p.is_table_lock_related_ = false;
+  p.is_xa_related_ = false;
 }
 inline int ObProxyParser::init_result(ObProxyParseResult &p, const char *start_pos)
 {
