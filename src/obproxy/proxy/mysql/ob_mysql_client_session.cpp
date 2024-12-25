@@ -916,9 +916,11 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
       }
     }
 
-    ObClientSessionIDList &cs_id_list = get_client_session_id_list(*mutex_->thread_holding_);
-    if (OB_FAIL(cs_id_list.erase_cs_id(cs_id_))) {
-      PROXY_CS_LOG(WDIAG, "fail to record cs_id and thread_id map", K_(cs_id), "thread_id", self_ethread().id_, K(ret));
+    if (cs_id_ != 0 && NULL != mutex_ && NULL != mutex_->thread_holding_) {
+      ObClientSessionIDList &cs_id_list = get_client_session_id_list(*mutex_->thread_holding_);
+      if (OB_FAIL(cs_id_list.erase_cs_id(cs_id_))) {
+        PROXY_CS_LOG(WDIAG, "fail to record cs_id and thread_id map", K_(cs_id), "thread_id", self_ethread().id_, K(ret));
+      }
     }
 
     // in 2 situations we will delete cluster (cluster rslist and resource)
