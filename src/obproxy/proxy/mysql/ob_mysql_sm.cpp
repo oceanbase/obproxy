@@ -4542,7 +4542,7 @@ inline int ObMysqlSM::handle_first_compress_response_packet(ObMysqlAnalyzeStatus
           if (!resp_analyzer_.is_last_pkt(result)) {
             if (server_buffer_reader_->read_avail() >= ANALYZE_FIRST_OB20_RESP_MAX_LEN) {
               // use tunnel to process the response
-              resp_result_.reset(); // make sure tunnel use a clean resp_result_
+              resp_result.reset(); // make sure tunnel use a clean resp_result_
               state = ANALYZE_DONE; // finish analyzsis of first response
             } else {
               first_pkt_len = ANALYZE_FIRST_OB20_RESP_MAX_LEN; // inc the water mark to read more data
