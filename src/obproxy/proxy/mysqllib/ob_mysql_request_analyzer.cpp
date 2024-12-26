@@ -434,6 +434,13 @@ inline int ObMysqlRequestAnalyzer::handle_no_cmd_request(const ObRequestAnalyzeC
       result.meta_.cmd_ = OB_MYSQL_COM_AUTH_SWITCH_RESP;
     } else if (ctx.is_file_content_req_phase()) {
       result.meta_.cmd_ = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
+      // the last empty packet of content of file, reset read trigger
+      if (result.meta_.pkt_len_ == MYSQL_NET_META_LENGTH) {
+        result.status_ = ANALYZE_DONE;
+      // multiple packets, need the tunnel to transmit the rest of packets
+      } else {
+        result.status_ = ANALYZE_CONT;
+      }
     } else {
       ret = OB_ERR_UNEXPECTED;
       LOG_EDIAG("unexpected request phase here", K(ret), K(ctx.request_phase_));
