@@ -28,7 +28,8 @@ int64_t ObRespAnalyzeResult::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(is_trans_completed),
+  J_KV(K_(is_decompressed),
+       K_(is_trans_completed),
        K_(is_resp_completed),
        K_(ending_type),
        K_(is_partition_hit),
