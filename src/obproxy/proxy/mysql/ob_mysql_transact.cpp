@@ -6660,13 +6660,6 @@ void ObMysqlTransact::handle_retry_server_connection(ObTransState &s)
         s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
         OB_PROXY_NO_NEED_RETRY, "binlog request is unable to retry");
     handle_server_connection_break(s);
-  } else if (OB_UNLIKELY(OB_NOT_NULL(s.sm_->get_server_session())
-                         && s.sm_->get_server_session()->get_session_info().is_key_session())) {
-    const ObServerSessionInfo& server_info = s.sm_->get_server_session()->get_session_info();
-    COLLECT_INTERNAL_DIAGNOSIS(
-        s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
-        server_info.get_key_session_code(), "key session is unable to retry");
-    handle_server_connection_break(s);
   } else if (OB_UNLIKELY(!s.sm_->client_session_->get_session_info().is_oceanbase_server())) {
     COLLECT_INTERNAL_DIAGNOSIS(
         s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
