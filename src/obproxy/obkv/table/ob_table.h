@@ -1230,7 +1230,7 @@ public:
   ~ObTableSingleOp() = default;
   OB_INLINE ObTableOperationType::Type get_op_type() const { return op_type_; }
   OB_INLINE bool is_check_no_exists() const { return is_check_no_exists_; }
-  OB_INLINE bool need_query() const { return op_type_ == ObTableOperationType::CHECK_AND_INSERT_UP; }
+  OB_INLINE bool need_query() const { return op_type_ == ObTableOperationType::CHECK_AND_INSERT_UP || op_type_ == ObTableOperationType::SCAN; }
   void reset();
 
   TO_STRING_KV(K_(op_type),
