@@ -5823,7 +5823,9 @@ inline int ObMysqlTransact::handle_oceanbase_handshake_pkt(ObTransState &s, uint
         }
       } else {
         // single leader optimization of protocol
-        if (OB_NOT_NULL(s.sm_->multi_level_config_) && s.sm_->multi_level_config_->enable_single_leader_node_routing_) {
+        if (OB_NOT_NULL(s.sm_->multi_level_config_)
+            && s.sm_->multi_level_config_->enable_single_leader_node_routing_
+            && !s.sm_->multi_level_config_->enable_read_write_split_) {
           if (OB_NOT_NULL(cr) && cr->tenant_has_single_leader(cs_info.get_priv_info().tenant_name_)) {
             // change the sm's server protocol
             s.sm_->set_server_protocol(ObProxyProtocol::PROTOCOL_NORMAL);
@@ -8008,7 +8010,7 @@ void ObMysqlTransact::ObTransState::refresh_mysql_config()
       LOG_DEBUG("get config succ", K(addr), K(cluster_name), K(tenant_name),
                 K_(config->proxy_route_policy), K_(config->proxy_idc_name), K_(config->proxy_primary_zone_name),
                 K_(config->enable_cloud_full_username), K_(config->enable_client_ssl),
-                K_(config->enable_server_ssl), K_(config->enable_transaction_split), K_(config->enable_transaction_split),
+                K_(config->enable_server_ssl), K_(config->enable_transaction_split), K_(config->enable_read_write_split),
                 K(session_info.is_request_follower_user()), K(session_info.is_read_only_user()),
                 K_(config->target_db_server), K_(config->enable_single_leader_node_routing), K(ret));
     }
