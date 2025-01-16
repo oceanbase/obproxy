@@ -215,7 +215,7 @@ int ObRespAnalyzer::stream_analyze_packets(ObString data, ObRespAnalyzeResult &r
     ret = stream_analyze_compressed_mysql(data, resp_result);
   } else if (ObProxyProtocol::PROTOCOL_NORMAL == protocol_) {
     ret = stream_analyze_mysql(data, resp_result);
-    resp_result.reserved_ok_len_of_mysql_ = reserved_len_;
+    resp_result.set_reserved_ok_len_of_mysql(reserved_len_);
   } else {
     ret = OB_ERR_UNEXPECTED;
     OB_LOG(WDIAG, "unexpect analyze protocol", K(protocol_), K(ret));
@@ -341,7 +341,7 @@ void ObRespAnalyzer::dealloc_mysql_pkt_buf()
 void ObRespAnalyzer::handle_analyze_ob20_extra_info_header(ObRespAnalyzeResult &resp_result)
 {
   if (STREAM_OCEANBASE20_EXTRA_INFO == stream_ob20_state_) {
-    resp_result.extra_info_.extra_info_buf_.reset();
+    resp_result.get_extra_info().extra_info_buf_.reset();
   }
 }
 

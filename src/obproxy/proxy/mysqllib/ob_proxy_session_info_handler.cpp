@@ -91,7 +91,7 @@ int ObProxySessionInfoHandler::analyze_extra_ok_packet(ObIOBufferReader &reader,
   }
 
   // we will trim the extra ok packet anaway
-  resp_result.rewritten_last_ok_pkt_len_ = 0;
+  resp_result.set_rewritten_last_ok_pkt_len(0);
   ObMIOBuffer *writer = reader.writer();
   if (OB_ISNULL(writer)) {
     ret = OB_ERR_UNEXPECTED;
@@ -150,7 +150,7 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
                   K(des_ok), "dst_size", des_ok.get_serialize_size());
 
         // 4. trim the orig ok packet
-        resp_result.rewritten_last_ok_pkt_len_ = des_ok.get_serialize_size() + MYSQL_NET_HEADER_LENGTH;
+        resp_result.set_rewritten_last_ok_pkt_len(des_ok.get_serialize_size() + MYSQL_NET_HEADER_LENGTH);
         ObMIOBuffer *writer = reader.writer();
         if (OB_ISNULL(writer)) {
           ret = OB_ERR_UNEXPECTED;
@@ -167,7 +167,7 @@ int ObProxySessionInfoHandler::rebuild_ok_packet(ObIOBufferReader &reader,
     }
   } else {
     // TODO: we may trim the last byte later
-    resp_result.rewritten_last_ok_pkt_len_ = pkt_len;
+    resp_result.set_rewritten_last_ok_pkt_len(pkt_len);
   }
   return ret;
 }
@@ -924,9 +924,9 @@ inline int ObProxySessionInfoHandler::handle_partition_hit_var(
     need_save = false;
   } else {
     if (value == ObString::make_string("1")) {
-      resp_result.is_partition_hit_ = true;
+      resp_result.set_is_partition_hit(true);
     } else {
-      resp_result.is_partition_hit_ = false;
+      resp_result.set_is_partition_hit(false);
     }
   }
 
@@ -941,9 +941,8 @@ inline int ObProxySessionInfoHandler::handle_last_insert_id_var(
     bool &need_save)
 {
   if (!is_auth_request) {
-    resp_result.is_last_insert_id_changed_ = true;
+    resp_result.set_is_last_insert_id_changed(true);
   }
-
   return handle_common_var(client_info, str_kv, is_auth_request, resp_result, need_save);
 }
 
@@ -1000,7 +999,7 @@ inline int ObProxySessionInfoHandler::handle_common_var(
     } else if (OB_FAIL(client_info.is_equal_with_snapshot(str_kv.key_, str_kv.value_, is_equal))) {
       // maybe observer has upgraded
       if (OB_UNLIKELY(OB_ERR_SYS_VARIABLE_UNKNOWN == ret)) {
-        resp_result.has_new_sys_var_ = true;
+        resp_result.set_has_new_sys_var(true);
         LOG_WDIAG("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
         ret = OB_SUCCESS;
         // do not save the new variable;
@@ -1107,7 +1106,7 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
 
       if (OB_FAIL(ret)) {
         if (OB_ERR_SYS_VARIABLE_UNKNOWN == ret) { // maybe observer has upgraded
-          resp_result.has_new_sys_var_ = true;
+          resp_result.set_has_new_sys_var(true);
           LOG_WDIAG("unknown system variable, maybe observer has upgrade", K(str_kv), K(ret));
           ret = OB_SUCCESS;
         } else {
@@ -1118,7 +1117,7 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
       // if last_insert_id has changed, assign version
       // NOTE: do this after update sys variable
       if (OB_SUCC(ret)) {
-        if (resp_result.is_last_insert_id_changed_) {
+        if (resp_result.is_last_insert_id_changed()) {
           assign_last_insert_id_version(client_info, server_info);
         }
       }
@@ -1168,7 +1167,7 @@ inline int ObProxySessionInfoHandler::handle_weak_read_replica_hit_var(const ObS
 {
   int ret = OB_SUCCESS;
   need_save = false;
-  resp_result.weak_read_hit_replica_ = get_weak_read_hit_replica_enum(value);
+  resp_result.set_weak_read_hit_replica(get_weak_read_hit_replica_enum(value));
   return ret;
 }
 
@@ -1192,7 +1191,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
   }
 
   // 2. save sys var
-  resp_result.has_new_sys_var_ = false;
+  resp_result.set_has_new_sys_var(false);
   const ObIArray<ObStringKV> &sys_var = ok_pkt.get_system_vars();
   if (!sys_var.empty()) {
     for (int64_t i = 0; i < sys_var.count() && OB_SUCC(ret); ++i) {
@@ -1223,7 +1222,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
         LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
       }
     } else {
-      resp_result.is_server_db_reset_ = true;
+      resp_result.set_is_server_db_reset(true);
       LOG_DEBUG("db has been reset");
     }
   }
@@ -1239,7 +1238,7 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
       } else {
         if (PROXY_IDC_NAME_USER_SESSION_VAR == str_kv.key_) {
           const ObString value = trim_quote(str_kv.value_);
-          resp_result.has_proxy_idc_name_user_var_ = true;
+          resp_result.set_has_proxy_idc_name_user_var(true);
           client_info.set_idc_name(value);
           LOG_INFO("succ to update user session variable proxy_idc_name",
                    "idc_name", client_info.get_idc_name());

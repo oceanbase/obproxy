@@ -89,9 +89,7 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
     // the ObRespAnalyzeResult will be use both by tunnel and this class, and if tunnel analyze finished,
     // is_resp_completed_ will set true, here we set back to false to ensure compress_analyzer
     // work happy.
-    if (resp_result.is_resp_completed()) {
-      resp_result.is_resp_completed_ = false;
-    }
+    resp_result.set_is_resp_completed(false);
 
     int64_t plugin_decompress_response_begin = sm_->get_based_hrtime();
     read_avail = local_reader_->read_avail();
@@ -108,8 +106,8 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         milestone_diff(plugin_decompress_response_begin, plugin_decompress_response_end);
 
       // save flt from response analyze result to sm
-      sm_->save_response_flt_result_to_sm(resp_result.flt_);
-      if (OB_FAIL(sm_->handle_feedback_proxy_info(resp_result.extra_info_))) {
+      sm_->save_response_flt_result_to_sm(resp_result.get_flt());
+      if (OB_FAIL(sm_->handle_feedback_proxy_info(resp_result.get_extra_info()))) {
         PROXY_API_LOG(WDIAG, "fail to handle feedback proxy info", "sm_id", sm_->sm_id_,
                       "result", resp_result, K(ret));
       }
@@ -123,7 +121,7 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       if (OB_FAIL(sm_->trim_ok_packet(*local_transfer_reader_))) {
         PROXY_API_LOG(WDIAG, "fail to trim last ok packet", K(ret));
       } else {
-        resp_result.is_last_ok_handled_ = true;
+        resp_result.set_is_last_ok_handled(true);
       }
       sm_->print_mysql_complete_log(NULL);
     }

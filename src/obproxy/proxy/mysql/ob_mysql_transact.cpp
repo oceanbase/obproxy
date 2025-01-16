@@ -4949,7 +4949,9 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
   ObServerStateType pre_state = s.current_.state_;
   s.current_.state_ = RESPONSE_ERROR;
 
-  s.trace_log_.log_it("[get_error]", "code", static_cast<int64_t>(resp.error_pkt_.get_err_code()), "trace_id", resp.server_trace_id_);
+  s.trace_log_.log_it("[get_error]",
+                      "code", static_cast<int64_t>(resp.get_error_pkt().get_err_code()),
+                      "trace_id", resp.get_server_trace_id());
   if (resp.is_mysql_wrong_arguments_error()
       || resp.is_trans_free_route_not_supported_error()
       || resp.is_internal_error()) {
@@ -4958,11 +4960,13 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
 
   if (resp.is_client_session_killed_error()) {
     COLLECT_INTERNAL_DIAGNOSIS(
-        s.sm_->connection_diagnosis_trace_, obutils::OB_SERVER_INTERNAL_TRACE,
-        resp.error_pkt_.get_err_code(),
-        "this session was killed by other user session, error_code: %d, "
-        "error_msg: %.*s",
-        resp.error_pkt_.get_err_code(), resp.error_pkt_.get_message().length(), resp.error_pkt_.get_message().ptr());
+      s.sm_->connection_diagnosis_trace_, obutils::OB_SERVER_INTERNAL_TRACE,
+      resp.get_error_pkt().get_err_code(),
+      "this session was killed by other user session, error_code: %d, "
+      "error_msg: %.*s",
+      resp.get_error_pkt().get_err_code(),
+      resp.get_error_pkt().get_message().length(),
+      resp.get_error_pkt().get_message().ptr());
   }
 
   switch(s.current_.send_action_) {
@@ -6207,8 +6211,8 @@ void ObMysqlTransact::handle_oceanbase_server_resp_error(ObTransState &s, ObMySQ
     case ORA_FATAL_ERROR:
       LOG_EDIAG("ob ora fatal error",
                 "sql", s.trans_info_.client_request_.get_print_sql(),
-                "origin_sql_cmd", get_mysql_cmd_str(request_cmd),
-                "current_sql_cmd", get_mysql_cmd_str(current_cmd));
+                "origin_sql_cmd", ObProxyParserUtils::get_sql_cmd_name(request_cmd),
+                "current_sql_cmd", ObProxyParserUtils::get_sql_cmd_name(current_cmd));
       if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == request_cmd) {
         ObClientSessionInfo &cs_info = s.sm_->get_client_session()->get_session_info();
         ObServerSessionInfo &ss_info = s.sm_->get_server_session()->get_session_info();
@@ -6369,14 +6373,14 @@ inline void ObMysqlTransact::handle_response_from_server(ObTransState &s)
           LOG_INFO("INACTIVE_TIMEOUT caused by OB_MYSQL_COM_QUIT, which is a normal condition",
                    "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
                    "addr", ObIpEndpoint(ss->get_netvc()->get_remote_addr()),
-                   "request_cmd", get_mysql_cmd_str(s.trans_info_.client_request_.get_packet_meta().cmd_),
-                   "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+                   "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.client_request_.get_packet_meta().cmd_),
+                   "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
                    "sql", s.trans_info_.get_print_sql());
         } else if (s.need_retry_) {
           LOG_WDIAG("connection error",
                    "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
-                   "request_cmd", get_mysql_cmd_str(s.trans_info_.client_request_.get_packet_meta().cmd_),
-                   "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+                   "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.client_request_.get_packet_meta().cmd_),
+                   "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
                    "sql", s.trans_info_.get_print_sql());
         }
       }
@@ -6901,8 +6905,8 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
           "proxy_user_name", s.sm_->client_session_->get_session_info().get_priv_info().get_proxy_user_name(),
           "database_name", s.sm_->client_session_->get_session_info().get_database_name(),
           "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
-          "request_cmd", get_mysql_cmd_str(s.trans_info_.client_request_.get_packet_meta().cmd_),
-          "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+          "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.client_request_.get_packet_meta().cmd_),
+          "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
           "sql", s.trans_info_.get_print_sql());
 
       if (obmysql::OB_MYSQL_COM_QUIT != s.trans_info_.sql_cmd_) {
@@ -6915,7 +6919,7 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
             "db", s.sm_->client_session_->get_session_info().get_database_name(),
             "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
             "sql", s.trans_info_.client_request_.get_print_sql(),
-            "request_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_));
+            "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_));
 
         s.trace_log_.log_it("[svr_connection_break]",
             "cli", s.client_info_.addr_,
@@ -6926,7 +6930,7 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
             "db", s.sm_->client_session_->get_session_info().get_database_name(),
             "svr_state", ObString(ObMysqlTransact::get_server_state_name(s.current_.state_)),
             "sql", s.trans_info_.client_request_.get_print_sql(),
-            "sql_cmd", ObString(get_mysql_cmd_str(s.trans_info_.sql_cmd_)),
+            "sql_cmd", ObString(ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_)),
             "coord", s.sm_->client_session_->get_trans_coordinator_ss_addr());
         LOG_WDIAG("trace_log", K(s.trace_log_));
       }
@@ -6936,8 +6940,8 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
              "client_ip", s.client_info_.addr_,
              "server_ip", s.server_info_.addr_,
              "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
-             "request_cmd", get_mysql_cmd_str(s.trans_info_.client_request_.get_packet_meta().cmd_),
-             "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+             "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.client_request_.get_packet_meta().cmd_),
+             "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
              "sql", s.trans_info_.get_print_sql());
 
     if (obmysql::OB_MYSQL_COM_QUIT != s.trans_info_.sql_cmd_) {
@@ -6946,14 +6950,14 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
                      "server_ip", s.server_info_.addr_,
                      "server_state", ObMysqlTransact::get_server_state_name(s.current_.state_),
                      "sql", s.trans_info_.client_request_.get_print_sql(),
-                     "request_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_));
+                     "request_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_));
 
       s.trace_log_.log_it("[svr_connection_break]",
                      "cli", s.client_info_.addr_,
                      "svr", s.server_info_.addr_,
                      "svr_state", ObString(ObMysqlTransact::get_server_state_name(s.current_.state_)),
                      "sql", s.trans_info_.client_request_.get_print_sql(),
-                     "sql_cmd", ObString(get_mysql_cmd_str(s.trans_info_.sql_cmd_)));
+                     "sql_cmd", ObString(ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_)));
       LOG_WDIAG("trace_log", K(s.trace_log_));
     }
   }
@@ -7527,14 +7531,14 @@ inline void ObMysqlTransact::handle_server_failed(ObTransState &s)
       ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
       if (resp.is_error_resp()) {
 
-        switch (resp.error_pkt_.get_err_code()) {
+        switch (resp.get_error_pkt().get_err_code()) {
           case -OB_SERVER_IS_INIT:
           case -OB_SERVER_IS_STOPPING:
           case -OB_PACKET_CHECKSUM_ERROR:
           case -OB_ALLOCATE_MEMORY_FAILED:
             // congestion control
             LOG_INFO("ObMysqlTransact::handle_server_failed", "err code",
-                      resp.error_pkt_.get_err_code(), KPC(s.congestion_entry_));
+                      resp.get_error_pkt().get_err_code(), KPC(s.congestion_entry_));
             if (s.sm_->client_session_->get_session_info().is_oceanbase_server()) {
               s.set_alive_failed();
             }
@@ -7558,14 +7562,14 @@ inline void ObMysqlTransact::handle_server_failed(ObTransState &s)
                        "maybe this new server do not support old agreement, try next server",
                        "zone_type", zone_type_to_str(s.pll_info_.route_.cur_chosen_server_.zone_type_),
                        "origin_name", s.pll_info_.te_name_,
-                       "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+                       "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
                        "sql", s.trans_info_.client_request_.get_print_sql(),
                        "route info", s.pll_info_.route_);
             } else {
               LOG_WDIAG("zone is readonly, proxy should not send request to it, "
                        "maybe zone type has been changed, try next server",
                        "origin_name", s.pll_info_.te_name_,
-                       "sql_cmd", get_mysql_cmd_str(s.trans_info_.sql_cmd_),
+                       "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
                        "sql", s.trans_info_.client_request_.get_print_sql(),
                        "route info", s.pll_info_.route_);
             }

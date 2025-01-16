@@ -227,7 +227,6 @@ enum ObServerStatusFlagsPos
   OB_SERVER_SESSION_STATE_CHANGED_POS,
 };
 
-char const *get_mysql_cmd_str(ObMySQLCmd mysql_cmd);
 
 //http://dev.mysql.com/doc/refman/5.7/en/information-functions.html#function_current-user
 enum ObInformationFunctions

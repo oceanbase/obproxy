@@ -786,7 +786,7 @@ inline bool ObMysqlSM::need_print_trace_stat() const
 
 inline const common::ObString &ObMysqlSM::get_server_trace_id()
 {
-  return trans_state_.trans_info_.resp_result_.server_trace_id_;
+  return trans_state_.trans_info_.resp_result_.get_server_trace_id();
 }
 
 struct ObMysqlSMListBucket

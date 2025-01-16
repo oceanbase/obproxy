@@ -132,9 +132,9 @@ int ObRespAnalyzer::handle_analyze_last_mysql(ObRespAnalyzeResult &resp_result)
     }
 
     if (is_resp_completed) {
-      resp_result.is_trans_completed_ = is_trans_completed;
-      resp_result.is_resp_completed_ = is_resp_completed;
-      resp_result.ending_type_ = ending_type;
+      resp_result.set_is_trans_completed(is_trans_completed);
+      resp_result.set_is_resp_completed(is_resp_completed);
+      resp_result.set_ending_type(ending_type);
       is_mysql_stream_end_ = true;
       LOG_DEBUG("mark mysql stream end", K(is_mysql_stream_end_), K(is_trans_completed), K(is_resp_completed));
     }
@@ -234,7 +234,7 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
         if (OK_PACKET_ACTION_CONSUME == ok_packet_action_type
             || OK_PACKET_ACTION_REWRITE == ok_packet_action_type) {
           if (OB_NOT_NULL(resp_result)) {
-            resp_result->last_ok_pkt_len_ = pkt_len + MYSQL_NET_HEADER_LENGTH;
+            resp_result->set_last_ok_pkt_len(pkt_len + MYSQL_NET_HEADER_LENGTH);
           }
         } else {
           // do nothing
@@ -274,7 +274,7 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
             is_last_eof_pkt = false;
           }
         } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd_ || OB_MYSQL_COM_LOGIN == req_cmd_) && resp_result != NULL) {
-          resp_result->is_auth_switch_req_ = true;
+          resp_result->set_is_auth_switch_req(true);
         }
 
         if (0 == eof_pkt_cnt) {
@@ -376,7 +376,7 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
     reserve_pkt_body_buf_.reset();
 
     if (OB_LIKELY(NULL != resp_result)) {
-      resp_result->ok_packet_action_type_ = ok_packet_action_type;
+      resp_result->set_ok_packet_action_type(ok_packet_action_type);
       if (is_last_pkt() && OB_FAIL(handle_analyze_last_mysql(*resp_result))) {
         LOG_WDIAG("fail to handle_analyze_last_mysql", K(ret), K(*resp_result));
       }
@@ -524,7 +524,7 @@ void ObRespAnalyzer::handle_analyze_ob20_tailer(ObRespAnalyzeResult &resp_result
     LOG_DEBUG("analyze oceanbase 2.0 tailer", "tailer_crc", ob20_analyzer_.get_local_payload_checksum());
     if (is_last_oceanbase_pkt()) {
       if (SIMPLE_MODE == analyze_mode_) {
-        resp_result.is_resp_completed_ = true; // 不设置会导致 tunnel 出现问题
+        resp_result.set_is_resp_completed(true); // 不设置会导致 tunnel 出现问题
         is_mysql_stream_end_ = true;
       }
       is_oceanbase_stream_end_ = true;
@@ -620,7 +620,7 @@ int ObRespAnalyzer::handle_analyze_compressed_mysql_payload(const char *buf, con
     // the last compressed packet which contains the last mysql packet was analyzed
     if (is_last_compressed_pkt()) {
       if (SIMPLE_MODE == analyze_mode_) {
-        resp_result.is_resp_completed_ = true; // 不设置会导致 tunnel 出现问题
+        resp_result.set_is_resp_completed(true);// 不设置会导致 tunnel 出现问题
         is_mysql_stream_end_ = true;
       }
       is_compressed_stream_end_ = true; // mark compressed mysql packet stream end
@@ -655,7 +655,7 @@ int ObRespAnalyzer::handle_analyze_mysql_payload(const char *buf, const int64_t 
   } else if (OB_FAIL(stream_analyze_mysql(seg, resp_result))) {
     LOG_WDIAG("fail to stream_analyze_mysql", K(ret), K(seg), K(resp_result));
   } else {
-    resp_result.reserved_ok_len_of_compressed_ = reserved_len_;
+    resp_result.set_reserved_ok_len_of_compressed(reserved_len_);
   }
 
   return ret;
@@ -691,7 +691,7 @@ int ObRespAnalyzer::handle_analyze_compressed_payload(const char *buf, const int
       if (OB_FAIL(stream_analyze_mysql(seg, resp_result))) {
         LOG_WDIAG("fail to stream_analyze_mysql", K(ret), K(seg), K(resp_result));
       } else {
-        resp_result.reserved_ok_len_of_compressed_ = reserved_len_;
+        resp_result.set_reserved_ok_len_of_compressed(reserved_len_);
       }
     }
   }
@@ -703,7 +703,7 @@ int ObRespAnalyzer::handle_analyze_ob20_extra_info(const char *buf, const int64_
 {
   int ret = OB_SUCCESS;
   const Ob20ProtocolFlags &flags = ob20_analyzer_.get_header().flag_;
-  FLTObjManage &flt = resp_result.flt_;
+  FLTObjManage &flt = resp_result.get_flt();
   Ob20ExtraInfo &extra_info = resp_result.get_extra_info();
   // only process extra info in the last oceanbase 2.0 packet
   if (!extra_info.extra_info_buf_.is_inited() &&
@@ -807,7 +807,7 @@ int ObRespAnalyzer::handle_analyze_ob20_header(ObRespAnalyzeResult &resp_result)
     }
 
     if (header.flag_.is_last_packet()) {
-      resp_result.is_server_trans_internal_routing_ = header.flag_.is_trans_internal_routing();
+      resp_result.set_is_server_trans_internal_routing(header.flag_.is_trans_internal_routing());
     }
     LOG_DEBUG("analyze oceanbase 2.0 header",
               "magic_num", header.magic_num_,
@@ -859,10 +859,10 @@ int ObRespAnalyzer::analyze_one_packet_header(
     // compressed mysql or oceanabse 2.0
     if (ObProxyProtocol::PROTOCOL_NORMAL != protocol_) {
       if (is_last_pkt(result)) {    // only has one compressed packet
-        resp_result.is_resultset_resp_ = false;
+        resp_result.set_is_resultset_resp(false);
         analyze_mode_ = DECOMPRESS_MODE;
       } else {
-        resp_result.is_resultset_resp_ = true;
+        resp_result.set_is_resultset_resp(true);
         // only works for oceanbase 2.0 exclude prepare and prepare-execute
         if (ObProxyProtocol::PROTOCOL_OB20 == protocol_
             && !params_.is_compressed_
@@ -919,7 +919,7 @@ int ObRespAnalyzer::analyze_one_packet_header(
         // if it is result + eof + error + ok, it may be not....
         // treat multi stmt as result set protocol
         bool is_resultset_resp = ObRespAnalyzerUtil::is_resultset_resp(req_cmd_, result.mysql_header_.pkt_type_, server_status);
-        resp_result.is_resultset_resp_ = is_resultset_resp;
+        resp_result.set_is_resultset_resp(is_resultset_resp);
         LOG_DEBUG("after analyze one response packet",
                   "packet_type", result.mysql_header_.pkt_type_,
                   "cmd", req_cmd_,
@@ -965,7 +965,7 @@ int ObRespAnalyzer::analyze_all_packets(
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("written_len is not expected", K(written_len), K(tmp_read_avail), K(ret));
             } else {
-              resp_result.is_decompressed_ = true;
+              resp_result.set_is_decompressed(true);
               LOG_DEBUG("all mysql pkts decompressed", K(result));
             }
           }
@@ -984,12 +984,12 @@ int ObRespAnalyzer::analyze_all_packets(
     if (OB_SUCC(ret)) {
       if (ANALYZE_DONE == result.status_) {
         if (is_stream_end()) {
-        if (OB_MYSQL_COM_LOGIN == req_cmd_ || OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
-          resp_result.is_resultset_resp_ = false;
-        } else if (resp_result.is_eof_resp()
-              || ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_)
-                   && !resp_result.is_error_resp())) {
-            resp_result.is_resultset_resp_ = true;
+          if (OB_MYSQL_COM_LOGIN == req_cmd_ || OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
+            resp_result.set_is_resultset_resp(false);
+          } else if (resp_result.is_eof_resp()
+                || ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_)
+                     && !resp_result.is_error_resp())) {
+            resp_result.set_is_resultset_resp(true);
           }
         } else {
           if(OB_FAIL(ObProto20Utils::analyze_first_mysql_packet(reader, result))) {
@@ -998,7 +998,7 @@ int ObRespAnalyzer::analyze_all_packets(
             // if it is result + eof + error + ok, it may be not....
             // treat multi stmt as result set protocol
             uint8_t pkt_type = result.mysql_header_.pkt_type_;
-            resp_result.is_resultset_resp_ =
+            resp_result.set_is_resultset_resp(
               ((OB_MYSQL_COM_QUERY == req_cmd_
                 || OB_MYSQL_COM_STMT_EXECUTE == req_cmd_
                 || OB_MYSQL_COM_STMT_FETCH == req_cmd_)
@@ -1009,10 +1009,10 @@ int ObRespAnalyzer::analyze_all_packets(
                && MYSQL_LOCAL_INFILE_TYPE != pkt_type)
               || OB_MYSQL_COM_STMT_PREPARE == req_cmd_
               || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_
-              || OB_MYSQL_COM_FIELD_LIST == req_cmd_;
+              || OB_MYSQL_COM_FIELD_LIST == req_cmd_);
           }
           LOG_DEBUG("analyze OB20 first response finished", K(result),
-                    "is_resultset_resp", resp_result.is_resultset_resp_);
+                    "is_resultset_resp", resp_result.is_resultset_resp());
         }
       }
     }
@@ -1025,10 +1025,10 @@ int ObRespAnalyzer::analyze_all_packets(
       if (is_stream_end()) {
         result.status_ = ANALYZE_DONE;
         if (OB_MYSQL_COM_LOGIN == req_cmd_ || OB_MYSQL_COM_CHANGE_USER == req_cmd_) {
-          resp_result.is_resultset_resp_ = false;
+          resp_result.set_is_resultset_resp(false);
         } else if (resp_result.is_eof_resp() || ((OB_MYSQL_COM_STMT_PREPARE == req_cmd_ || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == req_cmd_)
                                                  && !resp_result.is_error_resp())) {
-          resp_result.is_resultset_resp_ = true;
+          resp_result.set_is_resultset_resp(true);
         }
       } else {
         result.status_ = ANALYZE_CONT;
@@ -1556,7 +1556,7 @@ int ObRespAnalyzer::analyze_error_pkt(ObRespAnalyzeResult *resp_result)
   int ret = OB_SUCCESS;
   if (NULL != resp_result) {
     obutils::ObVariableLenBuffer<FIXED_MEMORY_BUFFER_SIZE> &content_buf
-      = resp_result->error_pkt_buf_;
+      = resp_result->get_error_pkt_buf();
     if (OB_FAIL(build_packet_content(content_buf))) {
       LOG_WDIAG("fail to build packet content", K(ret));
     } else {
@@ -1633,24 +1633,24 @@ int ObRespAnalyzer::analyze_hanshake_pkt(ObRespAnalyzeResult *resp_result)
     if (OB_FAIL(packet.decode())) {
       LOG_WDIAG("decode packet failed", K(ret));
     } else {
-      resp_result->server_capabilities_lower_.capability_ = packet.get_server_capability_lower();
-      resp_result->server_capabilities_upper_.capability_ = packet.get_server_capability_upper();
-      resp_result->connection_id_ = packet.get_thread_id();
+      resp_result->set_server_cap_lower(packet.get_server_capability_lower());
+      resp_result->set_server_cap_upper(packet.get_server_capability_upper());
+      resp_result->set_connection_id(packet.get_thread_id());
       int64_t copy_len = 0;
-      if (OB_FAIL(packet.get_scramble(resp_result->scramble_buf_,
-                                      static_cast<int64_t>(sizeof(resp_result->scramble_buf_)),
+      if (OB_FAIL(packet.get_scramble(resp_result->get_scramble_buf(),
+                                      resp_result->get_scramble_buf_len(),
                                       copy_len))) {
         LOG_WDIAG("fail to get scramble", K(ret));
-      } else if (OB_UNLIKELY(copy_len >= static_cast<int64_t>(sizeof(resp_result->scramble_buf_)))) {
+      } else if (OB_UNLIKELY(copy_len >= resp_result->get_scramble_buf_len())) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("copy_len is too bigger", K(copy_len), K(ret));
       } else {
-        resp_result->scramble_buf_[copy_len] = '\0';
+        resp_result->get_scramble_buf()[copy_len] = '\0';
+        LOG_DEBUG("succ to get connection id and scramble ",
+              "connection_id", resp_result->get_connection_id(),
+              "scramble_buf", resp_result->get_scramble_buf());
       }
     }
-    LOG_DEBUG("succ to get connection id and scramble ",
-              "connection_id", resp_result->connection_id_,
-              "scramble_buf", resp_result->scramble_buf_);
   }
 
   return ret;

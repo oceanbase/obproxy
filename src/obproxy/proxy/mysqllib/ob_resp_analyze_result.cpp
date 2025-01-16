@@ -28,28 +28,35 @@ int64_t ObRespAnalyzeResult::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(is_decompressed),
-       K_(is_trans_completed),
-       K_(is_resp_completed),
-       K_(ending_type),
-       K_(is_partition_hit),
-       K_(has_new_sys_var),
-       K_(has_proxy_idc_name_user_var),
-       K_(is_server_db_reset),
-       K_(reserved_ok_len_of_mysql),
-       K_(reserved_ok_len_of_compressed),
-       K_(connection_id),
-       K_(scramble_buf),
-       K_(is_resultset_resp),
-       K_(server_capabilities_lower_.capability),
-       K_(ok_packet_action_type),
-       K_(last_ok_pkt_len),
-       K_(rewritten_last_ok_pkt_len),
-       K_(extra_info));
+  J_KV(K(transmit_control_.is_decompressed_),
+       K(transmit_control_.is_trans_completed_),
+       K(transmit_control_.is_resp_completed_),
+       K(transmit_control_.reserved_ok_len_of_mysql_),
+       K(transmit_control_.reserved_ok_len_of_compressed_),
+       K(transmit_control_.is_last_ok_handled_),
+       K(transmit_control_.last_ok_pkt_len_),
+       K(transmit_control_.rewritten_last_ok_pkt_len_),
+       K(transmit_control_.ok_packet_action_type_),
+       K(format_.is_auth_switch_req_),
+       K(format_.is_resultset_resp_),
+       K(format_.is_server_db_reset_),
+       K(format_.ending_type_),
+       K(sysvar_.is_partition_hit_),
+       K(sysvar_.is_last_insert_id_changed_),
+       K(sysvar_.has_new_sys_var_),
+       K(sysvar_.has_proxy_idc_name_user_var_),
+       K(sysvar_.weak_read_hit_replica_),
+       K(sysvar_.server_trace_id_),
+       K(handshake_.connection_id_),
+       K(handshake_.server_capabilities_lower_.capability_),
+       K(handshake_.server_capabilities_upper_.capability_),
+       K(ob20_.is_server_trans_internal_routing_),
+       K(ob20_.extra_info_),
+       K(ob20_.flt_));
 
   if (is_error_resp()) {
     J_COMMA();
-    J_KV(K_(error_pkt));
+    J_KV(K(error_.error_pkt_));
   }
   J_OBJ_END();
   return pos;

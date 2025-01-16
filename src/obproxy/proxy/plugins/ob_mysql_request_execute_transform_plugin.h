@@ -108,7 +108,7 @@ public:
   {
     PROXY_API_LOG(DEBUG, "need_enable_plugin",
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
-                  "mysql_cmd", get_mysql_cmd_str(sm->trans_state_.trans_info_.sql_cmd_));
+                  "mysql_cmd", ObProxyParserUtils::get_sql_cmd_name(sm->trans_state_.trans_info_.sql_cmd_));
 
     bool bret = false;
 

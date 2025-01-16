@@ -15,6 +15,7 @@
 #include "lib/time/ob_hrtime.h"
 #include "iocore/eventsystem/ob_event_processor.h"
 #include "iocore/eventsystem/ob_task.h"
+#include "proxy/mysqllib/ob_proxy_parser_utils.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -251,7 +252,7 @@ void ObSqlauditRecordQueue::enqueue(const int64_t sm_id, const int64_t gmt_creat
     ip.to_string(sqlaudit_records_[index].ip_, ObSqlauditRecord::IP_LENGTH);
     sql.to_string(sqlaudit_records_[index].sql_, ObSqlauditRecord::SQL_LENGTH);
 
-    ObString cmd = ObString::make_string(get_mysql_cmd_str(sql_cmd));
+    ObString cmd = ObString::make_string(ObProxyParserUtils::get_sql_cmd_name(sql_cmd));
     cmd.to_string(sqlaudit_records_[index].sql_cmd_, ObSqlauditRecord::SQL_CMD_LENGTH);
   }
 }
