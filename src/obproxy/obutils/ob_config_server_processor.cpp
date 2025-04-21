@@ -2026,6 +2026,7 @@ int ObConfigServerProcessor::swap_origin_web_rslist_and_build_sys(const ObString
 {
   int ret = OB_SUCCESS;
 
+  CWLockGuard lock(json_info_lock_);
   if (OB_FAIL(json_config_info_->swap_origin_web_rslist_and_build_sys(cluster, cluster_id, need_save_rslist_hash))) {
     LOG_WDIAG("fail to parse remote rslist", K(cluster), K(cluster_id), K(ret));
   }
@@ -3171,7 +3172,7 @@ int ObConfigServerProcessor::get_cluster_resource_for_service_name()
       } else if (refresh_cont->init(instance)) {
         LOG_WDIAG("failed to init for ObServiceNameRoleRefreshCont", K(ret));
       } else {
-        if (OB_ISNULL(g_event_processor.schedule_imm(refresh_cont, ET_CALL, REFRESH_TENANT_ROLE_EVENT))) {
+        if (OB_ISNULL(g_event_processor.schedule_imm(refresh_cont, ET_NET, REFRESH_TENANT_ROLE_EVENT))) {
           ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WDIAG("failed to schedule ObServiceNameRoleRefreshCont", K(ret));
         } else {

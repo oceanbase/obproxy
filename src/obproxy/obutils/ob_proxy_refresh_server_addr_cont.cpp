@@ -91,7 +91,7 @@ int ObProxyRefreshServerAddrCont::schedule_refresh_server_cont(bool imm)
     int64_t delay_us = 0;
     if (imm) {
       // must be done in work thread
-      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, REFRESH_SERVER_START_CONT_EVENT))) {
+      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET, REFRESH_SERVER_START_CONT_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule refresh_server event", K(ret));
       }
@@ -356,7 +356,7 @@ int ObProxyRefreshServerAddrCont::handle_create_cluster_resource_complete(void *
       LOG_INFO("fail to create cluste resource, will retry", "remain retry count", retry_count_,
                K(schema_key_->get_cluster_name()));
       if (OB_ISNULL(pending_action_ = g_event_processor.schedule_in(
-                                        this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), ET_CALL,
+                                        this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), ET_NET,
                                         REFRESH_SERVER_CREATE_CLUSTER_RESOURCE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule fetch rslist task", K(ret));

@@ -38,12 +38,10 @@ int ObPartDesc::get_part(ObNewRange &range,
 }
 
 int ObPartDesc::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
-                                         ObIArray<int64_t> &tablet_ids,
-                                         ObIArray<int64_t> &ls_ids)
+                                         ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(part_ids);
   UNUSED(tablet_ids);
-  UNUSED(ls_ids);
   return OB_NOT_IMPLEMENT;
 }
 
@@ -51,15 +49,13 @@ int ObPartDesc::get_part_for_obkv(ObNewRange &range,
                                   ObIAllocator &allocator,
                                   ObIArray<int64_t> &part_ids,
                                   ObPartDescCtx &ctx,
-                                  ObIArray<int64_t> &tablet_ids,
-                                  ObIArray<int64_t> &ls_ids)
+                                  ObIArray<int64_t> &tablet_ids)
 {
   UNUSED(range);
   UNUSED(allocator);
   UNUSED(part_ids);
   UNUSED(ctx);
   UNUSED(tablet_ids);
-  UNUSED(ls_ids);
   return OB_NOT_IMPLEMENT;
 }
 
@@ -70,13 +66,6 @@ int ObPartDesc::get_part_by_num(const int64_t num,
   UNUSED(num);
   UNUSED(part_ids);
   UNUSED(tablet_ids);
-  return OB_NOT_IMPLEMENT;
-}
-
-int ObPartDesc::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
-{
-  UNUSED(num);
-  UNUSED(ls_ids);
   return OB_NOT_IMPLEMENT;
 }
 
@@ -176,7 +165,7 @@ int ObPartDesc::cast_obj(ObObj &src_obj,
   } else {
     ObCastMode cm = CM_NULL_ON_WARN;
     // for insert stmt, use column_conv
-    if (ctx.need_accurate()) {
+    if (ctx.is_insert()) {
       cm = cm | CM_COLUMN_CONVERT;
     // for other stmt, use cast
     } else {
@@ -188,7 +177,7 @@ int ObPartDesc::cast_obj(ObObj &src_obj,
     // use src_obj as buf_obj
     if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
       COMMON_LOG(DEBUG, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
-    } else if (ctx.need_accurate()
+    } else if (ctx.is_insert()
                && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
       COMMON_LOG(DEBUG, "fail to obj accuracy check", K(ret), K(src_obj));
     } else {
@@ -252,7 +241,7 @@ int ObPartDesc::cast_obj_for_obkv(ObObj &src_obj,
   // use src_obj as buf_obj
   if (OB_FAIL(ObObjCasterV2::to_type(obj_type, cs_type, cast_ctx, src_obj, src_obj))) {
     COMMON_LOG(WDIAG, "failed to cast obj", K(ret), K(src_obj), K(obj_type), K(cs_type));
-  } else if (ctx.need_accurate()
+  } else if (ctx.is_insert()
               && OB_FAIL(obj_accuracy_check(cast_ctx, accuracy, cs_type, *res_obj, src_obj, res_obj))) {
     COMMON_LOG(WDIAG, "fail to obj accuracy check", K(ret), K(src_obj));
   } else {

@@ -141,30 +141,38 @@ inline int ObPacketAnalyzer::process_response_content(
 
   cmd_complete = false;
   trans_complete = false;
-  if (NULL != resp_result_ && resp_result_->is_resp_completed()) {
-    // non-resultset protocol
+  // resp_analyzer_ == NULL 的情况是, Response 是非结果集或者已经完全读取并且解析解压
+  // 这种情况下数据已经被 Producer 完全读取了
+  // 所以直接设置 cmd_complete 结束 Producer 的读取, 同时设置事务状态 trans_complete
+  if (resp_analyzer_ == NULL && NULL != resp_result_ && resp_result_->is_resp_completed()) {
     cmd_complete = true;
     trans_complete = resp_result_->is_trans_completed();
     LOG_DEBUG("process_response_content, is_resp_completed = true",
               K_(packet_type), "vc_type", producer_->vc_type_, K(trans_complete));
+  // 其他情况下, 需要使用 resp_analyzer_ 继续进行 Response 读取控制以及解压解析
   } else if (NULL != resp_analyzer_ && NULL != resp_result_) {
-    // resultset protocol
     int64_t data_size = packet_reader_->read_avail();
 
     if (data_size > 0) {
-      if (analyzer_ == NULL) {
-        LOG_DEBUG("no need analyze response");
-      } else if (OB_FAIL(resp_analyzer_->analyze_response(*packet_reader_, *resp_result_))) {
+      if (OB_FAIL(resp_analyzer_->analyze_response(*packet_reader_, *resp_result_))) {
         LOG_WDIAG("fail to analyze response with resp analyzer v2", K(ret));
       } else {
-        trans_complete = resp_result_->is_trans_completed();
-        cmd_complete = resp_result_->is_resp_completed();
+        // 增加判断 is_stream_end() 表示要判断整个 Response 是否读取并解析完, 包含 checksum tailer
+        // 在以前的实现中是仅判断 resp_result_->is_resp_completed() 这个判断是判断 MySQL Packets 是否读取完
+        // 对于 OceanBase 2.0/Compressed MySQL 来说, 可能刚好 check tailer 没读取到, 但是 is_resp_completed() == True
+        // 所以 checksum tailer 可能不会被读取并解析
+        trans_complete = resp_analyzer_->is_stream_end() && resp_result_->is_trans_completed();
+        cmd_complete = resp_analyzer_->is_stream_end() && resp_result_->is_resp_completed();
         LOG_DEBUG("process_response_content", K_(packet_type),
                   K(data_size), "vc_type", producer_->vc_type_, K(cmd_complete), K(trans_complete),
                   "reserved_ok_len_of_mysql", resp_result_->get_reserved_ok_len_of_mysql(),
                   "reserved_ok_len_of_compressed", resp_result_->get_reserved_ok_len_of_compressed(), K(packet_reader_));
       }
     }
+  } else {
+    // Tunnel "transform" -> "client" 不需要设置 resp_result_ 和 resp_analyzer_
+    // 因为 Producer "transform" 只需要一直读到 EOS 即可
+    // 上游 Tunnel "observer" -> "transform" 会保证所有 Response 读完并解析解压完
   }
 
   if (NULL != packet_reader_ && OB_SUCC(ret)) {
@@ -735,6 +743,17 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
 
   ObMysqlClientSession *client_vc = NULL;
   event = producer_handler_packet(event, p);
+  if (IS_DEBUG_ENABLED()) {
+    if (p.read_vio_ != NULL) {
+      LOG_DEBUG("callback producer_handler after read data from read_vio",
+               "name", p.name_,
+               "ndone", p.read_vio_->ndone_,
+               "init_bytes", p.init_bytes_done_,
+               "nbytes", p.read_vio_->nbytes_,
+               "event",  ObMysqlDebugNames::get_event_name(event),
+               "callback", p.read_vio_->cont_);
+    }
+  }
   switch (event) {
     case VC_EVENT_READ_READY:
       // Data read from producer, reenable consumers
@@ -991,6 +1010,17 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
      }
   }
 
+  if (IS_DEBUG_ENABLED()) {
+    if (c.write_vio_ != NULL) {
+      LOG_DEBUG("callback consumer_handler after write data to write_vio",
+               "name", c.name_,
+               "ndone", c.write_vio_->ndone_,
+               "nbytes", c.write_vio_->nbytes_,
+               "event",  ObMysqlDebugNames::get_event_name(event),
+               "callback", c.write_vio_->cont_);
+    }
+  }
+
   switch (event) {
     case VC_EVENT_WRITE_READY:
       consumer_reenable(c);
@@ -1150,13 +1180,11 @@ int ObMysqlTunnel::finish_all_internal(ObMysqlTunnelProducer &p, const bool chai
       } else {
         total_bytes = p.bytes_read_ + p.init_bytes_done_;
         c->write_vio_->nbytes_ = total_bytes - c->skip_bytes_ - c->buffer_reader_->reserved_size_;
-        LOG_DEBUG("finish_all_internal", K(&p), K(p.bytes_read_), K(p.init_bytes_done_), K(total_bytes),
-                  K(c->skip_bytes_), K(c->buffer_reader_->reserved_size_),
-                  K(c->write_vio_->nbytes_),
-                  K(c->write_vio_->ndone_),
-                  K(c->buffer_reader_),
-                  K(c->buffer_reader_->read_avail()),
-                  K(c->buffer_reader_->mbuf_));
+        LOG_DEBUG("producer finish", "name", p.name_, K(&p), K(total_bytes),
+                  K(c->write_vio_->ndone_), K(c->write_vio_->nbytes_),
+                  K(p.bytes_read_), K(p.init_bytes_done_),
+                  K(c->skip_bytes_), K(c->buffer_reader_->reserved_size_));
+
         if (c->write_vio_->nbytes_ < 0) {
           ret = OB_ERR_SYS;
           LOG_EDIAG("finish_all_internal, Incorrect nbytes",

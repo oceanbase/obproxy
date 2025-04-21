@@ -1048,8 +1048,7 @@ int64_t ObDiagnosisExprParse::to_string(char *buf, const int64_t buf_len) const
 
 void ObDiagnosisExprParse::reset()
 {
-  this->ObDiagnosisBase::reset();
-  col_val_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisExprParse));
 }
 
 static const char *get_row_id_calc_state_str(const ObRowIDCalcState state)
@@ -1131,9 +1130,7 @@ int64_t ObDiagnosisCalcRowid::to_string(char *buf, const int64_t buf_len) const
 
 void ObDiagnosisCalcRowid::reset()
 {
-  this->ObDiagnosisBase::reset();
-  state_ = SUCCESS;
-  version_ = 0;
+  MEMSET(this, 0, sizeof(ObDiagnosisCalcRowid));
 }
 int64_t ObDiagnosisResolveToken::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
 {
@@ -1176,17 +1173,16 @@ int64_t ObDiagnosisResolveToken::to_string(char *buf, const int64_t buf_len) con
       J_COMMA();
       J_KV("generated_func", get_generate_function_type(generated_func_));
     }
+    if (part_key_func_ != ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE) {
+      J_COMMA();
+      J_KV("part_key_func", get_expr_type_name(part_key_func_));
+    }
   )
 }
 
 void ObDiagnosisResolveToken::reset()
 {
-  this->ObDiagnosisBase::reset();
-  resolved_obj_.reset();
-  token_.reset();
-  token_type_ = ObProxyTokenType::TOKEN_NONE;
-  expr_type_ = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
-  generated_func_ = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
+  MEMSET(this, 0, sizeof(ObDiagnosisResolveToken));
 }
 
 int64_t ObDiagnosisResolveExpr::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1211,9 +1207,7 @@ int64_t ObDiagnosisResolveExpr::to_string(char *buf, const int64_t buf_len) cons
 
 void ObDiagnosisResolveExpr::reset()
 {
-  this->ObDiagnosisBase::reset();
-  part_range_.reset();
-  sub_part_range_.reset();
+  MEMSET(this, 0, sizeof(ObDiagnosisResolveExpr));
 }
 
 int64_t ObDiagnosisCalcPartitionId::diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const
@@ -1413,6 +1407,7 @@ ObDiagnosisPoint::~ObDiagnosisPoint() {
 }
 void ObDiagnosisPoint::reset()
 {
+  LOG_DEBUG("will reset ObDiagnosisPoint", "type", base_.type_);
   switch(base_.type_) {
     case BASE_ROUTE_DIAGNOSIS_TYPE:
       this->base_.reset();

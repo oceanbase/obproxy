@@ -31,6 +31,7 @@ typedef struct _ObProxyParseString
   ObProxyParseQuoteType quote_type_;
 } ObProxyParseString;
 
+// 注意，每增加一个变量，需要在init_result_basic中初始化
 typedef struct _ObProxyTableInfo
 {
   ObProxyParseString database_name_;
@@ -38,6 +39,9 @@ typedef struct _ObProxyTableInfo
   ObProxyParseString table_name_;
   ObProxyParseString alias_name_;
   ObProxyParseString dblink_name_;
+  ObProxyParseString join_table_name_;
+  ObProxyParseString join_table_alias_name_;
+  ObProxyParseString join_database_name_;
 } ObProxyTableInfo;
 
 #endif /* end of OBPROXY_PARSE_TYPE_H */

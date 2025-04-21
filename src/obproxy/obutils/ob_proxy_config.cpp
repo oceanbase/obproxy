@@ -273,16 +273,45 @@ int ObProxyConfig::load_sqlite_config_init_callback(void *data, int argc, char *
   return ret;
 }
 
-int ObProxyConfig::dump_config_to_local()
+int ObProxyConfig::serialize_to_yaml(char* buf, const int64_t buf_len, int64_t& pos) const
+{
+  int ret = OB_SUCCESS;
+
+  ObConfigContainer::const_iterator it = container_.begin();
+  int cnt = 0;
+
+  for (; OB_SUCC(ret) && it != container_.end(); ++it) {
+    if (OB_ISNULL(it->second)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexpected config_item is NULL", K(ret));
+    } else {
+      const ObConfigItem &item = *it->second;
+      if (OB_FAIL(databuff_printf(buf, buf_len, pos, "- name: %s\n  default_value: \"%s\"\n"
+            "  description: \"%s\"\n  is_need_restart: %s\n  type: %s\n"
+            "  allowed_string_values: \"%s\"\n"
+            , item.name(), item.str(), item.info()
+            , item.need_reboot() ? OB_CONFIG_NEED_REBOOT : OB_CONFIG_NOT_NEED_REBOOT
+            , item.config_type_to_str(), item.range_str()))) {
+        LOG_WDIAG("fail to printf config buf", K(pos), K(item), K(cnt), K(ret));
+      }
+    }
+    ++cnt;
+  }
+  LOG_INFO("finished serialize config to yaml", K(buf_len), K(pos), K(cnt), K(ret));
+  return ret;
+}
+
+int ObProxyConfig::dump_config_to_local(const bool is_yaml_format/*false*/)
 {
   int ret = OB_SUCCESS;
   const int64_t now = ObTimeUtility::current_time();
 
-  if (OB_FAIL(ObProxyConfigUtils::dump2file(*this))) {
-    LOG_WDIAG("fail to dump config bin to file", K(ret));
+  if (OB_FAIL(ObProxyConfigUtils::dump2file(*this, is_yaml_format))) {
+    LOG_WDIAG("fail to dump config bin to file", K(is_yaml_format), K(ret));
   }
 
-  LOG_DEBUG("finish dump config to local", "cost time(us)", ObTimeUtility::current_time() - now, K(ret));
+  LOG_DEBUG("finish dump config to local", "cost time(us)", ObTimeUtility::current_time() - now,
+            K(is_yaml_format), K(ret));
   return ret;
 }
 

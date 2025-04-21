@@ -532,7 +532,8 @@ int debug_mem_content(const char* src, int64_t len)
     LOG_WARN("fail to alloc mem", K(ret));
   } else {
     for (int64_t i = 0; i < len && pos < print_len; i++) {
-      int written_len = snprintf(buf + pos, static_cast<size_t>(print_len - pos), "%#x ", src[i]);
+      int written_len = snprintf(buf + pos, static_cast<size_t>(print_len - pos), "0x%lX ",
+                                 static_cast<unsigned long>(src[i]));
       if (OB_UNLIKELY(0 == written_len)) {
         break;
       } else {

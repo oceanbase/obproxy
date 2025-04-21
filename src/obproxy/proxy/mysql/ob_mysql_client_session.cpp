@@ -10,6 +10,8 @@
  * See the Mulan PubL v2 for more details.
  */
 
+#define USING_LOG_PREFIX PROXY
+
 #include "lib/encrypt/ob_encrypted_helper.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
 #include "proxy/mysql/ob_mysql_sm.h"
@@ -49,6 +51,26 @@ namespace proxy
 #define MYSQL_SSN_INCREMENT_DYN_STAT(x)     \
   session_stats_.stats_[x] += 1;            \
   MYSQL_INCREMENT_DYN_STAT(x)
+
+static uint32_t g_max_local_seq_v1 = 0;
+static uint32_t g_max_local_seq_v2 = 0;
+
+// v1 版本，thread_id 和 max_local_seq 共用 22 位
+// v2 版本，thread_id 和 max_local_seq 共用 17 位
+// 以 max_local_seq 为 16 位为例，cs_id 使用范围：0x0001 ~ 0xFFFF
+uint32_t get_g_max_local_seq_v1() {
+  if (OB_UNLIKELY(0 == g_max_local_seq_v1)) {
+    ATOMIC_CAS(&g_max_local_seq_v1, 0, (1 << (22 - get_thread_id_bits())) - 1);
+  }
+  return g_max_local_seq_v1;
+}
+
+uint32_t get_g_max_local_seq_v2() {
+  if (OB_UNLIKELY(0 == g_max_local_seq_v2)) {
+    ATOMIC_CAS(&g_max_local_seq_v2, 0, (1 << (17 - get_thread_id_bits())) - 1);
+  }
+  return g_max_local_seq_v2;
+}
 
 enum ObClientSessionMagic
 {
@@ -524,7 +546,7 @@ int ObMysqlClientSession::acquire_client_session_id_v1()
 {
   static __thread uint32_t next_cs_id = 0;
   static __thread uint32_t thread_init_cs_id = 0;
-  static __thread uint32_t max_local_seq = 0;
+  uint32_t max_local_seq = get_g_max_local_seq_v1();
 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 == next_cs_id) && OB_FAIL(get_thread_init_cs_id(CLIENT_SESSION_ID_V1, thread_init_cs_id, max_local_seq))) {
@@ -555,10 +577,8 @@ int ObMysqlClientSession::acquire_client_session_id_v2()
 {
   static __thread uint32_t next_cs_id = 0;
   static __thread uint32_t thread_init_cs_id = 0;
-  static __thread uint32_t max_local_seq = 0;
   static __thread uint32_t proxy_id = 0;
-
-  proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
+  uint32_t max_local_seq = get_g_max_local_seq_v2();
 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 == next_cs_id) || proxy_id != static_cast<uint32_t>(get_global_proxy_config().proxy_id)) {
@@ -576,12 +596,33 @@ int ObMysqlClientSession::acquire_client_session_id_v2()
   return ret;
 }
 
+int64_t ObMysqlClientSession::get_max_local_seq(const ObClientSessionIDVersion version) const
+{
+  int64_t max_local_seq = 0;
+  switch (version) {
+    case CLIENT_SESSION_ID_V1: {
+      max_local_seq = get_g_max_local_seq_v1();
+      break;
+    }
+    case CLIENT_SESSION_ID_V2: {
+      max_local_seq = get_g_max_local_seq_v2();
+      break;
+    }
+    default: {
+      LOG_EDIAG("unexpected client session version", K(version));
+      break;
+    }
+  }
+
+  return max_local_seq;
+}
+
 int ObMysqlClientSession::get_thread_init_cs_id(const ObClientSessionIDVersion version, uint32_t &thread_init_cs_id,
     uint32_t &max_local_seq, const int64_t thread_id/*-1*/)
 {
   int ret = OB_SUCCESS;
   uint32_t tmp_thread_id = 0;
-  if (thread_id < 0 || thread_id >= g_event_processor.thread_count_for_type_[ET_CALL]) {// use curr ethread
+  if (thread_id < 0 || thread_id >= g_event_processor.thread_count_for_type_[ET_NET]) {// use curr ethread
     ObEThread &ethread = self_ethread();
     tmp_thread_id = static_cast<uint32_t>(ethread.id_);
   } else {// use assigned ethread
@@ -590,62 +631,55 @@ int ObMysqlClientSession::get_thread_init_cs_id(const ObClientSessionIDVersion v
   const uint32_t upgrade_ver  = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
   const uint32_t proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
 
-  switch (version)
-  {
-  case CLIENT_SESSION_ID_V1:
-  {
-    const uint32_t proxy_head_bits      = 9;//MARKS + PROXY_ID
-    const uint32_t upgrade_ver_bits     = 1;
-    const uint32_t thread_id_bits       = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
-    const uint32_t local_seq_bits       = 32 - proxy_head_bits - upgrade_ver_bits - thread_id_bits;
+  switch (version) {
+    case CLIENT_SESSION_ID_V1: {
+      const uint32_t proxy_head_bits      = 9;//MARKS + PROXY_ID
+      const uint32_t upgrade_ver_bits     = 1;
+      const uint32_t thread_id_bits       = get_thread_id_bits();
 
-    const uint32_t proxy_id_offset      = 32 - proxy_head_bits;
-    const uint32_t upgrade_ver_offset   = 32 - proxy_head_bits - upgrade_ver_bits;
-    const uint32_t thread_id_offset     = local_seq_bits;
+      const uint32_t proxy_id_offset      = 32 - proxy_head_bits;
+      const uint32_t upgrade_ver_offset   = proxy_id_offset - upgrade_ver_bits;
+      const uint32_t thread_id_offset     = upgrade_ver_offset - thread_id_bits;
 
-    const uint32_t upgrade_ver   = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
+      const uint32_t upgrade_ver   = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
 
-    max_local_seq = 0;
-    thread_init_cs_id = 0;
+      max_local_seq = get_g_max_local_seq_v1();
+      thread_init_cs_id = 0;
 
-    if (OB_SUCC(ret)) {
-      thread_init_cs_id |= (proxy_id << proxy_id_offset);        // set proxy id
-      thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);  // set upgrade version
-      thread_init_cs_id |= (tmp_thread_id << thread_id_offset);  // set thread id
-      max_local_seq      = (1 << local_seq_bits) - 1;
+      if (OB_SUCC(ret)) {
+        thread_init_cs_id |= (proxy_id << proxy_id_offset);        // set proxy id
+        thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);  // set upgrade version
+        thread_init_cs_id |= (tmp_thread_id << thread_id_offset);  // set thread id
+      }
+      break;
     }
-    break;
-  }
-  case CLIENT_SESSION_ID_V2:
-  {
-    // calc bits
-    const uint32_t flag_bits = 1;
-    const uint32_t proxy_id_bits =  13;
-    const uint32_t upgrade_ver_bits = 1;
-    const uint32_t thread_id_bits = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
-    const uint32_t seq_id_bits = 32 - flag_bits - proxy_id_bits - upgrade_ver_bits - thread_id_bits;
+    case CLIENT_SESSION_ID_V2: {
+      // calc bits
+      const uint32_t flag_bits = 1;
+      const uint32_t proxy_id_bits =  13;
+      const uint32_t upgrade_ver_bits = 1;
+      const uint32_t thread_id_bits = get_thread_id_bits();
 
-    // calc offset
-    const uint32_t flag_offset = 32 - flag_bits;
-    const uint32_t proxy_id_offset = flag_offset - proxy_id_bits;
-    const uint32_t upgrade_ver_offset = proxy_id_offset - upgrade_ver_bits;
-    const uint32_t thread_id_offset = upgrade_ver_offset - thread_id_bits;
+      // calc offset
+      const uint32_t flag_offset = 32 - flag_bits;
+      const uint32_t proxy_id_offset = flag_offset - proxy_id_bits;
+      const uint32_t upgrade_ver_offset = proxy_id_offset - upgrade_ver_bits;
+      const uint32_t thread_id_offset = upgrade_ver_offset - thread_id_bits;
 
-    // set flag/proxy_id/upgrade_ver/thread_id_offset for cs_id
+      // set flag/proxy_id/upgrade_ver/thread_id_offset for cs_id
 
-    thread_init_cs_id = 0;
-    max_local_seq = 0;
+      thread_init_cs_id = 0;
+      max_local_seq = get_g_max_local_seq_v2();
 
-    thread_init_cs_id |= (proxy_id << proxy_id_offset);
-    thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);
-    thread_init_cs_id |= (tmp_thread_id << thread_id_offset);
-    max_local_seq = (1 << seq_id_bits) - 1;
-    break;
-  }
-  default:
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WDIAG, "unexpected client session version", K(ret), K(version));
-    break;
+      thread_init_cs_id |= (proxy_id << proxy_id_offset);
+      thread_init_cs_id |= (upgrade_ver << upgrade_ver_offset);
+      thread_init_cs_id |= (tmp_thread_id << thread_id_offset);
+      break;
+    }
+    default:
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("unexpected client session version", K(ret), K(version));
+      break;
   }
 
   return ret;
@@ -662,14 +696,14 @@ int ObMysqlClientSession::async_disconnect_by_internal_reason(int64_t async_disc
   } else if (OB_FALSE_IT(mysql_sm_->set_kill_this_after_cmd_done(async_disconnect_code))) {
     // nothing
   } else if (OB_UNLIKELY(is_request_transferring_)) {
-    PROXY_CS_LOG(DEBUG, "mysql sm is running, will close connection after cmd done");
+    PROXY_CS_LOG(WDIAG, "mysql sm is running, will close connection after cmd done");
   } else if (OB_ISNULL(client_vc = static_cast<ObUnixNetVConnection*>(client_vc_))) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_CS_LOG(EDIAG, "invalid client vc", K(client_vc_), K(ret));
   } else {
+    PROXY_CS_LOG(WDIAG, "mysql sm is idle, stop it and close connection");
     ObVIO* client_vio = &(client_vc->read_.vio_);
     mysql_sm_->handle_event(VC_EVENT_EOS, client_vio);
-    PROXY_CS_LOG(DEBUG, "mysql sm is idle, stop it and close connection");
   }
 
   return ret;
@@ -680,9 +714,16 @@ int ObMysqlClientSession::add_to_list()
   int ret = OB_SUCCESS;
   ObMysqlClientSessionMap &cs_map = get_client_session_map(*mutex_->thread_holding_);
   ObClientSessionIDList &cs_id_list = get_client_session_id_list(*mutex_->thread_holding_);
-  const int64_t MAX_TRY_TIMES = 1000;
+  // to constrain cycle upper bound, avoid potential dead-cyle
+  const int64_t MAX_TRY_TIMES = get_max_local_seq(cs_id_version_);
   if (OB_FAIL(acquire_client_session_id(cs_id_version_))) {
     PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
+  } else if (OB_UNLIKELY(LIST_ADDED == in_list_stat_)) {
+    ret = OB_ENTRY_EXIST;
+    PROXY_CS_LOG(WDIAG, "cs had already in the list, it should not happened", K_(cs_id), K(ret));
+  } else if (OB_ISNULL(mutex_->thread_holding_)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(WDIAG, "mutex_->thread_holding_ is null, it should not happened", K_(cs_id), K(ret));
   } else if (is_proxy_mysql_client()) {
     //if it is is proxy mysql client, we do follow things:
     //1. do not add to list
@@ -695,7 +736,8 @@ int ObMysqlClientSession::add_to_list()
     } else if (cs_id_version_ == CLIENT_SESSION_ID_V2) {
       // CLIENT_SESSION_ID_V2, record cs id to avoid duplicate cs_id
       bool is_exist = false;
-      for (int64_t i = 0; OB_SUCC(ret) && i < MAX_TRY_TIMES; ++i) {
+      bool exist_available_cs_id = (get_max_local_seq(cs_id_version_) - cs_id_list.size()) > 0;
+      for (int64_t i = 0; OB_SUCC(ret) && i < MAX_TRY_TIMES && exist_available_cs_id; ++i) {
         if (OB_FAIL(cs_id_list.is_cs_id_exist(cs_id_, is_exist))) {
           PROXY_CS_LOG(WDIAG, "fail to check if cs_id exist", K(cs_id_), K(ret));
           break;
@@ -709,20 +751,20 @@ int ObMysqlClientSession::add_to_list()
           break;
         }
       }
-      if (OB_SUCC(ret) && is_exist) {
-        ret = OB_SESSION_ENTRY_EXIST;
-        PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
-        cs_id_ = 0;
+      if (OB_SUCC(ret)) {
+        if (is_exist) {
+          ret = OB_SESSION_ENTRY_EXIST;
+          PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+          cs_id_ = 0;
+        } else {
+          PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(MAX_TRY_TIMES));
+        }
       }
     }
-  } else if (OB_UNLIKELY(LIST_ADDED == in_list_stat_)) {
-    ret = OB_ENTRY_EXIST;
-    PROXY_CS_LOG(WDIAG, "cs had already in the list, it should not happened", K_(cs_id), K(ret));
-  } else if (OB_ISNULL(mutex_->thread_holding_)) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_CS_LOG(WDIAG, "mutex_->thread_holding_ is null, it should not happened", K_(cs_id), K(ret));
   } else {
-    for (int64_t i = 0; OB_SUCC(ret) && LIST_ADDED != in_list_stat_ && i < MAX_TRY_TIMES; ++i) {
+    bool exist_available_cs_id = (get_max_local_seq(cs_id_version_) - cs_id_list.size()) > 0;
+    for (int64_t i = 0; OB_SUCC(ret) && LIST_ADDED != in_list_stat_
+                        && i < MAX_TRY_TIMES && exist_available_cs_id; ++i) {
       int tmp_ret = OB_SUCCESS;
       bool is_exist = false;
       if (OB_FAIL(cs_id_list.is_cs_id_exist(cs_id_, is_exist))) {
@@ -749,10 +791,17 @@ int ObMysqlClientSession::add_to_list()
         PROXY_CS_LOG(WDIAG, "fail to acquire client session_id", K_(cs_id), K(ret));
       }
     }
-    if (OB_SUCC(ret) && LIST_ADDED != in_list_stat_) {
-      ret = OB_SESSION_ENTRY_EXIST;
-      PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
-      cs_id_ = 0;
+    if (OB_SUCC(ret)) {
+      if (LIST_ADDED != in_list_stat_) {
+        ret = OB_SESSION_ENTRY_EXIST;
+        PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+        OBPROXY_DIAGNOSIS_LOG(WDIAG, "[CONNECTION]", "trace_type", "PROXY_INTERNAL_TRACE",
+                              "error_msg", "obproxy disconnect because the cs_id has been used up", K_(cs_id),
+                              "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES));
+        cs_id_ = 0;
+      } else {
+        PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(MAX_TRY_TIMES));
+      }
     }
   }
   return ret;
@@ -997,6 +1046,7 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
 {
   STATE_ENTER(&ObMysqlClientSession::state_server_keep_alive, event, data);
 
+  int64_t ret = OB_SUCCESS;
   int64_t async_disconnect_code = OB_SUCCESS;
   if (OB_LIKELY(data == server_ka_vio_) && OB_LIKELY(NULL != bound_ss_)) {
     switch (event) {
@@ -1021,7 +1071,9 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
         }
         if (OB_UNLIKELY(OB_SUCCESS != async_disconnect_code)) {
           set_closed_key_server_session(bound_ss_);
-          async_disconnect_by_internal_reason(async_disconnect_code);
+          if (OB_FAIL(async_disconnect_by_internal_reason(async_disconnect_code))) {
+            PROXY_CS_LOG(WDIAG, "fail to close client session", "client session", this, KPC(bound_ss_), K(ret));
+          }
         } else {
           bound_ss_->do_io_close();
           bound_ss_ = NULL;
@@ -1120,7 +1172,8 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
 
 void ObMysqlClientSession::close_last_used_ss()
 {
-   PROXY_CS_LOG(INFO, "close last server session", KPC(bound_ss_));
+   PROXY_CS_LOG(INFO, "close last server session", K(is_session_pool_client()),
+                K(is_can_server_session_release()), KPC(bound_ss_));
   if (NULL != bound_ss_) {
     if (is_session_pool_client() && is_can_server_session_release()) {
       PROXY_CS_LOG(DEBUG, "is_session_pool_client will release");
@@ -1970,7 +2023,7 @@ int ObMysqlClientSessionMap::erase(const uint32_t &id)
 int init_cs_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_cs_map_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObMysqlClientSessionMap", K(i), K(ret));
@@ -1982,7 +2035,7 @@ int init_cs_map_for_thread()
 int init_cs_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][index]->cs_map_ = new (std::nothrow) ObMysqlClientSessionMap())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObMysqlClientSessionMap", K(index), K(ret));
   }
@@ -2005,7 +2058,7 @@ int init_cs_map_for_one_thread(event::ObEThread *thread)
 int init_cs_id_list_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_cs_id_list_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(i), K(ret));
@@ -2017,7 +2070,7 @@ int init_cs_id_list_for_thread()
 int init_cs_id_list_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->cs_id_list_
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][index]->cs_id_list_
                 = new (std::nothrow) ObClientSessionIDList())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObClientSessionIDList", K(index), K(ret));
@@ -2053,7 +2106,7 @@ int init_random_seed_for_thread()
 
   //2. create random seed of each ethread
   if (OB_SUCC(ret)) {
-    const int64_t count = g_event_processor.thread_count_for_type_[ET_CALL];
+    const int64_t count = g_event_processor.thread_count_for_type_[ET_NET];
     ObMysqlRandom *tmp_random = NULL;
     for (int64_t i = 0; i < count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(tmp_random = new (std::nothrow) ObMysqlRandom())) {
@@ -2062,8 +2115,8 @@ int init_random_seed_for_thread()
       } else {
         const uint64_t tmp = init_seed->get_uint64();
         tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
-                         tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_CALL][i]->tid_));
-        g_event_processor.event_thread_[ET_CALL][i]->random_seed_ = tmp_random;
+                         tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_NET][i]->tid_));
+        g_event_processor.event_thread_[ET_NET][i]->random_seed_ = tmp_random;
       }
     }
   }
@@ -2096,8 +2149,8 @@ int init_random_seed_for_one_thread(int64_t index)
     } else {
       const uint64_t tmp = init_seed->get_uint64();
       tmp_random->init(tmp + reinterpret_cast<uint64_t>(tmp_random),
-                       tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_CALL][index]->tid_));
-      g_event_processor.event_thread_[ET_CALL][index]->random_seed_ = tmp_random;
+                       tmp + static_cast<uint64_t>(g_event_processor.event_thread_[ET_NET][index]->tid_));
+      g_event_processor.event_thread_[ET_NET][index]->random_seed_ = tmp_random;
     }
   }
 
@@ -2151,7 +2204,7 @@ inline bool is_proxy_conn_id_avail(const uint64_t conn_id)
   if (OB_FAIL(ObMysqlClientSession::get_thread_init_cs_id(
           static_cast<ObClientSessionIDVersion>(get_global_proxy_config().client_session_id_version.get_value()),
           thread_init_cs_id, max_local_seq,
-          g_event_processor.thread_count_for_type_[ET_CALL] - 1))) {
+          g_event_processor.thread_count_for_type_[ET_NET] - 1))) {
     bret = false;
     PROXY_CS_LOG(WDIAG, "fail to  is get thread init cs id", K(bret), K(ret));
   } else {
@@ -2187,7 +2240,7 @@ int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id)
 
   const uint32_t proxy_heads_bits   = 10; //proxy mark + proxy id + upgrade version
   const uint32_t upgrade_ver_offset = 32 - proxy_heads_bits;
-  const uint32_t thread_id_bits     = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+  const uint32_t thread_id_bits     = get_thread_id_bits();
   const uint32_t cs_upgrade_ver     = (cs_id & (0x1 << upgrade_ver_offset)) >> upgrade_ver_offset;
   const uint32_t target_upgrade_ver = static_cast<uint32_t>(0x1 & info.upgrade_version_);
 
@@ -2198,7 +2251,7 @@ int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id)
              K(target_upgrade_ver), "upgrade_version", info.upgrade_version_, K(ret));
   } else {
     const uint32_t thread_id_tmp = ((cs_id << proxy_heads_bits) >> (32 - thread_id_bits));
-    if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL])) {
+    if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_NET])) {
       ret = OB_ERR_UNEXPECTED;
       PROXY_CS_LOG(WDIAG, "error thread id, it should not happened", K(thread_id_tmp), K(ret));
     } else {
@@ -2212,12 +2265,12 @@ int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id)
 {
   int ret = OB_SUCCESS;
   const uint32_t proxy_head_bits = 15; //proxy mark + proxy id(13) + upgrade version
-  const uint32_t thread_id_bits  = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+  const uint32_t thread_id_bits  = get_thread_id_bits();
   // don't need to check upgrade version for unique cs id
 
   thread_id = -1;
   const uint32_t thread_id_tmp = ((cs_id << proxy_head_bits) >> (32 - thread_id_bits));
-  if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL])) {
+  if (thread_id_tmp >= static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_NET])) {
     // two case:
     // 1. the cs_id generated with CLIENT_SESSION_ID_V1
     // 2. the cs_id is incorrect
@@ -2296,6 +2349,10 @@ int ObMysqlClientSession::fill_tenant_info_with_ppv2(proxy_protocol_v2::ProxyPro
 
   if (OB_FAIL(fetch_tenant_by_vip())) {
     PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(v2), K(ret));
+  } else {
+    // 需要用新的vip信息获取多级别配置
+    mysql_sm_->set_need_update_config(true);
+    mysql_sm_->trans_state_.refresh_mysql_config();
   }
 
   return ret;

@@ -1242,7 +1242,9 @@ bool ObProxyShardUtils::is_unsupport_type_in_multi_stmt(ObSqlParseResult& parse_
          || parse_result.is_show_tables_stmt()
          || parse_result.is_show_full_tables_stmt()
          || parse_result.is_show_table_status_stmt()
-         || parse_result.is_show_create_table_stmt();
+         || parse_result.is_show_create_table_stmt()
+         || parse_result.is_internal_request()
+         || parse_result.is_internal_cmd();
 }
 
 int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &client_session,

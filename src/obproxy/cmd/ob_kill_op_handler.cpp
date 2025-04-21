@@ -132,7 +132,7 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
 {
   int ret = OB_SUCCESS;
   int64_t affected_row = 0;
-  int errcode = OB_SUCCESS;
+  int errcode = OB_ERR_KILL_DENIED;
   switch (sub_type_) {
     case OBPROXY_T_SUB_KILL_CONNECTION:
     case OBPROXY_T_SUB_KILL_CS: {
@@ -158,21 +158,24 @@ int ObKillOpHandler::kill_session(ObMysqlClientSession &cs)
         if (session_priv_.has_all_privilege_) {
           DEBUG_ICMD("curr user has the all privilege to kill any client session");
           has_privilege = true;
-        } else if (!cs.get_session_info().is_sharding_user() && session_priv_.tenant_name_.case_compare(OB_SYS_TENANT_NAME) == 0) {
-          if (session_priv_.is_same_cluster(other_priv_info)) {
-            DEBUG_ICMD("curr user is root@sys in same cluster, has privilege to kill this client session");
-            has_privilege = true;
+        } else if (!cs.get_session_info().is_sharding_user()) {
+          if (OB_UNLIKELY(!session_priv_.is_same_cluster(other_priv_info))) {
+            errcode = OB_ERR_KILL_DENIED;
+            PROXY_SS_LOG(WDIAG, "different cluster", K(errcode));
+          } else if (session_priv_.is_sys_tenant()) {
+              DEBUG_ICMD("curr user is xxx@sys in same cluster, has privilege to kill this client session");
+              has_privilege = true;
+          } else if (session_priv_.is_same_tenant(other_priv_info)) {
+            if (session_priv_.is_same_user(other_priv_info) || session_priv_.has_super_privilege()) {
+              DEBUG_ICMD("curr user has the privilege to kill this client session");
+              has_privilege = true;
+            } else {
+              errcode = OB_ERR_KILL_DENIED;
+              DEBUG_ICMD("same cluster.tenant, but different user, not the owner to execute kill", K(errcode));
+            }
           } else {
             errcode = OB_ERR_KILL_DENIED;
-            DEBUG_ICMD("not root user of sys tenant or not the same cluster, not the owner to execute kill", K(errcode));
-          }
-        } else if (!cs.get_session_info().is_sharding_user() && session_priv_.is_same_tenant(other_priv_info)) {
-          if (session_priv_.is_same_user(other_priv_info) || session_priv_.has_super_privilege()) {
-            DEBUG_ICMD("curr user has the privilege to kill this client session");
-            has_privilege = true;
-          } else {
-            errcode = OB_ERR_KILL_DENIED;
-            DEBUG_ICMD("same cluster.tenant, but different user, not the owner to execute kill", K(errcode));
+            DEBUG_ICMD("same cluster, but different tenant, not the owner to execute kill", K(errcode));
           }
         } else if (cs.get_session_info().is_sharding_user()) {
           if (session_priv_.is_same_logic_user(other_priv_info)) {

@@ -62,6 +62,8 @@ public:
   bool has_sub_part() const { return share::schema::PARTITION_LEVEL_TWO == part_level_; }
   bool has_generated_key() const { return has_generated_key_; }
   void set_has_generated_key(bool has_generated_key) { has_generated_key_ = has_generated_key; }
+  bool has_part_func_key() const { return has_part_func_key_; }
+  void set_has_part_func_key(bool val) { has_part_func_key_ = val; }
   bool is_oracle_mode() const { return is_oracle_mode_; }
   void set_oracle_mode(bool is_oracle_mode) { is_oracle_mode_ = is_oracle_mode; }
   bool has_unknown_part_key() const { return has_unknown_part_key_; }
@@ -74,6 +76,7 @@ public:
 
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
+  share::schema::ObPartitionLevel get_part_func_key_level() const { return part_func_key_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }
   common::ObIArray<common::ObString> &get_part_columns() { return part_columns_; }
   common::ObIArray<common::ObString> &get_sub_part_columns() { return sub_part_columns_; }
@@ -84,9 +87,12 @@ public:
   common::ObIAllocator &get_allocator() { return allocator_; }
 
   void set_part_level(const share::schema::ObPartitionLevel level) { part_level_ = level; }
+  void set_part_func_key_level(const share::schema::ObPartitionLevel level) { part_func_key_level_ = level; }
   void set_table_cs_type(const common::ObCollationType cs_type) { table_cs_type_ = cs_type; }
   int64_t get_cluster_version() const { return cluster_version_; }
   void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
+  int64_t get_schema_version() const { return schema_version_; }
+  void set_schema_version(const int64_t schema_version) { schema_version_ = schema_version; }
 
   void set_part_expr(ObString part_expr) { part_expr_ = part_expr; }
   ObString get_part_expr() const { return part_expr_; }
@@ -105,12 +111,15 @@ public:
 private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyPartInfo);
 
-  bool is_oracle_mode_;
-  bool has_generated_key_;
-  bool has_unknown_part_key_;
-  bool is_template_table_;
-  bool is_primary_key_as_part_expr_;
+  bool is_oracle_mode_:                          1;
+  bool has_generated_key_:                       1;
+  bool has_part_func_key_:                       1;
+  bool has_unknown_part_key_:                    1;
+  bool is_template_table_:                       1;
+  bool is_primary_key_as_part_expr_:             1;
+  uint16_t :                                     0;
   share::schema::ObPartitionLevel part_level_;
+  share::schema::ObPartitionLevel part_func_key_level_;
   common::ObCollationType table_cs_type_;
 
   ObString part_expr_;
@@ -127,6 +136,7 @@ private:
   ObProxyPartKeyInfo part_key_info_;
   ObProxyPartMgr part_mgr_;
   int64_t cluster_version_;
+  int64_t schema_version_;
 };
 
 inline bool ObProxyPartOption::is_range_part(const int64_t cluster_version) const

@@ -37,7 +37,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
   int ret = OB_SUCCESS;
   uint8_t next_compress_seq = 0;
   ObServerSessionInfo &server_info = server_session->get_session_info();
-  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
+  if (ObProxyProtocol::PROTOCOL_OCEANBASE_20 == ob_proxy_protocol) {
     ObSEArray<ObObJKV, 3> extra_info;
     ObSqlString sess_info_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
@@ -67,7 +67,7 @@ int ObMysqlRequestBuilder::build_request_packet(ObString sql,
       next_compress_seq = ob20_head_param.get_compressed_seq();
     }
   } else {
-    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
+    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL ? true : false;
     ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
     DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (OB_FAIL(ObMysqlPacketWriter::write_request_packet(mio_buf, cmd, sql, need_compress, param))) {
@@ -261,7 +261,7 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
   int ret = OB_SUCCESS;
   uint8_t next_compress_seq = 0;
   ObServerSessionInfo &server_info = server_session->get_session_info();
-  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
+  if (ObProxyProtocol::PROTOCOL_OCEANBASE_20 == ob_proxy_protocol) {
     const bool is_last_packet = true;
     const bool is_proxy_switch_route = false;
     const int64_t compression_level = sm->compression_algorithm_.level_;
@@ -278,7 +278,7 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
       next_compress_seq = ob20_head_param.get_compressed_seq();
     }
   } else {
-    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_CHECKSUM ? true : false;
+    const bool need_compress = ob_proxy_protocol == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL ? true : false;
     ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
     DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (need_compress) {

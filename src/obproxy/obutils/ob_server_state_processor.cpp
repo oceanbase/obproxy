@@ -215,7 +215,7 @@ int ObServerStateRefreshCont::schedule_refresh_server_state(const bool imm /*fal
   } else if (OB_UNLIKELY(NULL != pending_action_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("pending action should be null here", K_(pending_action), K(ret));
-  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
+  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_NET))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("server state refresh cont must be scheduled in work thread", K(ret));
   } else {
@@ -1871,7 +1871,7 @@ int ObServerStateRefreshCont::set_server_state_refresh_interval(const int64_t in
     // add set_interval_task_count_ before schedule_imm, and dec when failed
     ss_refresh_interval_us_ = interval;
     ATOMIC_INC(&set_interval_task_count_);
-    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL))) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET))) {
       ATOMIC_DEC(&set_interval_task_count_);
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("schedule imm ss_refresh task error", K(ret));
@@ -2279,7 +2279,7 @@ int ObDetectServerStateCont::schedule_detect_server_state()
   } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
     ret = OB_SERVER_IS_STOPPING;
     LOG_WDIAG("proxy need exit now", K(ret));
-  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_CALL))) {
+  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_NET))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_EDIAG("server state refresh cont must be scheduled in work thread", K(ret));
   } else if (server_detect_mode > 0) {
@@ -2434,7 +2434,7 @@ int ObDetectServerStateCont::set_detect_server_state_interval(const int64_t refr
   } else {
     server_detect_state_interval_us_ = refresh_interval;
     ATOMIC_INC(&set_interval_task_count_);
-    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL))) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET))) {
       ATOMIC_DEC(&set_interval_task_count_);
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("schedule imm detect_server_state task error", K(ret));

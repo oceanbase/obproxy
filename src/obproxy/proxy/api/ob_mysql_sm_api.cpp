@@ -953,23 +953,37 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
     ObMysqlServerSession *server_session = sm_->get_server_session();
 
     ObRespAnalyzer *resp_analyzer = &sm_->resp_analyzer_;
-    if (ObProxyProtocol::PROTOCOL_CHECKSUM == ob_proxy_protocol
-        || ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
-      const uint8_t req_seq = sm_->get_compressed_or_ob20_request_seq();
-      const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
-      const ObMysqlProtocolMode mysql_mode = sm_->get_client_session()->get_session_info().is_oracle_mode() ?
-                                              OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
-      const bool enable_transmission_checksum = sm_->get_client_session()->get_session_info().get_enable_transmission_checksum();
-      const bool enable_extra_ok_packet_for_stats = sm_->is_extra_ok_packet_for_stats_enabled();
-      const bool is_analyze_compressed_ob20 = server_session->get_session_info().is_server_ob20_compress_supported()
-                                              && sm_->compression_algorithm_.level_ != 0;
-      if (OB_FAIL(resp_analyzer->init(ob_proxy_protocol, cmd, mysql_mode, ObRespAnalyzeMode::SIMPLE_MODE,
-                                      enable_extra_ok_packet_for_stats, is_analyze_compressed_ob20,
-                                      req_seq, req_seq, server_session->get_server_request_id(),
-                                      server_session->get_server_sessid(),
-                                      enable_transmission_checksum))) {
-        LOG_WDIAG("fail to init resp analyzer for tunnel", K(ret));
+    // 如果与 observer 使用的 OceanBase 2.0/Compressed MySQL 协议
+    // 则可能需要使用 resp_analyzer 对 Response 数据进行读取和解压解析
+    // 下面进一步判断
+    if (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == ob_proxy_protocol
+        || ObProxyProtocol::PROTOCOL_OCEANBASE_20 == ob_proxy_protocol) {
+      // 如果 Response 没有被完全读取解压解析 (resp_result_.is_decompressed())
+      // 那么需要初始化 resp_analyzer 其作用是解析 Response 数据并判断数据流是否结束 (process_response_content())
+      // 然后控制 Producer 是否继续从网络读取 Response 数据
+      if (!sm_->trans_state_.trans_info_.resp_result_.is_decompressed()) {
+        const uint8_t req_seq = sm_->get_compressed_or_ob20_request_seq();
+        const obmysql::ObMySQLCmd cmd = sm_->get_request_cmd();
+        const ObMysqlProtocolMode mysql_mode = sm_->get_client_session()->get_session_info().is_oracle_mode() ?
+                                                OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
+        const bool enable_transmission_checksum = sm_->get_client_session()->get_session_info().get_enable_transmission_checksum();
+        const bool enable_extra_ok_packet_for_stats = sm_->is_extra_ok_packet_for_stats_enabled();
+        const bool is_analyze_compressed_ob20 = server_session->get_session_info().is_server_ob20_compress_supported()
+                                                && sm_->compression_algorithm_.level_ != 0;
+        if (OB_FAIL(resp_analyzer->init(ob_proxy_protocol, cmd, mysql_mode, ObRespAnalyzeMode::SIMPLE_MODE,
+                                        enable_extra_ok_packet_for_stats, is_analyze_compressed_ob20,
+                                        req_seq, req_seq, server_session->get_server_request_id(),
+                                        server_session->get_server_sessid(),
+                                        enable_transmission_checksum))) {
+          LOG_WDIAG("fail to init resp analyzer for tunnel", K(ret));
+        }
+      // 如果 Response 已经被完全读取并解压解析为 MySQL Packets
+      // 那么可以不再使用解析器, 因为所有数据均已经被 Producer 读取
+      } else {
+        resp_analyzer = NULL;
       }
+    // 如果与 observer 使用的 MySQL 协议, Response 数据可能完全被 Producer 读取了,也可能没有
+    // 所以需要设置 resp_analyzer 来进行读取控制
     } else {
       // resp_analyzer has been inited in handle_first_normal_response_packet() and analyze_response() be called
       // analyze_response() will changes mysql packets related data in resp_analyzer
@@ -982,6 +996,8 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
         LOG_WDIAG("failed to set_producer_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
       } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
         LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
+      } else {
+        LOG_DEBUG("tunnel start 'observer -> transform write'", K(p->init_bytes_done_));
       }
     }
   }
@@ -1053,6 +1069,8 @@ int ObMysqlSMApi::setup_transfer_from_transform()
           LOG_WDIAG("failed to set_response_packet_analyzer", K(p), K_(sm_->sm_id), K(ret));
         } else if (OB_FAIL(sm_->tunnel_.tunnel_run(p))) {
           LOG_WDIAG("failed to run tunnel", K(p), K_(sm_->sm_id), K(ret));
+        } else {
+          LOG_DEBUG("tunnel start 'transform read -> client'", K(p->init_bytes_done_));
         }
       }
     }

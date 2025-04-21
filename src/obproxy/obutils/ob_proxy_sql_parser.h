@@ -508,6 +508,9 @@ struct ObSqlParseResult
 {
   ObSqlParseResult()
     : allocator_(common::ObModIds::OB_PROXY_SHARDING_PARSE),
+      join_table_name_(),
+      join_table_alias_name_(),
+      join_database_name_(),
       batch_insert_values_count_(0),
       text_ps_buf_(NULL), text_ps_buf_len_(0),
       hint_query_timeout_(0),
@@ -519,9 +522,12 @@ struct ObSqlParseResult
       cmd_sub_type_(OBPROXY_T_SUB_INVALID),
       cmd_err_type_(OBPROXY_T_ERR_INVALID),
       table_name_quote_(OBPROXY_QUOTE_T_INVALID),
+      join_table_name_quote_(OBPROXY_QUOTE_T_INVALID),
       package_name_quote_ (OBPROXY_QUOTE_T_INVALID),
       database_name_quote_(OBPROXY_QUOTE_T_INVALID),
+      join_database_name_quote_(OBPROXY_QUOTE_T_INVALID),
       alias_name_quote_(OBPROXY_QUOTE_T_INVALID),
+      join_alias_name_quote_(OBPROXY_QUOTE_T_INVALID),
       col_name_quote_(OBPROXY_QUOTE_T_INVALID),
       text_ps_inner_stmt_type_(OBPROXY_T_INVALID),
       hint_consistency_level_(common::INVALID_CONSISTENCY),
@@ -739,6 +745,9 @@ struct ObSqlParseResult
   const common::ObString get_table_name() const { return table_name_; }
   const common::ObString get_package_name() const { return package_name_; }
   const common::ObString get_database_name() const { return database_name_; }
+  const common::ObString get_join_database_name() const { return static_cast<common::ObString>(join_database_name_); }
+  const common::ObString get_join_table_name() const { return static_cast<common::ObString>(join_table_name_); }
+  const common::ObString get_join_table_alias_name() const { return static_cast<common::ObString>(join_table_alias_name_); }
   const common::ObString get_origin_table_name() const { return origin_table_name_; }
   const common::ObString get_origin_database_name() const { return origin_database_name_;}
   const common::ObString get_col_name() const { return col_name_; }
@@ -746,9 +755,12 @@ struct ObSqlParseResult
   const common::ObString get_part_name() const { return part_name_; }
   const common::ObString get_text_ps_name() const { return text_ps_name_; }
   ObProxyParseQuoteType get_table_name_quote() const { return table_name_quote_; }
+  ObProxyParseQuoteType get_join_table_name_quote() const { return join_table_name_quote_; }
   ObProxyParseQuoteType get_package_name_quote() const { return package_name_quote_; }
   ObProxyParseQuoteType get_database_name_quote() const { return database_name_quote_; }
+  ObProxyParseQuoteType get_join_database_name_quote() const { return join_database_name_quote_; }
   ObProxyParseQuoteType get_alias_name_quote() const { return alias_name_quote_; }
+  ObProxyParseQuoteType get_join_alias_name_quote() const { return join_alias_name_quote_; }
   ObProxyParseQuoteType get_col_name_quote() const { return col_name_quote_; }
   const common::ObString get_trace_id() const { return trace_id_; }
   const common::ObString get_rpc_id() const { return rpc_id_; }
@@ -777,10 +789,19 @@ struct ObSqlParseResult
   int set_db_name(const ObProxyParseString &database_name,
                   const bool use_lower_case_name = false,
                   const bool drop_origin_db_table_name = false);
+  int set_db_table_name(ObString &table_name, const ObProxyParseQuoteType table_name_quote,
+                        ObString &database_name, const ObProxyParseQuoteType database_name_quote,
+                        ObString &alias_table_name, const ObProxyParseQuoteType alias_quote,
+                        const bool use_lower_case_name = false);
+  int set_string_info(const ObProxyParseString &src, ObConfigVariableString &dest,
+                      ObProxyParseQuoteType &quote, const int64_t MAX_LENGTH,
+                      const bool use_lower_case_name);
   int set_db_table_name(const ObProxyParseString &database_name, const ObProxyParseString &package_name,
                         const ObProxyParseString &table_name, const ObProxyParseString &alias_name,
-                        const ObProxyParseString &dblink_name, bool &is_dblink_name,
-                        const bool use_lower_case_name = false, const bool save_origin_db_table_name = false);
+                        const ObProxyParseString &dblink_name, const ObProxyParseString &join_table_name,
+                        const ObProxyParseString &join_database_name, const ObProxyParseString &join_table_alias_name,
+                        bool &is_dblink_name, const bool use_lower_case_name = false,
+                        const bool save_origin_db_table_name = false);
   int set_real_table_name(const char *table_name, int64_t len);
   int set_col_name(const ObProxyParseString &col_name);
   int set_call_prarms(const ObProxyCallParseInfo &call_parse_info);
@@ -853,9 +874,12 @@ struct ObSqlParseResult
       internal_select_buf_ = other.internal_select_buf_;
       part_name_buf_ = other.part_name_buf_;
       table_name_quote_ = other.table_name_quote_;
+      join_table_name_quote_ = other.join_table_name_quote_;
       package_name_quote_ = other.package_name_quote_;
       database_name_quote_ = other.database_name_quote_;
+      join_database_name_quote_ = other.join_database_name_quote_;
       alias_name_quote_ = other.alias_name_quote_;
+      join_alias_name_quote_ = other.join_alias_name_quote_;
       col_name_quote_ = other.col_name_quote_;
       text_ps_inner_stmt_type_ = other.text_ps_inner_stmt_type_;
       is_multi_semicolon_in_stmt_ = other.is_multi_semicolon_in_stmt_;
@@ -866,6 +890,9 @@ struct ObSqlParseResult
       table_name_.assign_ptr(dml_buf_.table_name_buf_, other.table_name_.length());
       package_name_.assign_ptr(dml_buf_.package_name_buf_, other.package_name_.length());
       database_name_.assign_ptr(dml_buf_.database_name_buf_, other.database_name_.length());
+      join_table_name_ = other.join_table_name_;
+      join_table_alias_name_ = other.join_table_alias_name_;
+      join_database_name_ = other.join_database_name_;
       alias_name_.assign_ptr(dml_buf_.alias_name_buf_, other.alias_name_.length());
       col_name_.assign_ptr(internal_select_buf_.col_name_buf_, other.col_name_.length());
       part_name_.assign_ptr(part_name_buf_.part_name_buf_, other.part_name_.length());
@@ -934,14 +961,20 @@ struct ObSqlParseResult
     internal_select_buf_ = other.internal_select_buf_;
     part_name_buf_ = other.part_name_buf_;
     table_name_quote_ = other.table_name_quote_;
+    join_table_name_quote_ = other.join_table_name_quote_;
     package_name_quote_ = other.package_name_quote_;
     database_name_quote_ = other.database_name_quote_;
+    join_database_name_quote_ = other.join_database_name_quote_;
     alias_name_quote_ = other.alias_name_quote_;
+    join_alias_name_quote_ = other.join_alias_name_quote_;
     col_name_quote_ = other.col_name_quote_;
     is_multi_semicolon_in_stmt_ = other.is_multi_semicolon_in_stmt_;
     table_name_.assign_ptr(dml_buf_.table_name_buf_, other.table_name_.length());
     package_name_.assign_ptr(dml_buf_.package_name_buf_, other.package_name_.length());
     database_name_.assign_ptr(dml_buf_.database_name_buf_, other.database_name_.length());
+    join_table_name_ = other.join_table_name_;
+    join_table_alias_name_ = other.join_table_alias_name_;
+    join_database_name_ = other.join_database_name_;
     alias_name_.assign_ptr(dml_buf_.alias_name_buf_, other.alias_name_.length());
     col_name_.assign_ptr(internal_select_buf_.col_name_buf_, other.col_name_.length());
     part_name_.assign_ptr(part_name_buf_.part_name_buf_, other.part_name_.length());
@@ -988,6 +1021,9 @@ private:
   ObProxyDualParseResult dual_result_;
   ObDmlBuf origin_dml_buf_;
   // dml info
+  ObConfigVariableString join_table_name_;
+  ObConfigVariableString join_table_alias_name_;
+  ObConfigVariableString join_database_name_;
   common::ObString table_name_;
   common::ObString package_name_;
   common::ObString alias_name_;
@@ -1014,9 +1050,12 @@ private:
   ObProxyBasicStmtSubType cmd_sub_type_;
   ObProxyErrorStmtType cmd_err_type_;
   ObProxyParseQuoteType table_name_quote_;
+  ObProxyParseQuoteType join_table_name_quote_;
   ObProxyParseQuoteType package_name_quote_;
   ObProxyParseQuoteType database_name_quote_;
+  ObProxyParseQuoteType join_database_name_quote_;
   ObProxyParseQuoteType alias_name_quote_;
+  ObProxyParseQuoteType join_alias_name_quote_;
   ObProxyParseQuoteType col_name_quote_;
   ObProxyBasicStmtType text_ps_inner_stmt_type_;
   common::ObConsistencyLevel hint_consistency_level_;
@@ -1133,6 +1172,18 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
     database_name_.reset();
   }
 
+  if (!join_table_name_.is_empty()) {
+    join_table_name_.reset();
+  }
+
+  if (!join_table_alias_name_.is_empty()) {
+    join_table_alias_name_.reset();
+  }
+
+  if (!join_database_name_.is_empty()) {
+    join_database_name_.reset();
+  }
+
   if (!alias_name_.empty()) {
     alias_name_.reset();
   }
@@ -1193,13 +1244,12 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   parsed_length_ = 0;
   text_ps_inner_stmt_type_ = OBPROXY_T_INVALID;
   table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
+  join_table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   package_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   database_name_quote_ = OBPROXY_QUOTE_T_INVALID;
+  join_database_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   alias_name_quote_ = OBPROXY_QUOTE_T_INVALID;
-  col_name_quote_ = OBPROXY_QUOTE_T_INVALID;
-  table_name_quote_ = OBPROXY_QUOTE_T_INVALID;
-  database_name_quote_ = OBPROXY_QUOTE_T_INVALID;
-  alias_name_quote_ = OBPROXY_QUOTE_T_INVALID;
+  join_alias_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   col_name_quote_ = OBPROXY_QUOTE_T_INVALID;
   stmt_type_ = OBPROXY_T_INVALID;
   cmd_sub_type_ = OBPROXY_T_SUB_INVALID;

@@ -71,6 +71,7 @@ class ObTableQueryAsyncEntry;
 class ObTableGroupEntry;
 class ObIndexEntry;
 class ObRpcReqCtx;
+class ObTabletLsEntry;
 class ObRpcRedisInfo;
 
 typedef common::ObSEArray<common::ObString, COMMON_REDIS_ARGS_COUNT> ARR_ARGS;
@@ -283,6 +284,7 @@ class ObRpcOBKVInfo
   static const int SCHEMA_LENGTH = 100;
 public:
   enum OBKVInfoFlags {
+    NON_PARTITION_TABLE_FLAG     = 34,
     HBASE_FLAG                   = 33,
     EMPTY_QUERY_RESULT_FLAG      = 32,
     DIRECT_LOAD_FLAG             = 31,
@@ -314,15 +316,18 @@ public:
   };
 public:
   ObRpcOBKVInfo() :request_id_(0), server_request_id_(0), is_first_direct_load_request_(false), is_inner_request_(false),
-                   is_internal_rpc_request_(false), is_internal_rpc_request_has_done_(false),
-                   cluster_name_(), tenant_name_(), user_name_(), table_name_(), database_name_(), full_username_(),
+                   is_internal_rpc_request_(false), is_internal_rpc_request_has_done_(false), is_rpc_request_with_partition_id_(false),
+                   is_table_group_request_(false), is_server_support_distributed_execute_(false), is_single_partition_table_(false),
+                   cluster_name_(), tenant_name_(), user_name_(), table_name_(), database_name_(), full_username_(), tablegroup_new_table_name_(),
                    cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), ls_id_(common::ObLSID::INVALID_LS_ID), client_info_(),
                    server_info_(), route_policy_(1), cs_read_consistency_(0), is_proxy_route_policy_set_(false),
                    is_read_consistency_set_(false), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY), pcode_(obrpc::OB_INVALID_RPC_CODE),
                    flags_(0), rpc_origin_error_code_(0), rpc_request_retry_last_begin_(0), rpc_request_retry_times_(0),
                    rpc_request_reroute_moved_times_(0), query_async_entry_(NULL), rpc_ctx_(NULL), data_table_id_(OB_INVALID_ID),
-                   index_name_(), index_entry_(NULL), index_table_name_(), need_add_index_entry_into_cache_(false), tablegroup_entry_(NULL), dummy_ldc_(), dummy_entry_(NULL),
-                   is_set_rpc_trace_id_(false), rpc_trace_id_(), credential_(), inner_req_retries_(0), is_rpc_req_stat_recorded_(false)
+                   index_name_(), index_entry_(NULL), index_table_name_(), need_add_index_entry_into_cache_(false), tablegroup_entry_(NULL),
+                   tablet_ls_entry_(NULL), dummy_ldc_(), dummy_entry_(NULL),
+                   is_set_rpc_trace_id_(false), rpc_trace_id_(), credential_(), inner_req_retries_(0), is_rpc_req_stat_recorded_(false),
+                   is_rpc_ls_entry_need_retry_(false)
                    { index_table_name_buf_[0] = '\0'; }
   ~ObRpcOBKVInfo() {}
 
@@ -332,17 +337,21 @@ public:
 
   bool need_parse_response_fully() const;
 
-  void retry_reset() {
+  void retry_reset(bool clean_flag) {
     set_error_resp(false);
     set_resp_completed(false);
     set_resp_reroute_info(false);
     set_need_retry(false);
     set_need_retry_with_global_index(false);
     set_definitely_single(false);
+    set_non_partition_table(false);
+    set_rpc_ls_entry_need_retry(false);
 
-    partition_id_ = OB_INVALID_INDEX;
-    table_id_ = 0;
-    ls_id_ = common::ObLSID::INVALID_LS_ID; 
+    if (clean_flag) {
+      partition_id_ = OB_INVALID_INDEX;
+      table_id_ = 0;
+      ls_id_ = common::ObLSID::INVALID_LS_ID;
+    } //do nothing
   }
 
   // common::ObString get_req_trace_id(); //打印trace id使用
@@ -382,6 +391,7 @@ public:
   void set_need_retry_with_global_index(bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::NEED_GLOBAL_INDEX_RETRY_FLAG), flag); }
   void set_direct_load_req(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::DIRECT_LOAD_FLAG), flag);}
   void set_empty_query_result(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::EMPTY_QUERY_RESULT_FLAG), flag);}
+  void set_non_partition_table(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::NON_PARTITION_TABLE_FLAG), flag);}
 
   /* flag for response */
   void set_resp(bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::RESP_FLAG), flag); }
@@ -393,7 +403,9 @@ public:
   void set_query_with_index(bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::QUERY_WITH_INDEX), flag); }
   void set_hbase_request(bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::HBASE_FLAG), flag); }
   void set_first_direct_load_request(bool flag) { is_first_direct_load_request_ = flag; }
+  void set_table_group_request(bool flag) { is_table_group_request_ = flag; }
   void set_pcode(obrpc::ObRpcPacketCode pcode) { pcode_ = pcode; }
+  void set_rpc_ls_entry_need_retry(bool flag) { is_rpc_ls_entry_need_retry_ = flag; }
 
   /* flag for request */
   bool is_auth() const { return get_flag(static_cast<int>(OBKVInfoFlags::AUTH_FLAG)); }
@@ -409,7 +421,9 @@ public:
   bool is_direct_load_req() const { return get_flag(static_cast<int>(OBKVInfoFlags::DIRECT_LOAD_FLAG)); }
   bool is_empty_query_result() const { return get_flag(static_cast<int>(OBKVInfoFlags::EMPTY_QUERY_RESULT_FLAG)); }
   bool is_hbase_request() const { return get_flag(static_cast<int>(OBKVInfoFlags::HBASE_FLAG)); }
+  bool is_non_partition_table() const { return get_flag(static_cast<int>(OBKVInfoFlags::NON_PARTITION_TABLE_FLAG)); }
   bool is_first_direct_load_request() const { return is_first_direct_load_request_; }
+  bool is_table_group_request() const { return is_table_group_request_; }
 
   bool is_need_retry_with_query_async() const;
 
@@ -424,20 +438,37 @@ public:
   bool is_global_index_route() const { return get_flag(static_cast<int>(OBKVInfoFlags::GLOBAL_INDEX_ROUTE_FLAG)); }
   bool is_query_with_index() const { return get_flag(static_cast<int>(OBKVInfoFlags::QUERY_WITH_INDEX)); }
   bool is_async_query_request() const { return obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == pcode_; }
+  bool is_lsop_request() const { return obrpc::OB_TABLE_API_LS_EXECUTE == pcode_; }
+  bool is_query_request() const { return obrpc::OB_TABLE_API_EXECUTE_QUERY == pcode_ || obrpc::OB_TABLE_API_QUERY_AND_MUTATE == pcode_ || obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == pcode_; }
   bool is_inner_req_retrying() const { return is_inner_request_ && inner_req_retries_ > 0; }
   bool is_internal_get_partition_request() const { return obrpc::OB_GET_PARTITIONS == pcode_; }
+  bool is_need_ls_id() const { return is_lsop_request() && (!is_inner_request_|| is_inner_req_retrying()) && !is_server_support_distributed_execute_; } //TODO need add other condition for next
+  bool is_rpc_ls_entry_need_retry() const { return is_rpc_ls_entry_need_retry_; }
+
+  bool     is_not_master_error() const {  //used by sub request to retry(just for route error);
+    return get_error_code() == OB_NOT_MASTER
+            || get_error_code() == OB_TABLET_NOT_EXIST
+            || get_error_code() == OB_LS_NOT_EXIST
+            || get_error_code() == OB_PARTITION_NOT_EXIST
+            ;
+}
 
   int32_t get_error_code() const { return rpc_origin_error_code_; }
   obrpc::ObRpcPacketCode get_pcode() const { return pcode_; }
   inline bool is_request_has_retried() const { return rpc_request_retry_times_ > 0 || rpc_request_reroute_moved_times_ > 0; }
 
   void set_meta_flag(uint16_t meta_flag) { flags_ = ((flags_ & (~0xFFFFULL)) | static_cast<uint64_t>(meta_flag)); }
-  //TODO add one response flag need clear it in reset_odp_resp_flag()
-  void reset_odp_resp_flag() { set_bad_routing(false); set_error_resp(false); set_resp_completed(false); set_resp_reroute_info(false); set_need_retry(false); }
+  //TODO add one response flag need clear it in reset_odp_resp_flag(), just set for response flag inited by response from observer:
+  //  1.not to update flag which read from observer meta (<16)
+  //  2.not to update flag which used by request
+  void reset_odp_resp_flag() { set_error_resp(false); set_resp_completed(false); set_resp_reroute_info(false); set_need_retry(false); }
   // const common::ObString &get_server_trace_id() { return server_trace_id_; }
 
   int generate_index_table_name();
+  int init_and_set_tablegroup_table_new_name(const ObString &table_name);
+  void free_table_group_table_new_name();
   void set_route_entry_dirty();
+  void set_tablet_ls_entry_dirty();
 
   bool is_rpc_req_can_retry() const
   {
@@ -445,11 +476,14 @@ public:
     bool route_error_retry = is_need_retry();
     bool global_index_retry = is_need_retry_with_global_index();
     bool query_async_retry = is_need_retry_with_query_async();
+    bool rpc_ls_entry_need_retry = is_rpc_ls_entry_need_retry();
     uint32_t sub_req_retry_limit = obutils::get_global_proxy_config().rpc_sub_req_max_retries;
     if (!is_inner_request_) {
-      bret = (route_error_retry || global_index_retry || query_async_retry);
+      bret = (route_error_retry || global_index_retry || query_async_retry || rpc_ls_entry_need_retry);
     } else {
-      bret = (inner_req_retries_ < sub_req_retry_limit && pcode_ == obrpc::OB_TABLE_API_LS_EXECUTE && route_error_retry);
+      bret = (inner_req_retries_ < sub_req_retry_limit
+          && ((pcode_ == obrpc::OB_TABLE_API_LS_EXECUTE && route_error_retry)
+              || (pcode_ != obrpc::OB_TABLE_API_LS_EXECUTE && route_error_retry && (is_not_master_error() || 0 == get_error_code()))));
     }
     return bret;
   }
@@ -470,6 +504,9 @@ public:
   bool is_internal_rpc_request_;       // obproxy收到的rpc request，该flag表示obproxy内部执行完返回
   bool is_internal_rpc_request_has_done_; //
   bool is_rpc_request_with_partition_id_;
+  bool is_table_group_request_;         //only used for hbase column family group
+  bool is_server_support_distributed_execute_;
+  bool is_single_partition_table_;
 
   common::ObString cluster_name_;
   common::ObString tenant_name_;
@@ -477,6 +514,7 @@ public:
   common::ObString table_name_;
   common::ObString database_name_;
   common::ObString full_username_;
+  common::ObString tablegroup_new_table_name_;
 
   int64_t cluster_id_;
   int64_t tenant_id_;
@@ -517,6 +555,9 @@ public:
 
   // used by hbase tablegroup
   ObTableGroupEntry *tablegroup_entry_;
+  char tablegroup_new_table_name_buf_[OB_MAX_TABLE_NAME_LENGTH];
+  //used by LSOP which less than observer-4.3.5.bp2
+  ObTabletLsEntry *tablet_ls_entry_;
 
   // dummy_entry and dummy ldc
   ObLDCLocation dummy_ldc_;
@@ -529,6 +570,7 @@ public:
 
   uint32_t inner_req_retries_;
   bool is_rpc_req_stat_recorded_;
+  bool is_rpc_ls_entry_need_retry_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObRpcOBKVInfo);
 };
@@ -541,10 +583,10 @@ public:
   {
     RPC_REQ_CLIENT_INIT = 0,
     RPC_REQ_CLIENT_REQUEST_READ,
+    RPC_REQ_CLIENT_INNER_REQUEST,
     RPC_REQ_CLIENT_REQUEST_HANDLING,
     RPC_REQ_CLIENT_RESPONSE_HANDLING,
     RPC_REQ_CLIENT_RESPONSE_SEND,
-    RPC_REQ_CLIENT_INNER_REQUEST,
     RPC_REQ_CLIENT_DONE,
     RPC_REQ_CLIENT_INNER_REQUEST_DONE,
     REDIS_REQ_CLIENT_DONE,
@@ -652,6 +694,7 @@ public:
   void reset(); //only reset not release this object
   void finish(); // update stat and clean request sm
   void inner_request_cleanup();   //Called when the subtask ends to clean up all subtask data
+  void server_handle_request_failed();   // server rpc handle request failed
 
   char    *get_request_buf() { return request_buf_; }
   char    *get_request_inner_buf() { return request_inner_buf_; }
@@ -669,6 +712,8 @@ public:
   bool     is_use_request_inner_buf() const { return is_use_request_inner_buf_; }
   bool     is_use_response_inner_buf() const { return is_use_response_inner_buf_; }
   bool     is_server_failed() const { return is_server_failed_; }
+  bool     is_in_congestion_retry() const { return is_in_congestion_retry_; }
+
   int      get_rpc_req_error_code() const { return obkv_info_.rpc_origin_error_code_; }
   obkv::ObProxyRpcType get_rpc_type() const { return rpc_type_; }
   ObRpcOBKVInfo &get_obkv_info() { return obkv_info_; }
@@ -684,16 +729,31 @@ public:
       }
     }
   }
+  bool is_in_server_entry_sending() {
+     ServerNetState &sstate = get_snet_state() ;
+     return sstate > ObRpcReq::ServerNetState::RPC_REQ_SERVER_INIT && sstate < RPC_REQ_SERVER_REQUST_SENDED;
+  }
+
+  bool is_has_server_sended() {
+    ServerNetState &sstate = get_snet_state() ;
+    return sstate >= ObRpcReq::ServerNetState::RPC_REQ_SERVER_REQUST_SENDING;
+ }
 
   void retry_reset() {
     // Retrying will no longer reset the error code, but retain the error code.
     is_response_ = false;
     is_server_failed_ = false;
+    is_in_congestion_retry_ = false;
     is_server_addr_set_ = false;
     server_add_.reset();
     server_entry_send_retry_times_ = 0;
 
-    obkv_info_.retry_reset();
+    // OB_TABLE_API_BATCH_EXECUTE  and QUERY could not change partition info
+    // LSOP could not change if has not send to server
+    bool could_not_clean_flag = is_inner_request() && (get_obkv_info().get_pcode() != obrpc::OB_TABLE_API_LS_EXECUTE
+                                  || ((get_obkv_info().get_pcode() == obrpc::OB_TABLE_API_LS_EXECUTE) && !is_has_server_sended()));
+    obkv_info_.retry_reset(!could_not_clean_flag);
+    snet_state_ = RPC_REQ_SERVER_INIT; //reclean
   }
 
   bool is_valid() const { return !is_invalid(); }
@@ -723,6 +783,9 @@ public:
     if(is_server_failed_) {
       congest_status_ = SERVER_CONNECT_ERROR;
     } 
+  }
+  void set_in_congestion_retry(bool flag) {
+    is_in_congestion_retry_ = flag;
   }
   void  set_server_addr_set(bool flag) { is_server_addr_set_ = flag; }
   void  set_server_entry_send_retry_times (int64_t server_entry_send_retry_times) {
@@ -825,6 +888,7 @@ public:
                                int64_t cont_index, int64_t partition_id, int64_t ls_id  = 0);
   bool is_sub_req_inited() const { return is_sub_req_inited_; }
   void set_sub_req_inited(const bool is_sub_req_inited) { is_sub_req_inited_ = is_sub_req_inited; }
+  bool is_could_send_next_node_retry() { return obkv_info_.is_bad_routing() && (obkv_info_.get_error_code() == 0 || obkv_info_.get_error_code() == OB_NOT_MASTER); }
 
   DECLARE_TO_STRING;
 
@@ -874,6 +938,7 @@ private:
   bool is_use_request_inner_buf_;
   bool is_use_response_inner_buf_;
   bool is_server_failed_;
+  bool is_in_congestion_retry_;
   obkv::ObProxyRpcType rpc_type_;
   ObConnectionAttributes server_add_;
   event::ObEThread *created_thread_;
@@ -1084,6 +1149,7 @@ inline int ObRpcReq::alloc_request_buf(uint64_t len)
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
     } else {
+      MEMSET(buf, '\0', len);
       obkv::get_global_rpc_throttle().update_holding_resource(len);
       request_buf_ = buf;
       request_buf_len_ = len;
@@ -1154,6 +1220,7 @@ inline int ObRpcReq::alloc_request_inner_buf(uint64_t len)
       ret = common::OB_ALLOCATE_MEMORY_FAILED;
       PROXY_LOG(EDIAG, "fail to alloc mem", K(len), K(ret));
     } else {
+      MEMSET(buf, '\0', len);
       obkv::get_global_rpc_throttle().update_holding_resource(len);
       request_inner_buf_ = buf;
       request_inner_buf_len_ = len;
@@ -1388,7 +1455,7 @@ inline int ObRpcReq::init_rpc_redis_info()
     PROXY_LOG(EDIAG, "fail to init rpc_redis_info", K(len), K(ret), K(buf));
   } else if (OB_FAIL(redis_info->alloc_request_buf(OB_RPC_REDIS_DEFAULT_BUF_SIZE))) {
     PROXY_LOG(WDIAG, "fail to init rpc_redis_info request buf", K(len), K(ret), K(buf));
-  } else if (OB_ISNULL(redis_arr_args = new (xbuf) ARR_ARGS())) {
+  } else if (OB_ISNULL(redis_arr_args = new (xbuf) ARR_ARGS(common::ObModIds::OB_RPC_TABLE_REDIS, sizeof(ObString) * COMMON_REDIS_ARGS_COUNT))) {
     ret = common::OB_ERR_UNEXPECTED;
     PROXY_LOG(EDIAG, "fail to init redis_arr_args", K(len), K(ret), K(xbuf));
   } else {

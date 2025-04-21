@@ -181,7 +181,8 @@ class ObRpcRedisCmdInfo
 {
 public:
   ObRpcRedisCmdInfo() : redis_cmd_arr_len_(0), next_bulk_str_idx_(0), data_len_(0),
-  valid_data_len_(0), data_pos_(0), redis_bulk_str_arr_(), redis_bulk_str_len_arr_()
+  valid_data_len_(0), data_pos_(0), redis_bulk_str_arr_(common::ObModIds::OB_RPC_TABLE_REDIS, COMMON_REDIS_ARGS_COUNT * sizeof(uint64_t)),
+      redis_bulk_str_len_arr_(common::ObModIds::OB_RPC_TABLE_REDIS, COMMON_REDIS_ARGS_COUNT * sizeof(uint32_t))
   {}
   ~ObRpcRedisCmdInfo() {}
   void reset() {

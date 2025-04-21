@@ -33,7 +33,6 @@ namespace obkv
 OB_UNIS_DEF_SERIALIZE(ObRedisOperationSimplifiedRequest,
                     credential_,
                     redis_db_,
-                    ls_id_,
                     tablet_id_,
                     table_id_,
                     reserved_,
@@ -42,7 +41,6 @@ OB_UNIS_DEF_SERIALIZE(ObRedisOperationSimplifiedRequest,
 OB_UNIS_DEF_SERIALIZE_SIZE(ObRedisOperationSimplifiedRequest,
                     credential_,
                     redis_db_,
-                    ls_id_,
                     tablet_id_,
                     table_id_,
                     reserved_,
@@ -490,11 +488,12 @@ int ObRpcRedisCommonRequest::calc_partition_id(common::ObArenaAllocator &allocat
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("invalid rowkey value to handle", K(ret), "count", rowkey_.count(), K_(rowkey));
   } else {
-    ROWKEY_VALUE real_rowkey_value; // with db
-    ROWKEY_COLUMN rowkey_columns;  // mock , redis do not need columns
+    // ROWKEY_VALUE real_rowkey_value(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj)); // with db
+    ROWKEY_VALUE_OBJ(real_rowkey_value);
+    ROWKEY_COLUMN_OBJ(rowkey_columns);  // mock , redis do not need columns
+
     ObObj db_value(ObObjType::ObUInt64Type);
     db_value.set_uint64(redis_db_);
-    int64_t ls_id;
 
     ObString db_name("db");
     rowkey_columns.push_back(db_name);
@@ -519,8 +518,7 @@ int ObRpcRedisCommonRequest::calc_partition_id(common::ObArenaAllocator &allocat
                                                                                real_rowkey_value,
                                                                                rowkey_columns,
                                                                                part_info,
-                                                                               partition_id,
-                                                                               ls_id))) {
+                                                                               partition_id))) {
         LOG_WDIAG("fail to call calculate_partition_id_with_rowkey", K(ret), K(i));
       } else {
         real_rowkey_value.reset();
@@ -532,7 +530,7 @@ int ObRpcRedisCommonRequest::calc_partition_id(common::ObArenaAllocator &allocat
     if (OB_SUCC(ret)) {
       if (1 == partition_ids_.count()) {
         obkv_info.set_definitely_single(true);
-        obkv_info.set_ls_id(ls_id);
+        // obkv_info.set_ls_id(ls_id);
         obkv_info.set_partition_id(partition_id);
       } else if (partition_ids_.count() > 1) {
         obkv_info.set_shard(true);
@@ -560,11 +558,12 @@ int ObRpcRedisGlobalRequest::calc_partition_id(common::ObArenaAllocator &allocat
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("invalid rowkey value to handle", K(ret), "count", rowkey_.count(), K_(rowkey));
   } else {
-    ROWKEY_VALUE real_rowkey_value; // with db
-    ROWKEY_COLUMN rowkey_columns;  // mock , redis do not need columns
+    // ROWKEY_VALUE real_rowkey_value(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj)); // with db
+    ROWKEY_VALUE_OBJ(real_rowkey_value);
+    ROWKEY_COLUMN_OBJ(rowkey_columns);  // mock , redis do not need columns
     ObObj db_value(ObObjType::ObUInt64Type);
     db_value.set_uint64(redis_db_);
-    int64_t ls_id;
+    // int64_t ls_id;
 
     ObString db_name("db");
     rowkey_columns.push_back(db_name);
@@ -587,8 +586,7 @@ int ObRpcRedisGlobalRequest::calc_partition_id(common::ObArenaAllocator &allocat
                                                                                real_rowkey_value,
                                                                                rowkey_columns,
                                                                                part_info,
-                                                                               partition_id,
-                                                                               ls_id))) {
+                                                                               partition_id))) {
         LOG_WDIAG("fail to call calculate_partition_id_with_rowkey", K(ret), K(i));
       } else {
         real_rowkey_value.reset();
@@ -600,7 +598,7 @@ int ObRpcRedisGlobalRequest::calc_partition_id(common::ObArenaAllocator &allocat
     if (OB_SUCC(ret)) {
       if (1 == partition_ids_.count()) {
         obkv_info.set_definitely_single(true);
-        obkv_info.set_ls_id(ls_id);
+        // obkv_info.set_ls_id(ls_id);
         obkv_info.set_partition_id(partition_id);
       } else if (partition_ids_.count() > 1) {
         obkv_info.set_shard(true);

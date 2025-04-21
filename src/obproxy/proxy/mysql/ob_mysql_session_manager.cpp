@@ -279,11 +279,11 @@ int ObServerSessionPool::event_handler(int event, void *data)
   }
   
   if (OB_FAIL(server_session_err_code)) {
+    LOG_WDIAG("client session close because of a key server session close", KPC(ss), K(server_session_err_code));
     ss->get_client_session()->set_closed_key_server_session(ss);
     if (OB_FAIL(ss->get_client_session()->async_disconnect_by_internal_reason(server_session_err_code))) {
-      LOG_WDIAG("fail to close client session", "client session", ss->get_client_session(), K(ret));
+      LOG_WDIAG("fail to close client session", "client session", ss->get_client_session(), KPC(ss), K(ret));
     }
-    LOG_DEBUG("client session close because of a key server session close");
   }
 
   return VC_EVENT_NONE;

@@ -61,9 +61,11 @@ public:
     if (sub_req_retry_times <=0 ) {
       sub_index_id_ = index_id;
     } else {
-      uint64_t mask24 = 0xFFFFFF; // 24 位
+      uint64_t mask24 = 0xFFFFFFFF; // 32 位
+      uint64_t maxPNum = 10000000000;
       uint64_t origin_index_id = index_id & mask24;
-      sub_index_id_ = (sub_req_retry_times << 24);
+      // sub_index_id_ = (sub_req_retry_times << 24);
+      sub_index_id_ *= maxPNum;
       sub_index_id_ |= origin_index_id;
     }
   }

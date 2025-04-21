@@ -39,6 +39,7 @@ class ObTableEntry;
 class ObRoutineEntry;
 class ObPartitionEntry;
 class ObTableGroupEntry;
+class ObTabletLsEntry;
 class ObRouteUtils
 {
 public:
@@ -141,6 +142,18 @@ public:
                                             ObTableGroupEntry *&entry,
                                             const int64_t cluster_version);
 
+  static int get_tablet_ls_entry_sql(char *sql_buf,
+                                            const int64_t buf_len,
+                                            int64_t tenant_id,
+                                            int64_t table_id,
+                                            const int64_t cluster_version);
+
+  static int fetch_one_tablet_ls_entry_info(obproxy::ObResultSetFetcher &rs_fetcher,
+                                            const int64_t cr_version,
+                                            const int64_t cr_id,
+                                            ObTabletLsEntry *&entry,
+                                            const int64_t cluster_version);
+
 private:
   static int fetch_part_key(obproxy::ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info,
                             const int64_t cluster_version);
@@ -151,6 +164,9 @@ private:
   static int add_generated_part_key(const common::ObString &func_expr,
                                     const int64_t generated_key_idx,
                                     ObProxyPartInfo &part_info);
+  static int add_part_key_expr(const ObString &part_key_extra,
+                               ObProxyPartInfo &part_info,
+                               ObProxyPartKey &part_key);
   static int fetch_part_option(obproxy::ObResultSetFetcher &rs_fetcher, ObProxyPartInfo &part_info);
 };
 

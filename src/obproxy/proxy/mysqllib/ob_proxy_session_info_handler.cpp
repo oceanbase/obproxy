@@ -180,7 +180,7 @@ int ObProxySessionInfoHandler::rewrite_query_req_by_sharding(ObClientSessionInfo
   ObRequestAnalyzeCtx target_ctx;
   target_ctx.request_phase_ = REQ_PHASE_COMMAND;
   target_ctx.reader_ = &buffer_reader;
-  target_ctx.request_buffer_length_ = 4096;
+  target_ctx.request_buffer_length_ = get_global_proxy_config().request_buffer_length;
   target_ctx.cached_variables_ = &client_info.get_cached_variables();
   target_ctx.is_sharding_mode_ = true;
   target_ctx.drop_origin_db_table_name_ = true;

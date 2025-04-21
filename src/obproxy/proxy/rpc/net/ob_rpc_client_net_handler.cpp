@@ -65,7 +65,7 @@ ObMutex g_debug_rpc_cs_list_mutex;
 ObRpcClientNetHandler::ObRpcClientNetHandler()
     : ObRpcNetHandler(),
       vc_ready_killed_(false), half_close_(false),
-      cluster_resource_(NULL), cluster_version_(0),
+      cluster_resource_(NULL), cluster_version_(0), timeout_event_(OB_TIMEOUT_UNKNOWN_EVENT), timeout_record_(0),
       dummy_entry_(NULL), is_need_update_dummy_entry_(false),
       dummy_ldc_(), dummy_entry_valid_time_ns_(0),
       conn_channel_id_(0), conn_unique_id_(0), conn_seq_(0),
@@ -394,7 +394,7 @@ int ObRpcClientNetHandler::get_thread_init_cs_id(uint32_t &thread_init_cs_id,
   int ret = OB_SUCCESS;
   const uint32_t proxy_head_bits      = 9;//MARKS + PROXY_ID
   const uint32_t upgrade_ver_bits     = 1;
-  const uint32_t thread_id_bits       = 32 - __builtin_clz(static_cast<uint32_t>(g_event_processor.thread_count_for_type_[ET_CALL] - 1));
+  const uint32_t thread_id_bits       = 32 - get_thread_id_bits();
   const uint32_t local_seq_bits       = 32 - proxy_head_bits - upgrade_ver_bits - thread_id_bits;
 
   const uint32_t proxy_id_offset      = 32 - proxy_head_bits;
@@ -405,7 +405,7 @@ int ObRpcClientNetHandler::get_thread_init_cs_id(uint32_t &thread_init_cs_id,
   const uint32_t upgrade_ver   = static_cast<uint32_t>(0x1 & get_global_hot_upgrade_info().upgrade_version_); //only use the tail bits
 
   uint32_t tmp_thread_id = 0;
-  if (thread_id < 0 || thread_id >= g_event_processor.thread_count_for_type_[ET_CALL]) {// use curr ethread
+  if (thread_id < 0 || thread_id >= g_event_processor.thread_count_for_type_[ET_NET]) {// use curr ethread
     ObEThread &ethread = self_ethread();
     tmp_thread_id = static_cast<uint32_t>(ethread.id_);
   } else {// use assigned ethread
@@ -719,7 +719,8 @@ int ObRpcClientNetHandler::state_keep_alive(int event, void *data)
           }
         } else {
           if (OB_FAIL(state_client_request_read(event, data))) { //first
-            PROXY_CS_LOG(WDIAG, "fail to call state_client_request_read", K_(cs_id), K(ret));
+          // if fail, will do io close, can not print cs_id
+            PROXY_CS_LOG(WDIAG, "fail to call state_client_request_read", K(ret));
           }
         }
         break;
@@ -745,25 +746,38 @@ int ObRpcClientNetHandler::state_keep_alive(int event, void *data)
       }
       // fallthrough
       case VC_EVENT_ERROR:
+      case VC_EVENT_NET_READ_TIMEOUT:
+      case VC_EVENT_NET_WRITE_TIMEOUT:
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT: {
         if (MCS_HALF_CLOSED == read_state_) {
           half_close_ = false;
         }
+        ObIpEndpoint client_ip;
+        if (NULL != rpc_net_vc_) {
+          if (OB_UNLIKELY(!ops_ip_copy(client_ip, rpc_net_vc_->get_remote_addr()))) {
+            PROXY_CS_LOG(WDIAG, "fail to ops_ip_copy client_ip", K_(cs_id), K(rpc_net_vc_));
+          }
+        }
         // Keep-alive timed out
         if (VC_EVENT_INACTIVITY_TIMEOUT == event) {
-          ObIpEndpoint client_ip;
-          if (NULL != rpc_net_vc_) {
-            if (OB_UNLIKELY(!ops_ip_copy(client_ip, rpc_net_vc_->get_remote_addr()))) {
-              PROXY_CS_LOG(WDIAG, "fail to ops_ip_copy client_ip", K_(cs_id), K(rpc_net_vc_));
-            }
-          }
-
           PROXY_CS_LOG(WDIAG, "client connection is idle over wait_timeout, now we will close it.",
-                     //  "wait_timeout(s)", hrtime_to_sec(session_info_.get_wait_timeout()),
+                      "wait_timeout(s)", hrtime_to_sec(rpc_net_vc_->get_inactivity_timeout()),
                        K_(cs_id),
                        K(client_ip),
                        "event", ObRpcReqDebugNames::get_event_name(event));
+        } else if (VC_EVENT_NET_READ_TIMEOUT == event) {
+          PROXY_CS_LOG(WDIAG, "client connection net read timeout, now we will close it.",
+                       "net read timeout(s)", hrtime_to_sec(rpc_net_vc_->get_net_read_timeout()),
+                       K_(cs_id),
+                       K(client_ip),
+                       "event", ObRpcReqDebugNames::get_event_name(event));
+        } else if (VC_EVENT_NET_WRITE_TIMEOUT == event) {
+          PROXY_CS_LOG(WDIAG, "client connection net write timeout, now we will close it.",
+                      "net write timeout(s)", hrtime_to_sec(rpc_net_vc_->get_net_write_timeout()),
+                      K_(cs_id),
+                      K(client_ip),
+                      "event", ObRpcReqDebugNames::get_event_name(event));
         }
 
         do_io_close();
@@ -1509,7 +1523,7 @@ int ObRpcClientNetHandlerMap::erase(const uint32_t &id)
 int init_rpc_net_cs_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_rpc_net_cs_map_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObRpcClientNetHandlerMap", K(i), K(ret));
@@ -1521,7 +1535,7 @@ int init_rpc_net_cs_map_for_thread()
 int init_rpc_net_cs_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->rpc_net_cs_map_
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][index]->rpc_net_cs_map_
                 = new (std::nothrow) ObRpcClientNetHandlerMap())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObRpcClientNetHandlerMap", K(index), K(ret));

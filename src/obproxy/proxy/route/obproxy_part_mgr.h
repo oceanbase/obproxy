@@ -72,14 +72,12 @@ public:
                             common::ObPartDesc *sub_part_desc_ptr,
                             common::ObIArray<int64_t> &part_ids,
                             common::ObPartDescCtx &ctx,
-                            common::ObIArray<int64_t> &tablet_ids,
-                            common::ObIArray<int64_t> &ls_ids);
+                            common::ObIArray<int64_t> &tablet_ids);
   int get_first_part_for_obkv(common::ObNewRange &range,
                               common::ObIAllocator &allocator,
                               common::ObIArray<int64_t> &part_ids,
                               common::ObPartDescCtx &ctx,
-                              common::ObIArray<int64_t> &tablet_ids,
-                              common::ObIArray<int64_t> &ls_ids);
+                              common::ObIArray<int64_t> &tablet_ids);
   int get_sub_part_by_random(const int64_t rand_num, 
                              common::ObPartDesc *sub_part_desc_ptr,
                              common::ObIArray<int64_t> &part_ids,
@@ -94,14 +92,16 @@ public:
                       const bool is_template_table,
                       const ObProxyPartKeyInfo &key_info,
                       ObResultSetFetcher *rs_fetcher,
-                      const int64_t cluster_version);
+                      const int64_t cluster_version,
+                      int64_t &shcema_version);
   int build_sub_hash_part_with_non_template(const bool is_oracle_mode,
                                             const share::schema::ObPartitionFuncType part_func_type,
                                             const int64_t part_space,
                                             const int64_t part_col_num,
                                             const ObProxyPartKeyInfo &key_info,
                                             ObResultSetFetcher &rs_fetcher,
-                                            const int64_t cluster_version);
+                                            const int64_t cluster_version,
+                                            int64_t &schema_version);
   int build_key_part(const share::schema::ObPartitionLevel part_level,
                      const share::schema::ObPartitionFuncType part_func_type,
                      const int64_t part_num,
@@ -110,13 +110,15 @@ public:
                      const bool is_template_table,
                      const ObProxyPartKeyInfo &key_info,
                      ObResultSetFetcher *rs_fetcher,
-                     const int64_t cluster_version);
+                     const int64_t cluster_version,
+                     int64_t &schema_version);
   int build_sub_key_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                            const int64_t part_space,
                                            const int64_t part_col_num,
                                            const ObProxyPartKeyInfo &key_info,
                                            ObResultSetFetcher &rs_fetcher,
-                                           const int64_t cluster_version);
+                                           const int64_t cluster_version,
+                                           int64_t &schema_version);
   int build_range_part(const share::schema::ObPartitionLevel part_level,
                        const share::schema::ObPartitionFuncType part_func_type,
                        const int64_t part_num,
@@ -124,12 +126,14 @@ public:
                        const bool is_template_table,
                        const ObProxyPartKeyInfo &key_info,
                        ObResultSetFetcher &rs_fetcher,
-                       const int64_t cluster_version);
+                       const int64_t cluster_version,
+                       int64_t &schema_version);
   int build_sub_range_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                              const int64_t part_col_num,
                                              const ObProxyPartKeyInfo &key_info,
                                              ObResultSetFetcher &rs_fetcher,
-                                             const int64_t cluster_verison);
+                                             const int64_t cluster_verison,
+                                             int64_t &schema_version);
   int build_list_part(const share::schema::ObPartitionLevel part_level,
                       const share::schema::ObPartitionFuncType part_func_type,
                       const int64_t part_num,
@@ -137,12 +141,14 @@ public:
                       const bool is_template_table,
                       const ObProxyPartKeyInfo &key_info,
                       ObResultSetFetcher &rs_fetcher,
-                      const int64_t cluster_version);
+                      const int64_t cluster_version,
+                      int64_t &schema_version);
   int build_sub_list_part_with_non_template(const share::schema::ObPartitionFuncType part_func_type,
                                             const int64_t part_col_num,
                                             const ObProxyPartKeyInfo &key_info,
                                             ObResultSetFetcher &rs_fetcher,
-                                            const int64_t cluster_version);
+                                            const int64_t cluster_version,
+                                            int64_t &schema_version);
 
   bool is_first_part_valid() const { return NULL != first_part_desc_; }
   bool is_sub_part_valid() const { return NULL != sub_part_desc_; }

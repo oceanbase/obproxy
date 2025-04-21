@@ -153,10 +153,10 @@ int ObRpcTableOperationRequest::calc_partition_id(ObArenaAllocator &allocator,
                                                   int64_t &partition_id)
 {
   int ret = OB_SUCCESS;
-  int64_t ls_id;
+  int64_t ls_id = ObLSID::INVALID_LS_ID;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
-  if(OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, 0, partition_id, ls_id))) {
+  if(OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, 0, partition_id))) {
     LOG_WDIAG("fail to calc_partition_id_by_sub_rowkey", K(ret), K(rpc_trace_id));
   } else {
     obkv_info.set_definitely_single(true);
@@ -268,7 +268,9 @@ int ObRpcTableBatchOperationRequest::init_as_sub_batch_operation_request(const O
 {
   int ret = OB_SUCCESS;
   ObRpcTableBatchOperationRequest &new_quest = const_cast<ObRpcTableBatchOperationRequest &>(request);
-  SUB_REQUEST_BUF_ARR sub_op_buf_arr;
+  // SUB_REQUEST_BUF_ARR sub_op_buf_arr(common::ObModIds::OB_RPC_TABLE_BATCH_OPERATION, 2 * sizeof(ObRpcFieldBuf));
+  // ObSEArray<ObRpcFieldBuf, SUB_REQ_COUNT>
+  ObSEArray<OB_IGNORE_TABLE_OPERATION, SUB_REQ_COUNT> &sub_op_buf_arr = get_table_operation().get_table_operations();
   set_credential(new_quest.get_credential());
   // ob_write_string()
   set_table_name(new_quest.get_table_name());
@@ -283,9 +285,13 @@ int ObRpcTableBatchOperationRequest::init_as_sub_batch_operation_request(const O
   get_table_operation().set_readonly(new_quest.get_table_operation().is_readonly());
   get_table_operation().set_same_properties_names(new_quest.get_table_operation().is_same_properties_names());
   get_table_operation().set_same_type(new_quest.get_table_operation().is_same_type());
-  if (OB_FAIL(request.get_sub_req_buf_arr(sub_op_buf_arr, sub_index))) {
-    LOG_WDIAG("fail to get sub req buf arr", K(ret));
-  } else if (OB_FAIL(get_table_operation().set_table_ops(sub_op_buf_arr))) {
+  // if (OB_FAIL(request.get_sub_req_buf_arr(sub_op_buf_arr, sub_index))) {
+  //   LOG_WDIAG("fail to get sub req buf arr", K(ret));
+  // } else if (OB_FAIL(get_table_operation().set_table_ops(sub_op_buf_arr))) {
+  //   LOG_WDIAG("fail to set sub table operation", K(ret));
+  // }
+  // if (OB_FAIL(request.get_and_init_sub_req_buf_arr<ObTableOperation>(sub_op_buf_arr, sub_index))) {
+  if (OB_FAIL(request.get_and_init_sub_req_buf_arr(sub_op_buf_arr, sub_index))) {
     LOG_WDIAG("fail to set sub table operation", K(ret));
   }
   LOG_DEBUG("init sub batch operation succ", KPC(this)); 
@@ -314,16 +320,16 @@ int ObRpcTableBatchOperationRequest::calc_partition_id(ObArenaAllocator &allocat
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   partid_to_index_map_.reuse();
-  int64_t ls_id;
+  int64_t ls_id = ObLSID::INVALID_LS_ID;
 
   for (int i = 0; i < get_sub_req_count() && OB_SUCC(ret); i++) {
-    if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, i, partition_id, ls_id))) {
+    if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, i, partition_id))) {
       LOG_WDIAG("fail to calc sub req rowkey for batch operation", "index", i, K(ret), K(rpc_trace_id));
     } else {
       ObSEArray<int64_t, 4> *p_batch_index = const_cast<ObSEArray<int64_t, 4> *>(partid_to_index_map_.get(partition_id));
       if (OB_ISNULL(p_batch_index)) {
         // 当前没有partition_id节点，生成一个
-        ObSEArray<int64_t, 4> batch_index;
+        ObSEArray<int64_t, 4> batch_index(common::ObModIds::OB_RPC_TABLE_BATCH_OPERATION, 4 * sizeof(int64_t));
         if (OB_FAIL(batch_index.push_back(i))) {
           LOG_WDIAG("fail to push back", K(ret), K(i), K(rpc_trace_id));
         } else if (OB_FAIL(partid_to_index_map_.set_refactored(partition_id, batch_index))) {
@@ -472,9 +478,9 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   ObSEArray<int64_t, 1> partition_ids;
-  ObSEArray<int64_t, 1> ls_ids;
+  // ObSEArray<int64_t, 1> ls_ids;
   partition_ids_.reuse(); // clear before calc
-  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids, ls_ids))) {
+  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
   } else if (partition_ids.count() == 1) {
@@ -487,6 +493,12 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
     if (is_aggregate_query()) {
       ret = common::OB_NOT_SUPPORTED;
       LOG_WDIAG("query request with aggregate is a shard request", K(ret), K(rpc_trace_id));
+    } else if (obkv_info.is_server_support_distributed_execute_) {
+      // TODO support random/first/most
+      partition_id = partition_ids.at(0);
+      obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
+      obkv_info.set_partition_id(0);
+      set_partition_id(0);
     } else {
       obkv_info.set_shard(true);
       partition_id = common::OB_INVALID_INDEX;
@@ -496,7 +508,7 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
     partition_id = common::OB_INVALID_INDEX;
   }
   if (OB_SUCC(ret)) {
-    LOG_DEBUG("calc partition id for table query request", K(ls_ids), K(partition_ids), KP(this), K(rpc_trace_id));
+    LOG_DEBUG("calc partition id for table query request", K(partition_ids), KP(this), K(rpc_trace_id));
   }
   return ret;
 }
@@ -609,9 +621,8 @@ int ObRpcTableQueryAndMutateRequest::calc_partition_id(common::ObArenaAllocator 
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   ObSEArray<int64_t, 1> partition_ids;
-  ObSEArray<int64_t, 1> ls_ids;
   partition_ids_.reuse(); // clear before calc
-  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids, ls_ids))) {
+  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
   } else if (partition_ids.count() == 1) {
@@ -620,20 +631,26 @@ int ObRpcTableQueryAndMutateRequest::calc_partition_id(common::ObArenaAllocator 
     obkv_info.set_definitely_single(true);
     obkv_info.set_partition_id(partition_ids.at(0));
     obkv_info.set_ls_id(partition_ids.at(0));
-  } else if (partition_ids.count() > 1) {
+  } else if (partition_ids.count() > 1 && !obkv_info.is_server_support_distributed_execute_) {
     ret = OB_NOT_SUPPORTED;
     partition_id = common::OB_INVALID_INDEX;
     LOG_WDIAG("OB_TABLE_API_QUERY_AND_MUTATE get more than one partition_id, not support", K(ret), K(partition_ids),
               K(rpc_trace_id));
+  } else if (partition_ids.count() > 1 && obkv_info.is_server_support_distributed_execute_) {
+    // TODO need use random partition_id
+    partition_id = partition_ids.at(0);
+    set_partition_id(0);
+    obkv_info.set_partition_id(0);
   } else {
     obkv_info.set_empty_query_result(true);
     partition_id = common::OB_INVALID_INDEX;
   }
   if (OB_SUCC(ret)) {
-    LOG_DEBUG("calc partition id for query and mutate request", K(ls_ids), K(partition_ids), KP(this), K(rpc_trace_id));
+    LOG_DEBUG("calc partition id for query and mutate request", K(partition_ids), KP(this), K(rpc_trace_id));
   }
   return ret;
 }
+
 
 int64_t ObRpcTableQueryAndMutateRequest::get_encode_size() const
 {
@@ -755,9 +772,8 @@ int ObRpcTableQuerySyncRequest::calc_partition_id(common::ObArenaAllocator &allo
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   ObTableQueryAsyncEntry *query_async_entry = obkv_info.query_async_entry_;
   ObSEArray<int64_t, 1> partition_ids;
-  ObSEArray<int64_t, 1> ls_ids;
   partition_ids_.reuse(); // clear before calc
-  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids, ls_ids))) {
+  if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
   } else if (partition_ids.count() == 1) {
@@ -774,21 +790,37 @@ int ObRpcTableQuerySyncRequest::calc_partition_id(common::ObArenaAllocator &allo
       LOG_WARN("single async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
     }
   } else if (partition_ids.count() > 1) {
-    obkv_info.set_partition_id(partition_ids.at(0));
-    partition_id = partition_ids.at(0);
-    if (OB_NOT_NULL(query_async_entry)) {
-      query_async_entry->reset_tablet_ids();
-      query_async_entry->get_tablet_ids().assign(partition_ids);
+    if (obkv_info.is_server_support_distributed_execute_) {
+      // TODO support random/first/most
+      partition_id = partition_ids.at(0);
+      obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
+      obkv_info.set_partition_id(0);
+      set_partition_id(0);
+      if (OB_NOT_NULL(query_async_entry)) {
+        query_async_entry->reset_tablet_ids();
+        query_async_entry->get_tablet_ids().push_back(partition_id);
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
+      }
     } else {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
+      obkv_info.set_partition_id(partition_ids.at(0));
+      partition_id = partition_ids.at(0);
+      set_partition_id(partition_ids.at(0));
+      if (OB_NOT_NULL(query_async_entry)) {
+        query_async_entry->reset_tablet_ids();
+        query_async_entry->get_tablet_ids().assign(partition_ids);
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
+      }
     }
   } else {
     obkv_info.set_empty_query_result(true);
     partition_id = common::OB_INVALID_INDEX;
   }
   if (OB_SUCC(ret)) {
-    LOG_DEBUG("calc partition id for table query sync request", K(ls_ids), K(partition_ids), KP(this), K(rpc_trace_id));
+    LOG_DEBUG("calc partition id for table query sync request", K(partition_ids), KP(this), K(rpc_trace_id));
   }
   return ret;
 }
@@ -943,7 +975,7 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
     partition_id = obkv_info.get_partition_id();
   } else {
     int64_t tablet_id;
-    int64_t ls_id;
+    int64_t ls_id = ObLSID::INVALID_LS_ID;
     tablet_id_index_map_.reuse(); // clear before calc
     ls_id_tablet_id_map_.reuse();
     int offset = 0;
@@ -956,7 +988,7 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
       int64_t single_ops_count = tablet_ops.at(i).get_single_ops().count();
       for (int64_t j = 0; j < single_ops_count && OB_SUCC(ret); j++) {
         // partition id calculation depends on op_type
-        if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, offset, tablet_id, ls_id))) {
+        if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, offset, tablet_id))) {
           LOG_WDIAG("fail to calc tablet id for single operation", K(ret), K(offset), K(rpc_trace_id));
         } else if (OB_FAIL(record_ls_tablet_index(ls_id, tablet_id, offset))) {
           LOG_WDIAG("fail to record log stream id/ tablet_id/ index", K(ls_id), K(tablet_id), "tablet_index", i,
@@ -978,7 +1010,13 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
           obkv_info.set_ls_id(ls_id);
           obkv_info.set_partition_id(tablet_id);
           partition_id = tablet_id;
-        } else if (tablet_id_index_map_.size() > 1) {
+        } else if (tablet_id_index_map_.size() > 1 && obkv_info.is_server_support_distributed_execute_) {
+          // TODO support random/first/most
+          obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
+          obkv_info.set_partition_id(0);
+          partition_id = first_partition_id_;
+          set_ls_id(common::ObLSID::INVALID_LS_ID);
+        } else if (tablet_id_index_map_.size() > 1 && !obkv_info.is_server_support_distributed_execute_) {
           obkv_info.set_shard(true);
           partition_id = common::OB_INVALID_INDEX;
         } else {
@@ -996,6 +1034,50 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
   return ret;
 }
 
+
+int ObRpcTableLSOperationRequest::handle_tablet_ls_id(ObRpcReq &ob_rpc_req, const OB_TABLET_TO_LS_MAP &tablet_ls_map)
+{
+  int ret = OB_SUCCESS;
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+  if (obkv_info.is_rpc_request_with_partition_id_) {
+    obkv_info.set_definitely_single(true);
+    // partition_id = obkv_info.get_partition_id();
+  } else {
+    TABLET_ID_INDEX_MAP::iterator tablet_id_iter = tablet_id_index_map_.begin();
+    TABLET_ID_INDEX_MAP::iterator tablet_id_end = tablet_id_index_map_.end();
+    int64_t ls_id = 0;
+    for ( ; OB_SUCC(ret) && tablet_id_iter != tablet_id_end; tablet_id_iter++) {
+      int64_t tablet_id = tablet_id_iter->first;
+      ret = tablet_ls_map.get_refactored(tablet_id, ls_id);
+      if (OB_SUCC(ret)) {
+        ObSEArray<int64_t, 4> *p_ls_tablet_batch = const_cast<ObSEArray<int64_t, 4> *>(ls_id_tablet_id_map_.get(ls_id));
+        if (OB_ISNULL(p_ls_tablet_batch)) {
+          ObSEArray<int64_t, 4> tablet_id_arr;
+          if (OB_FAIL(tablet_id_arr.push_back(tablet_id))) {
+            LOG_WDIAG("fail to push back tablet id", K(ret));
+          } else if (OB_FAIL(ls_id_tablet_id_map_.set_refactored(ls_id, tablet_id_arr))) {
+            LOG_WDIAG("fail to record ls id and tablet id record", K(ret));
+          }
+        } else if (OB_FAIL(p_ls_tablet_batch->push_back(tablet_id))) {
+          LOG_WDIAG("fail to push tablet id", K(ret));
+        }
+      } else if (OB_HASH_NOT_EXIST == ret) {
+        LOG_WDIAG("handle_tablet_ls_id could find ls_id for tablet_id, need to retry", K(ret),
+                  K(tablet_id), K(ls_id), "table_name", obkv_info.table_name_, K(rpc_trace_id));
+      } else {
+        LOG_WDIAG("handle_tablet_ls_id to find ls_id for tablet_id failed", K(ret),
+                  K(tablet_id), K(ls_id), "table_name", obkv_info.table_name_, K(rpc_trace_id));
+      }
+    }
+    if (OB_SUCC(ret) && tablet_id_index_map_.size() == 1) {
+      obkv_info.set_ls_id(ls_id);
+    }
+  }
+
+  return ret;
+}
+
 int ObRpcTableLSOperationRequest::record_ls_tablet_index(int64_t ls_id,
                                                          int64_t tablet_id,
                                                          int64_t index)
@@ -1003,24 +1085,25 @@ int ObRpcTableLSOperationRequest::record_ls_tablet_index(int64_t ls_id,
   int ret = OB_SUCCESS;
   ObSEArray<int64_t, 4> *p_tablet_index_batch = const_cast<ObSEArray<int64_t, 4> *>(tablet_id_index_map_.get(tablet_id));
   if (OB_ISNULL(p_tablet_index_batch)) {
-    ObSEArray<int64_t, 4> index_arr;
+    ObSEArray<int64_t, 4> index_arr(common::ObModIds::OB_RPC_TABLE_LS_OPERATION, 4 * sizeof(int64_t));
     if (OB_FAIL(index_arr.push_back(index))) {
       LOG_WDIAG("fail to push back index", K(ret));
     } else if (OB_FAIL(tablet_id_index_map_.set_refactored(tablet_id, index_arr))) {
       LOG_WDIAG("fail to record index", K(ret));
     } else {
-      // new tablet id, record ls_id
-      ObSEArray<int64_t, 4> *p_ls_tablet_batch = const_cast<ObSEArray<int64_t, 4> *>(ls_id_tablet_id_map_.get(ls_id));
-      if (OB_ISNULL(p_ls_tablet_batch)) {
-        ObSEArray<int64_t, 4> tablet_id_arr;
-        if (OB_FAIL(tablet_id_arr.push_back(tablet_id))) {
-          LOG_WDIAG("fail to push back tablet id", K(ret));
-        } else if (OB_FAIL(ls_id_tablet_id_map_.set_refactored(ls_id, tablet_id_arr))) {
-          LOG_WDIAG("fail to record ls id and tablet id record", K(ret));
-        }
-      } else if (OB_FAIL(p_ls_tablet_batch->push_back(tablet_id))) {
-        LOG_WDIAG("fail to push tablet id", K(ret));
-      }
+      UNUSED(ls_id);
+//      // new tablet id, record ls_id
+//      ObSEArray<int64_t, 4> *p_ls_tablet_batch = const_cast<ObSEArray<int64_t, 4> *>(ls_id_tablet_id_map_.get(ls_id));
+//      if (OB_ISNULL(p_ls_tablet_batch)) {
+//        ObSEArray<int64_t, 4> tablet_id_arr(common::ObModIds::OB_RPC_TABLE_LS_OPERATION, 4 * sizeof(int64_t));
+//        if (OB_FAIL(tablet_id_arr.push_back(tablet_id))) {
+//          LOG_WDIAG("fail to push back tablet id", K(ret));
+//        } else if (OB_FAIL(ls_id_tablet_id_map_.set_refactored(ls_id, tablet_id_arr))) {
+//          LOG_WDIAG("fail to record ls id and tablet id record", K(ret));
+//        }
+//      } else if (OB_FAIL(p_ls_tablet_batch->push_back(tablet_id))) {
+//        LOG_WDIAG("fail to push tablet id", K(ret));
+//      }
     }
   } else if (OB_FAIL(p_tablet_index_batch->push_back(index))){
     LOG_WDIAG("fail to push back index", K(ret));
@@ -1144,8 +1227,10 @@ int ObRpcTableLSOperationRequest::init_tablet_ops(const ObRpcTableLSOperationReq
 
   for (int i = 0; OB_SUCC(ret) && i < tablet_ids.count(); i++) {
     // init tablet_op
-    SUB_REQUEST_BUF_ARR single_op_buf_arr;
+    // SUB_REQUEST_BUF_ARR single_op_buf_arr;
     ObTableTabletOp &tablet_op = get_operation().get_tablet_ops().at(i);
+    // ObSEArray<OB_IGNORE_TABLE_OPERATION, SUB_REQ_COUNT> &sub_op_buf_arr = tablet_op.get_single_ops();
+    ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, DEFAULT_TABLET_OP_COUNT> &single_op_buf_arr = tablet_op.get_single_ops();
     tablet_id = tablet_ids.at(i);
     index = const_cast<ObSEArray<int64_t, 4>*>(tablet_id_map.get(tablet_ids.at(i)));
     if (OB_ISNULL(index)) {
@@ -1154,10 +1239,20 @@ int ObRpcTableLSOperationRequest::init_tablet_ops(const ObRpcTableLSOperationReq
     } else {
       tablet_op.set_tablet_id(tablet_id);
       tablet_op.set_option_flag(root_tablet_op.get_option_flag());
-      if (OB_FAIL(root_request.get_sub_req_buf_arr(single_op_buf_arr, *index))) {
-        LOG_WDIAG("fail to get single op buf from original request", K(ret));
-      } else if (OB_FAIL(tablet_op.set_single_ops(single_op_buf_arr))) {
-        LOG_WDIAG("fail to set singel ops", K(ret));
+      // if (OB_FAIL(root_request.get_sub_req_buf_arr(single_op_buf_arr, *index))) {
+      //   LOG_WDIAG("fail to get single op buf from original request", K(ret));
+      // } else if (OB_FAIL(tablet_op.set_single_ops(single_op_buf_arr))) {
+      //   LOG_WDIAG("fail to set singel ops", K(ret));
+      // }
+      // if (OB_FAIL(root_request.get_and_init_sub_req_buf_arr<ObTableSingleOp>(single_op_buf_arr, *index))) {
+      if (OB_FAIL(root_request.get_and_init_sub_req_buf_arr(single_op_buf_arr, *index))) {
+        LOG_WDIAG("fail to init singel ops", K(ret));
+      } else if (OB_NOT_NULL(sub_request_rowkey_val_arr_) && OB_FAIL(sub_request_rowkey_val_arr_->reserve(index->count()))) {
+        LOG_WDIAG("failed to init rowkey var array", K(ret), K_(sub_request_rowkey_range_arr), "count", index->count());
+      } else if (OB_NOT_NULL(sub_request_columns_arr_) && OB_FAIL(sub_request_columns_arr_->reserve(index->count()))) {
+        LOG_WDIAG("failed to init column var array", K(ret), K_(sub_request_columns_arr), "count", index->count());
+      } else if (OB_NOT_NULL(sub_request_rowkey_range_arr_) && OB_FAIL(sub_request_rowkey_range_arr_->reserve(index->count()))) {
+        LOG_WDIAG("failed to init rowkey range array", K(ret), K_(sub_request_rowkey_range_arr), "count", index->count());
       }
       for (int j = 0; OB_SUCC(ret) && j < index->count(); j++) {
         int64_t offset = index->at(j);

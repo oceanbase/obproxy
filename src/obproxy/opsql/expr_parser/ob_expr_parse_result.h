@@ -157,6 +157,12 @@ typedef struct _ObProxyPartKeyAccuracy {
   int16_t scale_;
 } ObProxyPartKeyAccuracy;
 
+typedef struct _ObProxyPartKeyFunc
+{
+  ObProxyExprType part_key_func_type_;
+  ObProxyParamNode *func_params_;
+} ObProxyPartKeyFunc;
+
 typedef struct _ObProxyPartKey
 {
   ObProxyParseString name_;
@@ -170,12 +176,17 @@ typedef struct _ObProxyPartKey
   // obkv get partition
   ObProxyParseString part_key_extra_;
 
-  bool is_generated_;
-  int64_t generated_col_idx_;
-  int64_t param_num_;
-  ObProxyExprType func_type_;
+  // releated part_key is a func
+  ObProxyPartKeyFunc part_key_func_info_; // store func info when parse part_key is a func
+
+  // releated generated func
+  bool is_generated_;                     // used for is generated col
+  int64_t generated_col_idx_;             // used for generated func index of column
+  int64_t param_num_;                     // used for generated func param numbers
+  ObProxyExprType func_type_;             // used for generated func type
   ObProxyParamNode *params_[OBPROXY_MAX_PARAM_NUM]; // used to store generated func param
   int64_t real_source_idx_; // the real source idx of generated key, have no params_
+
   int64_t idx_in_rowid_;        // pos in rowid
   int64_t idx_in_part_columns_; // pos in part expr columns
   ObProxyPartKeyAccuracy accuracy_;

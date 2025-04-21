@@ -33,6 +33,7 @@ enum class ObTableEntityType;
 namespace obutils
 {
 struct SqlFieldResult;
+struct SqlColumnValue;
 }
 
 namespace proxy
@@ -46,6 +47,7 @@ class ObRouteDiagnosis;
 }
 namespace opsql
 {
+class ObPartkeyFuncInfo;
 struct ObExprResolverContext
 {
   ObExprResolverContext() : relation_info_(NULL), part_info_(NULL), client_request_(NULL),
@@ -86,11 +88,11 @@ public:
                          proxy::ObProxyMysqlRequest *client_request,
                          proxy::ObClientSessionInfo *client_info,
                          proxy::ObPsIdEntry *ps_entry,
-                         proxy::ObTextPsEntry *text_ps_entry,
                          common::ObObj *target_obj,
                          obutils::SqlFieldResult *sql_field_result,
+                         ObPartkeyFuncInfo *part_key_func_info_ptr = NULL,
                          const bool has_rowid = false);
-  int calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type);
+  int calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type, common::ObArenaAllocator &allocator);
   void set_route_diagnosis(proxy::ObRouteDiagnosis *route_diagnosis);
 private:
   int preprocess_range(common::ObNewRange &range, common::ObIArray<common::ObBorderFlag> &border_flags);
@@ -106,6 +108,11 @@ private:
                           const bool is_oracle_mode,
                           ObProxyExprType &type);
   int calc_token_hex_obj(ObProxyTokenNode *token, common::ObObj &target_obj);
+  int cal_part_key_func(ObPartkeyFuncInfo &func_info,
+                        ObExprResolverContext &ctx,
+                        common::ObIArray<common::ObBorderFlag> &part_columns_border,
+                        common::ObIArray<common::ObBorderFlag> &sub_part_columns_border,
+                        ObExprResolverResult &result);
   int calc_generated_key_value(common::ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode);
   int get_obj_with_param(common::ObObj &target_obj,
                          proxy::ObProxyMysqlRequest *client_request,
@@ -123,12 +130,18 @@ private:
                            obutils::SqlFieldResult *sql_field_result,
                            common::ObIArray<common::ObBorderFlag> &part_border_flags,
                            common::ObIArray<common::ObBorderFlag> &sub_part_border_flags,
-                           bool is_oracle_mode);
+                           bool is_oracle_mode,
+                           const bool has_part_func_key,
+                           ObPartkeyFuncInfo &part_key_func_info);
   int parse_and_resolve_default_value(ObProxyParseString &default_value_expr,
                                       proxy::ObClientSessionInfo *client_session_info,
                                       obutils::SqlFieldResult *sql_field_result,
                                       common::ObObj *target_obj,
                                       bool is_oracle_mode);
+  int add_obj_to_sql_field(obutils::SqlFieldResult *sql_field_result,
+                           common::ObObj &target_obj,
+                           const common::ObString &col_name);
+  static int convert_obj_to_sql_column_value(common::ObObj &src_obj, obutils::SqlColumnValue &dest_val);
 
   ObProxyExprType get_expr_token_func_type(common::ObString *func);
   common::ObIAllocator &allocator_;
@@ -142,6 +155,27 @@ class ObFuncExprTool
 public:
   static int calc_int_value_from_func_parser(ObProxyParamNode *param_node, int64_t &int_value);
   static int calc_str_value_from_func_parser(ObProxyParamNode *param_node, common::ObString &str_value);
+};
+
+class ObPartkeyFuncInfo
+{
+public:
+  ObPartkeyFuncInfo(): func_params_(NULL), type_(F_NONE),
+      first_part_column_idx_(-1), second_part_column_idx_(-1) {}
+  virtual ~ObPartkeyFuncInfo() { }
+
+  void set_func_params(ObProxyParamNode *val) { func_params_ = val; }
+  void set_type(const ObProxyFunctionType type) { type_ = type; }
+  void set_first_part_column_idx(int64_t val) { first_part_column_idx_ = val; }
+  void set_second_part_column_idx(int64_t val) { second_part_column_idx_ = val; }
+public:
+  ObProxyParamNode *func_params_;
+  ObProxyFunctionType type_;
+  int64_t first_part_column_idx_;
+  int64_t second_part_column_idx_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObPartkeyFuncInfo);
 };
 
 } // end of namespace opsql

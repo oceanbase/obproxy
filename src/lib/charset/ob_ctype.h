@@ -43,6 +43,10 @@ extern "C" {
 #define OB_LATIN1_SWEDISH_CI OB_LATIN1 "_swedish_ci"
 #define OB_LATIN1_BIN OB_LATIN1 "_bin"
 
+#define OB_GB2312 "gb2312"
+#define OB_GB2312_CHINESE_CI OB_GB2312 "_chinese_ci"
+#define OB_GB2312_BIN OB_GB2312 "_bin"
+
 /* wm_wc and wc_mb return codes */
 #define OB_CS_ILSEQ 0     // mb_wc wrong sequence
 #define OB_CS_ILUNI 0     // wc_mb fail to encode Unicode to charset
@@ -449,6 +453,14 @@ extern ObCharsetInfo ob_charset_ascii;
 extern ObCharsetInfo ob_charset_ascii_bin;
 extern ObCharsetInfo ob_charset_tis620_thai_ci;
 extern ObCharsetInfo ob_charset_tis620_bin;
+extern ObCharsetInfo ob_charset_ujis_japanese_ci;
+extern ObCharsetInfo ob_charset_ujis_bin;
+extern ObCharsetInfo ob_charset_euckr_korean_ci;
+extern ObCharsetInfo ob_charset_euckr_bin;
+extern ObCharsetInfo ob_charset_eucjpms_bin;
+extern ObCharsetInfo ob_charset_eucjpms_japanese_ci;
+extern ObCharsetInfo ob_charset_cp932_japanese_ci;
+extern ObCharsetInfo ob_charset_cp932_bin;
 extern ObCharsetInfo ob_charset_sjis_japanese_ci;
 extern ObCharsetInfo ob_charset_sjis_bin;
 extern ObCharsetHandler ob_charset_utf16le_handler;
@@ -458,10 +470,22 @@ extern ObCharsetInfo ob_charset_hkscs_bin;
 extern ObCharsetInfo ob_charset_hkscs31_bin;
 extern ObCharsetInfo ob_charset_dec8_swedish_ci;
 extern ObCharsetInfo ob_charset_dec8_bin;
+extern ObCharsetInfo ob_charset_cp850_general_ci;
+extern ObCharsetInfo ob_charset_cp850_bin;
+extern ObCharsetInfo ob_charset_hp8_english_ci;
+extern ObCharsetInfo ob_charset_hp8_bin;
+extern ObCharsetInfo ob_charset_macroman_general_ci;
+extern ObCharsetInfo ob_charset_macroman_bin;
+extern ObCharsetInfo ob_charset_swe7_swedish_ci;
+extern ObCharsetInfo ob_charset_swe7_bin;
 extern ObCharsetInfo *uca900_collations[63];
+extern size_t uca900_collations_size;
+extern size_t euro_collations_size;
 extern ObCharsetInfo *euro_collations[46];
 extern ObCharsetInfo ob_charset_gbk_chinese_ci;
 extern ObCharsetInfo ob_charset_gbk_bin;
+extern ObCharsetInfo ob_charset_gb2312_chinese_ci;
+extern ObCharsetInfo ob_charset_gb2312_bin;
 extern ObCharsetInfo ob_charset_utf16_general_ci;
 extern ObCharsetInfo ob_charset_utf16_bin;
 extern ObCharsetInfo ob_charset_utf16le_general_ci;
@@ -638,6 +662,23 @@ int ob_wildcmp_unicode(const ObCharsetInfo *cs,
                    const char *wildstr,const char *wildend,
                    int escape, int w_one, int w_many,
                    ObUnicaseInfo *weights);
+size_t ob_caseup_ujis(const ObCharsetInfo *cs, char *src, size_t srclen,
+                      char *dst, size_t dstlen);
+
+size_t ob_casedn_ujis(const ObCharsetInfo *cs, char *src, size_t srclen,
+                      char *dst, size_t dstlen);
+
+int ob_strnncoll_simple(const ObCharsetInfo *cs __attribute__((unused)),
+                        const unsigned char *s, size_t slen,
+                        const unsigned char *t, size_t tlen,
+                        ob_bool is_prefix);
+
+int ob_strnncollsp_simple(const ObCharsetInfo *cs
+                          __attribute__((unused)),
+                          const unsigned char *s, size_t slen,
+                          const unsigned char *t, size_t tlen,
+                          ob_bool diff_if_only_endspace_difference
+                          __attribute__((unused)));
 
 size_t ob_strxfrm_pad(const ObCharsetInfo *cs, uchar *str, uchar *frmend,
                       uchar *strend, uint nweights, uint flags);

@@ -517,7 +517,7 @@ bool ObProxyConfigUtils::is_memory_visible(const ObConfigItem &item)
    return ObString::make_string(OB_CONFIG_VISIBLE_LEVEL_MEMORY) == item.visible_level();
 }
 
-int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config)
+int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config, const bool is_yaml_format/*false*/)
 {
   int ret = OB_SUCCESS;
   char *buf = NULL;
@@ -525,17 +525,24 @@ int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config)
   static ObMutex file_mutex = PTHREAD_MUTEX_INITIALIZER;
   ObMemAttr mem_attr;
   mem_attr.mod_id_ = ObModIds::OB_PROXY_FILE;
-
-  if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(OB_PROXY_CONFIG_BUFFER_SIZE, mem_attr)))) {
+  const int64_t MAXC_CONFIG_SIZE = is_yaml_format ? OB_PROXY_CONFIG_YAML_BUFFER_SIZE : OB_PROXY_CONFIG_BUFFER_SIZE;
+  if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(MAXC_CONFIG_SIZE, mem_attr)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("ob tc malloc memory for buf fail", K(ret));
   } else {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
-    if (OB_FAIL(proxy_config.serialize(buf, OB_PROXY_CONFIG_BUFFER_SIZE, pos))) {
+    if (is_yaml_format) {
+      if (OB_FAIL(proxy_config.serialize_to_yaml(buf, MAXC_CONFIG_SIZE, pos))) {
+        LOG_WDIAG("fail to serialize_to_yaml proxy config", K(ret));
+      } else {
+        LOG_INFO("succ to serialize_to_yaml", K(pos));
+      }
+    } else if (OB_FAIL(proxy_config.serialize(buf, MAXC_CONFIG_SIZE, pos))) {
       LOG_WDIAG("fail to serialize proxy config", K(ret));
-    } else if (OB_UNLIKELY(pos > OB_PROXY_CONFIG_BUFFER_SIZE)) {
+    }
+    if (OB_SUCC(ret) && OB_UNLIKELY(pos > MAXC_CONFIG_SIZE)) {
       ret = OB_SERIALIZE_ERROR;
-      LOG_WDIAG("fail to serialize", K(pos), K(OB_PROXY_CONFIG_BUFFER_SIZE), K(ret));
+      LOG_WDIAG("fail to serialize", K(pos), K(MAXC_CONFIG_SIZE), K(is_yaml_format), K(ret));
     } else {/*do nothing*/}
   }
 
@@ -543,8 +550,17 @@ int ObProxyConfigUtils::dump2file(const ObProxyConfig &proxy_config)
     if (OB_FAIL(mutex_acquire(&file_mutex))) {
       LOG_EDIAG("fail to acquire mutex", K(ret));
     } else {
-      if (OB_FAIL(ObProxyFileUtils::write(CFG_DUMP_NAME, buf, pos))) {
-        LOG_WDIAG("fail to write config bin to file", K(CFG_DUMP_NAME), K(ret));
+      const char *const file_name = is_yaml_format ? CFG_DUMP_YAML_NAME : CFG_DUMP_NAME;
+      if (is_yaml_format) {
+        char cwd[ObLayout::MAX_PATH_LENGTH]{};
+        if (OB_ISNULL(getcwd(cwd, sizeof(cwd)))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to get current dir", K(ret));
+        } else if (OB_FAIL(ObProxyFileUtils::write_to_file(cwd, file_name, buf, pos, false))) {
+          LOG_WDIAG("fail to write file to dir", K(cwd), K(file_name), K(ret));
+        }
+      } else if (OB_FAIL(ObProxyFileUtils::write(file_name, buf, pos))) {
+        LOG_WDIAG("fail to write config bin to file", K(is_yaml_format), K(file_name), K(ret));
       }
       int tmp_ret = OB_SUCCESS;
       if (OB_UNLIKELY(OB_SUCCESS != (tmp_ret = mutex_release(&file_mutex)))) {

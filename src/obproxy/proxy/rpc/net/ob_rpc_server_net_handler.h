@@ -255,7 +255,7 @@ public:
                                access_times_(0), last_access_timestamp_(0), connnectiong_server_entry_count_(0),
                                server_connect_error_conut_(0), last_build_connect_timestamp_(0),
                                last_connect_failed_timestamp_(0), last_connect_success_timestamp_(0),
-                               send_request_action_(NULL), period_task_action_(NULL), retry_request_action_(NULL)
+                               send_request_action_(NULL), period_task_action_(NULL), pend_request_action_(NULL)
   {
     SET_HANDLER(&ObRpcServerNetTableEntry::main_handler);
   }
@@ -277,10 +277,15 @@ public:
   void do_entry_close();
   int handle_rpc_request(ObRpcReq &request);
   int handle_send_request();
+  // int retry_all_pending_request();
 
   int schedule_period_task();
   int handle_period_task();
   int cancel_period_task();
+
+  int schedule_pend_request_task();
+  int handle_pend_request_task();
+  int cancel_pend_request_task();
 
   void clean_all_timeout_request();
 
@@ -369,7 +374,7 @@ public:
   // event::ObAction *timeout_action_;
   event::ObAction *send_request_action_;
   event::ObAction *period_task_action_;
-  event::ObAction *retry_request_action_;
+  event::ObAction *pend_request_action_;
 };
 
 class ObRpcServerNetTableEntryPool : public event::ObContinuation

@@ -69,3 +69,7 @@ obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_factory.cpp\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr_type.h\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.cpp\
 obproxy/opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.h
+
+# 对已存在的变量追加赋值，使用+=
+# 定义一个新的变量，使用 :=
+AM_CFLAGS += -Wno-unused-parameter -Wno-string-plus-int

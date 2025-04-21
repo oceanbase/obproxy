@@ -113,6 +113,9 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.table_info_.table_name_.str_len_ = 0;
   p.table_info_.alias_name_.str_len_ = 0;
   p.table_info_.dblink_name_.str_len_ = 0;
+  p.table_info_.join_database_name_.str_len_ = 0;
+  p.table_info_.join_table_name_.str_len_ = 0;
+  p.table_info_.join_table_alias_name_.str_len_ = 0;
 
   p.read_consistency_type_ = OBPROXY_READ_CONSISTENCY_INVALID;
   p.cmd_info_.sub_type_ = OBPROXY_T_SUB_INVALID;

@@ -379,17 +379,17 @@ int ObRpcRequest::init_rowkey_info(int64_t sub_req_count)
     sub_request_count_ = sub_req_count;
     ObArenaAllocator *allocator = &allocator_;
     if (pcode != obrpc::OB_TABLE_API_EXECUTE
-        && OB_ISNULL(sub_request_buf_arr_ = OB_NEWx(SUB_REQUEST_BUF_ARR, allocator))) {
+        && OB_ISNULL(sub_request_buf_arr_ = OB_NEWx(SUB_REQUEST_BUF_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, SUB_REQ_COUNT * sizeof(ObRpcFieldBuf)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to init sub request buf arr", K(ret));
     } else if (pcode != obrpc::OB_TABLE_API_EXECUTE
-               && OB_ISNULL(sub_request_rowkey_range_arr_ = OB_NEWx(SUB_REQUEST_RANGE_ARR, allocator))) {
+               && OB_ISNULL(sub_request_rowkey_range_arr_ = OB_NEWx(SUB_REQUEST_RANGE_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, SUB_REQ_COUNT * sizeof(RANGE_VALUE)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to init sub request range arr", K(ret));
-    } else if (OB_ISNULL(sub_request_columns_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_COLUMNS_ARR, allocator))) {
+    } else if (OB_ISNULL(sub_request_columns_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_COLUMNS_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, SUB_REQ_COUNT * sizeof(ROWKEY_COLUMN)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to init sub request columns arr", K(ret));
-    } else if (OB_ISNULL(sub_request_rowkey_val_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_VAL_ARR, allocator))) {
+    } else if (OB_ISNULL(sub_request_rowkey_val_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_VAL_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, SUB_REQ_COUNT * sizeof(ROWKEY_VALUE)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to init sub request rowkey arr", K(ret));
     }
@@ -448,8 +448,7 @@ int ObRpcRequest::add_sub_req_columns(const ROWKEY_COLUMN &columns)
 int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
                                                   ObProxyPartInfo &part_info,
                                                   const int64_t sub_req_index,
-                                                  int64_t &partition_id,
-                                                  int64_t &ls_id)
+                                                  int64_t &partition_id)
 {
   int ret = OB_SUCCESS;
   opsql::ObExprResolverResult resolve_result;
@@ -466,24 +465,26 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
     if (rowkey_value.count() > 0) {
       rowkey.assign(&rowkey_value.at(0), rowkey_value.count());
     }
-    ROWKEY_COLUMN column_names;
+    ROWKEY_COLUMN_OBJ(column_names);
     // if ObTableOperation, rowkey columns is empty
     if (get_sub_req_columns_arr()->count() > 0) {
       column_names.assign(get_sub_req_columns_arr()->at(sub_req_index));
     }
     ObSEArray<int64_t, 1> partition_ids;
-    ObSEArray<int64_t, 1> ls_ids;
     ObSEArray<int64_t, 1> rowkey_index; // empty array
     ObSEArray<int64_t, 1> part_info_index; // empty array
     if (part_info.has_first_part()) {
       ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].start_key_;
-      if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, column_names, rowkey_index,
+      if (rowkey.is_min_row()) {
+        eval_rowkey.set_min_row();
+      } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, column_names, rowkey_index,
                                                        part_info_index))) {
         LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index,
                                                                part_info_index, eval_rowkey, get_entity_type()))) {
         LOG_WDIAG("fail to call eval rowkey for first part", K(rowkey), K(ret));
-      } else {
+      }
+      if (OB_SUCC(ret)) {
         // for range part, end key must to be set
         resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].end_key_ = eval_rowkey;
         resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].border_flag_.set_inclusive_start();
@@ -492,13 +493,16 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
     }
     if (OB_SUCC(ret) && part_info.has_sub_part()) {
       ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].start_key_;
-      if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, column_names, rowkey_index,
+      if (rowkey.is_min_row()) {
+        eval_rowkey.set_min_row();
+      } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, column_names, rowkey_index,
                                                        part_info_index))) {
         LOG_WDIAG("fail to call eval rowkey index for sub part", K(part_info), K(ret));
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index,
                                                                part_info_index, eval_rowkey, get_entity_type()))) {
         LOG_WDIAG("fail to call eval rowkey for sub part", K(rowkey), K(ret));
-      } else {
+      }
+      if (OB_SUCC(ret)) {
         // for range part, end key must to be set
         resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].end_key_ = eval_rowkey;
         resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].border_flag_.set_inclusive_start();
@@ -506,18 +510,16 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
       }
     }
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids,
-                                                                   ls_ids))) {
+      if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator, partition_ids))) {
         LOG_WDIAG("fail to calc partition id for table", K(ret));
-      } else if (partition_ids.count() != 1 || ls_ids.count() > 1) {
+      } else if (partition_ids.count() != 1) {
         // client_info.
         // TODO RPC need update it is a shard request
         ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("table/single operation get part ids/ log stream ids is not one", K(partition_ids), K(ls_ids),
-                  K(ret));
+        LOG_WDIAG("table/single operation get part ids/ log stream ids is not one", K(partition_ids), K(ret));
       } else {
         partition_id = partition_ids.at(0);
-        ls_id = ls_ids.at(0);
+        // ls_id = ls_ids.at(0);
       }
     } else {
       LOG_WDIAG("fail to calc partition id for table", K(ret));
@@ -530,12 +532,11 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
 int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &allocator,
                                                  proxy::ObProxyPartInfo &part_info,
                                                  const int64_t sub_req_index,
-                                                 ObIArray<int64_t> &partition_ids,
-                                                 ObIArray<int64_t> &ls_ids)
+                                                 ObIArray<int64_t> &partition_ids)
 {
   int ret = OB_SUCCESS;
   ObExprResolverResult resolve_result;
-  UNUSED(ls_ids);
+  // UNUSED(ls_ids);
   if (OB_ISNULL(get_sub_req_range_arr())
       || sub_req_index >= get_sub_req_range_arr()->count()
       || OB_ISNULL(get_sub_req_columns_arr())
@@ -566,7 +567,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
         }
 
         if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator,
-                                                                     partition_ids, ls_ids))) {
+                                                                     partition_ids))) {
           LOG_WDIAG("fail to calc partition id for table query", K(ret));
         } else {
           // success
@@ -624,7 +625,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
 
         if (OB_SUCC(ret)) {
           if (OB_FAIL(ObRpcExprCalcTool::do_partition_id_calc_for_obkv(resolve_result, part_info, allocator,
-                                                                       partition_ids, ls_ids))) {
+                                                                       partition_ids))) {
             LOG_WDIAG("fail to calc partition id for table query", K(ret));
           } else {
             // success
@@ -706,6 +707,66 @@ int ObRpcRequest::get_sub_req_buf_arr(common::ObIArray<ObRpcFieldBuf> &sub_reqs,
     } else if (OB_FAIL(sub_reqs.push_back(sub_request_buf_arr_->at(index)))) {
       LOG_WDIAG("fail to push back single ops", K(ret));
     }
+  }
+  return ret;
+}
+
+int ObRpcRequest::get_and_init_sub_req_buf_arr(common::ObIArray<OB_IGNORE_TABLE_SINGLE_OP> &sub_table_ops,
+                                               const ObIArray<int64_t> &indexes) const
+{
+  int ret = OB_SUCCESS;
+  sub_table_ops.reset();
+  if (OB_ISNULL(sub_request_buf_arr_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("rpc request not inited", K(ret));
+  } else if (OB_FAIL(sub_table_ops.reserve(indexes.count()))) {
+    LOG_WDIAG("fail to reserve mem for sub request", K(ret));
+  }
+  for (int i = 0; OB_SUCC(ret) && i < indexes.count(); i++) {
+    int index = indexes.at(i);
+    if (index >= sub_request_buf_arr_->count() || index < 0) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("invalid index for sub req buf", K(ret), K(index), "sub_req_buf_count", sub_request_buf_arr_->count());
+    } else {
+      ObRpcFieldBuf &field_buf = sub_request_buf_arr_->at(index);
+      OB_IGNORE_TABLE_SINGLE_OP ignore_field(field_buf.buf_, field_buf.buf_len_);
+      if (OB_FAIL(sub_table_ops.push_back(ignore_field))) {
+        LOG_WDIAG("fail to push back single ops to sub_request", K(ret));
+      }
+    }
+  }
+  if (OB_FAIL(ret)) {
+    sub_table_ops.reset();
+  }
+  return ret;
+}
+
+int ObRpcRequest::get_and_init_sub_req_buf_arr(common::ObIArray<OB_IGNORE_TABLE_OPERATION> &sub_table_ops,
+                                               const ObIArray<int64_t> &indexes) const
+{
+  int ret = OB_SUCCESS;
+  sub_table_ops.reset();
+  if (OB_ISNULL(sub_request_buf_arr_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("rpc request not inited", K(ret));
+  } else if (OB_FAIL(sub_table_ops.reserve(indexes.count()))) {
+    LOG_WDIAG("fail to reserve mem for sub request", K(ret));
+  }
+  for (int i = 0; OB_SUCC(ret) && i < indexes.count(); i++) {
+    int index = indexes.at(i);
+    if (index >= sub_request_buf_arr_->count() || index < 0) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("invalid index for sub req buf", K(ret), K(index), "sub_req_buf_count", sub_request_buf_arr_->count());
+    } else {
+      ObRpcFieldBuf &field_buf = sub_request_buf_arr_->at(index);
+      OB_IGNORE_TABLE_OPERATION ignore_field(field_buf.buf_, field_buf.buf_len_);
+      if (OB_FAIL(sub_table_ops.push_back(ignore_field))) {
+        LOG_WDIAG("fail to push back single ops to sub_request", K(ret));
+      }
+    }
+  }
+  if (OB_FAIL(ret)) {
+    sub_table_ops.reset();
   }
   return ret;
 }

@@ -83,13 +83,13 @@ class ObTableSingleOpResult;
 
 // Will be completely deserialize by the type, and collect info we need
 // Only copy buf in serialization
-typedef ODP_IGNORE_FIELD_TYPE(ObTableBitMap) OB_IGNORE_TABLE_BIT_MAP;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableTabletOp) OB_IGNORE_TABLE_TABLET_OP;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableSingleOp) OB_IGNORE_TABLE_SINGLE_OP;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableSingleOpEntity) OB_IGNORE_TABLE_SINGLE_OP_ENTITY;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableQuery) OB_IGNORE_TABLE_QUERY;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableQueryAndMutate) OB_IGNORE_TABLE_QUERY_AND_MUTATE;
-typedef ODP_IGNORE_FIELD_TYPE(ObTableOperation) OB_IGNORE_TABLE_OPERATION;
+typedef ODP_IGNORE_FIELD_TYPE(ObTableBitMap) OB_IGNORE_TABLE_BIT_MAP;       //not used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableTabletOp) OB_IGNORE_TABLE_TABLET_OP;   //not used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableSingleOp) OB_IGNORE_TABLE_SINGLE_OP;   //used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableSingleOpEntity) OB_IGNORE_TABLE_SINGLE_OP_ENTITY; //used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableQuery) OB_IGNORE_TABLE_QUERY;          //used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableQueryAndMutate) OB_IGNORE_TABLE_QUERY_AND_MUTATE; //used
+typedef ODP_IGNORE_FIELD_TYPE(ObTableOperation) OB_IGNORE_TABLE_OPERATION;  //used
 
 
 // Won't be completely deserialized, we skip the deserialization by the unis header
@@ -111,7 +111,8 @@ public:
 
 public:
   ObTableBitMap()
-    : block_count_(-1),
+    : datas_(common::ObModIds::OB_RPC_TABLE_TABLET_OPERATION, 8 * sizeof(size_type)),
+      block_count_(-1),
       valid_bits_num_(0)
   {};
   int deserialize(const char *buf, const int64_t data_len, int64_t &pos);
@@ -328,7 +329,7 @@ template <typename T>
 class ObTableEntityFactory: public ObITableEntityFactory
 {
 public:
-  ObTableEntityFactory(int64_t label = common::ObModIds::TABLE_ENTITY)
+  ObTableEntityFactory(int64_t label = common::ObModIds::OB_RPC_TABLE_ENTITY)
       :alloc_(label)
   {}
   virtual ~ObTableEntityFactory();
@@ -405,6 +406,8 @@ void ObTableEntityFactory<T>::free_all()
 enum class ObQueryOperationType : int {
   QUERY_START = 0,
   QUERY_NEXT = 1,
+  QUERY_END = 2,
+  QUERY_RENEW = 3,
   QUERY_MAX
 };
 
@@ -428,7 +431,9 @@ struct ObTableOperationType
     PUT = 11,
     TRIGGER = 12, // internal type for group commit trigger
     REDIS = 13,
-    INVALID = 15
+    QUERY_AND_MUTATE = 14,
+    CHECK_AND_MUTATE = 15,
+    INVALID = 16
   };
 };
 
@@ -591,7 +596,7 @@ class ObTableBatchOperation
 //   static const int64_t COMMON_BATCH_SIZE = 8;
 public:
   ObTableBatchOperation()
-      :table_operations_(common::ObModIds::TABLE_BATCH_OPERATION, common::OB_MALLOC_NORMAL_BLOCK_SIZE),
+      :table_operations_(common::ObModIds::OB_RPC_TABLE_BATCH_OPERATION, SUB_REQ_COUNT * sizeof(OB_IGNORE_TABLE_OPERATION)),
        is_readonly_(true),
        is_same_type_(true),
        is_same_properties_names_(true)
@@ -613,6 +618,7 @@ public:
   //int get_sub_table_operation(ObTableBatchOperation &sub_batch_operation, const common::ObIArray<int64_t> &sub_index);
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntityFactory &entity_factory, const ObTableBatchOperation &other);
   int set_table_ops(const common::ObIArray<ObRpcFieldBuf> &table_op_buf);
+  ObSEArray<OB_IGNORE_TABLE_OPERATION, SUB_REQ_COUNT> &get_table_operations() { return table_operations_; }
 
   TO_STRING_KV(K_(is_readonly),
                K_(is_same_type),
@@ -620,6 +626,8 @@ public:
                "operatiton_count",
                table_operations_.count(),
                K_(table_operations));
+private:
+  int init_empty_table_operations(int64_t size);
 
 private:
   ObSEArray<OB_IGNORE_TABLE_OPERATION, SUB_REQ_COUNT> table_operations_;
@@ -636,7 +644,7 @@ class ObTableBatchOperationResult
   OB_UNIS_VERSION(1);
 public:
   ObTableBatchOperationResult()
-      :table_operations_result_(common::ObModIds::TABLE_BATCH_OPERATION_RESULT, common::OB_MALLOC_NORMAL_BLOCK_SIZE)
+      :table_operations_result_(common::ObModIds::OB_RPC_TABLE_BATCH_OPERATION_RESULT, SUB_REQ_COUNT * sizeof(ObTableOperationResult))
        //entity_factory_(NULL),
        //alloc_(NULL)
   {}
@@ -654,6 +662,8 @@ public:
   //common::ObIAllocator *get_allocator() { return alloc_; }
   TO_STRING_KV("operatiton_result_count", table_operations_result_.count(),
                K_(table_operations_result));
+private:
+  int init_empty_table_operation_result(int64_t size);
 private:
   ObSEArray<ObTableOperationResult, SUB_REQ_COUNT> table_operations_result_;
   //ObITableEntityFactory *entity_factory_;
@@ -787,8 +797,8 @@ class ObTableQuery
 public:
   ObTableQuery()
       //:deserialize_allocator_(NULL),
-     :key_ranges_(),
-      select_columns_(),
+     :key_ranges_(common::ObModIds::OB_RPC_TABLE_QUERY, sizeof(common::ObNewRange) * ROWKEY_COLUMNS_COUNT),
+      select_columns_(common::ObModIds::OB_RPC_TABLE_QUERY, sizeof(ObString) * ROWKEY_COLUMNS_COUNT),
       filter_string_(),
       limit_(-1),
       offset_(0),
@@ -797,7 +807,8 @@ public:
       batch_size_(-1),
       max_result_size_(-1),
       htable_filter_(),
-      rowkey_columns_(),
+      rowkey_columns_(common::ObModIds::OB_RPC_TABLE_QUERY, sizeof(ObString) * ROWKEY_COLUMNS_COUNT),
+      aggregations_(common::ObModIds::OB_RPC_TABLE_QUERY, sizeof(ObTableAggregation) * ROWKEY_COLUMNS_COUNT),
       cluster_version_(0)
   {}
   ~ObTableQuery() = default;
@@ -1225,12 +1236,14 @@ public:
   ObTableSingleOp()
       : op_type_(ObTableOperationType::INVALID),
         flag_(0),
-        entities_(),
+        entities_(common::ObModIds::OB_RPC_TABLE_TABLE_OPERATION, 4 * sizeof(OB_IGNORE_TABLE_SINGLE_OP_ENTITY)),
         op_query_(nullptr) {}
   ~ObTableSingleOp() = default;
   OB_INLINE ObTableOperationType::Type get_op_type() const { return op_type_; }
   OB_INLINE bool is_check_no_exists() const { return is_check_no_exists_; }
-  OB_INLINE bool need_query() const { return op_type_ == ObTableOperationType::CHECK_AND_INSERT_UP || op_type_ == ObTableOperationType::SCAN; }
+  OB_INLINE bool need_query() const { return op_type_ == ObTableOperationType::CHECK_AND_INSERT_UP
+                                          || op_type_ == ObTableOperationType::SCAN
+                                          || op_type_ == ObTableOperationType::QUERY_AND_MUTATE; }
   void reset();
 
   TO_STRING_KV(K_(op_type),
@@ -1264,7 +1277,7 @@ public:
   ObTableTabletOp()
       : tablet_id_(common::ObTabletID::INVALID_TABLET_ID),
         option_flag_(0),
-        single_ops_()
+        single_ops_(common::ObModIds::OB_RPC_TABLE_TABLET_OPERATION, 2 * DEFAULT_TABLET_OP_COUNT * sizeof(OB_IGNORE_TABLE_SINGLE_OP))
   {}
   ~ObTableTabletOp() = default;
   OB_INLINE int64_t count() const { return single_ops_.count(); }
@@ -1274,8 +1287,8 @@ public:
   OB_INLINE void set_option_flag(const uint64_t option_flag) { option_flag_ =  option_flag; }
   int set_single_ops(const common::ObIArray<ObRpcFieldBuf> &single_op_buf);
   
-  OB_INLINE ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, 1> &get_single_ops() { return single_ops_;  } 
-  OB_INLINE const ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, 1> &get_single_ops() const { return single_ops_;  } 
+  OB_INLINE ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, DEFAULT_TABLET_OP_COUNT> &get_single_ops() { return single_ops_;  }
+  OB_INLINE const ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, DEFAULT_TABLET_OP_COUNT> &get_single_ops() const { return single_ops_;  }
   TO_STRING_KV(K_(tablet_id),
                K_(option_flag),
                K_(is_same_type),
@@ -1294,7 +1307,7 @@ private:
       uint64_t reserved : 62;
     };
   };
-  common::ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, 1> single_ops_;
+  common::ObSEArray<OB_IGNORE_TABLE_SINGLE_OP, DEFAULT_TABLET_OP_COUNT> single_ops_;
 };
 
 
@@ -1326,12 +1339,12 @@ public:
   ObTableLSOp()
     : ls_id_(common::ObLSID::INVALID_LS_ID),
       table_id_(common::OB_INVALID_ID),
-      rowkey_names_(),
-      properties_names_(),
+      rowkey_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION, sizeof(ObString) * 4),
+      properties_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION, sizeof(ObString) * 4),
       option_flag_(0),
       //entity_factory_(nullptr),
       //deserialize_alloc_(nullptr),
-      tablet_ops_()
+      tablet_ops_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION, 2 * SUB_REQ_COUNT * sizeof(ObTableTabletOp))
   {}
   void reset();
   //OB_INLINE void set_entity_factory(ObTableEntityFactory<ObTableSingleOpEntity> *entity_factory) { entity_factory_ = entity_factory; }
@@ -1415,7 +1428,7 @@ class ObTableTabletOpResult
   OB_UNIS_VERSION(1);
 public:
  ObTableTabletOpResult()
-     : single_op_result_(common::ObModIds::TABLE_LS_OPERATION_RESULT, ObTableTabletOp::COMMON_OPS_SIZE),
+     : single_op_result_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, ObTableTabletOp::COMMON_OPS_SIZE * sizeof(ObTableSingleOpResult)),
        all_properties_names_(NULL),
        all_rowkey_names_(NULL) {}
  virtual ~ObTableTabletOpResult() = default;
@@ -1439,7 +1452,9 @@ class ObTableLSOpResult
   OB_UNIS_VERSION(1);
 public:
   ObTableLSOpResult()
-    : tablet_op_result_(common::ObModIds::TABLE_LS_OPERATION_RESULT, SUB_REQ_COUNT) {}
+    : tablet_op_result_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, SUB_REQ_COUNT * sizeof(ObTableTabletOpResult)),
+      rowkey_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, 4 * sizeof(ObString)),
+      properties_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, 4 * sizeof(ObString)) {}
   virtual ~ObTableLSOpResult() = default;
   int set_all_properties_names(const ObIArray<ObString>& all_properties_names) {
     return properties_names_.assign(all_properties_names);
@@ -1531,7 +1546,7 @@ public:
   ObObkvPartitionInfo() :
     part_level_(0), part_num_(0), part_expr_(), part_type_(0),
     part_space_(0), sub_part_num_(0), sub_part_expr_(), sub_part_type_(0),
-    sub_part_space_(0), part_keys_() {}
+    sub_part_space_(0), part_keys_(common::ObModIds::OB_RPC_TABLE_PROC, 4 * sizeof(ObObkvPartKey)) {}
   ~ObObkvPartitionInfo() {}
 
   TO_STRING_KV(K_(part_level),
@@ -1583,8 +1598,11 @@ public:
 class ObObkvRouteResult {
   OB_UNIS_VERSION(1);
 public:
-  ObObkvRouteResult() : route_version_(0), create_time_us_(0), table_id_(0), part_num_(0),
-                        part_info_(), first_parts_(), sub_parts_() {}
+  ObObkvRouteResult() : route_version_(0), create_time_us_(0),
+                        table_id_(0), part_num_(0),
+                        part_info_(),
+                        first_parts_(common::ObModIds::OB_RPC_TABLE_PROC, 4 * sizeof(ObObkvSinglePart)),
+                        sub_parts_(common::ObModIds::OB_RPC_TABLE_PROC, 4 * sizeof(ObObkvSinglePart)) {}
   ~ObObkvRouteResult() {}
 
   TO_STRING_KV(K_(route_version),

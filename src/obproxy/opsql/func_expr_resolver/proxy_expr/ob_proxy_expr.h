@@ -58,6 +58,9 @@ enum ExprStrCaseOperation
     }                                                                     \
   } while (0)
 
+template <ObObjTypeClass obj_type_class, ObObjType obj_type>
+int get_obj_for_calc(ObIAllocator *allocator, ObObj &left, ObObj &right);
+
 class ObProxyExprCtx
 {
 public:
@@ -318,6 +321,7 @@ public:
 
   common::ObSEArray<ObProxyExpr*, 4>& get_param_array() { return param_array_; }
   void set_param_array(common::ObSEArray<ObProxyExpr*, 4>& param_array) { param_array_ = param_array; }
+  virtual void set_target_type(ObObjType target_type[[maybe_unused]]) {}
 
 public:
   static int get_int_obj(const common::ObObj &src, common::ObObj &dst, const ObProxyExprCtx &expr_ctx);
@@ -488,7 +492,7 @@ public:
   ~ObProxyExprToTime() {}
   int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
            common::ObIArray<common::ObObj> &result_obj_array);
-  void set_target_type(ObObjType target_type) { target_type_ = target_type; }
+  void set_target_type(ObObjType target_type) override { target_type_ = target_type; }
 private:
   ObObjType target_type_;
 };
@@ -502,7 +506,7 @@ public:
   ~ObProxyExprToDays() {}
   virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
                    common::ObIArray<common::ObObj> &result_obj_array);
-  void set_target_type(ObObjType target_type) { target_type_ = target_type; }
+  void set_target_type(ObObjType target_type) override { target_type_ = target_type; }
 private:
   ObObjType target_type_;
 };

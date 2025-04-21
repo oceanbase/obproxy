@@ -98,10 +98,10 @@ int get_rpc_mod_memory()
     allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_PROXY_RPC_PARSE, item);
     allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC, item);
     allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_PROCESSOR, item);
-    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_PROC, item);
-    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_CLIENT, item);
-    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_BATCH_OPERATION, item);
-    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::TABLE_LS_OPERATION_RESULT, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_TABLE_PROC, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_TABLE_CLIENT, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_TABLE_BATCH_OPERATION, item);
+    allocator->add_tenant_mod_usage(common::OB_SERVER_TENANT_ID, common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, item);
   }
   return item.hold_;
 }

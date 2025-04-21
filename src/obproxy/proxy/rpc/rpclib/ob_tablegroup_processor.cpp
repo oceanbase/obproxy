@@ -564,7 +564,7 @@ int ObTableGroupEntryCont::notify_caller()
   } else {
     SET_HANDLER(&ObTableGroupEntryCont::state_notify_caller);
     if (OB_ISNULL(pending_action_ = submit_thread_->schedule_imm(this))) {
-      ret = OB_ERR_UNEXPECTED;
+      ret = OB_ERR_UNEXPECTED; //TODO  这个情况下  ObTableGroupEntryCont 释放不了的场景
       LOG_EDIAG("fail to schedule imm", K(ret));
     }
   }

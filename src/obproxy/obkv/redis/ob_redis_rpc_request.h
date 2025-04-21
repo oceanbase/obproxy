@@ -16,6 +16,7 @@
 #include "lib/ob_define.h"
 #include "lib/hash/ob_hashmap.h" //ObHashMap
 #include "lib/hash/ob_hashutils.h"
+#include "lib/utility/ob_ls_id.h" //ObLSID::INVALID_LS_ID
 #include "obproxy/obkv/table/ob_table_rpc_struct.h"
 
 namespace oceanbase
@@ -36,7 +37,7 @@ class ObRedisOperationSimplifiedRequest final
 {
   OB_UNIS_VERSION_WITH_REWRITE_INFO(1);
 public:
-  ObRedisOperationSimplifiedRequest() : credential_(), redis_db_(common::OB_INVALID_ID), ls_id_(common::OB_INVALID_ID),
+  ObRedisOperationSimplifiedRequest() : credential_(), redis_db_(common::OB_INVALID_ID), ls_id_(ObLSID::INVALID_LS_ID),
                                         tablet_id_(common::OB_INVALID_ID), table_id_(common::OB_INVALID_ID), reserved_(0), resp_str_()
                                         {}
   ~ObRedisOperationSimplifiedRequest() {}

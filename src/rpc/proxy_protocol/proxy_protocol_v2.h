@@ -34,13 +34,14 @@ public:
   static const int64_t PROXY_PROTOCOL_V2_VALIDATE_LEN = 5;
 public:
   ProxyProtocolV2() : ver_cmd_(0), fam_(0), len_(0), src_addr_(), dst_addr_(), total_len_(0),
-                vpc_info_(), is_finished_(false), analyze_state_(ANALYZE_HEADER) {}
+                vpc_info_(), is_finished_(false), is_check_alive_pkt_(false), analyze_state_(ANALYZE_HEADER) {}
   ~ProxyProtocolV2() {}
   int analyze_packet(char *buf, int64_t buf_len);
   inline int64_t get_total_len() const { return total_len_; }
   inline int64_t get_len() const { return len_; }
   int64_t to_string(char *buf, const int64_t buf_len) const;
   bool is_finished() const { return is_finished_; }
+  bool is_check_alive_pkt() const { return is_check_alive_pkt_; }
   static bool check_proxy_protocol_v2_valid(char header[ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN]) {
     return header[0] == 0x0d && header[1] == 0x0a && header[2] == 0x0d && header[3] == 0x0a && header[4] == 0x00;
   }
@@ -55,6 +56,7 @@ public:
   int64_t total_len_;
   obproxy::obutils::ObVariableLenBuffer<64> vpc_info_;
   bool is_finished_;
+  bool is_check_alive_pkt_;
   ANALYZE_STATE analyze_state_;
 };
 

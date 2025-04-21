@@ -67,7 +67,6 @@ public:
   CfgInt flow_event_queue_threshold_;
 
   CfgInt default_buffer_water_mark_;
-  CfgInt tunnel_request_size_threshold_;
   CfgInt request_buffer_length_;
 
   CfgInt sock_recv_buffer_size_out_;
@@ -114,8 +113,6 @@ public:
   CfgBool enable_force_request_follower_;
 #endif
   CfgBool enable_proxy_scramble_;
-  CfgBool enable_compression_protocol_;
-  CfgBool enable_ob_protocol_v2_;
   CfgBool enable_reroute_;
   CfgBool enable_weak_reroute_;
   CfgBool enable_index_route_;
@@ -154,7 +151,6 @@ public:
   CfgInt client_max_memory_size_;
   CfgBool enable_cpu_isolate_;
   CfgBool enable_primary_zone_;
-  CfgInt ip_listen_mode_;
   CfgIp local_bound_ipv6_ip_;
   CfgTime read_stale_retry_interval_;
   CfgTime ob_max_read_stale_time_;

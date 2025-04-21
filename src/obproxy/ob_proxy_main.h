@@ -86,6 +86,7 @@ private:
   int use_daemon();
   int get_log_file_name(const ObLogFDType type, char *file_name, const int64_t len);
   int handle_inherited_sockets(const int argc, char *const argv[]);
+  void dump_config_to_yaml() const;
   int init_log();
   int init_signal();
   int close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd, const int32_t rpc_listen_ipv4_fd = 0, const int32_t rpc_listen_ipv6_fd = 0);

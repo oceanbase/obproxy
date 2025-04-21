@@ -34,11 +34,15 @@ public:
   int init(const ObProxyRpcParallelParam &parallel_param, const int64_t cont_index,
            ObIAllocator *allocator, const int64_t timeout_ms);
   void destroy();
+  void free_sub_rpc_request();
   virtual int init_task();
   virtual int finish_task(void *data);
   virtual void *get_callback_data() {
     return static_cast<void *>(rpc_request_);
   };
+  virtual void free_holding_object() {
+    free_sub_rpc_request();
+  }
 
 private:
   proxy::ObRpcReq *rpc_request_;

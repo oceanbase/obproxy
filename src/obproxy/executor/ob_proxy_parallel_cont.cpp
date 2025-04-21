@@ -131,7 +131,7 @@ int ObProxyParallelCont::handle_parallel_task(ObIArray<ObProxyParallelParam> &pa
       LOG_WDIAG("fail to alloc parallel execute cont", K(ret));
     } else if (OB_FAIL(execute_cont->init(parallel_param.at(i), i, allocator, timeout_ms_))) {
       LOG_WDIAG("fail to init execute cont", K(ret));
-    } else if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
+    } else if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_NET))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
     } else {

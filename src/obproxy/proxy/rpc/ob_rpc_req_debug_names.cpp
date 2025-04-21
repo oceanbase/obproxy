@@ -17,6 +17,7 @@
 #include "proxy/rpc/rpclib/ob_tablegroup_entry.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_entry.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx.h"
+#include "proxy/rpc/rpclib/ob_tablet_ls_entry.h"
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "proxy/client/ob_client_vc.h"
 #include "obutils/ob_resource_pool_processor.h"
@@ -50,6 +51,10 @@ const char *ObRpcReqDebugNames::get_action_name(enum ObRpcRequestSMActionType ev
     }
     case RPC_REQ_IN_TABLEGROUP_LOOKUP: {
       ret = "RPC_REQ_IN_TABLEGROUP_LOOKUP";
+      break;
+    }
+    case RPC_REQ_IN_TABLET_LS_LOOKUP: {
+      ret = "RPC_REQ_IN_TABLET_LS_LOOKUP";
       break;
     }
     case RPC_REQ_IN_PARTITION_LOOKUP: {
@@ -187,6 +192,14 @@ const char *ObRpcReqDebugNames::get_event_name(const int event)
 
     case VC_EVENT_ACTIVE_TIMEOUT:
       ret = "VC_EVENT_ACTIVE_TIMEOUT";
+      break;
+
+    case VC_EVENT_NET_READ_TIMEOUT:
+      ret = "VC_EVENT_NET_READ_TIMEOUT";
+      break;
+
+    case VC_EVENT_NET_WRITE_TIMEOUT:
+      ret = "VC_EVENT_NET_WRITE_TIMEOUT";
       break;
 
     case EVENT_INTERVAL:
@@ -347,6 +360,23 @@ const char *ObRpcReqDebugNames::get_event_name(const int event)
       break;
     case RPC_REQ_CTX_LOOKUP_CACHE_EVENT:
       ret = "RPC_REQ_CTX_LOOKUP_CACHE_EVENT";
+      break;
+
+    // tablegroup
+    case TABLET_LS_ENTRY_LOOKUP_CACHE_DONE:
+      ret = "TABLET_LS_ENTRY_LOOKUP_CACHE_DONE";
+      break;
+    case TABLET_LS_ENTRY_LOOKUP_START_EVENT:
+      ret = "TABLET_LS_ENTRY_LOOKUP_START_EVENT";
+      break;
+    case TABLET_LS_ENTRY_LOOKUP_CACHE_EVENT:
+      ret = "TABLET_LS_ENTRY_LOOKUP_CACHE_EVENT";
+      break;
+    case TABLET_LS_ENTRY_LOOKUP_REMOTE_EVENT:
+      ret = "TABLET_LS_ENTRY_LOOKUP_REMOTE_EVENT";
+      break;
+    case TABLET_LS_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT:
+      ret = "TABLET_LS_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT";
       break;
 
     // analyze

@@ -47,7 +47,10 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
 
     if (ANALYZE_BODY == analyze_state_ && buf_len >= total_len_) {
       int64_t end_pos = 0;
-      if (0x11 == fam_) {
+      if (0x20 == ver_cmd_) {
+        is_check_alive_pkt_ = true;
+        LOG_DEBUG("get ppv2 check alive pkt");
+      } else if (0x11 == fam_) {
         uint32_t src_addr = ntohl(*(uint32_t*)(&buf[16]));
         uint32_t dst_addr = ntohl(*(uint32_t*)(&buf[20]));
         uint16_t src_port = ntohs(*(uint16_t*)(&buf[24]));
@@ -70,7 +73,11 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
         LOG_WDIAG("not support situation", K(fam_), K(ret));
       }
 
-      if (OB_SUCC(ret)) {
+      if (OB_FAIL(ret)) {
+        // nothing
+      } if (is_check_alive_pkt_) {
+        // nothing
+      } else {
         end_pos++;
         while (end_pos < total_len_) {
           uint8_t type = *(uint8_t*)(&buf[end_pos]);
@@ -97,7 +104,7 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
               LOG_WDIAG("unexpected private service connect ID length", K(length), K(ret));
             } else {
               pscConnectionId_big = *(int64_t*)(&buf[end_pos + 3]);
-              pscConnectionId_little = (int64_t)__bswap_64(pscConnectionId_big);
+              pscConnectionId_little = (int64_t)htonll(pscConnectionId_big);
               if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%ld", pscConnectionId_little))) {
                 ret = OB_ERR_UNEXPECTED;
                 LOG_WDIAG("fail to printf pscConnectionId_little", K(digit_num), K(pscConnectionId_little), K(ret));
@@ -124,7 +131,8 @@ int64_t ProxyProtocolV2::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(ver_cmd), K_(fam), K_(total_len), K_(src_addr), K_(dst_addr), K_(vpc_info));
+  J_KV(K_(ver_cmd), K_(fam), K_(total_len), K_(src_addr), K_(dst_addr), K_(vpc_info),
+          K_(is_finished), K_(is_check_alive_pkt));
   J_OBJ_END();
   return pos;
 }

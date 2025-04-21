@@ -374,7 +374,7 @@ enum ObServerRespErrorType
     ObPartitionLookupInfo()
         : lookup_success_(false), cached_dummy_entry_renew_state_(NO_NEED_RENEW),
           pl_attempts_(0), force_renew_state_(NO_NEED_RENEW), te_name_(), route_(),
-          is_need_force_flush_(false)
+          is_need_force_flush_(false), has_replace_dup_join_info_(false)
     {
     }
     ~ObPartitionLookupInfo() {}
@@ -407,6 +407,8 @@ enum ObServerRespErrorType
     void set_need_force_flush(bool is_need_force_flush) { is_need_force_flush_ = is_need_force_flush; }
     bool is_need_force_flush() { return is_need_force_flush_; }
     bool is_remote_readonly() { return route_.is_remote_readonly(); }
+    bool has_replace_dup_join_info() const { return has_replace_dup_join_info_; }
+    void set_has_replace_dup_join_info(bool val) { has_replace_dup_join_info_ = val; }
 
 
     int get_next_avail_replica(const bool is_force_retry,
@@ -456,6 +458,7 @@ enum ObServerRespErrorType
     ObTableEntryName te_name_;
     ObServerRoute route_;
     bool is_need_force_flush_;
+    bool has_replace_dup_join_info_;
 
   private:
     DISALLOW_COPY_AND_ASSIGN(ObPartitionLookupInfo);
@@ -526,7 +529,6 @@ enum ObServerRespErrorType
           transact_return_point(NULL),
           internal_buffer_(NULL),
           internal_reader_(NULL),
-          internal_write_buffer_(NULL),
           reroute_info_(),
           pll_info_(),
           mysql_errcode_(0),
@@ -581,6 +583,8 @@ enum ObServerRespErrorType
     }
 
     void refresh_mysql_config();
+
+    void refresh_protocol_config();
     int get_multi_level_config_item(const common::ObString& cluster_name,
                         const common::ObString &tenant_name,
                         const obutils::ObVipAddr &addr,
@@ -668,6 +672,14 @@ enum ObServerRespErrorType
         internal_buffer_->water_mark_ = mysql_config_params_->default_buffer_water_mark_;
       }
 
+      // 不是每次使用了 internal_buffer_ 后都会执行 reset_internal_buffer()
+      // 只有在客户端的一次请求执行完毕后和 Tunnel 完成 Request 转发后才会执行 reset_internal_buffer()
+      // 在某些情况下不会执行 reset_internal_buffer() 导致 internal_reader_ 指向残留数据
+      // consume_all() 来确保 internal_reader_ 指向的数据都是后来新写入的
+      if (NULL != internal_reader_) {
+        internal_reader_->consume_all();
+      }
+
       return ret;
     }
 
@@ -699,38 +711,12 @@ enum ObServerRespErrorType
       }
     }
 
-    event::ObMIOBuffer * alloc_internal_writer_buffer(const int64_t buffer_block_size)
-    {
-      if (OB_UNLIKELY(NULL == internal_write_buffer_)) {
-        internal_write_buffer_ = event::new_miobuffer(buffer_block_size);
-      } else {
-        internal_write_buffer_->dealloc_all_readers();
-        internal_write_buffer_->reset();
-      }
-      return internal_write_buffer_;
-    }
-
-    void reset_write_buffer()
-    {
-      if (OB_LIKELY(NULL != internal_write_buffer_)) {
-        internal_write_buffer_->reset();
-      }
-    }
-
-    void free_write_buffer()
-    {
-      if (OB_LIKELY(NULL != internal_write_buffer_)) {
-        free_miobuffer(internal_write_buffer_);
-      }
-    }
-
     void reset()
     {
       // do not reset trans_info_.resp_result_
       // because it will maybe be used in processing the next request
       update_transaction_stats();
       reset_internal_buffer();
-      reset_write_buffer();
       trans_info_.request_content_length_ = MYSQL_UNDEFINED_CL; // disable tunnel client request
       trans_info_.client_request_.reset_parse_result(); // clear SQL parse result
       set_send_request_direct(false);
@@ -833,7 +819,6 @@ enum ObServerRespErrorType
       trans_info_.client_request_.reset();
       trans_info_.resp_result_.reset();
       free_internal_buffer();
-      free_write_buffer();
       if (NULL != mysql_config_params_) {
         mysql_config_params_->dec_ref();
         mysql_config_params_ = NULL;
@@ -942,7 +927,7 @@ enum ObServerRespErrorType
     event::ObMIOBuffer *internal_buffer_;
     event::ObIOBufferReader *internal_reader_;
     event::ObMIOBuffer *internal_write_buffer_;
-    common::ObPtr<event::ObIOBufferBlock> cache_block_;
+    common::ObPtr<event::ObIOBufferBlock> cache_block_; // 仅在 reset_internal_buffer() 中会赋值
 
     ObProxyRerouteInfo reroute_info_;
     ObPartitionLookupInfo pll_info_;
@@ -1034,6 +1019,7 @@ enum ObServerRespErrorType
                                               common::ObIArray<common::ObString> &region_names);
   static int get_proxy_primary_zone_array(common::ObString zone,
                                           common::ObSEArray<common::ObString, 5> &zone_array);
+  static int handle_dup_join(ObTransState &s);
   static void handle_pl_lookup(ObTransState &s);
   static void handle_bl_lookup(ObTransState &s);
   static void modify_pl_lookup(ObTransState &s);
@@ -1300,6 +1286,7 @@ inline void ObMysqlTransact::ObPartitionLookupInfo::reset()
   cached_dummy_entry_renew_state_ = NO_NEED_RENEW;
   te_name_.reset();
   is_need_force_flush_ = false;
+  has_replace_dup_join_info_ = false;
 }
 
 inline common::ObString ObMysqlTransact::get_retry_status_string(const ObSSRetryStatus status)

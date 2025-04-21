@@ -435,7 +435,7 @@ void ObBasePsEntryGlobalCache::destroy()
 int init_ps_entry_cache_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_ps_entry_cache_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
@@ -448,7 +448,7 @@ int init_ps_entry_cache_for_thread()
 int init_ps_entry_cache_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->ps_entry_cache_
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][index]->ps_entry_cache_
     = new (std::nothrow) ObBasePsEntryThreadCache())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));
@@ -472,7 +472,7 @@ int init_ps_entry_cache_for_one_thread(event::ObEThread *thread)
 int init_text_ps_entry_cache_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; i < event_thread_count && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_text_ps_entry_cache_for_one_thread(i))) {
       PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(i), K(ret));
@@ -484,7 +484,7 @@ int init_text_ps_entry_cache_for_thread()
 int init_text_ps_entry_cache_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(g_event_processor.event_thread_[ET_CALL][index]->text_ps_entry_cache_
+  if (OB_ISNULL(g_event_processor.event_thread_[ET_NET][index]->text_ps_entry_cache_
     = new (std::nothrow) ObBasePsEntryThreadCache())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObBasePsEntryThreadCache", K(index), K(ret));

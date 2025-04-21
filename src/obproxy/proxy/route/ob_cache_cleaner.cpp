@@ -1483,8 +1483,8 @@ int ObCacheCleaner::update_clean_interval()
 {
   int ret = OB_SUCCESS;
   int64_t interval_us = get_global_proxy_config().cache_cleaner_clean_interval;
-  int64_t thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
-  ObEThread **threads = g_event_processor.event_thread_[ET_CALL];
+  int64_t thread_count = g_event_processor.thread_count_for_type_[ET_NET];
+  ObEThread **threads = g_event_processor.event_thread_[ET_NET];
   ObCacheCleaner *cleaner = NULL;
   ObEThread *ethread = NULL;
   for (int64_t i = 0; (i < thread_count) && OB_SUCC(ret); ++i) {

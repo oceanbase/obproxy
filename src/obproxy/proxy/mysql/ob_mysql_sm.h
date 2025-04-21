@@ -156,6 +156,7 @@ public:
   int process_executor_result(event::ObIOBufferReader *resp_reader);
 
   int handle_shard_request(bool &need_response_for_stmt, bool &need_wait_callback);
+  int direct_change_shard_connector(int64_t target_group_id);
 
   int check_user_identity(const ObString &user_name, const ObString &tenant_name, const ObString &cluster_name);
   int save_user_login_info(ObClientSessionInfo &session_info, ObHSRResult &hsr_result);
@@ -211,7 +212,7 @@ public:
   void update_session_stats(int64_t *stats, const int64_t stats_size);
 
   void get_server_session_ids(uint32_t &server_sessid, int64_t &ss_id);
-  bool need_update_non_login_config() { return need_update_non_login_config_; }
+  bool need_update_config() { return need_update_config_; }
   bool need_depend_last_tenant() { return need_depend_last_tenant_; }
 
   const common::ObString &get_server_trace_id();
@@ -248,7 +249,7 @@ public:
   inline void set_skip_plugin(const bool bvalue) { skip_plugin_ = bvalue; }
   void set_detect_server_info(net::ObIpEndpoint target_addr, int cnt, int64_t time);
   int build_error_packet_for_connection_diagnosis(bool &is_packet_build);
-  void set_need_update_non_login_config(const bool need_update_non_login_config) { need_update_non_login_config_ = need_update_non_login_config; }
+  void set_need_update_config(const bool need_update_config) { need_update_config_ = need_update_config; }
   void set_need_renew_cluster_resource(const bool need_renew_cluster_resource) { need_renew_cluster_resource_ = need_renew_cluster_resource; }
 public:
   static const int64_t OP_LOCAL_NUM = 32;
@@ -522,8 +523,8 @@ private:
   bool skip_plugin_;
   bool add_detect_server_cnt_;
   proxy_protocol_v2::ProxyProtocolV2 proxy_protocol_v2_;
-  ObProxyProtocol server_protocol_; // server protocol configured by `enable_compression_protocol` or `enable_ob_protocol_v2`
-  bool need_update_non_login_config_; // 默认false，登录时设置为true，然后刷新vip级别配置后，重新设置为false
+  ObProxyProtocol server_protocol_; // server protocol configured by server_protocol
+  bool need_update_config_; // 默认false，登录时设置为true，然后刷新vip级别配置后，重新设置为false
   bool need_depend_last_tenant_;
 public:
   ObSingleLeader *single_leader_;

@@ -397,6 +397,7 @@ private:
   common::ObArenaAllocator allocator_;
   common::hash::ObHashSet<int64_t> text_ps_version_set_;
   SessInfoFieldVersionList sess_info_field_version_;
+
   DISALLOW_COPY_AND_ASSIGN(ObServerSessionInfo);
 };
 
@@ -607,8 +608,10 @@ public:
   int64_t get_last_insert_id_version() const { return version_.last_insert_id_version_; }
   int64_t get_sess_info_version() const { return version_.sess_info_version_; }
 
+
   ObString get_init_sql();
   void set_login_config(omt::ObProxyMultiLevelConfig *login_config);
+  omt::ObProxyMultiLevelConfig* get_login_config() { return login_config_; }
   bool can_send_init_sql();
   void set_has_send_init_sql(bool val) { has_send_init_sql_ = val; }
 
@@ -831,7 +834,6 @@ public:
 
   // get memory size(stat field_mgr_ only, add more later)
   int64_t get_memory_size() const { return field_mgr_.get_memory_size(); }
-
   void destroy();
 
   dbconfig::ObShardConnector *get_shard_connector() { return shard_conn_; }
@@ -888,13 +890,13 @@ public:
   bool is_allow_use_last_session() const { return is_allow_use_last_session_; }
 
   void set_group_id(const int64_t group_id) { group_id_ = group_id; }
-  int64_t get_group_id() { return group_id_; }
+  int64_t get_group_id() const { return group_id_; }
 
   void set_table_id(const int64_t table_id) { table_id_ = table_id; }
-  int64_t get_table_id() { return table_id_; }
+  int64_t get_table_id() const { return table_id_; }
 
   void set_es_id(const int64_t es_id) { es_id_ = es_id; }
-  int64_t get_es_id() { return es_id_; }
+  int64_t get_es_id() const { return es_id_; }
 
   bool is_sys_hot_version_changed() const {
     return hash_version_.hot_sys_var_version_ != version_.hot_sys_var_version_;

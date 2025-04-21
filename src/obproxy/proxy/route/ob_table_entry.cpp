@@ -169,6 +169,60 @@ void ObTableEntry::free()
   op_fixed_mem_free(this, total_len);
 }
 
+void ObTableEntry::reuse()
+{
+  LOG_DEBUG("ObTableEntry was reused", K(*this));
+  if (is_dummy_entry()) {
+    if (NULL != tenant_servers_) {
+      op_free(tenant_servers_);
+      tenant_servers_ = NULL;
+    }
+  } else if (is_location_entry()) {
+    if (NULL != first_pl_) {
+      op_free(first_pl_);
+      first_pl_ = NULL;
+    }
+  } else if (is_part_info_entry()) {
+    // partition table, free part info
+    if (NULL != part_info_) {
+      part_info_->free();
+      part_info_ = NULL;
+    }
+  } else {
+    if (OB_UNLIKELY(NULL != tenant_servers_|| NULL != part_info_)) {
+      LOG_EDIAG("tenant_servers_/part_info_ is not null here, we will have memory leak here", KPC(this));
+    }
+  }
+  // ObRouteEntry
+  // cr_version, cr_id
+  schema_version_ = 0;
+  last_update_time_us_ = 0;
+  tenant_version_ = 0;
+  time_for_expired_ = 0;
+  current_expire_time_config_ = 0;
+  create_time_us_ = ObTimeUtility::current_time();
+  renew_last_access_time();
+  renew_last_valid_time();
+  set_avail_state();
+
+  // ObTableEntry
+  // is_dummy_entry_, is_binlog_entry_, name_, batch_mutex_
+  is_inited_ = true;
+  is_entry_from_rslist_ = false;
+  is_empty_entry_allowed_ = false;
+  is_need_force_flush_ = false;
+  has_dup_replica_ = false;
+  tenant_id_ = common::OB_INVALID_ID;
+  table_id_ = common::OB_INVALID_ID;
+  table_type_ = share::schema::MAX_TABLE_TYPE;
+  part_num_ = 0;
+  replica_num_ = 0;
+  // name_.reset();
+  batch_fetch_tablet_id_set_.reuse();
+  remote_fetching_tablet_id_set_.reuse();
+  batch_fetch_cont_ = NULL;
+}
+
 int ObTableEntry::alloc_and_init_table_entry(
     const ObTableEntryName &name,
     const int64_t cr_version,
@@ -226,6 +280,14 @@ int ObTableEntry::alloc_part_info()
   return ret;
 }
 
+void ObTableEntry::free_part_info()
+{
+  if (NULL != part_info_) {
+    part_info_->free();
+    part_info_ = NULL;
+  }
+}
+
 int ObTableEntry::is_contain_all_dummy_entry(const ObTableEntry &new_entry, bool &is_contain_all) const
 {
   int ret = OB_SUCCESS;
@@ -262,6 +324,7 @@ int64_t ObTableEntry::to_string(char *buf, const int64_t buf_len) const
        K_(is_empty_entry_allowed),
        K_(is_need_force_flush),
        K_(has_dup_replica),
+       K_(is_single_partition_table),
        K_(cr_id),
        K_(name),
        K_(table_id),

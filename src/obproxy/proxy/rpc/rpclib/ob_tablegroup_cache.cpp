@@ -168,7 +168,7 @@ int ObTableGroupCacheCont::add_building_tablegroup_entry(ObTableGroupCache &tabl
   int ret = OB_SUCCESS;
   ObTableGroupEntry *entry = NULL;
   ObString sharding("NONE");
-  ObSEArray<ObTableGroupTableNameInfo, 1> table_names;
+  ObSEArray<ObTableGroupTableNameInfo, 1> table_names(common::ObModIds::OB_RPC_TABLE_GROUP, sizeof(ObTableGroupTableNameInfo));
   table_names.push_back(ObTableGroupTableNameInfo());
 
   if (OB_FAIL(ObTableGroupEntry::alloc_and_init_tablegroup_entry(key.tenant_id_,
@@ -551,7 +551,7 @@ ObTableGroupCache &get_global_tablegroup_cache()
 int init_tablegroup_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_tablegroup_map_for_one_thread(i))) {
       LOG_WDIAG("fail to init tablegroup_map", K(i), K(ret));
@@ -564,7 +564,7 @@ int init_tablegroup_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
-  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
+  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_NET])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {

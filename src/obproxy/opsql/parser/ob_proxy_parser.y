@@ -11,7 +11,7 @@
 
 #define UNUSED(v) ((void)(v))
 
-#define HANDLE_ACCEPT() \
+#define HANDLE_ACCEPT_FINISH() \
 do {\
   if (result->stmt_count_ > 1) {\
     result->stmt_type_ = OBPROXY_T_MULTI_STMT;\
@@ -86,7 +86,7 @@ do {\
     result->cmd_info_.err_type_ = OBPROXY_T_ERR_PARSE;\
   }\
   handle_stmt_end(result);\
-  HANDLE_ACCEPT();\
+  HANDLE_ACCEPT_FINISH();\
 } while (0);
 
 #define SET_ICMD_SUB_TYPE(sub_type) \
@@ -285,7 +285,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* reserved keyword */
 %token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE UNIQUE
 %token GRANT REVOKE ANALYZE PURGE COMMENT
-%token FROM DUAL
+%token FROM DUAL JOIN
 %token PREPARE EXECUTE USING DEALLOCATE
 %token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN LOAD_DATA_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY PLACE_HOLDER
 %token END_P ERROR
@@ -297,9 +297,9 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> WARNINGS ERRORS TRACE
 %token<str> QUICK COUNT AS WHERE VALUES ORDER GROUP HAVING INTO UNION FOR
 %token<str> TX_READ_ONLY SELECT_OBPROXY_ROUTE_ADDR SET_OBPROXY_ROUTE_ADDR
-%token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR
+%token<str> NAME_OB_DOT NAME_OB EXPLAIN EXPLAIN_ROUTE DESC DESCRIBE NAME_STR USER_VARIABLE SYSTEM_VARIABLE
 %token<str> LOAD DATA LOCAL INFILE SLAVE RELAYLOG EVENTS HOSTS BINLOG PORT
-%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS MASTER LOGS RESET FLUSH SERVER TENANT
+%token<str> USE HELP SET_NAMES SET_CHARSET SET_PASSWORD SET_DEFAULT SET_OB_READ_CONSISTENCY SET_TX_READ_ONLY GLOBAL SESSION GLOBAL_ALIAS SESSION_ALIAS MASTER LOGS RESET FLUSH SERVER TENANT
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
@@ -338,17 +338,17 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %type<str> table_factor non_reserved_keyword var_name
 %start root
 %%
-root: sql_stmts { HANDLE_ACCEPT(); }
+root: sql_stmts { HANDLE_ACCEPT_FINISH(); }
     | error     { HANDLE_ERROR_ACCEPT(); }
 
 sql_stmts: sql_stmt
          | sql_stmts sql_stmt
 
-sql_stmt: comment_stmt END_P     { handle_stmt_end(result); HANDLE_ACCEPT(); }
+sql_stmt: comment_stmt END_P     { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
         | comment_stmt ';'       { handle_stmt_end(result); }
-        | comment_stmt ';' END_P { handle_stmt_end(result); HANDLE_ACCEPT(); }
+        | comment_stmt ';' END_P { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
         | ';'            { handle_stmt_end(result); }
-        | ';' END_P      { handle_stmt_end(result); HANDLE_ACCEPT(); }
+        | ';' END_P      { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
         | BEGI comment_stmt ';'  { handle_stmt_end(result); }
 
 comment_stmt: stmt
@@ -458,26 +458,26 @@ text_ps_from_stmt: select_stmt {}
                  | call_stmt {}
                  | merge_stmt {}
 
-text_ps_execute_using_var_list: '@' NAME_OB
+text_ps_execute_using_var_list: USER_VARIABLE
                               {
                                 ObProxyTextPsParseNode *node = NULL;
                                 malloc_parse_node(node);
-                                node->str_value_ = $2;
+                                node->str_value_ = $1;
                                 add_text_ps_node(result->text_ps_parse_info_, node);
                               }
-                              | text_ps_execute_using_var_list ',' '@' NAME_OB
+                              | text_ps_execute_using_var_list ',' USER_VARIABLE
                               {
                                 ObProxyTextPsParseNode *node = NULL;
                                 malloc_parse_node(node);
-                                node->str_value_ = $4;
+                                node->str_value_ = $3;
                                 add_text_ps_node(result->text_ps_parse_info_, node);
                               }
 
-text_ps_prepare_var_list: '@' NAME_OB
+text_ps_prepare_var_list: USER_VARIABLE
                         {
                           ObProxyTextPsParseNode *node = NULL;
                           malloc_parse_node(node);
-                          node->str_value_ = $2;
+                          node->str_value_ = $1;
                           add_text_ps_node(result->text_ps_parse_info_, node);
                         }
 
@@ -705,15 +705,15 @@ call_expr: NAME_OB
            malloc_call_node($$, CALL_TOKEN_NUMBER_VAL);
            $$->str_value_ = $1;
          }
-         | '@' NAME_OB
+         | USER_VARIABLE
          {
            malloc_call_node($$, CALL_TOKEN_USER_VAR);
-           $$->str_value_ = $2;
+           $$->str_value_ = $1;
          }
-         | '@' '@' NAME_OB
+         | SYSTEM_VARIABLE
          {
            malloc_call_node($$, CALL_TOKEN_SYS_VAR);
-           $$->str_value_ = $3;
+           $$->str_value_ = $1;
          }
          | PLACE_HOLDER
          {
@@ -745,7 +745,7 @@ column_list: var_name
 
 insert_stmt: insert_with_opt_hint table_factor partition_factor {
                                                                   handle_stmt_end(result);
-                                                                  HANDLE_ACCEPT();
+                                                                  HANDLE_ACCEPT_FINISH();
                                                                 }
            | insert_with_opt_hint table_factor partition_factor opt_column_list sub_query
 replace_stmt: replace_with_opt_hint fromlist
@@ -753,7 +753,7 @@ update_stmt: update_with_opt_hint fromlist
 delete_stmt: delete_with_opt_hint opt_quick FROM fromlist
 merge_stmt: merge_with_opt_hint table_factor {
                                                  handle_stmt_end(result);
-                                                 HANDLE_ACCEPT();
+                                                 HANDLE_ACCEPT_FINISH();
                                                }
 
 set_stmt: SET set_expr_list
@@ -761,25 +761,25 @@ set_stmt: SET set_expr_list
 set_expr_list: set_expr ',' set_expr_list
              | set_expr
 
-set_expr: '@' var_name '=' set_var_value
+set_expr: USER_VARIABLE '=' set_var_value
         {
-          add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_USER);
+          add_set_var_node(result->set_parse_info_, $3, $1, SET_VAR_USER);
         }
-        | '@' '@' GLOBAL var_name '=' set_var_value
+        | GLOBAL_ALIAS var_name '=' set_var_value
         {
-          add_set_var_node(result->set_parse_info_, $6, $4, SET_VAR_SYS);
+          add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_SYS);
         }
         | GLOBAL var_name '=' set_var_value
         {
           add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_SYS);
         }
-        | '@' '@' var_name '=' set_var_value
+        | SYSTEM_VARIABLE '=' set_var_value
         {
-          add_set_var_node(result->set_parse_info_, $5, $3, SET_VAR_SYS);
+          add_set_var_node(result->set_parse_info_, $3, $1, SET_VAR_SYS);
         }
-        | '@' '@' SESSION var_name '=' set_var_value
+        | SESSION_ALIAS var_name '=' set_var_value
         {
-          add_set_var_node(result->set_parse_info_, $6, $4, SET_VAR_SYS);
+          add_set_var_node(result->set_parse_info_, $4, $2, SET_VAR_SYS);
         }
         | SESSION var_name '=' set_var_value
         {
@@ -1260,24 +1260,29 @@ partition_factor: /*empty*/ {}
 
 table_references: table_factor partition_factor {
                                                   handle_stmt_end(result);
-                                                  HANDLE_ACCEPT();
+                                                  HANDLE_ACCEPT_FINISH();
+                                                }
+                | table_factor partition_factor join_expr
+                                                {
+                                                  handle_stmt_end(result);
+                                                  HANDLE_ACCEPT_FINISH();
                                                 }
 
 table_factor: var_name  {
                           result->table_info_.table_name_ = $1;
                         }
-            | var_name '.' var_name '@' var_name {
+            | var_name '.' var_name USER_VARIABLE {
                                                   result->table_info_.database_name_ = $1;
                                                   result->table_info_.table_name_ = $3;
-                                                  result->table_info_.dblink_name_ = $5;
+                                                  result->table_info_.dblink_name_ = $4;
                                                  }
             | var_name '.' var_name {
                                       result->table_info_.database_name_ = $1;
                                       result->table_info_.table_name_ = $3;
                                     }
-            | var_name '@' var_name {
+            | var_name USER_VARIABLE {
                                       result->table_info_.table_name_ = $1;
-                                      result->table_info_.dblink_name_ = $3;
+                                      result->table_info_.dblink_name_ = $2;
                                     }
             | var_name var_name   {
                                     UPDATE_ALIAS_NAME($2);
@@ -1297,6 +1302,35 @@ table_factor: var_name  {
                                                   result->table_info_.database_name_ = $1;
                                                   result->table_info_.table_name_ = $3;
                                                 }
+
+join_expr: JOIN var_name { result->table_info_.join_table_name_ = $2; }
+         | JOIN var_name '.' var_name
+         {
+            result->table_info_.join_database_name_ = $2;
+            result->table_info_.join_table_name_ = $4;
+          }
+         | JOIN var_name var_name
+         {
+            result->table_info_.join_table_name_ = $2;
+            result->table_info_.join_table_alias_name_ = $3;
+         }
+         | JOIN var_name AS var_name
+         {
+            result->table_info_.join_table_name_ = $2;
+            result->table_info_.join_table_alias_name_ = $4;
+         }
+         | JOIN var_name '.' var_name var_name
+         {
+            result->table_info_.join_database_name_ = $2;
+            result->table_info_.join_table_name_ = $4;
+            result->table_info_.join_table_alias_name_ = $5;
+         }
+         | JOIN var_name '.' var_name AS var_name
+         {
+            result->table_info_.join_database_name_ = $2;
+            result->table_info_.join_table_name_ = $4;
+            result->table_info_.join_table_alias_name_ = $6;
+         }
 
 non_reserved_keyword: START
                     | XA

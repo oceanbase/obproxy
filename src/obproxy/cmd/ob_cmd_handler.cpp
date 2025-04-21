@@ -35,7 +35,7 @@ ObCmdHandler::~ObCmdHandler()
 {
   is_inited_ = false;
   destroy_internal_buf();
-  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  protocol_ = ObProxyProtocol::PROTOCOL_MAX;
   ob20_param_.reset();
 }
 
@@ -252,14 +252,13 @@ int ObCmdHandler::fill_external_buf()
 {
   int ret = OB_SUCCESS;
 
-  if (OB_LIKELY(protocol_ == ObProxyProtocol::PROTOCOL_OB20)) {
-    // cli - proxy not supports compressed ob20
+  if (OB_LIKELY(protocol_ == ObProxyProtocol::PROTOCOL_OCEANBASE_20)) {
     if (OB_FAIL(ObProto20Utils::consume_and_compress_data(internal_reader_, external_buf_, internal_reader_->read_avail(), ob20_param_))) {
       WDIAG_ICMD("fail to consume and compress to ob20 packet", K(ret), K_(ob20_param));
     } else {
       DEBUG_ICMD("succ to write to client in ob20", K_(ob20_param));
     }
-  } else if (protocol_ == ObProxyProtocol::PROTOCOL_NORMAL) {
+  } else if (protocol_ == ObProxyProtocol::PROTOCOL_MYSQL) {
     // mysql
     int64_t data_size = internal_reader_->read_avail();
     int64_t bytes_written = 0;

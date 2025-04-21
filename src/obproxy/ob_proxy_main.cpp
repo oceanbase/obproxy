@@ -116,6 +116,7 @@ int ObProxyMain::get_opts_setting(struct option long_opts[], const int64_t long_
     {"version", 'V', 0},
     {"releaseid", 'R', 0},
     {"regression_test", 't', 1},
+    {"config_yaml", 'C', 0},
   };
 
   int64_t opts_cnt = sizeof (ob_opts) / sizeof (ob_opts[0]);
@@ -296,6 +297,10 @@ int ObProxyMain::parse_short_opt(const int32_t c, const char *value, ObProxyOpti
       print_usage();
       ret = OB_NOT_RUNNING;
       break;
+    } case 'C': {
+      dump_config_to_yaml();
+      ret = OB_NOT_RUNNING;
+      break;
     }
     default:{
       ret = OB_INIT_FAIL;
@@ -454,6 +459,17 @@ int ObProxyMain::get_log_file_name(const ObLogFDType type, char *file_name, cons
   return ret;
 }
 
+void ObProxyMain::dump_config_to_yaml() const
+{
+  int ret = OB_SUCCESS;
+  ObProxyConfig &config = get_global_proxy_config();
+  const bool is_yaml_format = true;
+  if (OB_FAIL(config.dump_config_to_local(is_yaml_format))) {
+    MPRINT("fail to dump_config_to_ymal, ret=%d", ret);
+  }
+
+}
+
 int ObProxyMain::start(const int argc, char *const argv[])
 {
   int ret = OB_SUCCESS;
@@ -490,9 +506,7 @@ int ObProxyMain::start(const int argc, char *const argv[])
   }
 
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(ObMemLeakChecker::init_all_mem_leak_checker())) {
-      MPRINT("fail to init mem checker, ret=%d", ret);
-    } else if (OB_FAIL(obkv::get_global_rpc_throttle().init())) {
+    if (OB_FAIL(obkv::get_global_rpc_throttle().init())) {
       MPRINT("fail to init rpc throttle, ret=%d", ret);
     } else if (OB_FAIL(get_global_layout().init(argv[0]))) {
       MPRINT("fail to init global layout, ret=%d", ret);
@@ -589,6 +603,7 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
         }
       }
     }
+    LOG_INFO("handle inherited sockets info", K(info));
   }
 
   return ret;
@@ -619,9 +634,9 @@ int ObProxyMain::init_log()
 
   if (OB_SUCC(ret)) {
     ObProxyConfig &config = get_global_proxy_config();
-    OB_LOGGER.set_log_level("INFO");
-    OB_LOGGER.set_monitor_log_level("INFO");
-    OB_LOGGER.set_xflush_log_level("INFO");
+    OB_LOGGER.set_log_level("DEBUG");
+    OB_LOGGER.set_monitor_log_level("DEBUG");
+    OB_LOGGER.set_xflush_log_level("DEBUG");
     OB_LOGGER.set_max_file_size(config.max_log_file_size);
     // OB_LOGGER.set_logger_callback_handler(&oceanbase::obproxy::logger_callback);
 

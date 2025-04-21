@@ -2379,7 +2379,7 @@ bool ObObjCmpFuncs::compare_oper_nullsafe(const ObObj &obj1,
   } else {
     obj_cmp_func cmp_op_func = cmp_funcs[tc1][tc2][cmp_op];
     if (OB_ISNULL(cmp_op_func)) {
-      LOG_EDIAG("obj1 and obj2 can't compare", K(obj1), K(obj2), K(cmp_op));
+      LOG_DEBUG("obj1 and obj2 can't compare", K(obj1), K(obj2), K(cmp_op));
       cmp = CR_ERROR;
     } else {
       ObCompareCtx cmp_ctx(ObMaxType, cs_type, true, INVALID_TZ_OFF);
@@ -2407,7 +2407,7 @@ int ObObjCmpFuncs::compare_nullsafe(const ObObj &obj1,
   } else {
     obj_cmp_func cmp_func = cmp_funcs[tc1][tc2][CO_CMP];
     if (OB_ISNULL(cmp_func)) {
-      LOG_EDIAG("obj1 and obj2 can't compare", K(obj1), K(obj2));
+      LOG_DEBUG("obj1 and obj2 can't compare", K(obj1), K(obj2));
       cmp = CR_ERROR;
     } else {
       ObCompareCtx cmp_ctx(ObMaxType, cs_type, true, INVALID_TZ_OFF);

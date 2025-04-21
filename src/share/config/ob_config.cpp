@@ -24,7 +24,8 @@ namespace common
 // ObConfigItem
 ObConfigItem::ObConfigItem()
     : ck_(NULL), version_(0), need_reboot_(false),
-      is_initial_value_set_(false), config_level_(ObConfigLevel::OB_CONFIG_MULTI_LEVEL_MAX)
+      is_initial_value_set_(false), config_level_(ObConfigLevel::OB_CONFIG_MULTI_LEVEL_MAX),
+      config_type_(OB_CONFIG_DEFAULT_TYPE)
 {
   MEMSET(value_str_, 0, sizeof(value_str_));
   MEMSET(name_str_, 0, sizeof(name_str_));
@@ -55,7 +56,8 @@ int64_t ObConfigItem::to_string(char *buf, const int64_t buf_len) const
        "visible_level_str", visible_level_str_,
        "info", info_str_,
        "range", range_str_,
-       "config_level", config_level_to_str());
+       "config_level", config_level_to_str(),
+       "config_type", config_type_to_str());
   J_OBJ_END();
   return pos;
 }
@@ -86,6 +88,50 @@ const char* ObConfigItem::config_level_to_str() const
     }
   }
   return config_level_str;
+}
+
+const char* ObConfigItem::config_type_to_str() const
+{
+  const char *ret_str = "";
+  switch (config_type_) {
+    case OB_CONFIG_DEFAULT_TYPE:
+      ret_str = "DEFAULT_TYPE";
+      break;
+    case OB_CONFIG_INTLIST_TYPE:
+      ret_str = "INTLIST";
+      break;
+    case OB_CONFIG_STRLIST_TYPE:
+      ret_str = "STRLIST";
+      break;
+    case OB_CONFIG_INTEGRAL_TYPE:
+      ret_str = "INTEGRAL";
+      break;
+    case OB_CONFIG_DOUBLE_TYPE:
+      ret_str = "DOUBLE";
+      break;
+    case OB_CONFIG_CAPACITY_TYPE:
+      ret_str = "CAPACITY";
+      break;
+    case OB_CONFIG_TIME_TYPE:
+      ret_str = "TIME";
+      break;
+    case OB_CONFIG_INT_TYPE:
+      ret_str = "INT";
+      break;
+    case OB_CONFIG_MOMENT_TYPE:
+      ret_str = "MOMENT";
+      break;
+    case OB_CONFIG_BOOL_TYPE:
+      ret_str = "BOOL";
+      break;
+    case OB_CONFIG_STRING_TYPE:
+      ret_str = "STRING";
+      break;
+    default:
+      // impossiable
+      OB_LOG(WDIAG, "Invaile config type, unexcepted branch", K_(config_type));
+  }
+  return ret_str;
 }
 
 ObConfigItem::ObConfigLevel ObConfigItem::str_to_config_level(const char *config_level_str)
@@ -184,6 +230,7 @@ ObConfigItem::ObConfigItem(const ObConfigItem& item)
   set_config_level(item.config_level());
   need_reboot_ = item.need_reboot();
   is_initial_value_set_ = item.is_initial_value_set();
+  config_type_ = item.config_type();
 }
 
 ObConfigItem& ObConfigItem::operator =(const ObConfigItem& item)
@@ -199,6 +246,7 @@ ObConfigItem& ObConfigItem::operator =(const ObConfigItem& item)
     set_config_level(item.config_level());
     need_reboot_ = item.need_reboot();
     is_initial_value_set_ = item.is_initial_value_set();
+    config_type_ = item.config_type();
   }
 
   return *this;
@@ -215,6 +263,8 @@ void ObConfigItem::reset()
   section_str_[0] = '\0';
   visible_level_str_[0] = '\0';
   range_str_[0] = '\0';
+  config_type_ = OB_CONFIG_DEFAULT_TYPE;
+
 }
 
 ObConfigItem& ObConfigItem::operator =(const ObVariableLenConfigItem& item)
@@ -326,6 +376,7 @@ ObConfigIntListItem::ObConfigIntListItem(ObConfigContainer *container,
                                          const ObCfgItemExtraInfo e4)
     : value_(), initial_value_()
 {
+  config_type_ = OB_CONFIG_INTLIST_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -385,6 +436,7 @@ void ObConfigStrListItem::free()
 ObConfigStrListItem::ObConfigStrListItem()
     : value_(), initial_value_()
 {
+  config_type_ = OB_CONFIG_STRLIST_TYPE;
 }
 
 ObConfigStrListItem::ObConfigStrListItem(ObConfigContainer *container,
@@ -397,6 +449,7 @@ ObConfigStrListItem::ObConfigStrListItem(ObConfigContainer *container,
                                          const ObCfgItemExtraInfo e4)
     : value_(), initial_value_()
 {
+  config_type_ = OB_CONFIG_STRLIST_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -634,6 +687,7 @@ ObConfigDoubleItem::ObConfigDoubleItem(ObConfigContainer *container,
                                        const ObCfgItemExtraInfo e4)
     : value_(0), initial_value_(0)
 {
+  config_type_ = OB_CONFIG_DOUBLE_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -650,6 +704,7 @@ ObConfigDoubleItem::ObConfigDoubleItem(ObConfigContainer *container,
                                       const ObCfgItemExtraInfo e4)
     : value_(0), initial_value_(0)
 {
+  config_type_ = OB_CONFIG_DOUBLE_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -764,6 +819,7 @@ ObConfigCapacityItem::ObConfigCapacityItem(ObConfigContainer *container,
                                             const ObCfgItemExtraInfo e3,
                                             const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_CAPACITY_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -779,6 +835,7 @@ ObConfigCapacityItem::ObConfigCapacityItem(ObConfigContainer *container,
                                            const ObCfgItemExtraInfo e3,
                                            const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_CAPACITY_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -825,6 +882,7 @@ ObConfigTimeItem::ObConfigTimeItem(ObConfigContainer *container,
                                    const ObCfgItemExtraInfo e3,
                                    const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_TIME_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -840,6 +898,7 @@ ObConfigTimeItem::ObConfigTimeItem(ObConfigContainer *container,
                                  const ObCfgItemExtraInfo e3,
                                  const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_TIME_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -911,6 +970,7 @@ ObConfigIntItem::ObConfigIntItem(ObConfigContainer *container,
                                  const ObCfgItemExtraInfo e3,
                                  const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_INT_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -926,6 +986,7 @@ ObConfigIntItem::ObConfigIntItem(ObConfigContainer *container,
                                  const ObCfgItemExtraInfo e3,
                                  const ObCfgItemExtraInfo e4)
 {
+  config_type_ = OB_CONFIG_INT_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -983,6 +1044,7 @@ ObConfigMomentItem::ObConfigMomentItem(ObConfigContainer *container,
                                        const ObCfgItemExtraInfo e4)
     :  value_(), initial_value_()
 {
+  config_type_ = OB_CONFIG_MOMENT_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -1038,6 +1100,7 @@ ObConfigBoolItem::ObConfigBoolItem(ObConfigContainer *container,
                                    const ObCfgItemExtraInfo e4)
     : value_(false), initial_value_(false)
 {
+  config_type_ = OB_CONFIG_BOOL_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }
@@ -1130,6 +1193,7 @@ ObConfigStringItem::ObConfigStringItem(ObConfigContainer *container,
                                        const ObCfgItemExtraInfo e4)
 {
   MEMSET(initial_value_str_, 0, sizeof(initial_value_str_));
+  config_type_ = OB_CONFIG_STRING_TYPE;
   if (OB_LIKELY(NULL != container)) {
     container->set_refactored(ObConfigStringKey(name), this, 1);
   }

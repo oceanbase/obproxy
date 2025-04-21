@@ -168,7 +168,7 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
       int64_t async_thread_iso_range = ObRpcReqThreadQpsStat::get_sub_req_async_thread_iso_range();
       if (sub_req_iso_mode == NOT_ISOLAEION || async_thread_count == 0) {
         LOG_DEBUG("obkv event processor handle sub request");
-        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
+        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_NET))) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
         }
@@ -186,7 +186,7 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
         }
       } else {
         LOG_INFO("invalid rpc_sub_req_siolation_mode", K(sub_req_iso_mode));
-        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_CALL))) {
+        if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_NET))) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
         }
@@ -204,6 +204,7 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
     }
 
     if (OB_FAIL(ret) && OB_NOT_NULL(execute_cont)) {
+      execute_cont->free_sub_rpc_request();
       execute_cont->destroy();
       execute_cont = NULL;
       // parallel_execute_cont_arr_.reset();

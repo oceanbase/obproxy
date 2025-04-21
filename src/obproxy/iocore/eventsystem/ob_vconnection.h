@@ -96,6 +96,9 @@ class ObProxyMutex;
 #define VC_EVENT_HELLO_PKT_READ_READY    (VC_EVENT_EVENTS_START+7)
 // OBProxy detect server dead, should close connection
 #define VC_EVENT_DETECT_SERVER_DEAD      (VC_EVENT_EVENTS_START+8)
+// OBProxy RPC net read timeout or net write_timeout, should close connection
+#define VC_EVENT_NET_READ_TIMEOUT             (VC_EVENT_EVENTS_START+9)
+#define VC_EVENT_NET_WRITE_TIMEOUT            (VC_EVENT_EVENTS_START+10)
 
 // ObEvent return codes
 #define VC_EVENT_DONE                CONTINUATION_DONE

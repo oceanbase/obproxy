@@ -43,7 +43,8 @@ class ObTableEntry : public ObRouteEntry
 public:
   ObTableEntry()
     : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_entry_from_rslist_(false),
-      is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), tenant_id_(common::OB_INVALID_ID),
+      is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), is_single_partition_table_(false),
+      need_rebuild_as_single_partition_table_(false), tenant_id_(common::OB_INVALID_ID),
       table_id_(common::OB_INVALID_ID), table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
       buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
       batch_mutex_(), batch_fetch_cont_(NULL)
@@ -52,6 +53,7 @@ public:
 
   virtual ~ObTableEntry() {} // must be empty
   virtual void free();
+  void reuse();
 
   static int alloc_and_init_table_entry(const ObTableEntryName &name, const int64_t cr_version,
                                         const int64_t cr_id, ObTableEntry *&entry);
@@ -68,16 +70,20 @@ public:
         : share::schema::MAX_TABLE_TYPE);
   }
   void set_entry_from_rslist() { is_entry_from_rslist_ = true; }
+  void set_single_partition_table(bool flag) { is_single_partition_table_ = flag;}
+  void set_need_rebuild_as_single_partition_table() { need_rebuild_as_single_partition_table_ = true; }
   int set_names(const ObTableEntryName &name);
   int set_first_partition_location(ObProxyPartitionLocation *first_location);
   int set_tenant_servers(ObTenantServer *new_ts);
   bool is_dummy_entry() const { return is_dummy_entry_; }
   bool is_sys_dummy_entry() const { return is_dummy_entry_ && name_.is_sys_tenant(); }
   bool is_common_dummy_entry() const { return is_dummy_entry_ && !name_.is_sys_tenant(); }
-  bool is_location_entry() const { return (!is_dummy_entry_ && 1 == part_num_) || is_binlog_entry_; }
-  bool is_part_info_entry() const { return !is_dummy_entry_ && part_num_ > 1; }
-  bool is_non_partition_table() const { return (1 == get_part_num()); }
-  bool is_partition_table() const { return (get_part_num() > 1); }
+  bool is_location_entry() const { return (!is_dummy_entry_ && 1 == part_num_ && !is_single_partition_table_) || is_binlog_entry_; }
+  bool is_part_info_entry() const { return !is_dummy_entry_ && (part_num_ > 1 || (1 == part_num_ && is_single_partition_table_)); }
+  bool is_non_partition_table() const { return (1 == get_part_num() && !is_single_partition_table_); }
+  bool is_partition_table() const { return (get_part_num() > 1 || is_single_partition_table_); }
+  bool is_single_partition_table() const { return is_single_partition_table_; }
+  bool is_need_rebuild_as_single_partition_table() const { return need_rebuild_as_single_partition_table_; }
   bool is_entry_from_rslist() const { return is_entry_from_rslist_; }
   bool is_empty_entry_allowed() const { return is_empty_entry_allowed_; }
   void set_allow_empty_entry(const bool is_empty_entry_allowed) { is_empty_entry_allowed_ = is_empty_entry_allowed; }
@@ -116,6 +122,7 @@ public:
 
   // will alloc part info if need
   int alloc_part_info();
+  void free_part_info();
   ObProxyPartInfo *get_part_info() { return part_info_; }
   ObProxyPartInfo *get_part_info() const { return part_info_; }
   int is_contain_all_dummy_entry(const ObTableEntry &new_entry, bool &is_contain_all) const;
@@ -149,6 +156,8 @@ private:
   bool is_empty_entry_allowed_;
   bool is_need_force_flush_;
   bool has_dup_replica_;
+  bool is_single_partition_table_;
+  bool need_rebuild_as_single_partition_table_;
 
   // schema info, add more later
   uint64_t tenant_id_;

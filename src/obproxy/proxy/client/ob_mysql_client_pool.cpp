@@ -233,7 +233,7 @@ void ObMysqlClientPool::destroy()
     if (OB_ISNULL(cont = ObMysqlClientDestroyCont::alloc(this))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to alloc ObMysqlClientDestroyCont", K(ret));
-    } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL, CLIENT_DESTROY_SELF_EVENT))) {
+    } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_NET, CLIENT_DESTROY_SELF_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to schedule ObMysqlClientDestroyCont", K(cont), K(ret));
     }

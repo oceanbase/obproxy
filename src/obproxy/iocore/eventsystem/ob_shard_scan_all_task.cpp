@@ -23,11 +23,11 @@ namespace obproxy
 {
 namespace event
 {
-ObEventThreadType ET_SHARD_SCAN_ALL = ET_CALL;
+ObEventThreadType ET_SHARD_SCAN_ALL = ET_NET;
 ObShardScanAllTaskProcessor g_shard_scan_all_task_processor;
 
 // Note that if the number of task_threads is 0, all continuations scheduled for
-// ET_SHARD_SCAN_ALL ends up running on ET_CALL (which is the net-threads).
+// ET_SHARD_SCAN_ALL ends up running on ET_NET (which is the net-threads).
 int ObShardScanAllTaskProcessor::start(
     const int64_t shard_scan_all_threads, const int64_t stacksize,
     const bool enable_cpu_topology, const bool automatic_match_work_thread,

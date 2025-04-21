@@ -46,6 +46,7 @@ class ObProto20Utils
 public:
   static const int64_t OB_20_PROTOCOL_TYPE_LEN = 2;
   static const int64_t OB_20_PROTOCOL_VAL_LENGTH_LEN = 4;
+  static const int64_t OB_20_PROTOCOL_MAX_PAYLOAD_LEN = 1 << 23; //8MB
 
   ObProto20Utils();
   virtual ~ObProto20Utils();

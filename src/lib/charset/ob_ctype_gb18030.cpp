@@ -20204,7 +20204,7 @@ static void ob_hash_sort_gb18030(const ObCharsetInfo *cs, const uchar *s,
   *n2 = tmp2;
 }
 
-static ObCollationHandler ob_collation_ci_handler =
+static ObCollationHandler ob_collation_gb18030_ci_handler =
 {
   NULL,
   ob_strnncoll_gb18030<get_weight_if_chinese_character, INSENSITIVE>,
@@ -20316,7 +20316,7 @@ ObCharsetInfo ob_charset_gb18030_chinese_ci = {
     1, /* levels_for_compare */
     1,
     &ob_charset_gb18030_handler,
-    &ob_collation_ci_handler};
+    &ob_collation_gb18030_ci_handler};
 
 ObCharsetInfo ob_charset_gb18030_chinese_cs = {
     251,

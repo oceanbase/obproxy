@@ -139,9 +139,8 @@ void ObTenantAllocator::print_usage() const
   OBPROXY_DIAGNOSIS_LOG(INFO, "[MEMORY]", "hold", hold_bytes_, "buf", buf);
   if (OB_SUCC(ret) && sum_item.count_ > 0) {
     const ObModItem &item = sum_item;
-    OBPROXY_DIAGNOSIS_LOG(WDIAG,
-                        "[MEMORY]", "hold", item.hold_, "used", item.used_, "count", item.count_,
-                        "avg_used", (0 == item.count_) ? 0 : item.used_ / item.count_, "mod", "SUMMARY");
+    OBPROXY_DIAGNOSIS_LOG(WDIAG, "[MEMORY]", "hold", item.hold_, "used", item.used_, "count", item.count_,
+                          "avg_used", (0 == item.count_) ? 0 : item.used_ / item.count_, "mod", "SUMMARY");
   }
 }
 

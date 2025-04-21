@@ -53,7 +53,7 @@ public:
 
     return ret;
   }
-  template<typename ClassT>
+  template<typename ClassT, ObObjType target_type>
   int alloc_func_expr(const ObProxyExprType type, ObProxyFuncExpr *&expr)
   {
     int ret = common::OB_SUCCESS;
@@ -68,6 +68,7 @@ public:
       } else {
         expr = new(ptr) ClassT();
         expr->set_expr_type(type);
+        expr->set_target_type(target_type);
       }
     }
     return ret;

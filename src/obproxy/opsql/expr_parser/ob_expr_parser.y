@@ -107,42 +107,6 @@ static inline ObProxyFunctionType get_reverse_func(ObProxyFunctionType type)
   return ret_type;
 }
 
-static inline int64_t get_mask(ObProxyFunctionType type, ObProxyPartKeyLevel level)
-{
-  int64_t mask = 0;
-  int64_t flag = NO_BOUND_FLAG;
-  switch (type) {
-    case F_COMP_EQ:
-    case F_COMP_NSEQ:
-      flag = BOTH_BOUND_FLAG;
-      break;
-    case F_COMP_GE:
-    case F_COMP_GT:
-      flag = LOW_BOUND_FLAG;
-      break;
-    case F_COMP_LE:
-    case F_COMP_LT:
-      flag = HIGH_BOUND_FLAG;
-      break;
-    default:
-      break;
-  }
-  switch (level) {
-    case PART_KEY_LEVEL_ONE:
-      mask = GET_FIRST_PART_MASK(flag);
-      break;
-    case PART_KEY_LEVEL_TWO:
-      mask = GET_SUB_PART_MASK(flag);
-      break;
-    case PART_KEY_LEVEL_BOTH:
-      mask = GET_FIRST_PART_MASK(flag) | GET_SUB_PART_MASK(flag);
-      break;
-    default:
-      break;
-  }
-  return mask;
-}
-
 static inline void set_part_key_column_idx(ObExprParseResult *result, ObProxyParseString *column_name)
 {
   int64_t i = 0;
@@ -954,6 +918,9 @@ opt_where_clause: /* empty */
 %%
 void yyerror(YYLTYPE* yylloc, ObExprParseResult* p, char* s, ...)
 {
+  UNUSED(yylloc);
+  UNUSED(p);
+  UNUSED(s);
   // do nothing
 }
 

@@ -62,6 +62,9 @@ public:
 
   // int64_t to_string(char *buf, const int64_t buf_len) const;
 
+  void set_client_net_read_timeout();
+  void set_client_net_write_timeout();
+
   /** handle net info*/
   int setup_client_request_read();
   int state_client_request_read(int event, void *data);
@@ -89,6 +92,7 @@ protected:
   ObRpcReqList need_send_response_list_;
   ObRpcReqList sending_response_list_;
   event::ObAction *period_task_action_;
+  event::ObAction *timeout_action_;
   // event::ObAction *pending_action_;
 
   int64_t current_need_read_len_;
@@ -97,6 +101,30 @@ protected:
 private:
   DISALLOW_COPY_AND_ASSIGN(ObRpcOBKVClientNetHandler);
 };
+
+inline void ObRpcOBKVClientNetHandler::set_client_net_read_timeout()
+{
+  ObHRTime timeout = HRTIME_USECONDS(obutils::get_global_proxy_config().rpc_client_net_read_timeout);
+  set_net_read_timeout(timeout, obutils::OB_CLIENT_NET_READ_TIMEOUT);
+  #ifdef ERRSIM
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(OB_E(EventTable::EN_RPC_CLIENT_NET_READ_TIMEOUT) OB_SUCCESS)) {
+    set_net_read_timeout(1, obutils::OB_CLIENT_NET_READ_TIMEOUT);
+  }
+  #endif
+}
+
+inline void ObRpcOBKVClientNetHandler::set_client_net_write_timeout()
+{
+  ObHRTime timeout = HRTIME_USECONDS(obutils::get_global_proxy_config().rpc_client_net_write_timeout);
+  set_net_write_timeout(timeout, obutils::OB_CLIENT_NET_WRITE_TIMEOUT);
+  #ifdef ERRSIM
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(OB_E(EventTable::EN_RPC_CLIENT_NET_WRITE_TIMEOUT) OB_SUCCESS)) {
+    set_net_write_timeout(1, obutils::OB_CLIENT_NET_WRITE_TIMEOUT);
+  }
+  #endif
+}
 
 inline void ObRpcOBKVClientNetHandler::add_client_response_request(ObRpcReq *request)
 {

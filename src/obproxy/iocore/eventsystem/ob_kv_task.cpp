@@ -25,7 +25,7 @@ namespace obproxy
 {
 namespace event
 {
-ObEventThreadType ET_OBKV = ET_CALL;
+ObEventThreadType ET_OBKV = ET_NET;
 ObKvTaskProcessor g_obkv_task_processor;
 
 int ObKvTaskProcessor::start(const int64_t obkv_task_all_threads, const int64_t stacksize)

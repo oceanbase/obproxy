@@ -42,7 +42,7 @@ int ObProxyPacketWriter::write_packet(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
     Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
@@ -70,7 +70,7 @@ int ObProxyPacketWriter::write_raw_packet(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
     Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_,
@@ -101,7 +101,7 @@ int ObProxyPacketWriter::write_kv_resultset(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
     Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
@@ -130,7 +130,7 @@ int ObProxyPacketWriter::write_empty_resultset(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
     Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
@@ -159,7 +159,7 @@ int ObProxyPacketWriter::write_ok_packet(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
     uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
     Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
@@ -229,7 +229,7 @@ int ObProxyPacketWriter::write_error_packet(event::ObMIOBuffer &write_buf,
 {
   int ret = OB_SUCCESS;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     if (OB_ISNULL(client_session)) {
       ret = OB_INVALID_ARGUMENT;
       LOG_WDIAG("invalid client session ptr in ob20 mode", K(ret));

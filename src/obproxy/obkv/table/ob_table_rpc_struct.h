@@ -36,7 +36,7 @@ class ObTableLoginRequest final
   OB_UNIS_VERSION(1);
 public:
   uint8_t auth_method_;  // always 1 for now
-  uint8_t client_type_;  // 1: libobtable; 2: java client
+  uint8_t client_type_;  // 1: libobtable; 2: java client 3: hbase client
   uint8_t client_version_;  // always 1 for now
   uint8_t reserved1_;
   uint32_t client_capabilities_;
@@ -356,7 +356,8 @@ public:
   //int deserialize_get_position_v4(const char *buf, int64_t buf_len, int64_t &pos, REWRITE_INFO_ARG);
   //int deserialize_get_position_v4_(const char *buf, int64_t buf_len, int64_t &pos, REWRITE_INFO_ARG);
 
-  bool is_valid() const { return ObQueryOperationType::QUERY_START == query_type_ || ObQueryOperationType::QUERY_NEXT == query_type_; }
+  // bool is_valid() const { return ObQueryOperationType::QUERY_START == query_type_ || ObQueryOperationType::QUERY_NEXT == query_type_; }
+  bool is_valid() const { return (ObQueryOperationType::QUERY_START <= query_type_ && ObQueryOperationType::QUERY_MAX > query_type_); }
 
   INHERIT_TO_STRING_KV("ObTableQueryRequest", ObTableQueryRequest, K_(query_session_id), K_(query_type));
 

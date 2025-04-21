@@ -55,7 +55,7 @@ public:
   ObRpcReqCtx()
     : common::ObSharedRefCount(), rc_state_(RC_BORN), credential_(),
       cluster_name_(), tenant_name_(), user_name_(), database_name_(), full_name_(), rpc_password_str_(),
-      is_clustername_from_default_(false), name_len_(0), name_buf_(NULL),
+      is_clustername_from_default_(false), is_server_support_distributed_execute_(false), name_len_(0), name_buf_(NULL),
       last_access_time_ns_(0), lock_(), cluster_resource_(NULL), cache_cluster_resource_state_(CACHE_ENTRY_UPDATING),
       dummy_entry_(NULL), dummy_ldc_(), dummy_entry_valid_time_ns_(0), server_state_version_(0), cache_dummy_entry_state_(CACHE_ENTRY_UPDATING),
       config_info_(), cache_config_info_state_(CACHE_ENTRY_UPDATING) {}
@@ -73,6 +73,8 @@ public:
   int set_rpc_password_str(const ObString &pwd);
   void set_clustername_from_default(bool flag) { is_clustername_from_default_ = flag; }
   bool is_clustername_from_default() const { return is_clustername_from_default_; }
+  void set_support_distributed_execute(bool flag) { is_server_support_distributed_execute_ = flag; }
+  bool is_support_distributed_execute() const { return is_server_support_distributed_execute_; }
 
   ObString get_tenant_name() const { return tenant_name_; }
   ObString get_cluster_name() const { return cluster_name_; }
@@ -156,6 +158,7 @@ private:
   common::ObString rpc_password_str_;
 
   bool is_clustername_from_default_;
+  bool is_server_support_distributed_execute_;
   int64_t name_len_;
   char *name_buf_;
   char full_name_buf_[OB_PROXY_FULL_USER_NAME_MAX_LEN];

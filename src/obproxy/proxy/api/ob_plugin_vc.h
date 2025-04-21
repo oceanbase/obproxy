@@ -117,6 +117,12 @@ public:
   virtual int get_conn_fd() { return 0; }
   virtual int set_tcp_init_cwnd(int init_cwnd);
   virtual int apply_options();
+  virtual void set_net_write_timeout(ObHRTime timeout_in) { UNUSED(timeout_in); }
+  virtual void cancel_net_write_timeout() {}
+  virtual ObHRTime get_net_write_timeout() { return 0;}
+  virtual void set_net_read_timeout(ObHRTime timeout_in) { UNUSED(timeout_in); }
+  virtual void cancel_net_read_timeout() {}
+  virtual ObHRTime get_net_read_timeout() { return 0;}
 
   virtual bool get_data(const int32_t id, void *data);
   virtual bool set_data(const int32_t id, void *data);

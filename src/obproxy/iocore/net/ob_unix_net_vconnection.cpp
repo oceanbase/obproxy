@@ -388,6 +388,11 @@ inline bool ObUnixNetVConnection::handle_read_from_net_success(
   }
   read_.vio_.ndone_ += total_read;
   net_activity();
+  if (net_read_timeout_in_ > 0) {
+    next_net_read_timeout_at_ = get_hrtime() + net_read_timeout_in_;
+  } else {
+    next_net_read_timeout_at_ = 0;
+  }
 
   // If there are no more bytes to read, signal read complete
   if (read_.vio_.ntodo() <= 0) {
@@ -430,6 +435,11 @@ inline bool ObUnixNetVConnection::handle_write_to_net_success(
   }
 
   net_activity();
+  if (net_write_timeout_in_ > 0) {
+    next_net_write_timeout_at_ = get_hrtime() + net_write_timeout_in_;
+  } else {
+    next_net_write_timeout_at_ = 0;
+  }
 
   if (write_.vio_.ntodo() <= 0) {
     if (EVENT_DONE != write_signal_done(VC_EVENT_WRITE_COMPLETE)) {
@@ -481,6 +491,10 @@ inline int ObUnixNetVConnection::close()
   next_inactivity_timeout_at_ = 0;
   reenable_read_time_at_ = 0;
   inactivity_timeout_in_ = 0;
+  net_write_timeout_in_ = 0;
+  next_net_write_timeout_at_ = 0;
+  net_read_timeout_in_ = 0;
+  next_net_read_timeout_at_ = 0;
 
   if (NULL != active_timeout_action_) {
     if (OB_FAIL(active_timeout_action_->cancel(this))) {
@@ -818,6 +832,10 @@ ObUnixNetVConnection::ObUnixNetVConnection()
       active_timeout_action_(NULL),
       inactivity_timeout_in_(0),
       next_inactivity_timeout_at_(0),
+      net_write_timeout_in_(0),
+      next_net_write_timeout_at_(0),
+      net_read_timeout_in_(0),
+      next_net_read_timeout_at_(0),
       reenable_read_time_at_(0),
       ep_(NULL),
       nh_(NULL),
@@ -858,6 +876,12 @@ inline void ObUnixNetVConnection::reenable(ObVIO *vio)
         ns.enabled_ = true;
         if (0 == next_inactivity_timeout_at_ && inactivity_timeout_in_ > 0) {
           next_inactivity_timeout_at_ = get_hrtime() + inactivity_timeout_in_;
+        }
+        if (vio == &write_.vio_ && 0 == next_net_write_timeout_at_ && net_write_timeout_in_ > 0) {
+          next_net_write_timeout_at_ = get_hrtime() + net_write_timeout_in_;
+        }
+        if (vio == &read_.vio_ && 0 == next_net_read_timeout_at_ && net_read_timeout_in_ > 0) {
+          next_net_read_timeout_at_ = get_hrtime() + net_read_timeout_in_;
         }
 
         if (nh_->mutex_->thread_holding_ == &ethread) {
@@ -940,6 +964,12 @@ void ObUnixNetVConnection::reenable_re(ObVIO *vio)
         get_net_state_by_vio(*vio).enabled_ = true;
         if (0 == next_inactivity_timeout_at_ && inactivity_timeout_in_ > 0) {
           next_inactivity_timeout_at_ = get_hrtime() + inactivity_timeout_in_;
+        }
+        if (vio == &write_.vio_ && 0 == next_net_write_timeout_at_ && net_write_timeout_in_ > 0) {
+          next_net_write_timeout_at_ = get_hrtime() + net_write_timeout_in_;
+        }
+        if (vio == &read_.vio_ && 0 == next_net_read_timeout_at_ && net_read_timeout_in_ > 0) {
+          next_net_read_timeout_at_ = get_hrtime() + net_read_timeout_in_;
         }
 
         if (using_ssl_) {
@@ -1444,6 +1474,12 @@ int ObUnixNetVConnection::accept_event(int event, ObEvent *e)
         if (inactivity_timeout_in_ > 0) {
           set_inactivity_timeout(inactivity_timeout_in_);
         }
+        if (net_write_timeout_in_ > 0) {
+          set_net_write_timeout(net_write_timeout_in_);
+        }
+        if (net_read_timeout_in_ > 0) {
+          set_net_read_timeout(net_read_timeout_in_);
+        }
 
         if (active_timeout_in_ > 0) {
           if (OB_FAIL(set_active_timeout(active_timeout_in_))) {
@@ -1512,11 +1548,19 @@ int ObUnixNetVConnection::main_event(int event, ObEvent *e)
       signal_timeout = &t;
 
       if (EVENT_IMMEDIATE == event) {
-        if (0 == inactivity_timeout_in_ || next_inactivity_timeout_at_ > get_hrtime()) {
+        if ((0 == inactivity_timeout_in_ || next_inactivity_timeout_at_ > get_hrtime())
+             && (0 == net_read_timeout_in_ || next_net_read_timeout_at_ > get_hrtime())
+             && (0 == net_write_timeout_in_ || next_net_write_timeout_at_ > get_hrtime())) {
           event_ret = EVENT_CONT;
-        } else {
+        } else if (0 != inactivity_timeout_in_ && next_inactivity_timeout_at_ <= get_hrtime()) {
           signal_event = VC_EVENT_INACTIVITY_TIMEOUT;
           signal_timeout_at = &next_inactivity_timeout_at_;
+        } else if (0 != net_read_timeout_in_ && next_net_read_timeout_at_ <= get_hrtime()) {
+          signal_event = VC_EVENT_NET_READ_TIMEOUT;
+          signal_timeout_at = &next_net_read_timeout_at_;
+        } else {
+          signal_event = VC_EVENT_NET_WRITE_TIMEOUT;
+          signal_timeout_at = &next_net_write_timeout_at_;
         }
       } else if (EVENT_ERROR == event) {
         signal_event = VC_EVENT_DETECT_SERVER_DEAD;

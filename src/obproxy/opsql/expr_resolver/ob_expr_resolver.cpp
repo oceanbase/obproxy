@@ -154,8 +154,9 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
         }
       }
     }
-
     if (OB_SUCC(ret)) {
+      // 记录建表分区函数，对应列的值、函数param信息
+      ObPartkeyFuncInfo part_key_func_info;
       ObObj *target_obj = NULL;
       void *tmp_buf = NULL;
       // ignore ret in for loop
@@ -174,8 +175,9 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("fail to do placement new", K(ret));
           } else if (OB_FAIL(resolve_token_list(ctx.relation_info_->relations_[i], ctx.part_info_, ctx.client_request_,
-                                                ctx.client_info_, ctx.ps_id_entry_, ctx.text_ps_entry_, target_obj,
-                                                ctx.sql_field_result_))) {
+                                                ctx.client_info_, ctx.ps_id_entry_, target_obj,
+                                                ctx.sql_field_result_,
+                                                &part_key_func_info))) {
             LOG_DEBUG("fail to resolve token list, ignore it", K(ret));
           } else if ((PART_KEY_LEVEL_ONE == ctx.relation_info_->relations_[i]->level_ ||
                       PART_KEY_LEVEL_BOTH == ctx.relation_info_->relations_[i]->level_) &&
@@ -200,8 +202,17 @@ int ObExprResolver::resolve(ObExprResolverContext &ctx, ObExprResolverResult &re
         if(OB_FAIL(handle_default_value(ctx.parse_result_->part_key_info_,
                                         ctx.client_info_, result.ranges_,
                                         ctx.sql_field_result_,part_columns_border,
-                                        sub_part_columns_border, part_info->is_oracle_mode()))){
+                                        sub_part_columns_border, part_info->is_oracle_mode(),
+                                        part_info->has_part_func_key(), part_key_func_info))){
           LOG_WDIAG("fail to handle default value of part keys", K(ret));
+        }
+      }
+
+      // 计算part_key_func的位置，要在resolve_token_list后，preprocess_range前执行
+      if (OB_SUCC(ret) && NULL != part_key_func_info.func_params_) {
+        if (OB_FAIL(cal_part_key_func(part_key_func_info, ctx,
+                      part_columns_border, sub_part_columns_border, result))) {
+          LOG_WDIAG("fail to cal_part_key_func", K(ret));
         }
       }
 
@@ -311,9 +322,9 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
                                        ObProxyMysqlRequest *client_request,
                                        ObClientSessionInfo *client_info,
                                        ObPsIdEntry *ps_id_entry,
-                                       ObTextPsEntry *text_ps_entry,
                                        ObObj *target_obj,
                                        SqlFieldResult *sql_field_result,
+                                       ObPartkeyFuncInfo *part_key_func_info_ptr/*NULL*/,
                                        const bool has_rowid)
 {
   int ret = OB_SUCCESS;
@@ -323,7 +334,7 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
   char int_token_buf[20] { 0 };
   ObProxyExprType expr_type = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
   ObProxyExprType generated_func = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
-  UNUSED(text_ps_entry);
+  ObProxyExprType part_key_func_type = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
   if (OB_ISNULL(target_obj)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("target_obj is null");
@@ -334,6 +345,7 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
     ret = OB_INVALID_ARGUMENT;
     LOG_INFO("token list or head is null", K(relation->right_value_), K(ret));
   } else {
+    target_obj->set_type(ObUnknownType);
     ObProxyTokenNode *token = relation->right_value_->head_;
     int64_t col_idx = relation->column_idx_;
     token_type = token->type_;
@@ -365,11 +377,11 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
       }
     } else if (TOKEN_PLACE_HOLDER == token->type_) {
       int64_t param_index = token->placeholder_idx_;
+      target_obj->set_type(ObUnknownType);
       if (OB_FAIL(get_obj_with_param(*target_obj, client_request, client_info,
                                      part_info, ps_id_entry, param_index))) {
         LOG_DEBUG("fail to get target obj with param", K(ret));
       }
-
       if (OB_UNLIKELY(is_diagnostic)) {
         token_str.assign_ptr(NULL, 0);
       }
@@ -434,6 +446,7 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
       }
     }
 
+
     // set target_obj collation
     if (OB_SUCC(ret)) {
       if (ObHexStringType == target_obj->get_type()) {
@@ -455,14 +468,47 @@ int ObExprResolver::resolve_token_list(ObProxyRelationExpr *relation,
         LOG_DEBUG("skip setting non string obj collation", K(*target_obj));
       }
     }
+
+    // 增加计算建表式的函数表达式
+    if (OB_SUCC(ret)
+        && !has_rowid
+        && part_info->has_part_func_key()) {
+      ObProxyPartKeyInfo &part_key_info = part_info->get_part_key_info();
+      if (OB_ISNULL(part_key_func_info_ptr)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("part key func info_ptr is NULL, maybe calc for row_id", K(ret));
+      } else if (col_idx >= part_key_info.key_num_) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("relation column index is invalid", K(col_idx), K(part_key_info.key_num_), K(ret));
+      } else if (OB_PROXY_EXPR_TYPE_NONE == part_key_info.part_keys_[col_idx].part_key_func_info_.part_key_func_type_) {
+        LOG_DEBUG("not support func of part_key, do nothing");
+      } else if (OB_ISNULL(part_key_info.part_keys_[col_idx].part_key_func_info_.func_params_)) {
+        ret = OB_INVALID_ARGUMENT;
+        LOG_WDIAG("func_params_ is NULL for has_part_func_key is true", K(ret));
+      } else {
+        ObProxyParseString &p_name = part_key_info.part_keys_[col_idx].name_;
+        ObString col_name(p_name.str_len_, p_name.str_);
+        if (OB_FAIL(add_obj_to_sql_field(sql_field_result, *target_obj, col_name))) {
+          LOG_WDIAG("fail to add_obj_to_sql_field", K(col_name), K(*target_obj), K(ret));
+        } else {
+          LOG_DEBUG("succ to push_column_obj", K(col_name));
+          part_key_func_info_ptr->set_func_params(part_key_info.part_keys_[col_idx].part_key_func_info_.func_params_);
+          part_key_func_info_ptr->set_type(relation->type_);
+          part_key_func_info_ptr->set_first_part_column_idx(relation->first_part_column_idx_);
+          part_key_func_info_ptr->set_second_part_column_idx(relation->second_part_column_idx_);
+          part_key_func_type = part_key_info.part_keys_[col_idx].part_key_func_info_.part_key_func_type_;
+        }
+      }
+    }
+
   } // end of else
   if (OB_ISNULL(target_obj)) {
     ObObj null_obj;
     null_obj.set_null();
-    ROUTE_DIAGNOSIS(route_diagnosis_, RESOLVE_TOKEN, resolve_token, ret, token_type, token_str, expr_type, generated_func, null_obj);
+    ROUTE_DIAGNOSIS(route_diagnosis_, RESOLVE_TOKEN, resolve_token, ret, token_type, token_str, expr_type, generated_func, part_key_func_type, null_obj);
   } else {
     LOG_DEBUG("succ to route diagnosis resolve token", "target_obj", *target_obj);
-    ROUTE_DIAGNOSIS(route_diagnosis_, RESOLVE_TOKEN, resolve_token, ret, token_type, token_str, expr_type, generated_func, *target_obj);
+    ROUTE_DIAGNOSIS(route_diagnosis_, RESOLVE_TOKEN, resolve_token, ret, token_type, token_str, expr_type, generated_func, part_key_func_type, *target_obj);
   }
   return ret;
 }
@@ -524,7 +570,9 @@ int ObExprResolver::handle_default_value(ObProxyPartKeyInfo &part_key_info,
                                          obutils::SqlFieldResult *sql_field_result,
                                          ObIArray<ObBorderFlag> &part_border_flags,
                                          ObIArray<ObBorderFlag> &sub_part_border_flags,
-                                         bool is_oracle_mode)
+                                         bool is_oracle_mode,
+                                         const bool has_part_func_key,
+                                         ObPartkeyFuncInfo &part_key_func_info)
 {
   int ret = OB_SUCCESS;
   ObObj *target_obj = NULL;
@@ -560,6 +608,7 @@ int ObExprResolver::handle_default_value(ObProxyPartKeyInfo &part_key_info,
           } else if (FALSE_IT(var_str = &part_key_info.part_keys_[real_source_idx].default_value_) || var_str->str_len_ < 0 ){
           } else if (OB_FAIL(parse_and_resolve_default_value(*var_str, client_info, sql_field_result, target_obj, is_oracle_mode))){
             LOG_WDIAG("parse and resolve default value of partition key failed", K(ret));
+          // TODO: 目前暂不支持生成列+has_part_func_key同时存在的场景
           } else if (OB_FAIL(calc_generated_key_value(*target_obj, part_key_info.part_keys_[source_idx], is_oracle_mode))) {
             LOG_WDIAG("fail to get generated key value", K(target_obj), K(ret));
           } else {
@@ -568,10 +617,21 @@ int ObExprResolver::handle_default_value(ObProxyPartKeyInfo &part_key_info,
         }
       } else if (!part_key_info.part_keys_[i].is_exist_in_sql_) {
         ObProxyParseString &var_str = part_key_info.part_keys_[i].default_value_;
+        ObString col_name(part_key_info.part_keys_[i].name_.str_len_, part_key_info.part_keys_[i].name_.str_);
+        const bool is_part_func_key = has_part_func_key
+                    && OB_PROXY_EXPR_TYPE_NONE != part_key_info.part_keys_[i].part_key_func_info_.part_key_func_type_;
         if (var_str.str_len_ > 0) {
           if (OB_FAIL(parse_and_resolve_default_value(var_str, client_info, sql_field_result, target_obj, is_oracle_mode))) {
             LOG_WDIAG("parse and resolve default value of partition key failed", K(ret));
+          } else if (is_part_func_key && OB_FAIL(add_obj_to_sql_field(sql_field_result, *target_obj, col_name))) {
+            LOG_WDIAG("fail to add_obj_to_sql_field for default value", K(col_name), KPC(target_obj), K(ret));
           } else {
+            if (is_part_func_key) {
+              part_key_func_info.set_func_params(part_key_info.part_keys_[i].part_key_func_info_.func_params_);
+              part_key_func_info.set_type(F_COMP_EQ);
+              part_key_func_info.set_first_part_column_idx(column_idx);
+              part_key_func_info.set_second_part_column_idx(column_idx);
+            }
             is_need_default_val = true;
           }
         }
@@ -662,10 +722,49 @@ int ObExprResolver::parse_and_resolve_default_value(ObProxyParseString &default_
       // do nothing
     }
   }
+
   if (OB_SUCC(ret) && ObStringTC == target_obj->get_type_class()) {
     LOG_DEBUG("parse and resolve default value succ", K(*target_obj), K(ret));
     target_obj->set_collation_type(static_cast<common::ObCollationType>(client_session_info->get_collation_connection()));
   }
+  return ret;
+}
+
+int ObExprResolver::add_obj_to_sql_field(SqlFieldResult *sql_field_result,
+                                         ObObj &target_obj,
+                                         const ObString &col_name)
+{
+  int ret = OB_SUCCESS;
+  SqlField *field = NULL;
+  SqlColumnValue col_value;
+  if (OB_FAIL(SqlField::alloc_sql_field(field))) {
+    LOG_WDIAG("fail to alloc_sql_field for part_key_func", K(ret));
+  } else if (false == field->column_name_.set_value(col_name)) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to set col_name value, may be out of memory", K(col_name),
+              K(ret));
+    // 根据obj的类型，设置对应的值
+  } else if (OB_FAIL(convert_obj_to_sql_column_value(target_obj, col_value))) {
+    LOG_WDIAG("fail to convert obj to sql_column_value", K(col_name),
+              K(target_obj), K(ret));
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(field->column_values_.push_back(col_value))) {
+      LOG_WDIAG("fail to push_back col_value", K(col_value), K(ret));
+    } else if (OB_FAIL(sql_field_result->fields_.push_back(field))) {
+      LOG_WDIAG("fail to push_back field", K(ret));
+    } else {
+      sql_field_result->field_num_++;
+      field = NULL;
+    }
+  }
+
+  // 如果中间出现失败，需要释放申请的field内存
+  if (NULL != field) {
+    field->reset();
+  }
+
   return ret;
 }
 
@@ -823,6 +922,123 @@ int ObExprResolver::calc_token_hex_obj(ObProxyTokenNode *token, ObObj &target_ob
   return ret;
 }
 
+int ObExprResolver::convert_obj_to_sql_column_value(common::ObObj &src_obj, obutils::SqlColumnValue &dest_val)
+{
+  // 目前只支持整形/string类型
+  int ret = OB_SUCCESS;
+  ObObjTypeClass obj_type = src_obj.get_type_class();
+  switch (obj_type) {
+    case ObNullTC:
+      // do nothing
+      break;
+    // 处理整形相关类型
+    case ObIntTC:
+    case ObUIntTC:
+      dest_val.value_type_ = TOKEN_INT_VAL;
+      dest_val.column_int_value_ = src_obj.get_int();
+      break;
+    case ObDateTimeTC:
+    case ObOTimestampTC:
+      dest_val.value_type_ = TOKEN_INT_VAL;
+      dest_val.column_int_value_ = src_obj.get_datetime();
+      break;
+    case ObDateTC:
+      dest_val.value_type_ = TOKEN_INT_VAL;
+      dest_val.column_int_value_ = src_obj.get_date();
+      break;
+    case ObTimeTC:
+      dest_val.value_type_ = TOKEN_INT_VAL;
+      dest_val.column_int_value_ = src_obj.get_time();
+      break;
+    case ObYearTC:
+      dest_val.value_type_ = TOKEN_INT_VAL;
+      dest_val.column_int_value_ = src_obj.get_year();
+      break;
+    // 处理字符串相关
+    case ObStringTC:
+      dest_val.value_type_ = TOKEN_STR_VAL;
+      dest_val.column_value_.set_value(src_obj.get_string());
+      break;
+    default:
+      // 其他的暂不支持
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("not support convert obj_type to column_value", K(obj_type));
+      break;
+  }
+  return ret;
+}
+
+
+int ObExprResolver::cal_part_key_func(ObPartkeyFuncInfo &func_info,
+                                     ObExprResolverContext &ctx,
+                                     ObIArray<ObBorderFlag> &part_columns_border,
+                                     ObIArray<ObBorderFlag> &sub_part_columns_border,
+                                     ObExprResolverResult &result)
+{
+  int ret = OB_SUCCESS;
+  ObProxyParamNode *param_node = func_info.func_params_;
+  const int64_t first_part_column_idx = func_info.first_part_column_idx_;
+  const int64_t second_part_column_idx = func_info.second_part_column_idx_;
+  const ObProxyFunctionType type = func_info.type_;
+  ObProxyExprType expr_type = OB_PROXY_EXPR_TYPE_NONE;
+  ObClientSessionInfo *client_session_info = ctx.client_info_;
+  SqlFieldResult *sql_field_result = ctx.sql_field_result_;
+  const bool is_oracle_mode = ctx.part_info_->is_oracle_mode();
+  const share::schema::ObPartitionLevel level = ctx.part_info_->get_part_func_key_level();
+
+  ObProxyExpr *expr = NULL;
+  ObObj target_obj;   // 建表分区函数计算后的值
+  ObProxyExprFactory factory(allocator_);
+  ObFuncExprResolverContext ctx_context(&allocator_, &factory);
+  ObFuncExprResolver resolver(ctx_context);
+
+  // 1. 计算建表表达式的分区结果
+  if (OB_ISNULL(param_node)
+      || OB_UNLIKELY(share::schema::ObPartitionLevel::PARTITION_LEVEL_ZERO == level)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("unexpected param of func_info is NULL ", K(param_node), K(level), K(ret));
+  } else if (OB_UNLIKELY(
+              (share::schema::ObPartitionLevel::PARTITION_LEVEL_ONE == level
+                && -1 == first_part_column_idx)
+              || (share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO == level
+                && -1 == second_part_column_idx))) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("unexpected param of column_idx ", K(level), K(first_part_column_idx), K(second_part_column_idx), K(ret));
+  } else if (OB_FAIL(resolver.resolve(param_node, expr))) {
+    LOG_WDIAG("fail to resolve", K(ret));
+  } else {
+    ObSEArray<ObObj, 4> result_array;
+    ObProxyExprCalcItem calc_item(const_cast<SqlFieldResult *>(sql_field_result));
+    ObProxyExprCtx expr_ctx(0, TESTLOAD_NON, false, &allocator_, client_session_info);
+    expr_ctx.is_oracle_mode = is_oracle_mode;
+    if (OB_FAIL(expr->calc(expr_ctx, calc_item, result_array))) {
+      LOG_WDIAG("calc expr result failed", K(ret));
+    } else if (OB_FAIL(result_array.at(0, target_obj))) {
+      LOG_WDIAG("get expr calc result fail", K(ret));
+    } else {
+      expr_type = expr->get_expr_type();
+      LOG_DEBUG("succ to cal part_key_func", K(get_expr_type_name(expr_type)), K(level),
+                K(first_part_column_idx), K(second_part_column_idx), K(target_obj));
+    }
+  }
+
+  // 2. 设置对应的range结果
+  if (OB_SUCC(ret)) {
+    if ((share::schema::ObPartitionLevel::PARTITION_LEVEL_ONE == level)
+              && OB_FAIL(place_obj_to_range(type, first_part_column_idx,
+                            &target_obj, &result.ranges_[0], part_columns_border))) {
+      LOG_WDIAG("fail to place obj to range of part level one for part_key_func_type",
+                "part_key_func_name", get_expr_type_name(expr_type), K(ret));
+    } else if ((share::schema::ObPartitionLevel::PARTITION_LEVEL_TWO == level)
+              && OB_FAIL(place_obj_to_range(type, second_part_column_idx,
+                            &target_obj, &result.ranges_[1], sub_part_columns_border))) {
+      LOG_WDIAG("fail to place obj to range of part level tow for part_key_func_type",
+                "part_key_func_name", get_expr_type_name(expr_type), K(ret));
+    }
+  }
+  return ret;
+}
+
 // todo : integrate with new func expr resolver
 int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &part_key, const bool is_oracle_mode)
 {
@@ -865,7 +1081,7 @@ int ObExprResolver::calc_generated_key_value(ObObj &obj, const ObProxyPartKey &p
 }
 
 // todo : merge with calc_generated_key_value
-int ObExprResolver::calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type)
+int ObExprResolver::calc_generated_key_value_for_obkv(common::ObObj &obj, const ObProxyPartKey &part_key, const obkv::ObTableEntityType entity_type, common::ObArenaAllocator &allocator)
 {
   int ret = OB_SUCCESS;
   if (OB_PROXY_EXPR_TYPE_FUNC_SUBSTR == part_key.func_type_) {
@@ -989,6 +1205,29 @@ int ObExprResolver::calc_generated_key_value_for_obkv(common::ObObj &obj, const 
         obj.set_string(obj.get_type(), output);
       }
       LOG_DEBUG("calc substring_index generated key for obkv", K(obj));
+    }
+  } else if (OB_PROXY_EXPR_TYPE_FUNC_ABS == part_key.func_type_) {
+    if (OB_UNLIKELY(OB_ISNULL(part_key.params_[0]) || obj.is_null())) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("unexpected arg for generated calculation", K(ret), KP(part_key.params_[0]), K(obj));
+    } else if (PARAM_INT_VAL == part_key.params_[0]->type_ || ObIntType == obj.get_type()) {
+      int64_t val = obj.get_int();
+      obj.set_int(abs(val));
+      LOG_DEBUG("calc abs generated key for obkv hbase", K(obj));
+    } else {
+      number::ObNumber res_nmb;
+      if (OB_FAIL((get_obj_for_calc<ObNumberTC, ObNumberType>(&allocator, obj, obj)))) {
+        LOG_WDIAG("get number obj failed", K(ret), K(obj));
+      } else {
+        if (obj.get_number().is_negative()) {
+          if (OB_FAIL(obj.get_number().negate(res_nmb, allocator))) {
+            LOG_WDIAG("calc abs number failed", K(ret), K(obj));
+          } else {
+            obj.set_number(res_nmb);
+          }
+        }
+      }
+      LOG_DEBUG("calc abs generated key for obkv hbase", K(obj));
     }
   } else {
     ret = OB_ERR_FUNCTION_UNKNOWN;

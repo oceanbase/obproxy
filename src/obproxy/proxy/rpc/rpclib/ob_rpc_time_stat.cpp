@@ -37,12 +37,14 @@ int64_t ObRpcReqCmdTimeStat::to_string(char *buf, const int64_t buf_len) const
   TO_STRING_TIME_US(query_async_lookup_time_);
   TO_STRING_TIME_US(index_entry_lookup_time_);
   TO_STRING_TIME_US(tablegroup_entry_lookup_time_);
+  TO_STRING_TIME_US(tablet_ls_entry_lookup_time_);
   TO_STRING_TIME_US(pl_lookup_time_);
   TO_STRING_TIME_US(pl_process_time_);
   TO_STRING_TIME_US(congestion_control_time_);
   TO_STRING_TIME_US(congestion_process_time_);
 
   TO_STRING_TIME_US(build_server_request_time_);
+  TO_STRING_TIME_US(server_init_time_);
   TO_STRING_TIME_US(prepare_send_request_to_server_time_);
   TO_STRING_TIME_US(server_request_write_time_);
   TO_STRING_TIME_US(server_process_request_time_);

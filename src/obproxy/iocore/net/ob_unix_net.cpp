@@ -401,6 +401,16 @@ int ObInactivityCop::check_inactivity(int event, ObEvent *e)
                         "next_inactivity_timeout_at", hrtime_to_sec(vc->next_inactivity_timeout_at_),
                         "inactivity_timeout_in", hrtime_to_sec(vc->inactivity_timeout_in_));
           vc->handle_event(EVENT_IMMEDIATE, e);
+        } else if (vc->next_net_write_timeout_at_ > 0 && vc->next_net_write_timeout_at_ <= now) {
+          PROXY_NET_LOG(DEBUG, "net write timeout state", K(vc), K(vc->source_type_), K(now),
+                        "next_net_write_timeout_at", hrtime_to_sec(vc->next_net_write_timeout_at_),
+                        "net_write_timeout_in", hrtime_to_sec(vc->net_write_timeout_in_));
+          vc->handle_event(EVENT_IMMEDIATE, e);
+        } else if (vc->next_net_read_timeout_at_ > 0 && vc->next_net_read_timeout_at_ <= now) {
+          PROXY_NET_LOG(DEBUG, "net read timeout state", K(vc), K(vc->source_type_), K(now),
+                        "next_net_read_timeout_at", hrtime_to_sec(vc->next_net_read_timeout_at_),
+                        "net_read_timeout_in", hrtime_to_sec(vc->net_read_timeout_in_));
+          vc->handle_event(EVENT_IMMEDIATE, e);
         } else if (EVENT_NONE != event) {
           vc->handle_event(event, e);
         }

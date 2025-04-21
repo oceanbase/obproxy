@@ -10,6 +10,8 @@
  * See the Mulan PubL v2 for more details.
  */
 
+#define USING_LOG_PREFIX PROXY_API
+
 #include "ob_mysql_request_compress_transform_plugin.h"
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
@@ -105,29 +107,57 @@ int ObMysqlRequestCompressTransformPlugin::consume_normal_compress_packet(event:
 {
   int ret = OB_SUCCESS;
   const int64_t newest_read_avail = reader.read_avail();
-  int64_t local_read_avail = (local_reader_ == NULL) ? 0 : local_reader_->read_avail();
   bool is_last_segment = false;
+  int64_t local_read_avail = (local_reader_ == NULL) ? 0 : local_reader_->read_avail();
+
+
   if (OB_FAIL(check_last_data_segment(reader, is_last_segment))) {
     PROXY_API_LOG(WDIAG, "fail to check last data segment", K(ret));
   } else if ((local_read_avail >= MIN_COMPRESS_DATA_SIZE) || is_last_segment) {
     int64_t plugin_compress_request_begin = sm_->get_based_hrtime();
-    if (OB_FAIL(build_compressed_packet(is_last_segment, local_read_avail))) {
-      PROXY_API_LOG(WDIAG, "fail to build compressed packet", K(ret));
-    } else {
-      int64_t plugin_compress_request_end = sm_->get_based_hrtime();
-      sm_->cmd_time_stats_.plugin_compress_request_time_ +=
-        milestone_diff(plugin_compress_request_begin, plugin_compress_request_end);
-      int64_t consume_size = local_transfer_reader_->read_avail();
-      int64_t produce_size = 0;
-      // send the compressed packet in local_transfer_reader_
-      if (consume_size > 0) {
-        if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
-          ret = OB_ERR_UNEXPECTED;
-          PROXY_API_LOG(WDIAG, "fail to produce", "expected size", consume_size,
-                        "actual size", produce_size, K(ret));
-        } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
-          PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
-        }
+
+    int64_t remain_read_avail = local_read_avail;
+    int64_t local_avail_for_one_pakect = 0;
+    // 1. is_last_packet means the last OB2.0 paket
+    //    to set the flag of OB2.0 paket.
+    // 2. is_last_segment mean the last data stream
+    //    handled by the Plugin.
+    // if no cut of packet, is_last_packet equals to is_last_segment.
+    // when paket cut happens, is_last_packet doesn`t equal to is_last_segment.
+    bool is_last_packet = false;
+    do {
+      is_last_packet = is_last_segment;
+      local_avail_for_one_pakect = remain_read_avail;
+      if (local_avail_for_one_pakect > ObProto20Utils::OB_20_PROTOCOL_MAX_PAYLOAD_LEN) {
+        local_avail_for_one_pakect = ObProto20Utils::OB_20_PROTOCOL_MAX_PAYLOAD_LEN;
+        is_last_packet = false;
+      }
+      remain_read_avail -= local_avail_for_one_pakect;
+      if (OB_FAIL(build_compressed_packet(is_last_packet, local_avail_for_one_pakect))) {
+          LOG_WDIAG("fail to build compressed packet", K(is_last_segment),
+                      K(local_avail_for_one_pakect), K(local_read_avail), K(ret));
+      } else {
+        LOG_DEBUG("succ to compress one packet",  K(is_last_segment),
+                  K(local_avail_for_one_pakect), K(local_read_avail));
+      }
+    } while (OB_SUCC(ret)
+             && remain_read_avail > 0
+             && (is_last_segment
+                 || remain_read_avail >= ObProto20Utils::OB_20_PROTOCOL_MAX_PAYLOAD_LEN));
+
+    int64_t plugin_compress_request_end = sm_->get_based_hrtime();
+    sm_->cmd_time_stats_.plugin_compress_request_time_ +=
+      milestone_diff(plugin_compress_request_begin, plugin_compress_request_end);
+    int64_t consume_size = local_transfer_reader_->read_avail();
+    int64_t produce_size = 0;
+    // send the compressed packet in local_transfer_reader_
+    if (consume_size > 0) {
+      if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_API_LOG(WDIAG, "fail to produce", "expected size", consume_size,
+                      "actual size", produce_size, K(ret));
+      } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
+        PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
       }
     }
   } else {
@@ -300,7 +330,7 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
   // local_reader_ will consume in consume_and_compress_data(),
   //  next_compressed_seq_ will inc in consume_and_compress_data
   ObProxyProtocol ob_proxy_protocol = sm_->get_server_session_protocol();
-  if (ObProxyProtocol::PROTOCOL_OB20 == ob_proxy_protocol) {
+  if (ObProxyProtocol::PROTOCOL_OCEANBASE_20 == ob_proxy_protocol) {
     if (request_id_ > UINT24_MAX) {
       request_id_ = sm_->get_server_session()->get_next_server_request_id();
     }

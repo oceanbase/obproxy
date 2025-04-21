@@ -163,9 +163,13 @@ public:
                                                 obkv::ROWKEY_VALUE_PARAM &rowkey_value,
                                                 obkv::ROWKEY_COLUMN_PARAM &rowkey_columns,
                                                 ObProxyPartInfo &part_info,
-                                                int64_t &partition_id,
-                                                int64_t &ls_id);
-
+                                                int64_t &partition_id);
+  static int do_eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
+                                  ObProxyPartKeyLevel level,
+                                  const ObString &src_name,
+                                  int &src_key_idx,
+                                  const common::ObIArray<common::ObString> &rowkey_columns_name,
+                                  common::ObIArray<int64_t> &rowkey_index);
   static int eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                ObProxyPartKeyLevel level,
                                const common::ObIArray<common::ObString> &rowkey_columns_name,
@@ -184,8 +188,7 @@ public:
                                            // ObRpcClientSessionInfo &client_info,
                                            ObProxyPartInfo &part_info,
                                            common::ObIAllocator &allocator,
-                                           common::ObIArray<int64_t> &partition_ids,
-                                           common::ObIArray<int64_t> &ls_ids);
+                                           common::ObIArray<int64_t> &partition_ids);
   static void trim_part_key_name(const ObString &part_key_name, ObString &trim_name);
 };
 

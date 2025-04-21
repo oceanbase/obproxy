@@ -49,6 +49,7 @@
 #include "proxy/rpc/rpclib/ob_table_query_async_processor.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_processor.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_processor.h"
+#include "proxy/rpc/rpclib/ob_tablet_ls_processor.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_analyzer.h"
 #include "proxy/rpc/optimizer/ob_rpc_req_sharding_plan.h"
 #include "proxy/rpc/redis/ob_rpc_redis_info.h"
@@ -219,14 +220,16 @@ void ObRpcRequestSM::instantiate_func(ObRpcRequestSM &prototype, ObRpcRequestSM 
 ObRpcRequestSM::ObRpcRequestSM()
   : ObContinuation(NULL), sm_id_(0), magic_(RPC_REQUEST_HANDLE_SM_MAGIC_DEAD), next_action_(RPC_REQ_NEW_REQUEST),
     history_pos_(0), default_handler_(NULL), pending_action_(NULL), timeout_action_(NULL), cleanup_action_(NULL),
-    sharding_action_(NULL), sm_next_action_(NULL), child_callback_action_(NULL), inner_cont_(NULL), reentrancy_count_(0),
+    sharding_action_(NULL), sm_next_action_(NULL), child_callback_action_(NULL), release_check_action_(NULL), inner_cont_(NULL),
+    release_check_count_(0), reentrancy_count_(0),
     terminate_sm_(false), is_need_reuse_sm_(false), rpc_req_(NULL), rpc_req_origin_channel_id_(0), create_thread_(NULL), cmd_size_stats_(), cmd_time_stats_(),
     milestones_(), mysql_config_params_(NULL), cluster_resource_(NULL), real_meta_cluster_name_(),
     real_meta_cluster_name_str_(NULL), cluster_id_(0), timeout_us_(0), retry_need_update_pl_(false),
     need_pl_lookup_(true), need_congestion_lookup_(false),
     force_retry_congested_(false), congestion_lookup_success_(false), is_congestion_entry_updated_(false),
     already_get_async_info_(false), already_get_index_entry_(false), already_get_tablegroup_entry_(false),
-    congestion_entry_not_exist_count_(0), congestion_entry_(NULL), pll_info_(), rpc_trace_id_(), rpc_route_mode_(RPC_ROUTE_FIND_LEADER),
+    already_get_tablet_ls_entry_(false), congestion_entry_not_exist_count_(0), congestion_entry_(NULL),
+    pll_info_(), rpc_trace_id_(), rpc_route_mode_(RPC_ROUTE_FIND_LEADER),
     rpc_type_(OBPROXY_RPC_UNKOWN), inner_request_cleanup_mutex_() , connection_diagnosis_trace_(NULL)
 {
   static bool scatter_inited = false;
@@ -349,7 +352,7 @@ inline void ObRpcRequestSM::kill_this()
      LOG_WDIAG("fail to cancel timeout action", K(ret), K(this), K_(sm_id), K_(rpc_trace_id));
   }
 
-  if (OB_FAIL(cancel_pending_action())) {
+  if (OB_FAIL((cancel_pending_action()))) {
      LOG_WDIAG("fail to cancel pending action", K(ret), K(this), K_(sm_id), K_(rpc_trace_id));
   }
 
@@ -358,6 +361,10 @@ inline void ObRpcRequestSM::kill_this()
   }
 
   if (OB_FAIL(cancel_call_next_action())) {
+     LOG_WDIAG("fail to cancel call next action", K(ret), K(this), K_(sm_id), K_(rpc_trace_id));
+  }
+
+  if (OB_FAIL(cancel_release_check_action())) {
      LOG_WDIAG("fail to cancel call next action", K(ret), K(this), K_(sm_id), K_(rpc_trace_id));
   }
 
@@ -511,7 +518,10 @@ int ObRpcRequestSM::calc_rpc_timeout_us()
     if (OB_UNLIKELY(0 == timeout_us_)) { // timeout_us_ is 0 get from user's request, need update it to a default value
       timeout_us_ = rpc_req_->get_rpc_request_config_info().rpc_request_timeout_; //5s as default
     }
-    timeout_us_ += rpc_req_->get_rpc_request_config_info().rpc_request_timeout_delta_;
+    // vip config not refresh, need use global info
+    // timeout_us_ += rpc_req_->get_rpc_request_config_info().rpc_request_timeout_delta_;
+    timeout_us_ += get_global_proxy_config().rpc_request_timeout_delta;
+
     if (OB_LIKELY(0 == rpc_req_->get_client_net_timeout_us())) {
       rpc_req_->set_client_net_timeout_us(common::ObTimeUtility::current_time() + timeout_us_);
     }
@@ -647,6 +657,64 @@ int ObRpcRequestSM::cancel_sharding_action()
   return ret;
 }
 
+int ObRpcRequestSM::schedule_release_check_action()
+{
+  int ret = OB_SUCCESS;
+
+  int32_t value = get_global_proxy_config().rpc_period_task_check_request_release;
+  if (value > 0) {
+    int64_t timeout_ns = HRTIME_SECONDS(value);
+    LOG_DEBUG("schedule_release_check_action get timeout", K_(timeout_us), K_(rpc_trace_id), K_(release_check_count));
+
+    timeout_ns = timeout_ns *(1 + release_check_count_++);
+    if (OB_ISNULL(release_check_action_ = self_ethread().schedule_in(this, timeout_ns, RPC_REQUEST_SM_RELEASE_CHECK))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("fail to schedule release check", K_(release_check_action), K(ret), K_(rpc_trace_id));
+    }
+  }
+
+  return ret;
+}
+
+int ObRpcRequestSM::cancel_release_check_action()
+{
+  int ret = common::OB_SUCCESS;
+  if (NULL != release_check_action_) {
+    if (OB_FAIL(release_check_action_->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel release check action", K_(release_check_action), K(ret), K_(rpc_trace_id));
+    } else {
+      release_check_action_ = NULL;
+    }
+  }
+  return ret;
+}
+
+void ObRpcRequestSM::print_releasing_request_info()
+{
+  int64_t now_time = static_get_based_hrtime();
+  int64_t total_time_us = 0;
+  if (OB_NOT_NULL(rpc_req_)) {
+    total_time_us = milestone_diff_new(rpc_req_->client_timestamp_.client_begin_, now_time);
+    ObRpcReq *root_rpc_request = rpc_req_->get_root_rpc_req();
+    int64_t root_sub_rpc_req_count = (root_rpc_request == NULL) ? 0 : root_rpc_request->get_current_sub_rpc_req_count();
+    LOG_EDIAG("[!!Important RPC_MEM_LEAK]pending rpc request not release, has stay memory more times",
+              K_(release_check_count), K(total_time_us), KPC_(rpc_req),
+              "cnet_state", ObRpcReqDebugNames::get_client_state_name(rpc_req_->get_cnet_state()),
+              "snet_state", ObRpcReqDebugNames::get_server_state_name(rpc_req_->get_snet_state()),
+              "sm_state", ObRpcReqDebugNames::get_rpc_sm_state_name(rpc_req_->get_sm_state()),
+              "sub_rpc_req_count", rpc_req_->get_current_sub_rpc_req_count(),
+              "sub_execute_plan", rpc_req_->execute_plan_,
+              KPC(root_rpc_request), K(root_sub_rpc_req_count),
+              K_(rpc_trace_id)
+            );
+    schedule_release_check_action(); //schedule for next
+  } else {
+    // could't be here
+    LOG_EDIAG("pending rpc request not release, has stay memory more times, just for request_sm",
+              K_(release_check_count), K(total_time_us), K_(rpc_req), K_(rpc_trace_id));
+  }
+}
+
 int ObRpcRequestSM::main_handler(int event, void *data)
 {
   if (OB_UNLIKELY(RPC_REQUEST_HANDLE_SM_MAGIC_ALIVE != magic_)
@@ -663,6 +731,9 @@ int ObRpcRequestSM::main_handler(int event, void *data)
 
     if (EVENT_INTERVAL == event) {
       set_state_and_call_next(RPC_REQ_REQUEST_TIMEOUT);
+    } else if (RPC_REQUEST_SM_RELEASE_CHECK == event) {
+      release_check_action_ = NULL;
+      print_releasing_request_info();
     } else if (RPC_REQUEST_SM_DONE == event) {
       set_state_and_call_next(RPC_REQ_REQUEST_DONE);
     } else if (RPC_REQUEST_SM_CALL_NEXT == event) {
@@ -1068,6 +1139,7 @@ int ObRpcRequestSM::init_request_meta_info()
     obkv_info.tenant_name_ = rpc_ctx.tenant_name_;
     obkv_info.cluster_name_ = rpc_ctx.cluster_name_;
     obkv_info.database_name_ = rpc_ctx.database_name_;
+    obkv_info.is_server_support_distributed_execute_ = rpc_ctx.is_server_support_distributed_execute_;
 
     // 弱读场景下, 回退到常规路由模式, 强读场景下，默认走RPC_ROUTE_FIND_LEADER, 直接找到leader发送
     if (obkv_info.is_read_weak()) {
@@ -1621,6 +1693,10 @@ int ObRpcRequestSM::setup_rpc_get_cluster()
   }
 
   if (OB_FAIL(ret)) {
+    if (OB_NOT_NULL(rpc_req_)) {
+      //init proxy error to rpc_req
+      rpc_req_->set_rpc_req_error_code(ret);
+    }
     set_state_and_call_next(RPC_REQ_REQUEST_ERROR);
   } else if (NULL == pending_action_) {
     // 集群构建完毕
@@ -1703,8 +1779,8 @@ int ObRpcRequestSM::setup_req_inner_info_get()
     bool need_get_async_info = obkv_info.is_async_query_request();
     bool need_get_index_entry = !obkv_info.is_hbase_request() && !obkv_info.is_inner_request_
         && obkv_info.is_query_with_index() && rpc_req_->get_rpc_request_config_info().rpc_enable_global_index_;
-    // TODO : tablegroup sharding 跨分区 确定是否需要再获取entry
-    bool need_get_tablegroup_entry = obkv_info.is_hbase_request() && obkv_info.is_hbase_empty_family();
+    // TODO : tablegroup sharding 跨分区 确定是否需要再获取entry, forbiden to get table group for sub request
+    bool need_get_tablegroup_entry = obkv_info.is_hbase_request() && obkv_info.is_hbase_empty_family()&& !obkv_info.is_inner_request_;
 
     /**
      * @brief 
@@ -1823,6 +1899,8 @@ int ObRpcRequestSM::state_table_query_async_info_get(int event, void *data)
   LOG_DEBUG("ObRpcRequestSM::state_table_query_async_info_get", K(event), KP(data), KP_(pending_action), K_(rpc_trace_id));
   int ret = OB_SUCCESS;
   pending_action_ = NULL;
+  ObRpcTableQuerySyncRequest *sync_query_request = NULL;
+  bool need_return_response_to_client = false;
 
   if (OB_UNLIKELY(RPC_QUERY_ASYNC_ENTRY_LOOKUP_CACHE_DONE != event) || OB_ISNULL(data)) {
     ret = OB_ERR_UNEXPECTED;
@@ -1830,6 +1908,9 @@ int ObRpcRequestSM::state_table_query_async_info_get(int event, void *data)
   } else if (!is_valid_rpc_req()) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("state_table_query_async_info_get get a invalid rpc_req", K(ret), KP_(rpc_req), K_(rpc_trace_id));
+  } else if (OB_ISNULL(sync_query_request = dynamic_cast<ObRpcTableQuerySyncRequest *>(rpc_req_->get_rpc_request()))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid rpc request to handlet, it should not happen", KPC_(rpc_req), K(ret), K_(rpc_trace_id));
   } else {
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     ObTableQueryAsyncResult *result = reinterpret_cast<ObTableQueryAsyncResult *>(data);
@@ -1845,14 +1926,14 @@ int ObRpcRequestSM::state_table_query_async_info_get(int event, void *data)
       obkv_info.query_async_entry_ = result->target_entry_;
       result->target_entry_ = NULL;
       // update timeout
-      if (OB_NOT_NULL(rpc_req_->get_rpc_request())) {
+      if (OB_NOT_NULL(rpc_req_->get_rpc_request())) { //just for first query used, next will be updated by response's lease timeout
         obkv_info.query_async_entry_->update_timeout_ts(rpc_req_->get_rpc_request()->get_rpc_timeout());
         LOG_DEBUG("succ to update async entry timeout ts", "timeout_ts", obkv_info.query_async_entry_->get_timeout_ts(), K_(rpc_trace_id));
       }
 
       if (obkv_info.query_async_entry_->is_avail_state()) {
         obkv_info.table_id_ = obkv_info.query_async_entry_->get_table_id();
-        if (obkv_info.query_async_entry_->is_partition_table()) {
+        if (obkv_info.query_async_entry_->is_partition_table() && !obkv_info.is_server_support_distributed_execute_) {
           if (OB_FAIL(obkv_info.query_async_entry_->get_current_tablet_id(obkv_info.partition_id_))) {
             LOG_WDIAG("fail to get current tablet id", K(ret), KPC_(obkv_info.query_async_entry), K_(rpc_trace_id));
           }
@@ -1862,11 +1943,35 @@ int ObRpcRequestSM::state_table_query_async_info_get(int event, void *data)
         if (OB_SUCC(ret)) {
           LOG_DEBUG("get a query_async_entry for OB_TABLE_API_EXECUTE_QUERY_SYNC", KPC(obkv_info.query_async_entry_),
                       "tablet_id", obkv_info.partition_id_, "table_id", obkv_info.table_id_, K_(rpc_trace_id));
+          const ObTableQuerySyncRequest &sync_query = sync_query_request->get_query_request();
           if (obkv_info.query_async_entry_->is_server_info_set()) {
             LOG_DEBUG("not first tablet async query, use last addr", KPC(obkv_info.query_async_entry_), K_(rpc_trace_id));
             rpc_req_->get_server_addr().addr_ = obkv_info.query_async_entry_->get_server_info().addr_;
             rpc_req_->get_server_addr().sql_addr_ = obkv_info.query_async_entry_->get_server_info().sql_addr_;
             rpc_req_->set_server_addr_set(true);
+          } else if (ObQueryOperationType::QUERY_END == sync_query.query_type_
+                      || ObQueryOperationType::QUERY_RENEW == sync_query.query_type_) {
+            if (OB_FAIL(ObProxyRpcReqAnalyzer::build_empty_query_response(*rpc_req_))) {
+              LOG_WDIAG("failed to build error response", K(ret), K_(rpc_trace_id));
+            } else {
+              ObRpcTableQuerySyncResponse *query_response =
+                dynamic_cast<ObRpcTableQuerySyncResponse *>(rpc_req_->get_rpc_response());
+              if (OB_ISNULL(query_response)) {
+                ret = OB_ERR_UNEXPECTED;
+                LOG_WDIAG("invliad rpc async query response to handle, cloud not to be here", K(ret), K_(rpc_trace_id));
+              } else if (FALSE_IT(query_response->get_query_result().query_session_id_ = obkv_info.query_async_entry_->get_client_query_session_id())) {
+                //not to be here
+              } else if (FALSE_IT(query_response->get_query_result().is_end_ = true)) {
+                //not to be here
+              } else if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_obkv_serialize_response(*rpc_req_))){
+                LOG_WDIAG("invalid to serialize inner common query sync response", K_(sm_id), K(ret), K_(rpc_trace_id));
+              } else {
+                need_return_response_to_client = true;
+              }
+            }
+            obkv_info.query_async_entry_->set_need_terminal(true);
+            obkv_info.query_async_entry_->set_deleted_state();
+            obkv_info.query_async_entry_ = NULL;
           }
         }
       } else {
@@ -1881,7 +1986,11 @@ int ObRpcRequestSM::state_table_query_async_info_get(int event, void *data)
   }
 
   if (OB_SUCC(ret)) {
-    set_state_and_call_next(RPC_REQ_INNER_INFO_GET);
+    if (OB_LIKELY(!need_return_response_to_client)) {
+      set_state_and_call_next(RPC_REQ_INNER_INFO_GET);
+    } else {
+      set_state_and_call_next(RPC_REQ_RESPONSE_CLIENT_SENDING);
+    }
   } else {
     if (OB_NOT_NULL(rpc_req_)) {
       //init proxy error to rpc_req
@@ -1930,6 +2039,15 @@ int ObRpcRequestSM::setup_rpc_tablegroup_lookup()
       tablegroup_param.cr_id_ = cr_id;
       tablegroup_param.cluster_version_ = cluster_resource_->cluster_version_;
       tablegroup_param.mysql_proxy_ = &cluster_resource_->mysql_proxy_;
+      if (OB_LIKELY(get_global_proxy_config().rpc_enable_lower_case_table_names)) { //TODO need update same with server tenant
+        //need use lower case table name and database name for tablegroup fetch
+        MEMCPY(tablegroup_param.tablegroup_name_buf_, obkv_info.table_name_.ptr(), obkv_info.table_name_.length());
+        MEMCPY(tablegroup_param.database_name_buf_, obkv_info.database_name_.ptr(), obkv_info.database_name_.length());
+        string_to_lower_case(tablegroup_param.tablegroup_name_buf_, obkv_info.table_name_.length());
+        string_to_lower_case(tablegroup_param.database_name_buf_, obkv_info.database_name_.length());
+        tablegroup_param.tablegroup_name_.assign(tablegroup_param.tablegroup_name_buf_, obkv_info.table_name_.length());
+        tablegroup_param.database_name_.assign(tablegroup_param.database_name_buf_, obkv_info.database_name_.length());
+      }
       if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
         tablegroup_param.tenant_version_ = cluster_resource_->get_location_tenant_version(obkv_info.tenant_name_);
       }
@@ -2183,7 +2301,14 @@ int ObRpcRequestSM::fill_pll_tname()
   if (rpc_type_ == OBPROXY_RPC_OBRPC) {
     if (obkv_info.is_hbase_request() && obkv_info.is_hbase_empty_family() && OB_NOT_NULL(obkv_info.tablegroup_entry_)) {
       table_name = obkv_info.tablegroup_entry_->get_table_names().at(0);
+      MEMCPY(obkv_info.tablegroup_new_table_name_buf_, table_name.ptr(), table_name.length());
+      obkv_info.tablegroup_new_table_name_.assign(obkv_info.tablegroup_new_table_name_buf_, table_name.length());
+      obkv_info.is_table_group_request_ = true;
       LOG_DEBUG("ObRpcRequestSM::fill_pll_tname use tablegroup entry", KPC(obkv_info.tablegroup_entry_));
+    } else if (rpc_req_->is_inner_request() && obkv_info.is_table_group_request()) {
+      //TODO if failed(table not exist), not retry in sub request !
+      table_name = obkv_info.tablegroup_new_table_name_;
+      LOG_DEBUG("ObRpcRequestSM::fill_pll_tname use tablegroup entry for sub request", "origin_table_name", obkv_info.table_name_, K(table_name));
     } else if (obkv_info.is_query_with_index() && obkv_info.is_global_index_route() && !obkv_info.index_table_name_.empty()) {
       table_name = obkv_info.index_table_name_;
       LOG_DEBUG("ObRpcRequestSM::fill_pll_tname use index entry", "index_table_name", obkv_info.index_table_name_);
@@ -2219,7 +2344,7 @@ int ObRpcRequestSM::fill_pll_tname()
   ObTableEntryName &te_name = pll_info_.te_name_;
   te_name.cluster_name_ = cluster_name;
   te_name.tenant_name_ = tenant_name;
-  te_name.database_name_ = database_name;
+  te_name.database_name_ = database_name; //not to convert it to lowwer case, for __all_virtual_proxy_schema has set as user assigned
   te_name.package_name_ = package_name;
   te_name.table_name_ = table_name;
 
@@ -2276,8 +2401,9 @@ int ObRpcRequestSM::setup_rpc_partition_lookup()
                 "is_global_index_route", obkv_info.is_global_index_route(), K_(obkv_info.index_table_name), K_(rpc_type), K_(rpc_trace_id));
 
       // 1.先从table_map中获取
+      // for single partition table retry need force_renew to get first part info
       if (OB_LIKELY(!pll_info_.is_force_renew() && !name.is_all_dummy_table()
-                    && !pll_info_.is_cached_dummy_force_renew())) {
+                    && !pll_info_.is_cached_dummy_force_renew()) && !obkv_info.is_single_partition_table_) {
 
         ObTableRefHashMap &table_map = self_ethread().get_table_map();
         ObTableEntry *tmp_entry = NULL;
@@ -2305,6 +2431,10 @@ int ObRpcRequestSM::setup_rpc_partition_lookup()
           //RPC call the next sm state
           state_rpc_partition_lookup(TABLE_ENTRY_EVENT_LOOKUP_DONE, &result);
         } else if (NULL != tmp_entry) {
+          // only set true in non partition table receive OB_SCHEMA_ERROR
+          if (tmp_entry->is_need_rebuild_as_single_partition_table()) {
+            obkv_info.is_single_partition_table_ = true;
+          }
           tmp_entry->dec_ref();
         }
       }
@@ -2334,6 +2464,10 @@ int ObRpcRequestSM::setup_rpc_partition_lookup()
         param.need_pl_route_ = false;
         param.current_idc_name_ = get_current_idc_name();
         param.cluster_version_ = cluster_resource_->cluster_version_;
+        param.is_single_partition_table_ = obkv_info.is_single_partition_table_;
+        if (obkv_info.is_single_partition_table_) {
+          param.force_renew_ = true;
+        }
 
         param.ob_rpc_req_ = rpc_req_;
         LOG_DEBUG("do_partition_location_lookup name", K(name), "renew", pll_info_.is_cached_dummy_force_renew(),
@@ -2543,6 +2677,7 @@ int ObRpcRequestSM::process_partition_location(ObMysqlRouteResult &result)
         if (!result.table_entry_->is_partition_table()) {
           obkv_info.partition_id_ = 0; //force update partition id of single table to 0
           obkv_info.set_definitely_single(true);
+          obkv_info.set_non_partition_table(true);
         }
         pll_info_.set_route_info(result);
       }
@@ -2780,14 +2915,20 @@ int ObRpcRequestSM::state_rpc_partition_lookup_done()
         }
       }
       if (OB_SUCC(ret)) {
-        // 这里判断 redis 的shard逻辑
-        if (obkv_info.is_shard()) {
-          set_state_and_call_next(RPC_REQ_HANDLE_SHARD_REQUEST);
+        if (obkv_info.is_need_ls_id()) {
+          //do the ls_id info get for
+          set_state_and_call_next(RPC_REQ_IN_TABLET_LS_LOOKUP);
         } else {
-          set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHING);
+          // 这里判断 redis 的shard逻辑
+          // 分布式能力不支持batch请求,分布式能力不走shard逻辑
+          if (obkv_info.is_shard()) {
+            set_state_and_call_next(RPC_REQ_HANDLE_SHARD_REQUEST);
+          } else {
+            set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHING);
+          }
+          ObRpcReqThreadQpsStat::inc_rpc_req_stat(obkv_info.is_shard());
+          obkv_info.is_rpc_req_stat_recorded_ = true;
         }
-        ObRpcReqThreadQpsStat::inc_rpc_req_stat(obkv_info.is_shard());
-        obkv_info.is_rpc_req_stat_recorded_ = true;
       }
     }
   }
@@ -2942,6 +3083,203 @@ void ObRpcRequestSM::get_region_name_and_server_info(ObIArray<ObServerStateSimpl
   }
 }
 
+int ObRpcRequestSM::setup_rpc_tablet_ls_lookup()
+{
+  int ret = OB_SUCCESS;
+  ObAction *tablet_ls_lookup_action_handle = NULL;
+  ObTabletLsParam tablet_ls_param;
+
+  if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+    milestones_.tablet_ls_lookup_begin_ = get_based_hrtime();
+    milestones_.tablet_ls_lookup_end_ = 0;
+  }
+
+  if (!is_valid_rpc_req()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("state_rpc_tablet_ls_lookup get a invalid rpc_req", K(ret), KP_(rpc_req), K_(rpc_trace_id));
+  } else {
+    ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
+
+    if (obkv_info.is_inner_request_ && !obkv_info.is_inner_req_retrying()) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("inner request first handle cannot enter state_rpc_tablet_ls_lookup", K(ret), KP_(rpc_req), K_(rpc_trace_id));
+    } else {
+      int64_t cr_id = 0;
+      if (get_global_resource_pool_processor().get_default_cluster_resource() == cluster_resource_) {
+        // default cluster resource cluster id is always 0, and it is used only for building cluster resource
+        cr_id = obkv_info.cluster_id_;
+      } else {
+        cr_id = cluster_resource_->get_cluster_id();
+      }
+
+      tablet_ls_param.cont_ = this;
+      tablet_ls_param.table_id_ = obkv_info.table_id_;
+      tablet_ls_param.tenant_id_ = obkv_info.credential_.tenant_id_;
+      tablet_ls_param.cr_version_ = cluster_resource_->version_;
+      tablet_ls_param.cr_id_ = cr_id;
+      tablet_ls_param.cluster_version_ = cluster_resource_->cluster_version_;
+      tablet_ls_param.mysql_proxy_ = &cluster_resource_->mysql_proxy_;
+      if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
+        tablet_ls_param.tenant_version_ = cluster_resource_->get_location_tenant_version(obkv_info.tenant_name_);
+      }
+
+      LOG_DEBUG("tablet_ls_param build done", K(tablet_ls_param), K_(rpc_trace_id));
+
+      RPC_REQUEST_SM_SET_DEFAULT_HANDLER(&ObRpcRequestSM::state_rpc_tablet_ls_lookup);
+      if (OB_FAIL(ObTabletLsProcessor::get_tablet_ls_entry(tablet_ls_param, tablet_ls_lookup_action_handle))) {
+        LOG_WDIAG("fail to call ObTabletLsProcessor::get_tablet_ls_entry", K(ret), K_(rpc_trace_id));
+      } else {
+        if (OB_NOT_NULL(tablet_ls_lookup_action_handle)) {
+          pending_action_ = tablet_ls_lookup_action_handle;
+        }
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (NULL == pending_action_) {
+      handle_event(TABLET_LS_ENTRY_LOOKUP_CACHE_DONE, &tablet_ls_param.result_);
+      tablet_ls_param.result_.reset();
+    } else {
+      // do nothing, wait pending action
+      LOG_DEBUG("ObRpcRequestSM::setup_rpc_tablet_ls_lookup wait callback", KP_(pending_action), K_(rpc_trace_id));
+    }
+  } else {
+    if (OB_NOT_NULL(rpc_req_)) {
+      //init proxy error to rpc_req
+      rpc_req_->set_rpc_req_error_code(ret);
+    }
+    set_state_and_call_next(RPC_REQ_REQUEST_ERROR);
+  }
+
+  return ret;
+}
+
+int ObRpcRequestSM::state_rpc_tablet_ls_lookup(int event, void *data)
+{
+  int ret = OB_SUCCESS;
+  uint64_t tenant_version = 0;
+  pending_action_ = NULL;
+  int handle_ls_result = -1;
+  bool is_shard = false;
+
+  LOG_DEBUG("ObRpcRequestSM::state_rpc_tablet_ls_lookup", K(event), KP(data), KP_(pending_action), K_(rpc_trace_id));
+
+  if (OB_UNLIKELY(TABLET_LS_ENTRY_LOOKUP_CACHE_DONE != event) || OB_ISNULL(data)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("unexpected event type, it should not happen", K(event), K(data), K(ret), K_(rpc_trace_id));
+  } else if (!is_valid_rpc_req()) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("state_rpc_tablet_ls_lookup get a invalid rpc_req", K(ret), KP_(rpc_req), K_(rpc_trace_id));
+  } else {
+    ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
+    ObTabletLsResult *result = reinterpret_cast<ObTabletLsResult *>(data);
+    // hand over the ref
+    if (OB_NOT_NULL(obkv_info.tablet_ls_entry_)) {
+      obkv_info.tablet_ls_entry_->dec_ref();
+      obkv_info.tablet_ls_entry_ = NULL;
+    }
+    obkv_info.tablet_ls_entry_ = result->target_entry_;
+    result->target_entry_ = NULL;
+
+    if (OB_NOT_NULL(obkv_info.tablet_ls_entry_)) {
+      if (OB_UNLIKELY(get_global_proxy_config().check_tenant_locality_change)) {
+        tenant_version = cluster_resource_->get_location_tenant_version(obkv_info.tenant_name_);
+      }
+
+      obkv_info.tablet_ls_entry_->renew_last_access_time();
+      obkv_info.tablet_ls_entry_->check_and_set_expire_time(tenant_version, false);
+      LOG_DEBUG("ObRpcRequestSM get tablet_ls entry succ", "tablet_ls", *obkv_info.tablet_ls_entry_, K_(rpc_trace_id), K_(obkv_info.tenant_id));
+    }
+
+    if (OB_SUCC(ret)) {
+      if (OB_NOT_NULL(obkv_info.tablet_ls_entry_)
+          && OB_SUCC(rpc_req_->rpc_request_->handle_tablet_ls_id(*rpc_req_, obkv_info.tablet_ls_entry_->get_tablet_ls_map()))) {
+        //handle it success
+        handle_ls_result = 0;
+        is_shard = obkv_info.is_shard();
+        // set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHING);
+      } else if (OB_ISNULL(obkv_info.tablet_ls_entry_) || OB_HASH_NOT_EXIST == ret) {
+        //need to retry
+        handle_ls_result = 1;
+        obkv_info.set_rpc_ls_entry_need_retry(true);
+        LOG_DEBUG("ObRpcRequestSM get tablet_ls entry need retry", K(ret), "tablet_ls", obkv_info.tablet_ls_entry_,
+                  K_(rpc_trace_id), K_(obkv_info.tenant_id));
+
+      } else {
+        //error occured
+        handle_ls_result = 2;
+      }
+    }
+  }
+
+  if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+    milestones_.tablet_ls_lookup_end_ = get_based_hrtime();
+    cmd_time_stats_.tablet_ls_entry_lookup_time_ += milestone_diff_new(milestones_.tablet_ls_lookup_begin_, milestones_.tablet_ls_lookup_end_);
+  }
+
+  if (handle_ls_result == 0) {
+    // set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHING);
+    if (is_shard) {
+      set_state_and_call_next(RPC_REQ_HANDLE_SHARD_REQUEST);
+    } else {
+      set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHING);
+    }
+  } else if (handle_ls_result == 1) {
+    //TODO need dirty ls_entry and table_entry for retry
+    // set_state_and_call_next(RPC_REQ_REQUEST_RETRY);
+    // obkv_info.rpc_request_retry_last_begin_ = get_based_hrtime();
+    const int64_t rpc_request_retry_waiting_time_us = rpc_req_->get_rpc_request_config_info().rpc_request_retry_waiting_time_;
+    // LOG_DEBUG("[ObRpcRequestSM::state_rpc_tablet_ls_lookup] rpc need schedule retry", K_(sm_id),
+    //       "error_code", obkv_info.rpc_origin_error_code_,
+    //       "retry_times", obkv_info.rpc_request_retry_times_,
+    //       K(rpc_request_retry_waiting_time_us), K_(rpc_trace_id), "addr", server_info.sql_addr_);
+
+    int64_t rpc_request_retry_waiting_time_ns = HRTIME_USECONDS(rpc_request_retry_waiting_time_us);
+    // route error, waiting rpc_request_retry_waiting_time_ns
+    if (OB_FAIL(schedule_call_next_action(RPC_REQ_REQUEST_RETRY, rpc_request_retry_waiting_time_ns))) {
+      LOG_WDIAG("fail to call schedule_call_next_action", K(ret), K_(sm_id), K_(rpc_trace_id));
+    }
+    if (OB_FAIL(ret)) {
+      set_state_and_call_next(RPC_REQ_REQUEST_ERROR);
+    }
+  } else {
+    LOG_WDIAG("handle_tablet_ls_id with error", K(ret), K_(rpc_trace_id));
+      //error handle
+    if (OB_NOT_NULL(rpc_req_)) {
+      //init proxy error to rpc_req
+      rpc_req_->set_rpc_req_error_code(ret);
+    }
+    set_state_and_call_next(RPC_REQ_REQUEST_ERROR);
+  }
+
+  return EVENT_DONE;
+}
+
+// int ObRpcRequestSM::handle_tablet_to_ls_lookup_done()
+// {
+//   int ret = OB_SUCCESS;
+
+//   if (!is_valid_rpc_req()) {
+//     ret = OB_ERR_UNEXPECTED;
+//     LOG_WDIAG("handle_tablet_to_ls_lookup_done get a invalid rpc_req", K(ret), KP_(rpc_req), K_(rpc_trace_id));
+//   } else {
+//     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
+//     if (OB_LIKELY(obkv_info.is_need_ls_id())) {
+//       // ObRpcTableQuerySyncRequest
+//       if (OB_SUCC(handle_tablet_ls_id(*rpc_req_, obkv_info.tablet_ls_entry_->get_tablet_ls_map()))) {
+//         //do it success
+//       } else if (OB_HASH_NOT_EXIST == ret) {
+//         // could't find tablet <--> ls_id, need to build again
+//         set_state_and_call_next(RPC_REQ_REQUEST_RETRY)
+//       }
+//     }
+//   }
+//   if ()
+
+//   return ret;
+// }
+
 int ObRpcRequestSM::setup_rpc_server_addr_searching()
 {
   int ret = OB_SUCCESS;
@@ -2962,7 +3300,7 @@ int ObRpcRequestSM::setup_rpc_server_addr_searching()
   } else {
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     LOG_DEBUG("[ObRpcRequestSM::setup_rpc_server_addr_searching] Partition location Lookup successful",
-              "pl_attempts", pll_info_.pl_attempts_, K_(rpc_trace_id));
+              "pl_attempts", pll_info_.pl_attempts_, K_(rpc_route_mode), K_(rpc_trace_id));
     RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_ADDR_SEARCH);
     if (obkv_info.is_shard()) {
       ret = OB_ERR_UNEXPECTED;
@@ -3174,6 +3512,9 @@ int ObRpcRequestSM::setup_rpc_server_addr_search_normal()
                       "route", pll_info_.route_, K_(rpc_trace_id),
                       "rpc_enable_reroute", rpc_req_->get_rpc_request_config_info().rpc_enable_reroute_);
           }
+          if (obkv_info.is_need_ls_id()) {
+            obkv_info.set_tablet_ls_entry_dirty();
+          }
         } 
       }
     }
@@ -3225,13 +3566,20 @@ int ObRpcRequestSM::setup_congestion_control_lookup()
     LOG_WDIAG("ObRpcRequestSM::setup_congestion_control_lookup get a invalid rpc_req", K(ret), KP_(rpc_req), K_(rpc_trace_id));
   } else {
 
+   if (NULL != congestion_entry_) {
+     LOG_DEBUG("congestion entry should be NULL here", KPC_(congestion_entry), K_(sm_id), K_(rpc_trace_id));
+     congestion_entry_->dec_ref();
+     congestion_entry_ = NULL;
+   }
+
     // rpc request congestion only controled by rpc_enable_congestion_ config item.
     // For followding direct load request and stream fetch request no need to do
     // congestion_lookup, failed directly when server is failed
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     bool enable_congestion = rpc_req_->get_rpc_request_config_info().rpc_enable_congestion_
                                && (!(obkv_info.is_direct_load_req() && !obkv_info.is_first_direct_load_request()))
-                               && (!(OB_NOT_NULL(obkv_info.query_async_entry_) && !obkv_info.query_async_entry_->is_first_query()));
+                               && (!(OB_NOT_NULL(obkv_info.query_async_entry_) && !obkv_info.query_async_entry_->is_first_query()))
+                               && (!obkv_info.is_respo_reroute_info());
 
     ObConnectionAttributes &server_info = rpc_req_->get_server_addr();
 
@@ -3268,12 +3616,7 @@ int ObRpcRequestSM::setup_congestion_control_lookup()
         LOG_EDIAG("setup_congestion_control_lookup, pending_action_ should be NULL",
                   K_(pending_action), K_(congestion_entry), K_(sm_id), K_(rpc_trace_id));
       } else {
-        if (NULL != congestion_entry_) {
-          LOG_WDIAG("congestion entry must be NULL here",
-                  KPC_(congestion_entry), K_(sm_id), K_(rpc_trace_id));
-          congestion_entry_->dec_ref();
-          congestion_entry_ = NULL;
-        }
+
         is_congestion_entry_updated_ = false;
 
         ObAction *congestion_control_action_handle = NULL;
@@ -3337,6 +3680,7 @@ void ObRpcRequestSM::handle_congestion_entry_not_exist()
 {
   if (NULL == congestion_entry_ && is_valid_rpc_req()) { // not in server list
     ObConnectionAttributes &server_info = rpc_req_->get_server_addr();
+    ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     LOG_INFO("congestion entry does not exist", "addr", server_info.sql_addr_, K_(pll_info), K_(rpc_trace_id));
     congestion_entry_not_exist_count_++;
     // 1. mark entry dirty
@@ -3347,6 +3691,9 @@ void ObRpcRequestSM::handle_congestion_entry_not_exist()
                congestion_entry_not_exist_count_,
                "addr", server_info.sql_addr_,
                "pll_info", pll_info_, K_(rpc_trace_id));
+    }
+    if (obkv_info.is_need_ls_id()) {
+      obkv_info.set_tablet_ls_entry_dirty();
     }
 
     // 2. if all servers of the table entry are not in server list, just force renew
@@ -3405,7 +3752,7 @@ int ObRpcRequestSM::state_congestion_control_lookup_done()
       ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
       is_in_dead_congested = cgt_entry->is_dead_congested();
       is_in_detect_congested =  cgt_entry->is_detect_congested();
-      LOG_DEBUG("is_in_dead_congested", K(is_in_dead_congested), K(is_in_detect_congested), KPC(cgt_entry));
+      LOG_DEBUG("is_in_dead_congested", K(is_in_dead_congested), K(is_in_detect_congested), KPC(cgt_entry), K_(rpc_trace_id));
       if (!force_retry_congested_
           && is_in_dead_congested
           && pll_info_.is_strong_read()
@@ -3426,10 +3773,15 @@ int ObRpcRequestSM::state_congestion_control_lookup_done()
                       "and wait for updating", "addr", server_info.sql_addr_,
                       "route", pll_info_.route_, K_(rpc_trace_id), K_(sm_id));
           }
+          if (obkv_info.is_need_ls_id()) {
+            obkv_info.set_tablet_ls_entry_dirty();
+          }
         }
       }
 
-      if (is_in_dead_congested) {
+      if (is_in_detect_congested) {
+        get_global_resource_pool_processor().ip_set_.set_refactored(cgt_entry->server_ip_);
+      } else if (is_in_dead_congested) {
         //do nothing
       } else if (cgt_entry->is_force_alive_congested()) {
         is_in_alive_congested = true;
@@ -3444,12 +3796,18 @@ int ObRpcRequestSM::state_congestion_control_lookup_done()
                     "and will expand its retry interval to avoid other connections use this server",
                     KPC(cgt_entry), K_(rpc_trace_id), K_(sm_id), "sql_addr", server_info.sql_addr_);
           cgt_entry->set_alive_failed_at(get_hrtime());
+          if (get_global_proxy_config().server_detect_mode != 0) {
+            if (OB_LIKELY(NULL != cluster_resource_)) {
+              cluster_resource_->alive_addr_set_.set_refactored(cgt_entry->server_ip_);
+            }
+            is_in_alive_congested = true;
+          }
         } else {
           is_in_alive_congested = true;
         }
       }
 
-      if (is_in_alive_congested || is_in_dead_congested) {
+      if (is_in_alive_congested || is_in_dead_congested || is_in_detect_congested) {
         LOG_DEBUG("target server is in congested",
                   "addr", server_info.sql_addr_,
                   K(is_in_dead_congested),
@@ -3492,6 +3850,7 @@ int ObRpcRequestSM::state_congestion_control_lookup_done()
               "retry_times", obkv_info.rpc_request_retry_times_,
               K(rpc_request_retry_waiting_time_us), K_(rpc_trace_id), "congestion_status", rpc_req_->congest_status_, "addr", server_info.sql_addr_);
 
+        rpc_req_->set_in_congestion_retry(true);
         int64_t rpc_request_retry_waiting_time_ns = HRTIME_USECONDS(rpc_request_retry_waiting_time_us);
         // route error, waiting rpc_request_retry_waiting_time_ns
         if (OB_FAIL(schedule_call_next_action(RPC_REQ_REQUEST_RETRY, rpc_request_retry_waiting_time_ns))) {
@@ -3507,17 +3866,19 @@ int ObRpcRequestSM::state_congestion_control_lookup_done()
   return ret;
 }
 
-bool ObRpcRequestSM::retry_server_connection_not_open()
+bool ObRpcRequestSM::retry_next_avail_server_node()
 {
   bool bret = false;
   // int ret = OB_SUCCESS;
-  if (OB_LIKELY(is_valid_rpc_req()) && ObRpcReq::STATE_COMMON != rpc_req_->congest_status_) {
+  // congestion found or retry status and get not_master error
+  if (OB_LIKELY(is_valid_rpc_req()) && (ObRpcReq::STATE_COMMON != rpc_req_->congest_status_ || rpc_req_->is_could_send_next_node_retry())) {
     //need to retry another server
-    if (pll_info_.is_strong_read() && !rpc_req_->get_rpc_request_config_info().rpc_enable_reroute_) {
-      // could not to use it
-      LOG_WDIAG("request meet server failed, but not open rpc_enable_reroute, just to refound new"
-                "partition again", K_(rpc_req), "congest_status", rpc_req_->congest_status_, K_(rpc_trace_id));
-    } else if (pll_info_.replica_size() > 0) {
+    // if (pll_info_.is_strong_read() && !rpc_req_->get_rpc_request_config_info().rpc_enable_reroute_) {
+    //   // could not to use it
+    //   LOG_WDIAG("request meet server failed, but not open rpc_enable_reroute, just to refind new"
+    //             "partition again", K_(rpc_req), "congest_status", rpc_req_->congest_status_, K_(rpc_trace_id));
+    // } else
+    if (pll_info_.replica_size() > 0) {
       int32_t attempt_count = 0;
       bool found_leader_force_congested = false;
       const ObProxyReplicaLocation *replica = pll_info_.get_next_avail_replica(
@@ -3528,22 +3889,25 @@ bool ObRpcRequestSM::retry_server_connection_not_open()
         pll_info_.reset_cursor();
         force_retry_congested_ = true;
 
-        // get replica again
-        replica = pll_info_.get_next_avail_replica();
+        if (!pll_info_.is_strong_read()) {
+          // get replica again
+          replica = pll_info_.get_next_avail_replica();
+        }
       }
       if ((NULL != replica) && replica->is_valid()) {
         server_info.set_addr(ops_ip_sa_cast(replica->rpc_server_.get_sockaddr()));
         server_info.set_sql_addr(ops_ip_sa_cast(replica->server_.get_sockaddr()));
         bret = true;
       } else {
-        LOG_EDIAG("request meet server failed, can not found avail replica, unexpected branch", KPC(replica), K_(rpc_trace_id), K_(pll_info));
+        LOG_WDIAG("request meet server failed, need to build new replication for request", KPC(replica), K_(rpc_trace_id), K_(pll_info));
         replica = NULL;
         force_retry_congested_ = true; 
       }
     } else {
       ObTableEntryName &te_name = pll_info_.te_name_;
       LOG_INFO("no replica, retry to get table location again, "
-               "maybe used last session, ret_status = NOT_FOUND_EXISTING_ADDR", K(te_name), K_(rpc_trace_id));
+               "maybe used last session, ret_status = NOT_FOUND_EXISTING_ADDR",
+               K(te_name), "replica_size", pll_info_.replica_size(), K_(rpc_trace_id));
 
     }
 
@@ -3577,7 +3941,8 @@ int ObRpcRequestSM::setup_rpc_request_retry()
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     //update congestion info before retry
     if (OB_UNLIKELY(rpc_req_->is_server_failed()) && OB_NOT_NULL(congestion_entry_)) {
-      congestion_entry_->set_dead_failed_at(event::get_hrtime());
+      LOG_INFO("ObRpcRequestSM::setup_rpc_request_retry get server failed for rpc_req", K_(congestion_entry), K_(rpc_req), K_(rpc_trace_id));
+      congestion_entry_->set_alive_failed_at(event::get_hrtime());
       rpc_req_->set_server_failed(false); // reset retry info for next
     }
     LOG_DEBUG("setup_rpc_request_retry", "is_proxy_rpc_client", rpc_req_->is_inner_request(), K_(rpc_req), K(this), K_(rpc_trace_id));
@@ -3586,6 +3951,8 @@ int ObRpcRequestSM::setup_rpc_request_retry()
       LOG_WDIAG("ObRpcRequestSM::setup_rpc_request_retry can not retry", K_(obkv_info.rpc_request_retry_times), K(ret), K_(rpc_trace_id));
     } else if (obkv_info.is_need_retry_with_query_async()) {
       // retry with query async
+      // only for sharding request meet no data but is not the last tablet request
+      // for distributed execute will not come here,
       ObTableQueryAsyncEntry *query_async_entry = NULL;
 
       rpc_req_->retry_reset();  // 提前reset，后续会设置partition id以及table id
@@ -3615,6 +3982,9 @@ int ObRpcRequestSM::setup_rpc_request_retry()
                   "server_ip", rpc_req_->get_server_addr().addr_,
                   "route info", pll_info_.route_, K_(rpc_trace_id));
       }
+      if (obkv_info.is_need_ls_id()) {
+        obkv_info.set_tablet_ls_entry_dirty();
+      }
       // For global index retry logic, there are mainly two situations here
        // 1. Use the main table routing to report error -10500, splice it into a global index table, and try again
        // 2. Using global index table routing, error -10500 is reported. This situation is usually caused by using the old cache. In this case, normal retry logic is used, and the main table routing is used.
@@ -3630,7 +4000,7 @@ int ObRpcRequestSM::setup_rpc_request_retry()
       }
 
       if (OB_SUCC(ret)) {
-        if (ObRpcRouteMode::RPC_ROUTE_NORMAL == rpc_route_mode_ && retry_server_connection_not_open()) {
+        if (ObRpcRouteMode::RPC_ROUTE_NORMAL == rpc_route_mode_ && retry_next_avail_server_node()) {
           //retry other server to retry
           obkv_info.rpc_request_retry_times_++;
           set_state_and_call_next(RPC_REQ_SERVER_ADDR_SEARCHED);
@@ -3649,7 +4019,7 @@ int ObRpcRequestSM::setup_rpc_request_retry()
           }
           retry_reset();
           if (obkv_info.is_hbase_request() && obkv_info.is_hbase_empty_family()) {
-            already_get_tablegroup_entry_ = false;
+            already_get_tablet_ls_entry_ = false;
             set_state_and_call_next(RPC_REQ_INNER_INFO_GET);
           } else {
             set_state_and_call_next(RPC_REQ_IN_PARTITION_LOOKUP);
@@ -3694,6 +4064,9 @@ int ObRpcRequestSM::setup_rpc_request_server_reroute()
       const obkv::ObTableMoveResult &move_result = move_response->get_move_result();
       const common::ObAddr &server_addr = move_result.get_replica_info().server_;
       pll_info_.set_target_dirty(); //need fetch from remote next in next request.
+      if (obkv_info.is_need_ls_id()) {
+        obkv_info.set_tablet_ls_entry_dirty();
+      }
       rpc_req_->get_cur_server_addr(old_server_addr);
 
       if (OB_UNLIKELY(!server_addr.is_valid())) {
@@ -3935,6 +4308,9 @@ int ObRpcRequestSM::setup_process_response()
   } else {
     LOG_INFO("setup_process_response process response error, dirty route", K_(rpc_trace_id));
     pll_info_.set_target_dirty();
+    if (rpc_req_->get_obkv_info().is_need_ls_id()) {
+      rpc_req_->get_obkv_info().set_tablet_ls_entry_dirty();
+    }
 
     if (OB_NOT_NULL(rpc_req_)) {
       //init proxy error to rpc_req
@@ -3987,8 +4363,14 @@ int ObRpcRequestSM::state_rpc_analyze_response(int event, void *data)
       }
 
       if (ctx.dirty_table_entry_) {
+        if (obkv_info.is_single_partition_table_) {
+          pll_info_.route_.set_need_rebuild_as_single_partition_table();
+        }
         if (pll_info_.route_.set_table_entry_dirty()) { //schema changed
           get_pl_task_flow_controller().handle_new_task();
+        }
+        if (obkv_info.is_need_ls_id()) {
+          obkv_info.set_tablet_ls_entry_dirty();
         }
       }
       if (ctx.dirty_partition_entry_) {
@@ -3999,13 +4381,16 @@ int ObRpcRequestSM::state_rpc_analyze_response(int event, void *data)
                     "server_ip", rpc_req_->get_server_addr().addr_,
                     "route info", pll_info_.route_, K_(rpc_trace_id));
         }
+        if (obkv_info.is_need_ls_id()) {
+          obkv_info.set_tablet_ls_entry_dirty();
+        }
       }
 
       if (OB_SUCC(ret)) {
         if (ctx.need_reroute_) {
           //need reroute base on server reroute info
           set_state_and_call_next(RPC_REQ_RESPONSE_SERVER_REROUTING);
-        } else if (ctx.need_retry_) {
+        } else if (ctx.need_retry_ && (!(rpc_req_->is_inner_request()) || (obkv_info.is_rpc_req_can_retry()))) {
           /**
            * @brief
            *  1. route error
@@ -4014,6 +4399,8 @@ int ObRpcRequestSM::state_rpc_analyze_response(int event, void *data)
            *    2.1. is_need_retry_with_global_index
            *    2.2. is_need_retry_with_query_async
            *    2.3. retry imm
+           * ----
+           *  3.single request, or rpc sharding sub request which can retry by error code from observer and retry times by config
            */
           obkv_info.rpc_request_retry_last_begin_ = get_based_hrtime();
 
@@ -4344,6 +4731,10 @@ int ObRpcRequestSM::setup_rpc_send_response_to_client()
   if (!is_valid_rpc_req()) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("handle invalid rpc_req", K(ret), K_(rpc_trace_id));
+  } else if (rpc_req_->get_cnet_state() >= ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_HANDLING) {
+    //just to release
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("rpc request has sended to client", K(ret), K_(rpc_trace_id));
   } else {
     if (OBPROXY_RPC_REDIS == rpc_type_) {
       // send to redis client(same as obkv)
@@ -4386,7 +4777,7 @@ int ObRpcRequestSM::setup_rpc_handle_shard_request()
   optimizer::ObProxyShardRpcReqRequestPlan *execute_plan = NULL;
   engine::ObProxyRpcReqOperator *operator_root = NULL;
   ObHRTime execute_timeout = HRTIME_USECONDS(timeout_us_);
-  LOG_DEBUG("setup_rpc_handle_shard_request get timeout", K_(timeout_us), K_(rpc_trace_id));
+  LOG_DEBUG("setup_rpc_handle_shard_request to handle", K_(rpc_req), K_(timeout_us), K_(rpc_trace_id));
 
   RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_SHARDING_HANDLE);
   if (OB_ISNULL(rpc_req_)) {
@@ -4450,8 +4841,11 @@ int ObRpcRequestSM::state_rpc_handle_shard_request(int event, void *data)
       } else {
         ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
         ObRpcResponse *rpc_response = NULL;
+        bool need_check_global_index_error = rpc_req_->get_rpc_request_config_info().rpc_enable_global_index_
+                                                && obkv_info.is_query_with_index()
+                                                && obkv_info.is_query_request();
 
-        LOG_DEBUG("to handle data return", K_(sm_id), K(ret), K(data), K_(rpc_trace_id));
+        LOG_DEBUG("to handle data return", K_(sm_id), K(ret), K(data), K(need_check_global_index_error), K_(rpc_trace_id));
         if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_obkv_serialize_response(*(rpc_req_)))) {
           LOG_WDIAG("invalid to serialize inner sharding response", K_(sm_id), K(ret), K_(rpc_trace_id));
         } else if (obkv_info.is_inner_req_retrying() && rpc_req_->is_inner_request()) {
@@ -4466,6 +4860,30 @@ int ObRpcRequestSM::state_rpc_handle_shard_request(int event, void *data)
           if (OB_FAIL(inner_request_callback(ASYNC_PROCESS_DONE_EVENT))) {
             LOG_WDIAG("fail to callback", K(ret), KPC(rpc_req_), K_(rpc_trace_id));
           }
+        } else if (need_check_global_index_error && OB_NOT_NULL(rpc_response = rpc_req_->get_rpc_response())
+                      && rpc_response->get_result_code().rcode_ == OB_ERR_KV_GLOBAL_INDEX_ROUTE) {
+          if (obkv_info.is_global_index_route()) {
+            // dirtry index entry
+            if (OB_NOT_NULL(obkv_info.index_entry_)) {
+              obkv_info.index_entry_->cas_set_dirty_state();
+              obkv_info.index_entry_->dec_ref();
+              obkv_info.index_entry_ = NULL;
+            }
+            obkv_info.table_id_ = 0;
+            obkv_info.data_table_id_ = 0;
+            obkv_info.index_table_name_.reset();
+            obkv_info.set_need_retry(true);
+
+          } else {
+            // With index table name, try again
+            obkv_info.set_need_retry_with_global_index(true);
+          }
+
+          //to retry
+          if (OB_FAIL(schedule_call_next_action(RPC_REQ_REQUEST_RETRY))) {
+            LOG_WDIAG("fail to call schedule_call_next_action", K(ret));
+          }
+
         } else if (OB_NOT_NULL(rpc_req_->cnet_sm_) && rpc_req_->get_cnet_state() <= ObRpcReq::ClientNetState::RPC_REQ_CLIENT_RESPONSE_HANDLING) {
           ObRpcClientNetHandler *client_net_handler = rpc_req_->get_cnet_sm();
           obkv_info.set_resp_completed(true);
@@ -4628,6 +5046,12 @@ int ObRpcRequestSM::state_rpc_req_inner_request_cleanup()
           }
         }
       } else {
+        if (OB_FAIL(schedule_release_check_action())) {
+          if (OB_NOT_NULL(release_check_action_)) {
+            release_check_action_->cancel();
+            release_check_action_ = NULL;
+          }
+        }
         LOG_DEBUG("could not clean inner rpc_req", KP_(rpc_req),
                   "client_net_ready_to_cleanup", !(rpc_client_net_state > ObRpcReq::ClientNetState::RPC_REQ_CLIENT_INIT && rpc_client_net_state < ObRpcReq::ClientNetState::RPC_REQ_CLIENT_DONE),
                   "server_net_ready_to_cleanup", !(rpc_server_net_state > ObRpcReq::ServerNetState::RPC_REQ_SERVER_INIT && rpc_server_net_state < ObRpcReq::ServerNetState::RPC_REQ_SERVER_DONE),
@@ -4666,7 +5090,7 @@ int ObRpcRequestSM::state_rpc_req_cleanup()
     RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_REQUEST_CLEANUP);
 
     if (OB_UNLIKELY(rpc_req_->is_server_failed()) && OB_NOT_NULL(congestion_entry_)) {
-      congestion_entry_->set_dead_failed_at(event::get_hrtime());
+      congestion_entry_->set_alive_failed_at(event::get_hrtime());
       rpc_req_->set_server_failed(false); // reset retry info for next
     }
     ObRpcReq::RpcReqCleanModule rpc_clean_module = rpc_req_->get_clean_module();
@@ -4674,9 +5098,12 @@ int ObRpcRequestSM::state_rpc_req_cleanup()
     ObRpcReq::ServerNetState rpc_server_net_state = rpc_req_->get_snet_state();
     ObRpcReq::RpcReqSmState rpc_request_net_state = rpc_req_->get_sm_state();
 
-    LOG_DEBUG("enter ObRpcRequestSM::state_rpc_req_cleanup", KP_(rpc_req), "client_net_state", ObRpcReqDebugNames::get_client_state_name(rpc_client_net_state),
-              "server_net_state", ObRpcReqDebugNames::get_server_state_name(rpc_server_net_state), "request_sm_state", ObRpcReqDebugNames::get_rpc_sm_state_name(rpc_request_net_state),
-              "rpc_clean_module", ObRpcReqDebugNames::get_rpc_clean_module_name(rpc_clean_module), K_(rpc_trace_id));
+    LOG_DEBUG("enter ObRpcRequestSM::state_rpc_req_cleanup", KP_(rpc_req),
+              "client_net_state", ObRpcReqDebugNames::get_client_state_name(rpc_client_net_state),
+              "server_net_state", ObRpcReqDebugNames::get_server_state_name(rpc_server_net_state),
+              "request_sm_state", ObRpcReqDebugNames::get_rpc_sm_state_name(rpc_request_net_state),
+              "rpc_clean_module", ObRpcReqDebugNames::get_rpc_clean_module_name(rpc_clean_module),
+              K_(rpc_trace_id));
 
     if (ObRpcReq::RpcReqCleanModule::RPC_REQ_CLEAN_MODULE_MAX == rpc_clean_module) {
       ret = OB_ERR_UNEXPECTED;
@@ -4899,10 +5326,17 @@ void ObRpcRequestSM::handle_timeout()
   LOG_INFO("rpc_request handle timeout directly", KPC_(rpc_req), K(this), K_(timeout_us), K_(rpc_trace_id));
   int ret = OB_SUCCESS;
   bool need_forward_error = true;
+
+  if (OB_NOT_NULL(rpc_req_) && rpc_req_->is_in_server_entry_sending() && OB_NOT_NULL(congestion_entry_)) {
+    congestion_entry_->set_alive_failed_at(get_hrtime());
+  }
+
   if (OB_FAIL(cancel_timeout_action())) {
     LOG_WDIAG("fail to cancel timeout action", K(ret), K_(sm_id), K(this), K_(rpc_trace_id));
   } else if (OB_FAIL(cancel_pending_action())) {
     LOG_WDIAG("fail to cancel pending action", K(ret), K_(sm_id), K(this), K_(rpc_trace_id));
+  // } else if (OB_FAIL(cancel_call_next_action())) { // TODO need check cancel it for next, not change to avoid request mem leak
+    // LOG_WDIAG("fail to cancel pending action", K(ret), K_(sm_id), K(this), K_(rpc_trace_id));
   } else if (!is_valid_rpc_req()) {
     // to kill itself to free RpcRequestSM object in error request response
     LOG_WDIAG("invalid rpc_req to handle", KPC_(rpc_req), K_(rpc_trace_id));
@@ -4943,6 +5377,8 @@ void ObRpcRequestSM::update_cmd_stats()
       milestone_diff_new(rpc_req_->server_timestamp_.server_write_begin_, rpc_req_->server_timestamp_.server_read_begin_);
     cmd_time_stats_.prepare_send_request_to_server_time_ =
       milestone_diff_new(rpc_req_->client_timestamp_.client_begin_, rpc_req_->server_timestamp_.server_write_begin_);
+    cmd_time_stats_.server_init_time_ =
+      milestone_diff_new(rpc_req_->server_timestamp_.server_begin_, rpc_req_->server_timestamp_.server_write_begin_);
 
     // client_close will not be assigned properly in some exceptional situation.
     // TODO: Assign client_close with suitable value when ObMysqlTunnel terminates abnormally.
@@ -5281,7 +5717,7 @@ void ObRpcRequestSM::update_monitor_log()
 
   if (OB_NOT_NULL(rpc_req_)
       && OB_NOT_NULL(rpc_req_->get_rpc_request())
-      && !rpc_req_->is_inner_request()) {
+      && !rpc_req_->is_inner_request()) { //TODO release it
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
     int64_t slow_time_threshold = mysql_config_params_->slow_query_time_threshold_;
     int64_t query_digest_time_threshold = mysql_config_params_->query_digest_time_threshold_;
@@ -5783,6 +6219,10 @@ inline void ObRpcRequestSM::call_next_action()
     }
     case RPC_REQ_IN_INDEX_LOOKUP: {
       setup_rpc_index_lookup();
+      break;
+    }
+    case RPC_REQ_IN_TABLET_LS_LOOKUP : {
+      setup_rpc_tablet_ls_lookup();
       break;
     }
     case RPC_REQ_SERVER_ADDR_SEARCHING : {

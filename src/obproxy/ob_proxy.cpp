@@ -65,6 +65,7 @@
 #include "proxy/rpc/rpclib/ob_table_query_async_cache.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"
+#include "proxy/rpc/rpclib/ob_tablet_ls_cache.h"
 
 #include "cmd/ob_show_net_handler.h"
 #include "cmd/ob_show_warning_handler.h"
@@ -174,6 +175,7 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
     ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
     ObRpcReqCtxCache &rpc_ctx_cache = get_global_rpc_req_ctx_cache();
     ObRpcRedisCtxCache &redis_ctx_cache = get_global_rpc_redis_ctx_cache();
+    ObTabletLsCache &tablet_ls_cache = get_global_tablet_ls_cache();
     ObRpcRedisMonitorCache &redis_monitor_cache = get_global_rpc_redis_monitor_cache();
     ObRoutineCache &routine_cache = get_global_routine_cache();
     ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
@@ -201,6 +203,8 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init redis ctx cache", K(ret));
     } else if (OB_FAIL(redis_monitor_cache.init(ObRpcRedisMonitorCache::RPC_REDIS_MONITOR_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init redis monitor cache", K(ret));
+    } else if (OB_FAIL(tablet_ls_cache.init(ObTabletLsCache::TABLET_LS_CACHE_MAP_SIZE))) {
+      LOG_EDIAG("fail to init tablet_ls cache", K(ret));
     } else if (OB_FAIL(routine_cache.init(ObRoutineCache::ROUTINE_CACHE_MAP_SIZE))) {
       LOG_EDIAG("fail to init routine cache", K(ret));
     } else if (OB_FAIL(sql_table_cache.init(ObSqlTableCache::SQL_TABLE_CACHE_MAP_SIZE))) {
@@ -989,16 +993,19 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
       ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
       ObIndexCache &index_cache = get_global_index_cache();
       ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
+      ObTabletLsCache &tablet_ls_cache = get_global_tablet_ls_cache();
       table_cache.set_cache_expire_time(relative_expire_time_ms);
       part_cache.set_cache_expire_time(relative_expire_time_ms);
       index_cache.set_cache_expire_time(relative_expire_time_ms);
       tablegroup_cache.set_cache_expire_time(relative_expire_time_ms);
+      tablet_ls_cache.set_cache_expire_time(relative_expire_time_ms);
       sql_table_cache.set_cache_expire_time(relative_sql_table_expire_time_ms);
       LOG_INFO("current table cache and part cache will exipre", K(relative_expire_time_ms), K(relative_sql_table_expire_time_ms),
                "table entry expire_time_us", table_cache.get_cache_expire_time_us(),
                "part entry expire_time_us", part_cache.get_cache_expire_time_us(),
                "index entry expire_time_us", index_cache.get_cache_expire_time_us(),
                "tablegroup entry expire_time_us", tablegroup_cache.get_cache_expire_time_us(),
+               "tablet ls entry expire_time_us", tablet_ls_cache.get_cache_expire_time_us(),
                "sql table entry expire time us", sql_table_cache.get_cache_expire_time_us());
       config.partition_location_expire_relative_time = 0;
       config.sql_table_cache_expire_relative_time = 0;
@@ -1140,8 +1147,25 @@ int ObProxy::get_meta_table_server(ObIArray<ObProxyReplicaLocation> &replicas, O
         ObString cluster_version_str;
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(*rs_fetcher, "cluster_version", cluster_version_str);
         int64_t version = 0;
-        for (int64_t i = 0; i < cluster_version_str.length() && cluster_version_str[i] != '.'; i++) {
-          version = version * 10 + cluster_version_str[i] - '0';
+        int64_t shift_num = 32;
+        // for (int64_t i = 0; i < cluster_version.length() && cluster_version[i] != '.'; i++) {
+        //   version = version * 10 + cluster_version[i] - '0';
+        // }
+        /*
+          for example: 4.3.5.2 -> 4* 2^32 + 3* 2^16 + 5*2^8 + 2
+          we only care whether version > 4.x
+        */
+        for (int64_t i = 0; i < cluster_version_str.length(); i++) {
+          if (cluster_version_str[i] == '.') {
+            continue;
+          } else {
+            if ( i == cluster_version_str.length() - 1) {
+              shift_num = 0;
+            }
+            const uint64_t version_num = cluster_version_str[i] - '0';
+            version += (version_num << shift_num);
+            shift_num /= 2;
+          }
         }
         cluster_version = version;
       }

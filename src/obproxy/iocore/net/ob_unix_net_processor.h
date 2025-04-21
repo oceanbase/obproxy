@@ -50,10 +50,11 @@ public:
   ObUnixNetProcessor()  { }
   virtual ~ObUnixNetProcessor() { }
 
-  event::ObAction *accept_internal(
+  int accept_internal(
       event::ObContinuation &cont,
       int fd,
-      ObAcceptOptions const &opt);
+      ObAcceptOptions const &opt,
+      event::ObAction*& action_ret);
 
   int connect_internal(
       event::ObContinuation &cont,

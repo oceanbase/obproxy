@@ -34,7 +34,7 @@ class ObProxyRpcReqTableScanOp : public ObProxyRpcReqOperator
 {
 public:
   ObProxyRpcReqTableScanOp(proxy::ObRpcReq *input, common::ObIAllocator &allocator)
-    : ObProxyRpcReqOperator(input, allocator), parallel_param_(),
+    : ObProxyRpcReqOperator(input, allocator), parallel_param_(common::ObModIds::OB_RPC_TABLE_PROC, 4 * sizeof(executor::ObProxyRpcParallelParam)),
       handle_stream_request_(false), rpc_parallel_cont_ptr_(NULL)
   {
     set_rpc_op_type(PHY_RPC_TABLE_SCAN);

@@ -148,10 +148,10 @@ int ObHostnameIpRefreshProcessor::async_refresh_ip_by_hostname(const ObString& t
   ObProxyMutex *mutex = NULL;
 
   if (OB_ISNULL(this_ethread())
-      || !this_ethread()->is_event_thread_type(ET_CALL)) {
+      || !this_ethread()->is_event_thread_type(ET_NET)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_EDIAG("should only call this func on ET_CALL thread", "cur thread type",
-              this_ethread()->event_types_, "ET_CALL val", ET_CALL);
+    LOG_EDIAG("should only call this func on ET_NET thread", "cur thread type",
+              this_ethread()->event_types_, "ET_NET val", ET_NET);
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_EDIAG("fail to alloc memory for mutex", K(ret));

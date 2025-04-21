@@ -19,6 +19,7 @@
 #include "lib/hash/ob_hashmap.h"
 #include "share/config/ob_common_config.h"
 #include "iocore/net/ob_inet.h"
+#include "proxy/mysqllib/ob_mysql_common_define.h"
 
 namespace oceanbase
 {
@@ -35,7 +36,6 @@ class ObMysqlResultHandler;
 }
 namespace obutils
 {
-
 enum ObServerRoutingMode
 {
   OB_STANDARD_ROUTING_MODE = 0,
@@ -95,8 +95,9 @@ public:
   bool is_memory_visible(const common::ObString &key_name);
   static int load_sqlite_config_init_callback(void *data, int argc, char **argv, char **column_name);
   //dump config to local file
-  int dump_config_to_local();
+  int dump_config_to_local(const bool is_yaml_format = false);
   int dump_config_to_sqlite();
+  int serialize_to_yaml(char* buf, const int64_t buf_len, int64_t& pos) const;
   int update_config_item(const common::ObString &key_name, const common::ObString &value);
   int update_user_config_item(const common::ObString &key_name, const common::ObString &value);
 
@@ -119,6 +120,11 @@ public:
   int set_value_safe(common::ObConfigItem *item, const common::ObString &value,
                      const bool allow_invalid_value = true);
   int fill_proxy_config(proxy::ObMysqlResultHandler &result_handler);
+
+  static bool is_server_protocol_auto();
+  static bool is_server_protocol_mysql();
+  static bool is_server_protocol_compressed_mysql();
+  static bool is_server_protocol_oceanbase_20();
 
   static common::ObString get_service_mode_string(const ObProxyServiceMode mode);
   static ObProxyServiceMode get_service_mode(const common::ObString &mode_string);
@@ -262,8 +268,7 @@ public:
 
   //request&response transform related
   DEF_CAP(default_buffer_water_mark, "32KB", "[4B,64KB]", "default buffer water mark, [4B, 64KB]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_CAP(tunnel_request_size_threshold, "8KB", "(0,16MB]", "use tunnel to transfer request, [4KB, 16MB], if request bigger than the threshold, 0 disable", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_CAP(request_buffer_length, "4KB", "[1KB, 16MB]", "the max length of request buffer we will alloc for each reqeust", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(request_buffer_length, "8KB", "[1KB, 16MB]", "the max length of request buffer we will alloc for each reqeust. if request bigger than the threshold, will use tunnel to transfer request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_CAP(flow_high_water_mark, "64K", "[0,16MB]", "flow high water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_CAP(flow_low_water_mark, "64K", "[0,16MB]", "flow low water mark for flow control, [0, 16MB], if set a negative value, proxy treat it as 64K", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(flow_consumer_reenable_threshold, "256", "[0,131072]", "consumer reenable threshold for flow control, [0, 131072], if set a negative value, proxy treat it as 256", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -288,7 +293,6 @@ public:
   DEF_BOOL(ignore_local_config, "true", "ignore all local cached files, start proxy with remote json", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_IP(local_bound_ip, "0.0.0.0", "local bound ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(listen_port, "6688", "(1024,65536)", "obproxy listen port", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(ip_listen_mode, "1", "[1, 3]", "1 means ipv4 listen mode, 2 means ipv6 listen mode, 3 means ipv4 and ipv6 listen mode", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_IP(local_bound_ipv6_ip, "::", "local bound ipv6 ip(any)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(obproxy_config_server_url, "", "url of config info(rs list and so on)", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(proxy_service_mode, "client", "proxy deploy and service mode: 1.client(default); 2.server", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
@@ -318,8 +322,10 @@ public:
 
   DEF_BOOL(enable_bad_route_reject, "false", "if enabled, bad route request will be rejected, e.g. first statement of transaction opened by BEGIN(or START TRANSACTION) without table name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_partition_table_route, "true", "if enabled, partition table will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(enable_compression_protocol, "true", "if enabled, proxy will use compression protocol with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_BOOL(enable_ob_protocol_v2, "true", "if enabled, proxy will use oceanbase protocol 2.0 with server", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(server_protocol, "Auto", "the permissible values ignoring case are 'Auto', 'MySQL', 'Compressed MySQL', 'OceanBase 2.0'."
+                                   "'Auto' is recommanded, use MySQL protocol when single leader (single log stream) of tenant is detected or use OceanBase 2.0 with server."
+                                   "Use `show proxysession` to know exactly which protocol is used with server"
+                                   "'MySQL/Compressed MySQL/OceanBase 2.0' which will force proxy to use the protocol with server." , CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_ob_protocol_v2_with_client, "false", "if enabled, proxy will use oceanbase protocol 2.0 with client", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_full_link_trace, "false", "if enable proxy will use full link trace to trace query execution", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -365,6 +371,7 @@ public:
 
   // delay update table entry or partition entry
   DEF_TIME(delay_update_entry_interval, "5s", "[0s,1d]", "delay update table entry or partition entry interval, [0s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(is_need_skip_delay_interval_schema_changed, "false", "is need skip delay interval when table's schema version changed, default is us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   // tenant location valid time, if expred, will update all dummy
   DEF_TIME(tenant_location_valid_time, "1d", "[0s,100d]", "tenant location valid time, [0s, 100d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -393,6 +400,7 @@ public:
   DEF_BOOL(enable_qa_mode, "false", "just for test, not recommended, if enabled, proxy can forcibly expire all location cache", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(location_expire_period, "0", "[0,36000000]", "just for test, not recommended, the unit is ms, only work if qa_mode is set, it means location cache which has been created for more than this value will be expired", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(location_expire_period_time, "0d", "[0s, 30d]", "time for location expire period, values in [0s, 30d], 0 means no expire", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(table_entry_retry_build_limit, "3", "[0, 10000]", "obproxy max retries times when build atomic table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 
   DEF_STR(proxy_route_policy, "", "proxy route policy for weakread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_STR(route_target_replica_type, "Full;Readonly", "proxy will choose target replica type for route. Must set proxy_route_policy to a specific value for effect and case-insensitivity. Choosing other replica types is not permitted when select ColumnStore. Format: Full;Readonly;ColumnStore", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
@@ -562,7 +570,7 @@ public:
   DEF_INT(rpc_async_pull_batch_max_size, "10", "[2,50]", "max batch size for async pull, [2, 50]", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_async_pull_batch_max_times, "0", "[0,)", "max batch fetch times for single entry cont", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(rpc_async_pull_batch_wait_interval, "10ms", "[1ms, 1s]", "wait interval for async batch pull, [1ms, 1s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(rpc_sub_req_max_retries, "0", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_sub_req_max_retries, "5", "[0, 50]", "rpc sub request max retry times when sub request failed", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_rpc_throttle, "false", "if enabled, will be able to limit rpc req", CFG_NO_NEED_REBOOT,  CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_throttle_trigger_percentage, "50", "[0, 100)", "begin throttle when reach the percentage of mem occupied by rpc req", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_throttle_limit_qps_qa, "0", "[0,)", "rpc req limit qps when throttle trigger", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
@@ -572,19 +580,47 @@ public:
   DEF_INT(rpc_sub_request_isolation_mode, "0", "[0,2]", "rpc sub req handle mode, 0: not isolate sub request, 1: isolate all sub req to async thread, 2: isolate sub req to part of async thread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_sub_request_weight, "10", "[0,]", "rpc sub request weight, recommended range [0, 100]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_service_mode, "3", "[1, 3]","rpc service mode flag, option flag out, bit 1: OBKV service, bit 2: OB-Redis servcie", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_client_net_read_timeout, "30s", "[1s, 1d]", "rpc client net read timeout, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(rpc_client_net_write_timeout, "60s", "[1s, 1d]", "rpc client net write timeout, [1s, 1d]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(rpc_redis_default_database_name, "obkv_redis", "obkv-redis default database name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(rpc_redis_default_user_name, "default", "obkv-redis default user name", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_redis_operation_timeout, "10000000",  "obkv redis request timeout us", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(rpc_redis_max_monitor_num, "30", "[0,)", "obkv-redis max monitor num", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_enable_lower_case_table_names, "true", "rpc request enable lower_case_table_names for request", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_period_task_check_request_release, "0", "[0,1000]", "rpc request period task interval to check release, just for test, [0, 1000] /seconds, default 0 means not enable", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(rpc_force_use_original_redis_protocol, "true", "force use original redis protocol", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // 以下是废弃、无用的配置，统一放在下面
-  DEF_INT(max_connections, "60000", "(128,65535]", "max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_INT(rpc_request_max_retries, "300", "[1,)", "retry times when rpc request failed in error partition lookup", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_STR_LIST(rpc_force_srv_black_list, "", "a list of servers not passed the login request, format ip1:rpc_port1;ip2:rpc_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_compression_protocol, "false", "deprecated. Do not use and not work anymore, use server_protocol instead.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_ob_protocol_v2, "false", "deprecated, Do not use and not work anymore, use server_protocol instead.", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(max_connections, "60000", "(128,65535]", "deprecated, max fd proxy could use", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(qa_mode_mock_public_cloud_slb_addr, "127.0.0.1:33045", "deprecated, mock public cloud slb addr", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(qa_mode_mock_public_cloud_vid, "1", "[1,102400]", "deprecated, mock public cloud vid", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(rpc_request_max_retries, "300", "[1,)", "deprecated, retry times when rpc request failed in error partition lookup", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR_LIST(rpc_force_srv_black_list, "", "deprecated, a list of servers not passed the login request, format ip1:rpc_port1;ip2:rpc_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_CAP(tunnel_request_size_threshold, "8KB", "(0,16MB]", "deprecated, use tunnel to transfer request, [4KB, 16MB], if request bigger than the threshold, 0 disable", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_INT(ip_listen_mode, "1", "[1, 3]", "deprecated, 1 means ipv4 listen mode, 2 means ipv6 listen mode, 3 means ipv4 and ipv6 listen mode", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
 };
 
 ObProxyConfig &get_global_proxy_config();
+inline bool ObProxyConfig::is_server_protocol_auto()
+{
+  return proxy::SERVER_PROTOCOL_AUTO.case_compare(common::ObString(get_global_proxy_config().server_protocol).trim()) == 0;
+}
+
+inline bool ObProxyConfig::is_server_protocol_oceanbase_20()
+{
+  return proxy::SERVER_PROTOCOL_OCEANBASE_20.case_compare(common::ObString(get_global_proxy_config().server_protocol).trim()) == 0;
+}
+
+inline bool ObProxyConfig::is_server_protocol_mysql()
+{
+  return proxy::SERVER_PROTOCOL_MYSQL.case_compare(common::ObString(get_global_proxy_config().server_protocol).trim()) == 0;
+}
+
+inline bool ObProxyConfig::is_server_protocol_compressed_mysql()
+{
+  return proxy::SERVER_PROTOCOL_COMPRESSED_MYSQL.case_compare(common::ObString(get_global_proxy_config().server_protocol).trim()) == 0;
+}
 
 inline common::ObString ObProxyConfig::get_service_mode_string(const ObProxyServiceMode mode)
 {

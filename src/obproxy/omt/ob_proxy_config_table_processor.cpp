@@ -56,8 +56,8 @@ using namespace oceanbase::obproxy::opsql;
 do {\
   ObConfigItem item;\
   if (OB_SUCC(ret) && OB_FAIL(get_global_config_processor().get_proxy_config( \
-  vip_info_.vip_addr_, vip_info_.cluster_name_.ptr(), vip_info_.tenant_name_.ptr(), #name, item, false))) {\
-    PROXY_LOG(WDIAG, "fail to get " #name , K_(vip_info_.vip_addr), K_(vip_info_.cluster_name), K_(vip_info_.tenant_name), K(ret)); }  \
+  addr, cluster_name.ptr(), tenant_name.ptr(), #name, item, false))) {\
+    PROXY_LOG(WDIAG, "fail to get " #name , K(addr), K(cluster_name), K(tenant_name), K(ret)); }  \
   else {\
     name##_.rewrite(item.str(), strlen(item.str()));\
   }} while(0)
@@ -66,8 +66,8 @@ do {\
 do {\
   ObConfig##var_type##Item item;\
   if (OB_SUCC(ret) && OB_FAIL(get_global_config_processor().get_proxy_config##fun_type( \
-  vip_info_.vip_addr_, vip_info_.cluster_name_.ptr(), vip_info_.tenant_name_.ptr(), #name, item, false))) {\
-    PROXY_LOG(WDIAG, "fail to get " #name , K_(vip_info_.vip_addr), K_(vip_info_.cluster_name), K_(vip_info_.tenant_name), K(ret)); }  \
+  addr, cluster_name.ptr(), tenant_name.ptr(), #name, item, false))) {\
+    PROXY_LOG(WDIAG, "fail to get " #name , K(addr), K(cluster_name), K(tenant_name), K(ret)); }  \
   else {\
     name##_ = item.get_value();\
   }} while(0)
@@ -401,10 +401,40 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   // 注意：由于外面加了写锁，函数中每次调用get_proxy_config，都必须调用无锁的方法，否则会死锁
   int ret = OB_SUCCESS;
   const obutils::ObVipAddr &addr = vip_info_.vip_addr_;
-  const ObConfigVariableString &tenant_name = vip_info_.tenant_name_;
-  const ObConfigVariableString &cluster_name = vip_info_.cluster_name_;
   const ObConfigVariableString &service_name = vip_info_.service_name_;
+  ObConfigVariableString tenant_name = vip_info_.tenant_name_;
+  ObConfigVariableString cluster_name = vip_info_.cluster_name_;
 
+  // rootservice_cluster_name
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    // Get from metadb. If not found, will get global level config.
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, "", "", "rootservice_cluster_name", item, false, service_name))) {
+      PROXY_LOG(WDIAG, "fail to get rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(ret));
+    } else if ((0 != strlen(item.str())) && OB_FAIL(rootservice_cluster_name_.rewrite(item.str(), strlen(item.str())))) {
+      PROXY_LOG(WDIAG, "fail to rewrite rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(item), K(ret));
+    }
+  }
+  // proxy_tenant_name
+  if (OB_SUCC(ret)) {
+    ObConfigItem item;
+    // Get from metadb. If not found, will get global level config.
+    if (OB_FAIL(get_global_config_processor().get_proxy_config(
+          addr, "", "", "proxy_tenant_name", item, false))) {
+      PROXY_LOG(WDIAG, "fail to get proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(ret));
+    } else if ((0 != strlen(item.str())) && OB_FAIL(proxy_tenant_name_.rewrite(item.str(), strlen(item.str())))) {
+      PROXY_LOG(WDIAG, "fail to rewrite proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(item), K(ret));
+    }
+  }
+  // 兼容三段式登录，传入的vip_info优先级高于配置的cluster_name、tenant_name
+  if (OB_SUCC(ret)) {
+    if (tenant_name.is_empty() && OB_FAIL(tenant_name.rewrite(proxy_tenant_name_.ptr(), proxy_tenant_name_.size()))) {
+      LOG_WDIAG("fail to write for proxy_tenant_name", K(ret));
+    } else if (cluster_name.is_empty() && OB_FAIL(cluster_name.rewrite(rootservice_cluster_name_.ptr(), rootservice_cluster_name_.size()))) {
+      LOG_WDIAG("fail to write for rootservice_cluster_name", K(ret));
+    }
+  }
   GetProxyConfigVariableStr(proxy_route_policy);
   GetProxyConfigVariableStr(proxy_idc_name);
   GetProxyConfigVariableStr(proxy_primary_zone_name);
@@ -430,28 +460,6 @@ int ObProxyMultiLevelConfig::set_config(const uint64_t global_version)
   GetProxyConfigTime(observer_query_timeout_delta);
   GetProxyConfigTime(query_digest_time_threshold);
   GetProxyConfigTime(slow_query_time_threshold);
-  // rootservice_cluster_name
-  if (OB_SUCC(ret)) {
-    ObConfigItem item;
-    // Get from metadb. If not found, will get global level config.
-    if (OB_FAIL(get_global_config_processor().get_proxy_config(
-          addr, "", "", "rootservice_cluster_name", item, false, service_name))) {
-      PROXY_LOG(WDIAG, "fail to get rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(ret));
-    } else if ((0 != strlen(item.str())) && OB_FAIL(rootservice_cluster_name_.rewrite(item.str(), strlen(item.str())))) {
-      PROXY_LOG(WDIAG, "fail to rewrite rootservice cluster name", K(addr), K(cluster_name), K(tenant_name), K(service_name), K(item), K(ret));
-    }
-  }
-  // proxy_tenant_name
-  if (OB_SUCC(ret)) {
-    ObConfigItem item;
-    // Get from metadb. If not found, will get global level config.
-    if (OB_FAIL(get_global_config_processor().get_proxy_config(
-          addr, "", "", "proxy_tenant_name", item, false))) {
-      PROXY_LOG(WDIAG, "fail to get proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(ret));
-    } else if ((0 != strlen(item.str())) && OB_FAIL(proxy_tenant_name_.rewrite(item.str(), strlen(item.str())))) {
-      PROXY_LOG(WDIAG, "fail to rewrite proxy_tenant_name name", K(addr), K(cluster_name), K(tenant_name), K(item), K(ret));
-    }
-  }
   // enable_standby_read_write_split
   if (OB_SUCC(ret)) {
     ObConfigBoolItem item;
@@ -992,6 +1000,21 @@ int ObProxyConfigTableProcessor::set_proxy_config(void *arg, const bool is_backu
           } else if (level < 0 || level > 9) {
             // out of range
             ret = OB_NOT_SUPPORTED;
+          }
+        }
+
+        if (0 == strcasecmp("server_protocol", item->config_item_.name())) {
+          ObString val(item->config_item_.str());
+          val = val.trim();
+          if (val.empty()){
+            ret = OB_NOT_SUPPORTED;
+            LOG_WDIAG("server_protocol value can't be empty", K(ret));
+          } else if (val.case_compare(proxy::SERVER_PROTOCOL_AUTO) != 0
+                     && val.case_compare(proxy::SERVER_PROTOCOL_COMPRESSED_MYSQL) != 0
+                     && val.case_compare(proxy::SERVER_PROTOCOL_MYSQL) != 0
+                     && val.case_compare(proxy::SERVER_PROTOCOL_OCEANBASE_20) != 0) {
+            ret = OB_NOT_SUPPORTED;
+            LOG_WDIAG("server_protocol can only be set to the specified values(mysql, oceanbase 2.0, compressed mysql)", K(ret), K(val));
           }
         }
 

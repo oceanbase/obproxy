@@ -37,11 +37,18 @@ ObMysqlResponseCursorTransformPlugin *ObMysqlResponseCursorTransformPlugin::allo
 
 ObMysqlResponseCursorTransformPlugin::ObMysqlResponseCursorTransformPlugin(ObApiTransaction &transaction)
   : ObTransformationPlugin(transaction, ObTransformationPlugin::RESPONSE_TRANSFORMATION),
-    local_reader_(NULL), local_analyze_reader_(NULL), pkt_reader_(),
+    local_reader_(NULL), local_buffer_(NULL), pkt_reader_(),
     resultset_state_(RESULTSET_HEADER), column_num_(0), pkt_count_(0),
-    hava_cursor_(false), field_types_()
+    have_cursor_(false), field_types_()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin born", K(this));
+  // local_buffer_ 的使用目的换一个 ObMIOBuffer 暂存上游过来的数据, 缓急上游 ObMIOBuffer 数据压力
+  // 因为 consume() 的参数 reader 对应的 ObMIOBuffer 如果数据量太大将无法扩容, 继续读取数据会造成数据流 Hung
+  if (OB_ISNULL(local_buffer_ = new_empty_miobuffer())) {
+    PROXY_API_LOG(EDIAG, "fail to alloc memory for local_buffer_");
+  } else if (OB_ISNULL(local_reader_ = local_buffer_->alloc_reader())) {
+    PROXY_API_LOG(EDIAG, "fail to alloc reader of local_buffer_");
+  } else {}
 }
 
 void ObMysqlResponseCursorTransformPlugin::destroy()
@@ -59,7 +66,7 @@ void ObMysqlResponseCursorTransformPlugin::reset()
   resultset_state_ = RESULTSET_HEADER;
   column_num_ = 0;
   pkt_count_ = 0;
-  hava_cursor_ = false;
+  have_cursor_ = false;
   field_types_.reset();
   pkt_reader_.reset();
 }
@@ -69,82 +76,93 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin::consume happen");
   int ret = OB_SUCCESS;
 
-  int64_t write_size = 0;
-  ObMysqlAnalyzeResult result;
 
-  // 这里为什么要 clone 两个 reader，是因为:
-  // local_analyze_reader 用于分析, 当分析完一个 mysql 包，就要往前移动到下一个 mysql 包;
-  // local_reader 用于把数据输出给tunnel，这里需要从开始的位置输出;
-  // 这里也可以clone一个reader，使用start_pos_ 来移动
-  if (NULL == local_reader_) {
-    local_reader_ = reader->clone();
-    local_analyze_reader_ = local_reader_->clone();
+  if (local_reader_ == NULL || local_buffer_ == NULL) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_API_LOG(EDIAG, "unexpected null ptr", KP(local_reader_), KP(local_buffer_), K(ret));
   } else {
-    local_reader_->reserved_size_ = reader->reserved_size_;
-    local_analyze_reader_->reserved_size_ = reader->reserved_size_;
-  }
-
-    while (OB_SUCC(ret) && local_analyze_reader_->read_avail()) {
-      if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_analyze_reader_, result))) {
-        PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
+    int64_t forward_len = 0;
+    if (RESULTSET_END != resultset_state_) {
+      int64_t written = 0;
+      if (OB_FAIL(local_buffer_->write(reader, reader->read_avail(), written))) {  // 并没有真正拷贝内存, 仅克隆 block
+        PROXY_API_LOG(EDIAG, "fail to alloc reader of local_buffer_", K(ret));
+      } else if (reader->read_avail() != written) {
+        PROXY_API_LOG(EDIAG, "fail to write all data to local_buffer_", K(written), K(reader->read_avail()));
       } else {
-        if (ANALYZE_DONE == result.status_) {
-          switch(resultset_state_) {
-          case RESULTSET_HEADER :
-            if (OB_FAIL(handle_resultset_header(local_analyze_reader_))) {
-              PROXY_API_LOG(EDIAG, "handle resultset header failed", K(ret));
-            }
-            break;
-          case RESULTSET_FIELD :
-            if (OB_UNLIKELY(result.is_eof_packet())) {
-              // just for defence 
-              ret = OB_UNKNOWN_PACKET;
-              PROXY_API_LOG(EDIAG, "unknown decode state", K_(column_num), K_(pkt_count), K(result), K(ret));
-            } else if (OB_FAIL(handle_resultset_field(local_analyze_reader_))) {
-              PROXY_API_LOG(EDIAG, "handle resultset field", K(ret));
-            }
-            break;
-          case RESULTSET_EOF_FIRST :
-            if (OB_UNLIKELY(!result.is_eof_packet())) {
-              PROXY_API_LOG(EDIAG, "excepted EOF packet, but not", "type", result.meta_.pkt_type_, K(ret));
-            } else {
-              resultset_state_ = RESULTSET_ROW;
-            }
-            break;
-          case RESULTSET_ROW :
-            if (result.is_eof_packet()) {
-              reset();
-            } else if (OB_FAIL(handle_resultset_row(local_analyze_reader_, sm_, field_types_, hava_cursor_, column_num_))) {
-              PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
-            }
-            break;
-          default :
-            break;
-          }
+        ObMysqlAnalyzeResult result;
+        while (OB_SUCC(ret) && local_reader_->read_avail() > 0) {
+          if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_reader_, result))) {
+            PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_reader_), K(ret));
+          } else {
+            if (ANALYZE_DONE == result.status_) {
+              if (result.is_error_packet()) {
+                resultset_state_ = RESULTSET_END;
+              }
 
-          if (OB_SUCC(ret)) {
-            if (OB_FAIL(local_analyze_reader_->consume(result.meta_.pkt_len_))) {
-              PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              switch(resultset_state_) {
+              case RESULTSET_HEADER :
+                if (OB_FAIL(handle_resultset_header(local_reader_))) {
+                  PROXY_API_LOG(EDIAG, "handle resultset header failed", K(ret));
+                }
+                break;
+              case RESULTSET_FIELD :
+                if (OB_UNLIKELY(result.is_eof_packet())) {
+                  // just for defence
+                  ret = OB_UNKNOWN_PACKET;
+                  PROXY_API_LOG(EDIAG, "unknown decode state", K_(column_num), K_(pkt_count), K(result), K(ret));
+                } else if (OB_FAIL(handle_resultset_field(local_reader_))) {
+                  PROXY_API_LOG(EDIAG, "handle resultset field", K(ret));
+                }
+                break;
+              case RESULTSET_EOF_FIRST :
+                if (OB_UNLIKELY(!result.is_eof_packet())) {
+                  PROXY_API_LOG(EDIAG, "excepted EOF packet, but not", "type", result.meta_.pkt_type_, K(ret));
+                } else {
+                  if (have_cursor_) {
+                    resultset_state_ = RESULTSET_ROW;
+                  } else {
+                    resultset_state_ = RESULTSET_END;
+                  }
+                }
+                break;
+              case RESULTSET_ROW :
+                if (result.is_eof_packet()) {
+                  // 读完所有的 Row Packet 之后不需要再解析了
+                  resultset_state_ = RESULTSET_END;
+                } else if (OB_FAIL(handle_resultset_row(local_reader_, sm_, field_types_, have_cursor_, column_num_))) {
+                  PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+                }
+                break;
+              default :
+                break;
+              }
+
+              if (OB_FAIL(ret)) {
+              } else if (RESULTSET_END == resultset_state_) {
+                forward_len += local_reader_->read_avail();
+                local_reader_->consume_all();
+                break;
+              } else if (OB_FAIL(local_reader_->consume(result.meta_.pkt_len_))) {
+                PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
+              } else {
+                forward_len += result.meta_.pkt_len_;
+              }
             } else {
-              write_size += result.meta_.pkt_len_;
+              break;
             }
           }
-        } else {
-          break;
         }
       }
+    } else {
+      forward_len = reader->read_avail();
     }
 
-  if (OB_SUCC(ret) && write_size > 0) {
     int64_t actual_size = 0;
-    if (write_size != (actual_size = produce(local_reader_, write_size))) {
+    if (OB_SUCC(ret)
+        && forward_len > 0
+        && forward_len != (actual_size = produce(reader, forward_len))) {
       ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(EDIAG, "fail to produce", "expected size", write_size,
-                    "actual size", actual_size, K(ret));
-    } else if (write_size == local_reader_->read_avail() && OB_FAIL(local_analyze_reader_->consume_all())) {
-      PROXY_API_LOG(EDIAG, "fail to consume all local analyze reader", K(ret));
-    } else if (OB_FAIL(local_reader_->consume(write_size))) {
-      PROXY_API_LOG(EDIAG, "fail to consume local reader", K(write_size), K(ret));
+      PROXY_API_LOG(EDIAG, "fail to produce", "expected size", forward_len, "actual size", actual_size, K(ret));
     }
   }
 
@@ -196,7 +214,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_field(event::ObIOBuff
     } else {
       pkt_count_++;
       if (OB_MYSQL_TYPE_CURSOR == field.type_) {
-        hava_cursor_ = true;
+        have_cursor_ = true;
       }
 
       if (pkt_count_ == column_num_) {
@@ -439,14 +457,15 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
 void ObMysqlResponseCursorTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin::handle_input_complete happen");
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;
   }
 
-  if (NULL != local_analyze_reader_) {
-    local_analyze_reader_->dealloc();
-    local_analyze_reader_ = NULL;
+  if (NULL != local_buffer_) {
+    free_miobuffer(local_buffer_);
+    local_buffer_ = NULL;
   }
 
   set_output_complete();

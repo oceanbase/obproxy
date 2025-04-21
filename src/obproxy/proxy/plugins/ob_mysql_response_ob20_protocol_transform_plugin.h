@@ -111,7 +111,7 @@ public:
             // inner sql will received compeleted, no need plugin
             && !sm->client_session_->is_proxy_mysql_client()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && ObProxyProtocol::PROTOCOL_OB20 == sm->get_client_session_protocol());
+            && ObProxyProtocol::PROTOCOL_OCEANBASE_20 == sm->get_client_session_protocol());
   }
 
 private:

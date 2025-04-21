@@ -490,6 +490,7 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
 {
   int ret = OB_SUCCESS;
   bool need_notify_caller = true;
+  int64_t table_schema_version = param_.get_table_entry()->get_schema_version();
   if (OB_ISNULL(gcached_entry_)) { // not found fetch from remote
     // if not found in partition cache, it will add a building state entry
     is_add_building_entry_succ_ = true;
@@ -511,7 +512,9 @@ int ObPartitionEntryCont::handle_lookup_cache_done()
     // just inform out, treat as no found partition location
     gcached_entry_->dec_ref();
     gcached_entry_ = NULL;
-  } else if (gcached_entry_->is_need_update()) {
+  } else if (gcached_entry_->is_need_update()
+      || gcached_entry_->is_schema_version_changed_to_update(table_schema_version)) {
+      //schema version changed need update directly to update it
     // double check
     if (gcached_entry_->cas_compare_and_swap_state(ObRouteEntry::DIRTY, ObRouteEntry::UPDATING)) {
       if (get_pl_task_flow_controller().can_deliver_task()) {

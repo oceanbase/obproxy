@@ -45,8 +45,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     flow_event_queue_threshold_(0),
 
     default_buffer_water_mark_(0),
-    tunnel_request_size_threshold_(0),
-    request_buffer_length_(4096),
+    request_buffer_length_(8192),
 
     sock_recv_buffer_size_out_(0),
     sock_send_buffer_size_out_(0),
@@ -86,8 +85,6 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     enable_force_request_follower_(false),
 #endif
     enable_proxy_scramble_(false),
-    enable_compression_protocol_(false),
-    enable_ob_protocol_v2_(false),
     enable_reroute_(false),
     enable_weak_reroute_(true),
     enable_index_route_(false),
@@ -96,7 +93,6 @@ ObMysqlConfigParams::ObMysqlConfigParams()
 
     sqlaudit_mem_limited_(0),
     internal_cmd_mem_limited_(0),
-    max_connections_(0),
 
     client_max_connections_(0),
     enable_client_connection_lru_disconnect_(false),
@@ -125,7 +121,6 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     client_max_memory_size_(0),
     enable_cpu_isolate_(false),
     enable_primary_zone_(true),
-    ip_listen_mode_(0),
     local_bound_ipv6_ip_(),
     read_stale_retry_interval_(0),
     ob_max_read_stale_time_(0),
@@ -150,7 +145,6 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(flow_event_queue_threshold);
 
   CONFIG_ITEM_ASSIGN(default_buffer_water_mark);
-  CONFIG_ITEM_ASSIGN(tunnel_request_size_threshold);
   CONFIG_ITEM_ASSIGN(request_buffer_length);
 
   CONFIG_ITEM_ASSIGN(sock_recv_buffer_size_out);
@@ -196,8 +190,6 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(enable_force_request_follower);
 #endif
   CONFIG_ITEM_ASSIGN(enable_proxy_scramble);
-  CONFIG_ITEM_ASSIGN(enable_compression_protocol);
-  CONFIG_ITEM_ASSIGN(enable_ob_protocol_v2);
   CONFIG_ITEM_ASSIGN(enable_transaction_internal_routing);
   CONFIG_ITEM_ASSIGN(enable_reroute);
   CONFIG_ITEM_ASSIGN(enable_weak_reroute);
@@ -206,7 +198,6 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
 
   CONFIG_ITEM_ASSIGN(sqlaudit_mem_limited);
   CONFIG_ITEM_ASSIGN(internal_cmd_mem_limited);
-  CONFIG_ITEM_ASSIGN(max_connections);
 
   CONFIG_ITEM_ASSIGN(client_max_connections);
   CONFIG_ITEM_ASSIGN(enable_client_connection_lru_disconnect);
@@ -233,7 +224,6 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(client_max_memory_size);
   CONFIG_ITEM_ASSIGN(enable_cpu_isolate);
   CONFIG_ITEM_ASSIGN(enable_primary_zone);
-  CONFIG_ITEM_ASSIGN(ip_listen_mode);
   CONFIG_TIME_ASSIGN(read_stale_retry_interval);
   CONFIG_ITEM_ASSIGN(ob_max_read_stale_time);
   CONFIG_ITEM_ASSIGN(rpc_request_max_retries);
@@ -330,7 +320,7 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(stat_dump_interval), K_(enable_flow_control), K_(flow_high_water_mark),
        K_(flow_low_water_mark), K_(flow_consumer_reenable_threshold),
        K_(flow_event_queue_threshold), K_(default_buffer_water_mark),
-       K_(tunnel_request_size_threshold), K_(request_buffer_length),
+       K_(request_buffer_length),
        K_(sock_recv_buffer_size_out), K_(sock_send_buffer_size_out),
        K_(server_tcp_keepidle), K_(server_tcp_keepintvl),
        K_(server_tcp_keepcnt), K_(server_tcp_user_timeout),
@@ -341,7 +331,7 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(tenant_location_valid_time), K_(local_bound_ip), K_(listen_port), K_(rpc_listen_port), K_(stack_size), K_(work_thread_num),
        K_(task_thread_num), K_(block_thread_num), K_(grpc_thread_num), K_(shard_scan_thread_num), K_(automatic_match_work_thread),
        K_(enable_congestion), K_(enable_bad_route_reject), K_(test_server_addr),
-       K_(sqlaudit_mem_limited), K_(max_connections), K_(client_max_connections),
+       K_(sqlaudit_mem_limited), K_(client_max_connections),
        K_(enable_client_connection_lru_disconnect), K_(connect_observer_max_retries),
        K_(rpc_request_max_retries),
        K_(monitor_stat_low_threshold), K_(monitor_stat_middle_threshold), K_(monitor_stat_high_threshold));
@@ -359,11 +349,10 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(enable_force_request_follower),
 #endif
        K_(enable_proxy_scramble),
-       K_(enable_compression_protocol), K_(enable_ob_protocol_v2),
        K_(enable_reroute), K_(enable_weak_reroute), K_(enable_index_route), K_(enable_causal_order_read));
   J_COMMA();
   J_KV(
-       K_(ip_listen_mode), K_(local_bound_ipv6_ip), K_(read_stale_retry_interval), K_(ob_max_read_stale_time));
+       K_(local_bound_ipv6_ip), K_(read_stale_retry_interval), K_(ob_max_read_stale_time));
   J_COMMA();
   J_OBJ_END();
   return pos;

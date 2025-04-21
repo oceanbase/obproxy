@@ -42,11 +42,11 @@ namespace obproxy
 {
 namespace event
 {
-ObEventThreadType ET_BLOCKING = ET_CALL;
+ObEventThreadType ET_BLOCKING = ET_NET;
 ObBlockingTaskProcessor g_blocking_task_processor;
 
 // Note that if the number of task_threads is 0, all continuations scheduled for
-// ET_BLOCKING ends up running on ET_CALL (which is the net-threads).
+// ET_BLOCKING ends up running on ET_NET (which is the net-threads).
 int ObBlockingTaskProcessor::start(const int64_t blocking_threads, const int64_t stacksize)
 {
   int ret = OB_SUCCESS;

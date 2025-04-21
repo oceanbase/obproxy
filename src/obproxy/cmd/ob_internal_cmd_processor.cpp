@@ -45,7 +45,7 @@ void ObInternalCmdInfo::reset()
   second_string_.reset();
   first_str_[0] = '\0';
   second_str_[0] = '\0';
-  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  protocol_ = ObProxyProtocol::PROTOCOL_MAX;
   ob20_param_.reset();
 }
 

@@ -145,8 +145,8 @@ public:
    * @return event::ObAction, that can be cancelled to cancel the accept. The
    *         port becomes free immediately.
    */
-  virtual event::ObAction *accept(
-      event::ObContinuation &cont,
+  virtual int accept(
+      event::ObContinuation &cont, event::ObAction *& action,
       const ObAcceptOptions &opt = DEFAULT_ACCEPT_OPTIONS);
 
   /**
@@ -172,9 +172,9 @@ public:
    * @return event::ObAction, that can be cancelled to cancel the accept. The
    *         port becomes free immediately.
    */
-  virtual event::ObAction *main_accept(
+  virtual int main_accept(
       event::ObContinuation &cont,
-      int listen_fd,
+      int listen_fd, event::ObAction *& action,
       const ObAcceptOptions &opt = DEFAULT_ACCEPT_OPTIONS);
 
   /**

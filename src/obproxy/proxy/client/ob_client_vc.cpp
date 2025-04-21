@@ -438,7 +438,9 @@ int ObMysqlClient::post_request(
                       "common mutex", common_mutex_.ptr_, K(ret));
           } else {
             client_vc_->handle_event(CLIENT_VC_SWAP_MUTEX_EVENT, mutex_.ptr_);
-            client_vc_->mutex_ = mutex_;
+            if (NULL != client_vc_) {
+              client_vc_->mutex_ = mutex_;
+            }
           }
         }
       }

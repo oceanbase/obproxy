@@ -27,6 +27,7 @@
 #include "lib/ob_errno.h"      // error codes define
 #include "lib/utility/ob_macro_utils.h"  // useful utilities of macro
 #include "lib/utility/ob_template_utils.h"  // useful utilities of C++ template
+#include "lib/utility/ob_cluster_version.h"
 #include "lib/tbsys.h"                  // should be removed in future
 #include "lib/ob_proxy_worker.h"
 
@@ -42,6 +43,8 @@ const int16_t MAX_PRECISION_DECIMAL_INT_256 = 76;
 const int16_t MAX_PRECISION_DECIMAL_INT_512 = 154;
 const int16_t MAX_SIGNED_INTEGER_PRECISION = 18;
 
+const int64_t SCHEMA_VERSION_IS_BIGGER = -1;
+const int64_t SCHEMA_VERSION_IS_SMALLER = -2;
 const int64_t OB_ALL_SERVER_CNT = INT64_MAX;
 const uint16_t OB_COMPACT_COLUMN_INVALID_ID = UINT16_MAX;
 const int64_t OB_INVALID_TIMESTAMP = -1;

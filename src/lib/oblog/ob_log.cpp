@@ -343,7 +343,7 @@ ObLogger::LogBufferMgr *ObLogger::get_buffer_mgr()
 const char *const ObLogger::errstr_[] = {"ERROR", "USER_ERR", "WARN", "INFO", "EDIAG", "WDIAG", "TRACE", "DEBUG"};
 ObLogger::ObLogger()
 : log_file_(), max_file_size_(0), name_id_map_(), id_level_map_(),
-  syslog_level_(OB_LOG_LEVEL_WDIAG), monitor_level_(OB_LOG_LEVEL_WARN), xflush_level_(OB_LOG_LEVEL_WARN),
+  syslog_level_(OB_LOG_LEVEL_DEBUG), monitor_level_(OB_LOG_LEVEL_WARN), xflush_level_(OB_LOG_LEVEL_WARN),
   wf_level_(OB_LOG_LEVEL_WARN), level_version_(0), disable_thread_log_level_(true), force_check_(false), redirect_flag_(false),
   can_print_(true), stop_flush_(false), enable_async_log_(true), stop_append_log_(false),
   async_log_queue_(NULL), last_async_flush_count_per_sec_(0), async_tid_(0),

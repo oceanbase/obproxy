@@ -57,13 +57,13 @@ private:
 
 private:
   event::ObIOBufferReader *local_reader_;
-  event::ObIOBufferReader *local_analyze_reader_;
+  event::ObMIOBuffer *local_buffer_;
   packet::ObMysqlPacketReader pkt_reader_;
   EnumPrepareExecuteStateType prepare_execute_state_;
   uint16_t num_columns_;
   uint16_t num_params_;
   uint32_t pkt_count_;
-  bool hava_cursor_;
+  bool have_cursor_;
   common::ObArray<obmysql::EMySQLFieldType> field_types_;
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlResponsePrepareExecuteTransformPlugin);

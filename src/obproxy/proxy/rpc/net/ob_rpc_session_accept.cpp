@@ -77,7 +77,7 @@ int ObRpcSessionAccept::main_event(int event, void *data)
     }
     case NET_EVENT_ACCEPT_FAILED: {
       ret = static_cast<int>(reinterpret_cast<uintptr_t>(data));
-      PROXY_NET_LOG(EDIAG, "ObNetAccept fail to do listen", K(event), K(ret));
+      PROXY_NET_LOG(WDIAG, "ObNetAccept fail to do listen", K(event), K(ret));
       break;
     }
     case NET_EVENT_ACCEPT: {

@@ -109,6 +109,9 @@ public:
   }
 
   virtual void destroy();
+  virtual void free_holding_object() {
+    // do nothing
+  }
 
   virtual int init_task() { return common::OB_NOT_IMPLEMENT; }
   virtual int finish_task(void *data) { UNUSED(data); return common::OB_NOT_IMPLEMENT; }

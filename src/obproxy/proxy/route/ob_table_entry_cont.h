@@ -51,6 +51,7 @@ enum ObTableEntryLookupState
   LOOKUP_PART_INFO_STATE,
   LOOKUP_FIRST_PART_STATE,
   LOOKUP_SUB_PART_STATE,
+  LOOKUP_TABLE_ENTRY_RETRY_STATE,
   LOOKUP_BINLOG_ENTRY_STATE,
   LOOKUP_BINLOG_HOSTNAME_STATE,
   LOOKUP_RETRY_STATE,
@@ -101,6 +102,7 @@ public:
   bool force_renew_;
   bool is_oracle_mode_;
   bool is_need_force_flush_;
+  bool is_single_partition_table_;
   ObRouteResult result_;
   ObMysqlProxy *mysql_proxy_;
   common::ObString current_idc_name_;
@@ -178,11 +180,15 @@ private:
   ObMysqlRequestParam request_param_;
   bool need_notify_;
   bool need_prepare_binlog_entry_param_;
+  bool is_need_retry_;
+  bool is_need_reroute_;
+  bool is_reused_;
   common::ObString binlog_service_ip_;
   ObSEArray<ObString, 4> binlog_service_hostname_ip_list_;
   ObSEArray<ObAddr, 4> binlog_service_addr_list_;
   int64_t used_hostname_ip_count_; // config 'binlog_service_ip' may contain multiple hostname/ip
   int64_t used_addr_count_; // one hostname may indicate multiple addr
+  int64_t cur_build_count_; //build table entry times
 
   DISALLOW_COPY_AND_ASSIGN(ObTableEntryCont);
 };

@@ -627,7 +627,7 @@ int ObTableCache::add_table_entry(ObTableCache &table_cache, ObTableEntry &entry
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to allocate memory for table cache handler continuation", K(ret));
     } else {
-      g_event_processor.schedule_imm(handler_cont, ET_CALL);
+      g_event_processor.schedule_imm(handler_cont, ET_NET);
     }
   }
   return ret;
@@ -663,7 +663,7 @@ ObTableCache &get_global_table_cache()
 int init_table_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_table_map_for_one_thread(i))) {
       LOG_WDIAG("fail to init table_map", K(i), K(ret));
@@ -676,7 +676,7 @@ int init_table_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
-  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
+  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_NET])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
@@ -689,7 +689,7 @@ int init_table_map_for_one_thread(int64_t index)
     } else if (OB_FAIL(ethreads[index]->table_map_->init())) {
       LOG_WDIAG("fail to init table_map", K(ret));
     } else {
-      LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void*>(ethreads[index]),
+      LOG_DEBUG("succ to init table_map", K(ET_NET), "ethread", reinterpret_cast<const void*>(ethreads[index]),
                 "table_map", reinterpret_cast<const void*>(ethreads[index]->table_map_), K(ret));
     }
   }
@@ -709,7 +709,7 @@ int init_table_map_for_one_thread(ObEThread *thread)
     } else if (OB_FAIL(thread->table_map_->init())) {
       LOG_WDIAG("fail to init table_map", K(ret));
     } else {
-      LOG_DEBUG("succ to init table_map", K(ET_CALL), "ethread", reinterpret_cast<const void *>(thread), "table_map",
+      LOG_DEBUG("succ to init table_map", K(ET_NET), "ethread", reinterpret_cast<const void *>(thread), "table_map",
                 reinterpret_cast<const void *>(thread->table_map_), K(ret));
     }
   }

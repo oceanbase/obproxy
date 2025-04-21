@@ -45,11 +45,13 @@ struct ObProxyKillQueryInfo
   void reset();
   bool is_lookup_succ() const { return common::OB_ENTRY_EXIST == errcode_; }
   bool is_need_lookup() const { return common::OB_MAX_ERROR_CODE == errcode_; }
+  bool need_change_connector() const { return common::OB_INVALID_ID != group_id_;}
   int do_privilege_check(const ObProxySessionPrivInfo &session_priv);
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   bool is_kill_query_;
   int64_t cs_id_;//kill query cs_id
+  int64_t group_id_; // only use for sharding user
   uint32_t real_conn_id_;//cs_id_ maybe proxy conn id when in client service mode,
                          //we need store real conn_id and rewrite req pkt before sent to observer
   int errcode_;
@@ -297,10 +299,17 @@ inline int ObProxyMysqlRequest::alloc_prepare_execute_request_buf(const int64_t 
 }
 
 inline void ObProxyMysqlRequest::borrow_req_buf(char *&req_buf, int64_t &req_buf_len) {
-  req_buf = req_buf_;
-  req_buf_len = req_buf_len_;
-  req_buf_ = NULL;
-  req_buf_len_ = 0;
+  if (OB_LIKELY(obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE != meta_.cmd_)) {
+    req_buf = req_buf_;
+    req_buf_len = req_buf_len_;
+    req_buf_ = NULL;
+    req_buf_len_ = 0;
+  } else {
+    req_buf = req_buf_for_prepare_execute_;
+    req_buf_len = req_buf_for_prepare_execute_len_;
+    req_buf_for_prepare_execute_ = NULL;
+    req_buf_for_prepare_execute_len_ = 0;
+  }
 }
 
 inline int ObProxyMysqlRequest::free_prepare_execute_request_buf()

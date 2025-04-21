@@ -132,6 +132,9 @@ int ObAsyncCommonTask::handle_event_start()
       terminate_ = true;
     }
   }
+  if (OB_UNLIKELY(terminate_ == true)) {
+    free_holding_object();
+  }
   return ret;
 }
 

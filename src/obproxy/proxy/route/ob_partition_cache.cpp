@@ -562,7 +562,7 @@ ObPartitionCache &get_global_partition_cache()
 int init_partition_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_partition_map_for_one_thread(i))) {
       LOG_WDIAG("fail to init partition_map", K(i), K(ret));
@@ -575,7 +575,7 @@ int init_partition_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
-  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
+  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_NET])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {

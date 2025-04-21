@@ -593,6 +593,7 @@ private:
 private:
   int acquire_client_session_id_v1();
   int acquire_client_session_id_v2();
+  int64_t get_max_local_seq(const ObClientSessionIDVersion version) const;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlClientSession);
 };
 
@@ -693,6 +694,7 @@ public:
   int set(ObMysqlClientSession &cs);
   int get(const uint32_t &cs_id, ObMysqlClientSession *&cs);
   int erase(const uint32_t &cs_id);
+  int64_t size() const { return id_map_.count(); }
 
   IDHashMap id_map_;
 private:
@@ -741,8 +743,8 @@ public:
   int record_cs_id(const uint32_t cs_id);
   int is_cs_id_exist(const uint32_t cs_id, bool &is_exist);
   int erase_cs_id(const uint32_t cs_id);
+  int64_t size() const { return using_cs_id_set_.size(); }
 private:
-  ObSEArray<uint32_t, 32> unused_cs_id_list_;
   hash::ObHashSet<uint32_t, hash::NoPthreadDefendMode> using_cs_id_set_;
   common::DRWLock lock_;
   DISALLOW_COPY_AND_ASSIGN(ObClientSessionIDList);
@@ -753,6 +755,18 @@ inline ObClientSessionIDList &get_client_session_id_list(const event::ObEThread 
   return *(const_cast<event::ObEThread *>(&t)->cs_id_list_);
 }
 
+uint32_t get_thread_id_bits()
+{
+  uint32_t bits = 0;
+  int64_t et_net_thread_count = event::g_event_processor.thread_count_for_type_[event::ET_NET];
+  if (et_net_thread_count > 1) {
+    bits = 32 - __builtin_clz(static_cast<uint32_t>(et_net_thread_count - 1));
+  } else if (et_net_thread_count <= 0) {
+    PROXY_CS_LOG(ERROR, "unexpected thread count for ET_NET", K(et_net_thread_count));
+  }
+
+  return bits;
+}
 
 
 } // end of namespace proxy

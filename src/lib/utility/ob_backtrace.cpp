@@ -20,6 +20,7 @@
 #include <string.h>
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/oblog/ob_log.h"
+#include "utils/ob_proxy_lib.h"
 
 namespace oceanbase
 {
@@ -125,12 +126,20 @@ static __thread char buffer[LBT_BUFFER_LENGTH];
 char *lbt()
 {
   int size = OB_BACKTRACE_M(addrs, MAX_ADDRS_COUNT);
+  if (OB_UNLIKELY(size > MAX_ADDRS_COUNT)) {
+    MPRINT("unknownn backtrace size %d, errno:%s\n", size, strerror(errno));
+    size = MAX_ADDRS_COUNT;
+  }
   return parray(*&buffer, LBT_BUFFER_LENGTH, (int64_t *)addrs, size);
 }
 
 char *lbt(char *buf, int32_t len)
 {
   int size = OB_BACKTRACE_M(addrs, MAX_ADDRS_COUNT);
+  if (OB_UNLIKELY(size > MAX_ADDRS_COUNT)) {
+    MPRINT("unknownn backtrace size %d, errno:%s\n", size, strerror(errno));
+    size = MAX_ADDRS_COUNT;
+  }
   return parray(buf, len, (int64_t *)addrs, size);
 }
 

@@ -64,7 +64,7 @@ ObRpcOBKVClientNetHandler::ObRpcOBKVClientNetHandler()
     : ObRpcClientNetHandler(),
       atomic_channel_id_(0), is_sending_response_(false), has_inited_(false),
       ct_info_(), last_server_ip_(),
-      need_send_response_list_(), sending_response_list_(), period_task_action_(NULL),
+      need_send_response_list_(), sending_response_list_(), period_task_action_(NULL), timeout_action_(NULL),
       current_need_read_len_(RPC_NET_HEADER_LENGTH), current_ez_header_()
 {
   cid_to_req_map_.create(OB_RPC_PARALLE_REQUEST_MAP_MAX_BUCKET_NUM, ObModIds::OB_RPC);
@@ -265,6 +265,8 @@ int ObRpcOBKVClientNetHandler::setup_client_request_read()
     }
     has_inited_ = true;
   }
+  // set net_read_timeout when client begin to read
+  set_client_net_read_timeout();
 
   if (OB_SUCC(ret)) {
     if (OB_ISNULL(net_entry_.read_vio_ = this->do_io_read(this, read_num, buf_reader_->mbuf_))) {
@@ -276,6 +278,8 @@ int ObRpcOBKVClientNetHandler::setup_client_request_read()
         PROXY_CS_LOG(DEBUG, "the request already in buffer, continue to handle it",
                 K_(cs_id), "buffer len", buf_reader_->read_avail());
         state_client_request_read(VC_EVENT_READ_READY, net_entry_.read_vio_);
+      } else {
+        cancel_net_read_timeout();
       }
     }
   }
@@ -466,6 +470,7 @@ int ObRpcOBKVClientNetHandler::state_client_request_read(int event, void *data)
           net_entry_.read_vio_->reenable(); //need check next data
           current_need_read_len_ = RPC_NET_HEADER_LENGTH;
           current_ez_header_.reset();
+          cancel_net_read_timeout();
           if (OB_SUCC(ret)) {
             PROXY_CS_LOG(DEBUG, "need read next request immediately when request waiting", K_(cs_id), "net_len", buffer_reader.read_avail());
             if (OB_FAIL(setup_client_request_read())) {
@@ -619,6 +624,7 @@ int ObRpcOBKVClientNetHandler::setup_client_response_send()
       if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
         write_begin_ = ObRpcRequestSM::static_get_based_hrtime(); /* record begin time to write */
       }
+      set_client_net_write_timeout();
       // MUTEX_TRY_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);
       // TODO: Using MUTEX_ LOCK may affect performance. In the future, consider using different mutexes for asynchronous tasks within RPC requests
       // compared to client VC to prevent race conditions
@@ -671,6 +677,7 @@ int ObRpcOBKVClientNetHandler::state_client_response_send(int event, void *data)
         break;
       case VC_EVENT_WRITE_COMPLETE:
         is_sending_response_ = false;
+        cancel_net_write_timeout();
         if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
           write_done = ObRpcRequestSM::static_get_based_hrtime();
         }
@@ -694,6 +701,7 @@ int ObRpcOBKVClientNetHandler::state_client_response_send(int event, void *data)
               rpc_req->client_timestamp_.client_write_begin_ = write_begin_;
               rpc_req->client_timestamp_.client_end_ = write_done;
             }
+            rpc_req->cnet_sm_ = NULL; // client has done to clean it to avoid coredump when client exit
             if (OB_SUCC(ret)) {
               if (rpc_req->is_need_terminal_client_net()) {
                 need_terminal = true;

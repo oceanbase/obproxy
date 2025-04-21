@@ -41,11 +41,11 @@ namespace obproxy
 {
 namespace event
 {
-ObEventThreadType ET_TASK = ET_CALL;
+ObEventThreadType ET_TASK = ET_NET;
 ObTasksProcessor g_task_processor;
 
 // Note that if the number of task_threads is 0, all continuations scheduled for
-// ET_TASK ends up running on ET_CALL (which is the net-threads).
+// ET_TASK ends up running on ET_NET (which is the net-threads).
 int ObTasksProcessor::start(const int64_t task_threads, const int64_t stacksize)
 {
   int ret = OB_SUCCESS;

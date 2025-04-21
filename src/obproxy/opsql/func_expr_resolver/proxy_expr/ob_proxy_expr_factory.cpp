@@ -27,15 +27,15 @@ typedef int (ObProxyExprFactory::*ExprAllocFunc) (const ObProxyExprType type, Ob
 static ExprAllocFunc TYPE_ALLOC[EXPR_NUM];
 static ExprNameTypeMap g_expr_name_type_map;
 
-#define REG_EXPR(name, type, ExprClass)                                        \
-  do {                                                                         \
-    ObString store_name(name);                                                 \
-    if (OB_FAIL(g_expr_name_type_map.set_refactored(store_name, type))) {      \
-      LOG_EDIAG("fail to register expr funx", K(store_name), K(type), K(ret)); \
-    } else {                                                                   \
-      TYPE_ALLOC[type] = &ObProxyExprFactory::alloc_func_expr<ExprClass>;      \
-    }                                                                          \
-    i++;                                                                       \
+#define REG_EXPR(name, type, ExprClass, target_type)                                        \
+  do {                                                                                      \
+    ObString store_name(name);                                                              \
+    if (OB_FAIL(g_expr_name_type_map.set_refactored(store_name, type))) {                   \
+      LOG_EDIAG("fail to register expr funx", K(store_name), K(type), K(ret));              \
+    } else {                                                                                \
+      TYPE_ALLOC[type] = &ObProxyExprFactory::alloc_func_expr<ExprClass, target_type>;      \
+    }                                                                                       \
+    i++;                                                                                    \
   } while (0)
 
 void ObProxyExprFactory::str_toupper(char *upper_buf, const char *str, const int32_t str_len)
@@ -83,10 +83,17 @@ int ObProxyExprFactory::create_func_expr(const ObProxyExprType type, ObProxyFunc
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(OB_PROXY_EXPR_TYPE_NONE >= type || OB_PROXY_EXPR_TYPE_MAX <= type)) {
     ret = common::OB_INVALID_ARGUMENT;
+    LOG_INFO("unsupported function type", K(type), K(ret));
   } else if (OB_ISNULL(TYPE_ALLOC[type])) {
     ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected type_alloc func_expr is NULL", K(type), K(ret));
   } else if (OB_FAIL((this->*TYPE_ALLOC[type])(type, func_expr))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to call alloc, maybe out of memory", K(type), K(ret));
+  } else if (lib::is_oracle_mode) { // oracle的时间类型和mysql不同，需要特殊处理
+    if (OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP == type) {
+      func_expr->set_target_type(ObTimestampNanoType);
+    }
   }
   return ret;
 }
@@ -100,73 +107,73 @@ int ObProxyExprFactory::register_proxy_expr()
     // start from hash,front expr is not used for func
     int64_t i = 6;
 
-    REG_EXPR("+", OB_PROXY_EXPR_TYPE_FUNC_ADD, ObProxyExprAdd);
-    REG_EXPR("-", OB_PROXY_EXPR_TYPE_FUNC_SUB, ObProxyExprSub);
-    REG_EXPR("*", OB_PROXY_EXPR_TYPE_FUNC_MUL, ObProxyExprMul);
-    REG_EXPR("/", OB_PROXY_EXPR_TYPE_FUNC_DIV, ObProxyExprDiv);
-    REG_EXPR("%", OB_PROXY_EXPR_TYPE_FUNC_MOD, ObProxyExprMod);
+    REG_EXPR("+", OB_PROXY_EXPR_TYPE_FUNC_ADD, ObProxyExprAdd, ObNullType);
+    REG_EXPR("-", OB_PROXY_EXPR_TYPE_FUNC_SUB, ObProxyExprSub, ObNullType);
+    REG_EXPR("*", OB_PROXY_EXPR_TYPE_FUNC_MUL, ObProxyExprMul, ObNullType);
+    REG_EXPR("/", OB_PROXY_EXPR_TYPE_FUNC_DIV, ObProxyExprDiv, ObNullType);
+    REG_EXPR("%", OB_PROXY_EXPR_TYPE_FUNC_MOD, ObProxyExprMod, ObNullType);
 
 
-    REG_EXPR("HASH", OB_PROXY_EXPR_TYPE_FUNC_HASH, ObProxyExprHash);
-    REG_EXPR("SUBSTR", OB_PROXY_EXPR_TYPE_FUNC_SUBSTR, ObProxyExprSubStr);
-    REG_EXPR("CONCAT", OB_PROXY_EXPR_TYPE_FUNC_CONCAT, ObProxyExprConcat);
-    REG_EXPR("TOINT", OB_PROXY_EXPR_TYPE_FUNC_TOINT, ObProxyExprToInt);
-    REG_EXPR("DIV", OB_PROXY_EXPR_TYPE_FUNC_DIV, ObProxyExprDiv);
-    REG_EXPR("ADD", OB_PROXY_EXPR_TYPE_FUNC_ADD, ObProxyExprAdd);
-    REG_EXPR("SUB", OB_PROXY_EXPR_TYPE_FUNC_SUB, ObProxyExprSub);
-    REG_EXPR("MUL", OB_PROXY_EXPR_TYPE_FUNC_MUL, ObProxyExprMul);
+    REG_EXPR("HASH", OB_PROXY_EXPR_TYPE_FUNC_HASH, ObProxyExprHash, ObNullType);
+    REG_EXPR("SUBSTR", OB_PROXY_EXPR_TYPE_FUNC_SUBSTR, ObProxyExprSubStr, ObNullType);
+    REG_EXPR("CONCAT", OB_PROXY_EXPR_TYPE_FUNC_CONCAT, ObProxyExprConcat, ObNullType);
+    REG_EXPR("TOINT", OB_PROXY_EXPR_TYPE_FUNC_TOINT, ObProxyExprToInt, ObNullType);
+    REG_EXPR("DIV", OB_PROXY_EXPR_TYPE_FUNC_DIV, ObProxyExprDiv, ObNullType);
+    REG_EXPR("ADD", OB_PROXY_EXPR_TYPE_FUNC_ADD, ObProxyExprAdd, ObNullType);
+    REG_EXPR("SUB", OB_PROXY_EXPR_TYPE_FUNC_SUB, ObProxyExprSub, ObNullType);
+    REG_EXPR("MUL", OB_PROXY_EXPR_TYPE_FUNC_MUL, ObProxyExprMul, ObNullType);
 
     /*
      * these are agg function expr, func expr will not call 
      */
-    REG_EXPR("SUM", OB_PROXY_EXPR_TYPE_FUNC_SUM, ObProxyExprSum);
-    REG_EXPR("COUNT", OB_PROXY_EXPR_TYPE_FUNC_COUNT, ObProxyExprCount); 
-    REG_EXPR("MAX", OB_PROXY_EXPR_TYPE_FUNC_MAX, ObProxyExprMax); 
-    REG_EXPR("MIN", OB_PROXY_EXPR_TYPE_FUNC_MIN, ObProxyExprMin);  
-    REG_EXPR("AVG", OB_PROXY_EXPR_TYPE_FUNC_AVG, ObProxyExprAvg);
-    REG_EXPR("GROUP", OB_PROXY_EXPR_TYPE_FUNC_GROUP, ObProxyFuncExpr); 
-    REG_EXPR("ORDER", OB_PROXY_EXPR_TYPE_FUNC_ORDER, ObProxyFuncExpr);
+    REG_EXPR("SUM", OB_PROXY_EXPR_TYPE_FUNC_SUM, ObProxyExprSum, ObNullType);
+    REG_EXPR("COUNT", OB_PROXY_EXPR_TYPE_FUNC_COUNT, ObProxyExprCount, ObNullType);
+    REG_EXPR("MAX", OB_PROXY_EXPR_TYPE_FUNC_MAX, ObProxyExprMax, ObNullType);
+    REG_EXPR("MIN", OB_PROXY_EXPR_TYPE_FUNC_MIN, ObProxyExprMin, ObNullType);
+    REG_EXPR("AVG", OB_PROXY_EXPR_TYPE_FUNC_AVG, ObProxyExprAvg, ObNullType);
+    REG_EXPR("GROUP", OB_PROXY_EXPR_TYPE_FUNC_GROUP, ObProxyFuncExpr, ObNullType);
+    REG_EXPR("ORDER", OB_PROXY_EXPR_TYPE_FUNC_ORDER, ObProxyFuncExpr, ObNullType);
 
-    REG_EXPR("TESTLOAD", OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD, ObProxyExprTestLoad);
-    REG_EXPR("SPLIT", OB_PROXY_EXPR_TYPE_FUNC_SPLIT, ObProxyExprSplit);
-    REG_EXPR("TO_DAYS", OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS, ObProxyExprToDays);
-    REG_EXPR("TO_DATE", OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, ObProxyExprToTime); // special case will not call
-    REG_EXPR("TO_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, ObProxyExprToTime); // special case will not call
-    REG_EXPR("TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP, ObProxyExprToTime);
-    REG_EXPR("DATE", OB_PROXY_EXPR_TYPE_FUNC_DATE, ObProxyExprToTime);
-    REG_EXPR("TIME", OB_PROXY_EXPR_TYPE_FUNC_TIME, ObProxyExprToTime);
-    REG_EXPR("NVL", OB_PROXY_EXPR_TYPE_FUNC_NVL, ObProxyExprNvl);
-    REG_EXPR("TO_CHAR", OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR, ObProxyExprToChar);
-    REG_EXPR("SYSDATE", OB_PROXY_EXPR_TYPE_FUNC_SYSDATE, ObProxyExprSysdate);
-    REG_EXPR("MOD", OB_PROXY_EXPR_TYPE_FUNC_MOD, ObProxyExprMod);
-    REG_EXPR("ISNULL", OB_PROXY_EXPR_TYPE_FUNC_ISNULL, ObProxyExprIsnull);
-    REG_EXPR("FLOOR", OB_PROXY_EXPR_TYPE_FUNC_FLOOR, ObProxyExprFloor);
-    REG_EXPR("CEIL", OB_PROXY_EXPR_TYPE_FUNC_CEIL, ObProxyExprCeil);
-    REG_EXPR("CEILING", OB_PROXY_EXPR_TYPE_FUNC_CEIL, ObProxyExprCeil);
-    REG_EXPR("ROUND", OB_PROXY_EXPR_TYPE_FUNC_ROUND, ObProxyExprRound);
-    REG_EXPR("TRUNCATE", OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE, ObProxyExprTruncate);
-    REG_EXPR("TRUNC", OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE, ObProxyExprTruncate);
-    REG_EXPR("ABS", OB_PROXY_EXPR_TYPE_FUNC_ABS, ObProxyExprAbs);
-    REG_EXPR("SYSTIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_SYSTIMESTAMP, ObProxyExprSystimestamp);
-    REG_EXPR("CURRENT_DATE", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE, ObProxyExprCurrentdate);
-    REG_EXPR("CURDATE", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE, ObProxyExprCurrentdate);
-    REG_EXPR("CURRENT_TIME", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME, ObProxyExprCurrenttime);
-    REG_EXPR("CURTIME", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME, ObProxyExprCurrenttime);
-    REG_EXPR("CURRENT_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP, ObProxyExprCurrenttimestamp);
-    REG_EXPR("NOW", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP, ObProxyExprCurrenttimestamp);
+    REG_EXPR("TESTLOAD", OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD, ObProxyExprTestLoad, ObNullType);
+    REG_EXPR("SPLIT", OB_PROXY_EXPR_TYPE_FUNC_SPLIT, ObProxyExprSplit, ObNullType);
+    REG_EXPR("TO_DAYS", OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS, ObProxyExprToDays, ObIntType);
+    REG_EXPR("TO_DATE", OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, ObProxyExprToTime, ObDateTimeType); // special case will not call
+    REG_EXPR("TO_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, ObProxyExprToTime, ObTimestampNanoType); // special case will not call
+    REG_EXPR("TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP, ObProxyExprToTime, ObTimestampType);
+    REG_EXPR("DATE", OB_PROXY_EXPR_TYPE_FUNC_DATE, ObProxyExprToTime, ObDateTimeType);
+    REG_EXPR("TIME", OB_PROXY_EXPR_TYPE_FUNC_TIME, ObProxyExprToTime, ObTimeType);
+    REG_EXPR("NVL", OB_PROXY_EXPR_TYPE_FUNC_NVL, ObProxyExprNvl, ObNullType);
+    REG_EXPR("TO_CHAR", OB_PROXY_EXPR_TYPE_FUNC_TO_CHAR, ObProxyExprToChar, ObNullType);
+    REG_EXPR("SYSDATE", OB_PROXY_EXPR_TYPE_FUNC_SYSDATE, ObProxyExprSysdate, ObNullType);
+    REG_EXPR("MOD", OB_PROXY_EXPR_TYPE_FUNC_MOD, ObProxyExprMod, ObNullType);
+    REG_EXPR("ISNULL", OB_PROXY_EXPR_TYPE_FUNC_ISNULL, ObProxyExprIsnull, ObNullType);
+    REG_EXPR("FLOOR", OB_PROXY_EXPR_TYPE_FUNC_FLOOR, ObProxyExprFloor, ObNullType);
+    REG_EXPR("CEIL", OB_PROXY_EXPR_TYPE_FUNC_CEIL, ObProxyExprCeil, ObNullType);
+    REG_EXPR("CEILING", OB_PROXY_EXPR_TYPE_FUNC_CEIL, ObProxyExprCeil, ObNullType);
+    REG_EXPR("ROUND", OB_PROXY_EXPR_TYPE_FUNC_ROUND, ObProxyExprRound, ObNullType);
+    REG_EXPR("TRUNCATE", OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE, ObProxyExprTruncate, ObNullType);
+    REG_EXPR("TRUNC", OB_PROXY_EXPR_TYPE_FUNC_TRUNCATE, ObProxyExprTruncate, ObNullType);
+    REG_EXPR("ABS", OB_PROXY_EXPR_TYPE_FUNC_ABS, ObProxyExprAbs, ObNullType);
+    REG_EXPR("SYSTIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_SYSTIMESTAMP, ObProxyExprSystimestamp, ObNullType);
+    REG_EXPR("CURRENT_DATE", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE, ObProxyExprCurrentdate, ObNullType);
+    REG_EXPR("CURDATE", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_DATE, ObProxyExprCurrentdate, ObNullType);
+    REG_EXPR("CURRENT_TIME", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME, ObProxyExprCurrenttime, ObNullType);
+    REG_EXPR("CURTIME", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIME, ObProxyExprCurrenttime, ObNullType);
+    REG_EXPR("CURRENT_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP, ObProxyExprCurrenttimestamp, ObNullType);
+    REG_EXPR("NOW", OB_PROXY_EXPR_TYPE_FUNC_CURRENT_TIMESTAMP, ObProxyExprCurrenttimestamp, ObNullType);
 
-    REG_EXPR("TRIM", OB_PROXY_EXPR_TYPE_FUNC_TRIM, ObProxyExprTrim);
-    REG_EXPR("LTRIM", OB_PROXY_EXPR_TYPE_FUNC_LTRIM, ObProxyExprLtrim);
-    REG_EXPR("RTRIM", OB_PROXY_EXPR_TYPE_FUNC_RTRIM, ObProxyExprRtrim);
-    REG_EXPR("SUBSTRING", OB_PROXY_EXPR_TYPE_FUNC_SUBSTR, ObProxyExprSubStr);
-    REG_EXPR("REPLACE", OB_PROXY_EXPR_TYPE_FUNC_REPLACE, ObProxyExprReplace);
-    REG_EXPR("LENGTH", OB_PROXY_EXPR_TYPE_FUNC_LENGTH, ObProxyExprLength);
-    REG_EXPR("LOWER", OB_PROXY_EXPR_TYPE_FUNC_LOWER, ObProxyExprLower);
-    REG_EXPR("LCASE", OB_PROXY_EXPR_TYPE_FUNC_LOWER, ObProxyExprLower);
-    REG_EXPR("UPPER", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper);
-    REG_EXPR("UCASE", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper);
-    REG_EXPR("TO_NUMBER", OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER, ObProxyExprToNumber);
-    REG_EXPR("SUBSTRING_INDEX",OB_PROXY_EXPR_TYPE_FUNC_SUBSTR_INDEX,  ObProxyExprNotSupport);
+    REG_EXPR("TRIM", OB_PROXY_EXPR_TYPE_FUNC_TRIM, ObProxyExprTrim, ObNullType);
+    REG_EXPR("LTRIM", OB_PROXY_EXPR_TYPE_FUNC_LTRIM, ObProxyExprLtrim, ObNullType);
+    REG_EXPR("RTRIM", OB_PROXY_EXPR_TYPE_FUNC_RTRIM, ObProxyExprRtrim, ObNullType);
+    REG_EXPR("SUBSTRING", OB_PROXY_EXPR_TYPE_FUNC_SUBSTR, ObProxyExprSubStr, ObNullType);
+    REG_EXPR("REPLACE", OB_PROXY_EXPR_TYPE_FUNC_REPLACE, ObProxyExprReplace, ObNullType);
+    REG_EXPR("LENGTH", OB_PROXY_EXPR_TYPE_FUNC_LENGTH, ObProxyExprLength, ObNullType);
+    REG_EXPR("LOWER", OB_PROXY_EXPR_TYPE_FUNC_LOWER, ObProxyExprLower, ObNullType);
+    REG_EXPR("LCASE", OB_PROXY_EXPR_TYPE_FUNC_LOWER, ObProxyExprLower, ObNullType);
+    REG_EXPR("UPPER", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper, ObNullType);
+    REG_EXPR("UCASE", OB_PROXY_EXPR_TYPE_FUNC_UPPER, ObProxyExprUpper, ObNullType);
+    REG_EXPR("TO_NUMBER", OB_PROXY_EXPR_TYPE_FUNC_TO_NUMBER, ObProxyExprToNumber, ObNullType);
+    REG_EXPR("SUBSTRING_INDEX",OB_PROXY_EXPR_TYPE_FUNC_SUBSTR_INDEX, ObProxyExprNotSupport, ObNullType);
 
     // add new function above, this is the last
     // REG_EXPR("", OB_PROXY_EXPR_TYPE_MAX, );

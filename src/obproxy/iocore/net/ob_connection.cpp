@@ -354,6 +354,17 @@ void ObConnection::cleanup()
   }
 }
 
+int64_t ObConnection::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+
+  J_OBJ_START();
+  J_KV(K_(fd), K_(addr), K_(is_bound), K_(is_connected), K_(sock_type));
+  J_OBJ_END();
+
+  return pos;
+}
+
 int ObServerConnection::accept(ObConnection *c, bool need_return_eintr /* false */)
 {
   int ret = OB_SUCCESS;
@@ -556,6 +567,8 @@ int ObServerConnection::listen_client_mode(const bool non_blocking, const int32_
     }
   }
 
+  PROXY_SOCK_LOG(INFO, "listen client mode result", K(*this), K(ret));
+
   if (OB_FAIL(ret)) {
     // make coverity happy
     int tmp_ret = ret;
@@ -610,6 +623,8 @@ int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t
     }
   }
 
+  PROXY_SOCK_LOG(INFO, "listen proxy mode result", K(*this), K(ret));
+
   if (OB_FAIL(ret)) {
     // make coverity happy
     int tmp_ret = ret;
@@ -619,6 +634,19 @@ int ObServerConnection::listen_proxy_mode(const bool non_blocking, const int32_t
     ret = tmp_ret;
   }
   return ret;
+}
+
+int64_t ObServerConnection::to_string(char *buf, const int64_t buf_len) const
+{
+  int64_t pos = 0;
+
+  J_OBJ_START();
+  pos += ObConnection::to_string(buf + pos, buf_len - pos);
+  J_COMMA();
+  J_KV(K_(accept_addr));
+  J_OBJ_END();
+
+  return pos;
 }
 
 } // end of namespace net

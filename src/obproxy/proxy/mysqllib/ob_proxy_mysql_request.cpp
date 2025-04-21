@@ -35,6 +35,7 @@ void ObProxyKillQueryInfo::reset()
 {
   is_kill_query_ = false;
   cs_id_ = OB_INVALID_ID;
+  group_id_ = OB_INVALID_ID;
   real_conn_id_ = OB_INVALID_FILE_ID;
   errcode_ = OB_MAX_ERROR_CODE;
   priv_name_ = NULL;
@@ -58,7 +59,7 @@ int64_t ObProxyKillQueryInfo::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  databuff_print_kv(buf, buf_len, pos, K_(is_kill_query), K_(cs_id),
+  databuff_print_kv(buf, buf_len, pos, K_(is_kill_query), K_(cs_id), K_(group_id),
                     K_(real_conn_id), K_(errcode), K_(priv_name), K_(server_addr));
   J_OBJ_END();
   return pos;
@@ -107,10 +108,11 @@ int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int6
         req_buf_len = req_buf_len > total_len + PARSE_EXTRA_CHAR_NUM ? req_buf_len : total_len + PARSE_EXTRA_CHAR_NUM;
       } else {
         copy_len = std::min(total_len, req_buf_len - PARSE_EXTRA_CHAR_NUM);
+        req_buf_len = copy_len + PARSE_EXTRA_CHAR_NUM;
       }
 
       // if buf is not suitable we re-alloc it
-      if (OB_ISNULL(req_buf_) || OB_UNLIKELY(req_buf_len_ < req_buf_len || req_buf_len_ > req_buf_len * 2)) {
+      if (OB_ISNULL(req_buf_) || OB_UNLIKELY(req_buf_len_ < req_buf_len || req_buf_len_ > req_buf_len * 10)) {
         if (OB_FAIL(alloc_request_buf(req_buf_len))) {
           LOG_EDIAG("fail to alloc buf", K(req_buf_len), K(ret));
         } else {

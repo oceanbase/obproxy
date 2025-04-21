@@ -93,6 +93,12 @@ public:
   virtual ObHRTime get_inactivity_timeout() const;
   virtual void set_inactivity_timeout(const ObHRTime timeout_in);
   virtual void cancel_inactivity_timeout();
+  virtual void set_net_write_timeout(const ObHRTime timeout_in);
+  virtual void cancel_net_write_timeout();
+  virtual ObHRTime get_net_write_timeout();
+  virtual void set_net_read_timeout(const ObHRTime timeout_in);
+  virtual void cancel_net_read_timeout();
+  virtual ObHRTime get_net_read_timeout();
 
   virtual void add_to_keep_alive_lru();
   virtual void remove_from_keep_alive_lru();
@@ -192,6 +198,11 @@ public:
 
   ObHRTime inactivity_timeout_in_;
   ObHRTime next_inactivity_timeout_at_;
+
+  ObHRTime net_write_timeout_in_;
+  ObHRTime next_net_write_timeout_at_;
+  ObHRTime net_read_timeout_in_;
+  ObHRTime next_net_read_timeout_at_;
 
   ObHRTime reenable_read_time_at_;
 
@@ -301,6 +312,44 @@ inline void ObUnixNetVConnection::cancel_inactivity_timeout()
   PROXY_NET_LOG(DEBUG, "cancel inactive timeout", K(this));
   inactivity_timeout_in_ = 0;
   next_inactivity_timeout_at_ = 0;
+}
+
+inline void ObUnixNetVConnection::set_net_write_timeout(const ObHRTime timeout)
+{
+  PROXY_NET_LOG(DEBUG, "set net write timeout", K(timeout), K(this));
+  net_write_timeout_in_ = timeout;
+  next_net_write_timeout_at_ = event::get_hrtime() + timeout;
+}
+
+inline void ObUnixNetVConnection::cancel_net_write_timeout()
+{
+  PROXY_NET_LOG(DEBUG, "cancel net write timeout", K(this));
+  net_write_timeout_in_ = 0;
+  next_net_write_timeout_at_ = 0;
+}
+
+inline ObHRTime ObUnixNetVConnection::get_net_write_timeout()
+{
+  return net_write_timeout_in_;
+}
+
+inline void ObUnixNetVConnection::set_net_read_timeout(const ObHRTime timeout)
+{
+  PROXY_NET_LOG(DEBUG, "set net read timeout", K(timeout), K(this));
+  net_read_timeout_in_ = timeout;
+  next_net_read_timeout_at_ = event::get_hrtime() + timeout;
+}
+
+inline void ObUnixNetVConnection::cancel_net_read_timeout()
+{
+  PROXY_NET_LOG(DEBUG, "cancel net read timeout", K(this));
+  net_read_timeout_in_ = 0;
+  next_net_read_timeout_at_ = 0;
+}
+
+inline ObHRTime ObUnixNetVConnection::get_net_read_timeout()
+{
+  return net_read_timeout_in_;
 }
 
 inline int ObUnixNetVConnection::set_local_addr()

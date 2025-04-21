@@ -13,6 +13,7 @@
 #define OBPROXY_RPC_CLIENT_NET_HANDLER_H
 
 #include "obkv/table/ob_rpc_struct.h"
+#include "obutils/ob_connection_diagnosis_trace.h"
 #include "proxy/rpc/net/ob_rpc_net_handler.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_analyzer.h"
 #include "proxy/rpc/net/ob_proxy_rpc_session_info.h"
@@ -31,6 +32,7 @@ class ObRpcClientNetHandlerMap;
 #define RPC_CLIENT_NET_PERIOD_TASK RPC_CLIENT_NET_EVENT_EVENTS_START + 1
 #define RPC_CLIENT_NET_SEND_RESPONSE RPC_CLIENT_NET_EVENT_EVENTS_START + 2
 #define RPC_CLIENT_NET_READ_REQUEST RPC_CLIENT_NET_EVENT_EVENTS_START + 3
+#define RPC_CLIENT_NET_TIMEOUT_TASK RPC_CLIENT_NET_EVENT_EVENTS_START + 4
 
 static const uint32_t LOCAL_IPV4_ADDR = 0x100007F;
 
@@ -167,6 +169,12 @@ public:
   // void clean_all_pending_request();
   // void clean_all_timeout_request();
 
+  void set_net_read_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event);
+  void set_net_write_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event);
+  void cancel_net_read_timeout();
+  void cancel_net_write_timeout();
+  obutils::ObInactivityTimeoutEvent get_inactivity_timeout_event() const { return timeout_event_;}
+
   int64_t get_cluster_version() const { return cluster_version_; }
   void set_cluster_version(int64_t cluster_version) { cluster_version_ = cluster_version; }
 
@@ -210,6 +218,8 @@ public:
   bool half_close_;
   obutils::ObClusterResource *cluster_resource_;
   int64_t cluster_version_;
+  obutils::ObInactivityTimeoutEvent timeout_event_;     // just record timeout event for log
+  ObHRTime timeout_record_;                             // just record timeout for log
   //TODO next need build a global cache for client_net_handler
 
   ObTableEntry *dummy_entry_; // __all_dummy's table location entry
@@ -288,6 +298,42 @@ inline void ObRpcClientNetHandler::add_client_response_request(ObRpcReq *request
 {
   UNUSED(request);
   //do nothing
+}
+
+inline void ObRpcClientNetHandler::set_net_read_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event)
+{
+  timeout_event_ = event;
+  timeout_record_ = timeout;
+  if (OB_LIKELY(NULL != rpc_net_vc_)) {
+    rpc_net_vc_->set_net_read_timeout(timeout);
+  }
+}
+
+inline void ObRpcClientNetHandler::set_net_write_timeout(ObHRTime timeout, obutils::ObInactivityTimeoutEvent event)
+{
+  timeout_event_ = event;
+  timeout_record_ = timeout;
+  if (OB_LIKELY(NULL != rpc_net_vc_)) {
+    rpc_net_vc_->set_net_write_timeout(timeout);
+  }
+}
+
+inline void ObRpcClientNetHandler::cancel_net_read_timeout()
+{
+  timeout_event_ = obutils::OB_TIMEOUT_UNKNOWN_EVENT;
+  timeout_record_ = 0;
+  if (OB_LIKELY(NULL != rpc_net_vc_)) {
+    rpc_net_vc_->cancel_net_read_timeout();
+  }
+}
+
+inline void ObRpcClientNetHandler::cancel_net_write_timeout()
+{
+  timeout_event_ = obutils::OB_TIMEOUT_UNKNOWN_EVENT;
+  timeout_record_ = 0;
+  if (OB_LIKELY(NULL != rpc_net_vc_)) {
+    rpc_net_vc_->cancel_net_write_timeout();
+  }
 }
 
 // A list of client sessions.

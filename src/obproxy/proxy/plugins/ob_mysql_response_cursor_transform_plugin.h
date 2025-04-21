@@ -30,7 +30,8 @@ enum RESULTSET_STATE
   RESULTSET_HEADER,
   RESULTSET_FIELD,
   RESULTSET_EOF_FIRST,
-  RESULTSET_ROW
+  RESULTSET_ROW,
+  RESULTSET_END,
 };
 
 class ObMysqlResponseCursorTransformPlugin : public ObTransformationPlugin
@@ -62,12 +63,12 @@ private:
 
 private:
   event::ObIOBufferReader *local_reader_;
-  event::ObIOBufferReader *local_analyze_reader_;
+  event::ObMIOBuffer *local_buffer_;
   packet::ObMysqlPacketReader pkt_reader_;
   RESULTSET_STATE resultset_state_;
   uint64_t column_num_;
   uint64_t pkt_count_;
-  bool hava_cursor_;
+  bool have_cursor_;
   common::ObArray<obmysql::EMySQLFieldType> field_types_;
 
   DISALLOW_COPY_AND_ASSIGN(ObMysqlResponseCursorTransformPlugin);

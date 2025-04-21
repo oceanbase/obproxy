@@ -49,6 +49,7 @@ struct ObProxyRpcReqAnalyzeCtx;
 #define RPC_REQUEST_SM_CALL_NEXT RPC_REQUEST_SM_EVENT_EVENTS_START + 2
 #define RPC_REQUEST_SM_CLEANUP RPC_REQUEST_SM_EVENT_EVENTS_START + 3
 #define RPC_REQUEST_SM_ANALYZE_DONE RPC_REQUEST_SM_EVENT_EVENTS_START + 4
+#define RPC_REQUEST_SM_RELEASE_CHECK RPC_REQUEST_SM_EVENT_EVENTS_START + 5
 
 enum ObRpcRequestSMMagic
 {
@@ -82,6 +83,7 @@ enum ObRpcRequestSMActionType
   RPC_REQ_PARTITION_LOOKUP_DONE,
   RPC_REQ_IN_INDEX_LOOKUP,
   RPC_REQ_IN_TABLEGROUP_LOOKUP,
+  RPC_REQ_IN_TABLET_LS_LOOKUP,
   RPC_REQ_SERVER_ADDR_SEARCHING,
   RPC_REQ_SERVER_ADDR_SEARCHED,
   RPC_REQ_IN_CONGESTION_CONTROL_LOOKUP,
@@ -370,6 +372,7 @@ public:
   int setup_rpc_partition_lookup();
   int setup_rpc_index_lookup();
   int setup_rpc_tablegroup_lookup();
+  int setup_rpc_tablet_ls_lookup();
   int setup_congestion_control_lookup();
   int setup_rpc_server_addr_search_normal();
   int setup_rpc_server_addr_direct_find_leader(bool &need_retry_with_normal_mode);
@@ -396,6 +399,7 @@ public:
   int state_rpc_req_ctx_lookup(int event, void *data);
   int state_rpc_index_lookup(int event, void *data);
   int state_rpc_tablegroup_lookup(int event, void *data);
+  int state_rpc_tablet_ls_lookup(int event, void *data);
   int state_rpc_handle_shard_request(int event, void *data);
   int state_congestion_control_lookup(int event, void *data);
   int state_rpc_partition_lookup_done();
@@ -457,7 +461,7 @@ public:
   // int analyze_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
   int analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
 
-  bool retry_server_connection_not_open(); //found next addr or false
+  bool retry_next_avail_server_node(); //found next addr or false
   void retry_reset();
 
   int dirty_rpc_route_result(ObMysqlRouteResult *result);
@@ -477,9 +481,15 @@ public:
 
   int cancel_child_callback_action();
 
+  //TODO, need check request release not, when canceled and cleanup, just used in QA mode
+  int schedule_release_check_action();
+  int cancel_release_check_action();
+  void print_releasing_request_info();
+
   int get_proxy_primary_zone_array(common::ObString zone, common::ObSEArray<common::ObString, 5> &zone_array);
 
   int handle_global_index_partition_lookup_done();
+  // int handle_tablet_to_ls_lookup_done();
   void handle_timeout();
   void set_inner_cont(event::ObContinuation *cont) { inner_cont_ = cont; }
   ObRpcReqCmdTimeStat &get_cmd_time_stat() { return cmd_time_stats_; }
@@ -551,7 +561,9 @@ private:
   event::ObAction *sharding_action_;
   event::ObAction *sm_next_action_;
   event::ObAction *child_callback_action_;
+  event::ObAction *release_check_action_;
   event::ObContinuation *inner_cont_;
+  int32_t release_check_count_;
   int32_t reentrancy_count_;
 
   bool terminate_sm_;
@@ -582,6 +594,7 @@ private:
   bool already_get_async_info_;
   bool already_get_index_entry_;
   bool already_get_tablegroup_entry_;
+  bool already_get_tablet_ls_entry_;
   int32_t congestion_entry_not_exist_count_;
   obutils::ObCongestionEntry *congestion_entry_;
   ObPartitionLookupInfo pll_info_;  // partition lookup info

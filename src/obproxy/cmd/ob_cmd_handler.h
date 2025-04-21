@@ -42,7 +42,7 @@ public:
   void reset() {
     seq_ = 0;
     memory_limit_ = 0;
-    protocol_ = proxy::ObProxyProtocol::PROTOCOL_NORMAL;
+    protocol_ = proxy::ObProxyProtocol::PROTOCOL_MAX;
     ob20_param_.reset();
   }
 

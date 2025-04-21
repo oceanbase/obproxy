@@ -116,6 +116,19 @@ void ObProxyRpcReqParallelExecuteCont::destroy()
   cancel_pending_action();
   cancel_inform_out_action();
 
+  // 父类里最后是用的 delete, 但是本 Cont 是用的 op_alloc 分配出来的,
+  // 所以只能把父类里的 destroy 方法拷贝到这里
+  cb_cont_ = NULL;
+  allocator_ = NULL;
+  submit_thread_ = NULL;
+  mutex_.release();
+  action_.mutex_.release();
+
+  op_free(this);
+}
+
+void ObProxyRpcReqParallelExecuteCont::free_sub_rpc_request()
+{
   //sub rpc request not schedued to execute init, but need to release
   if (OB_NOT_NULL(rpc_request_)
       && rpc_request_->get_snet_state() == proxy::ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING_IDEL
@@ -127,16 +140,6 @@ void ObProxyRpcReqParallelExecuteCont::destroy()
     ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
     rpc_request_->cleanup(cleanup_params);
   }
-
-  // 父类里最后是用的 delete, 但是本 Cont 是用的 op_alloc 分配出来的,
-  // 所以只能把父类里的 destroy 方法拷贝到这里
-  cb_cont_ = NULL;
-  allocator_ = NULL;
-  submit_thread_ = NULL;
-  mutex_.release();
-  action_.mutex_.release();
-
-  op_free(this);
 }
 
 } // end of namespace executor

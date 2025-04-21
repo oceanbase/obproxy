@@ -353,7 +353,7 @@ int ObProxyCreateServerConnCont::schedule_create_conn_cont(bool imm)
     int64_t delay_us = 0;
     if (imm) {
       // must be done in work thread
-      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, CONN_ENTRY_GET_ONE_CONN_INFO_EVENT))) {
+      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET, CONN_ENTRY_GET_ONE_CONN_INFO_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule create_server_conn event", K(ret));
       }

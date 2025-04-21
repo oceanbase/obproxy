@@ -120,7 +120,7 @@ public:
   ObTableGroupEntry()
     : ObRouteEntry(), is_inited_(false), tenant_id_(0),
       tablegroup_name_(), database_name_(), sharding_(),
-      table_names_(), buf_(NULL), buf_len_(0) {}
+      table_names_(common::ObModIds::OB_RPC_TABLE_GROUP, 4 * sizeof(common::ObString)), buf_(NULL), buf_len_(0) {}
   virtual ~ObTableGroupEntry() {}
   virtual void free();
   int64_t to_string(char *buf, const int64_t buf_len) const;

@@ -135,9 +135,9 @@ ObTableEntryCont::ObTableEntryCont()
       table_param_(),
       name_buf_(NULL), name_buf_len_(0), te_op_(LOOKUP_MIN_OP), state_(LOOKUP_TABLE_ENTRY_STATE),
       newest_table_entry_(NULL), table_entry_(NULL), table_cache_(NULL), mysql_client_(NULL), binlog_sql_(NULL),
-      request_param_(), need_notify_(true), need_prepare_binlog_entry_param_(true),
+      request_param_(), need_notify_(true), need_prepare_binlog_entry_param_(true), is_need_retry_(false), is_need_reroute_(false), is_reused_(false),
       binlog_service_ip_(), binlog_service_hostname_ip_list_(), binlog_service_addr_list_(), used_hostname_ip_count_(0),
-      used_addr_count_(0)
+      used_addr_count_(0), cur_build_count_(0)
 {
   SET_HANDLER(&ObTableEntryCont::main_handler);
 }
@@ -427,6 +427,7 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
       table_param_.is_partition_table_route_supported_ = param.is_partition_table_route_supported_;
       table_param_.is_oracle_mode_ = param.is_oracle_mode_;
       table_param_.is_need_force_flush_ = param.is_need_force_flush_;
+      table_param_.is_single_partition_table_ = param.is_single_partition_table_;
       table_param_.set_route_diagnosis(param.route_diagnosis_);
       if (!param.current_idc_name_.empty()) {
         MEMCPY(table_param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
@@ -522,6 +523,9 @@ inline int ObTableEntryCont::set_next_state()
       next_state = LOOKUP_DONE_STATE;
       break;
 
+    case LOOKUP_TABLE_ENTRY_RETRY_STATE:
+      next_state = LOOKUP_TABLE_ENTRY_STATE;
+      break;
     case LOOKUP_DONE_STATE:
     default:
       ret = OB_ERR_UNEXPECTED;
@@ -588,6 +592,23 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
     ret = OB_ERR_UNEXPECTED; // use to free newest_table_entry_
     LOG_WDIAG("fail to get table entry from remote", "name", table_param_.name_, K(ret));
   }
+  // only for single_partition_table, because odp can not judge single partition or non partition table
+  // need rely on server response error OB_SCHEMA_ERROR
+  if (state_ == LOOKUP_PART_INFO_STATE && OB_ITER_END == ret && table_param_.is_single_partition_table_) {
+    // part_info get null resultset, maybe it is non partition table
+    // maybe truncate etc cause server response error OB_SCHEMA_ERROR
+    if (OB_LIKELY(NULL != newest_table_entry_)) {
+      newest_table_entry_->set_single_partition_table(false);
+    }
+    table_param_.is_single_partition_table_ = false;
+    is_need_retry_ = true;
+    ret = OB_SUCCESS;
+    LOG_INFO("this table entry is non partition table,need retry", K(ret), K(error_code));
+  } else if (state_ == LOOKUP_FIRST_PART_STATE && OB_INVALID_ARGUMENT == error_code && table_param_.is_single_partition_table_) {
+    // maybe server not refresh schema in time, need retry
+    is_need_retry_ = true;
+    error_code = OB_SUCCESS;
+  }
   if (ret != OB_SUCCESS || error_code != OB_SUCCESS) {
     tmp_ret = ret;
     if (!table_param_.name_.is_all_dummy_table()) {
@@ -598,6 +619,40 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
                       error_code,
                       state_,
                       newest_table_entry_);
+    }
+  } else if (is_need_retry_) {
+    is_need_retry_ = false;
+    if (cur_build_count_ < obproxy::obutils::get_global_proxy_config().table_entry_retry_build_limit) {
+      state_ = LOOKUP_TABLE_ENTRY_RETRY_STATE;
+      LOG_INFO("failed to get atomic table entry, need retry", K(cur_build_count_), KPC(newest_table_entry_));
+      cur_build_count_ ++;
+      if (OB_LIKELY(NULL != newest_table_entry_)) {
+        is_reused_ = true;
+        newest_table_entry_->reuse();
+        LOG_DEBUG("reuse table entry", KPC(newest_table_entry_), K(cur_build_count_), K(is_reused_));
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("newest_table_entry_ is null in retrying", K(ret));
+      }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("failed to get atomic table entry and reach retry limit", K(cur_build_count_), KPC(newest_table_entry_));
+    }
+  } else if (is_need_reroute_) {
+    is_need_reroute_ = false;
+    if (cur_build_count_ < obproxy::obutils::get_global_proxy_config().table_entry_retry_build_limit) {
+      state_ = LOOKUP_TABLE_ENTRY_STATE;
+      LOG_INFO("failed to get atomic table entry, need reroute", K(cur_build_count_), KPC(newest_table_entry_));
+      cur_build_count_ ++;
+      if (OB_LIKELY(NULL != newest_table_entry_)) {
+        newest_table_entry_->free_part_info();
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("newest_table_entry_ is null in retrying", K(ret));
+      }
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("failed to get atomic table entry and reach retry limit", K(cur_build_count_), KPC(newest_table_entry_));
     }
   }
 
@@ -632,7 +687,7 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
 inline int ObTableEntryCont::handle_table_entry_resp(ObResultSetFetcher &rs_fetcher)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(table_param_.name_,
+  if (!is_reused_ && OB_FAIL(ObTableEntry::alloc_and_init_table_entry(table_param_.name_,
                                                        table_param_.cr_version_,
                                                        table_param_.cr_id_,
                                                        newest_table_entry_))) {
@@ -640,6 +695,8 @@ inline int ObTableEntryCont::handle_table_entry_resp(ObResultSetFetcher &rs_fetc
   } else if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("table entry should not be NULL", K_(newest_table_entry), K(ret));
+  } else if (FALSE_IT(newest_table_entry_->set_single_partition_table(table_param_.is_single_partition_table_))) {
+    // not here
   } else if (OB_FAIL(ObRouteUtils::fetch_table_entry(rs_fetcher,
                                                      *newest_table_entry_,
                                                      table_param_.cluster_version_))) {
@@ -685,6 +742,19 @@ inline int ObTableEntryCont::handle_part_info_resp(ObResultSetFetcher &rs_fetche
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WDIAG("fail to fetch part info", K(ret));
   } else {
+    if (0 == newest_table_entry_->get_schema_version() || 0 == part_info->get_schema_version()) {
+      LOG_INFO("schema version is 0, maybe server not support, will not retry", K(newest_table_entry_->get_schema_version()), K(part_info->get_schema_version()));
+      newest_table_entry_->set_schema_version(0);
+      part_info->set_schema_version(0);
+    } else if (newest_table_entry_->get_schema_version() < part_info->get_schema_version()) {
+      is_need_retry_ = true;
+      LOG_WDIAG("fetch part info meet schema version not match, maybe server execute ddl operations, need retry", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    } else if (newest_table_entry_->get_schema_version() > part_info->get_schema_version()) {
+      is_need_reroute_ = true;
+      LOG_WDIAG("fetch part info meet schema version not match, maybe server is too old, need reroute", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    } else {
+      // do nothing
+    }
     PROCESSOR_INCREMENT_DYN_STAT(GET_PART_INFO_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
   }
@@ -705,7 +775,19 @@ inline int ObTableEntryCont::handle_first_part_resp(ObResultSetFetcher &rs_fetch
     PROCESSOR_INCREMENT_DYN_STAT(GET_FIRST_PART_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WDIAG("fail to fetch part info", K(ret));
+  } else if (OB_SUCC(rs_fetcher.next())) { //not fetch all the resultset from rs_fetcher in build part_info with has more data for part_info
+    is_need_retry_ = true;
+    LOG_WDIAG("failed to build new part_info with more part_info data", KPC_(newest_table_entry), K(ret));
   } else {
+    ret = OB_SUCCESS; //need to reset it to success when fetch end
+    if (OB_UNLIKELY(SCHEMA_VERSION_IS_BIGGER == part_info->get_schema_version())) {
+      is_need_retry_ = true;
+      LOG_WDIAG("fetch first part meet schema version not match, need retry", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    } else if (OB_UNLIKELY(SCHEMA_VERSION_IS_SMALLER == part_info->get_schema_version())) {
+      is_need_reroute_ = true;
+      LOG_WDIAG("fetch first part meet schema version not match, need reroute", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    }
+
     PROCESSOR_INCREMENT_DYN_STAT(GET_FIRST_PART_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
   }
@@ -727,6 +809,13 @@ inline int ObTableEntryCont::handle_sub_part_resp(ObResultSetFetcher &rs_fetcher
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, false);
     LOG_WDIAG("fail to fetch part info", K(ret));
   } else {
+    if (OB_UNLIKELY(SCHEMA_VERSION_IS_BIGGER == part_info->get_schema_version())) {
+      is_need_retry_ = true;
+      LOG_WDIAG("fetch sub part meet schema version not match, need retry", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    } else if (OB_UNLIKELY(SCHEMA_VERSION_IS_SMALLER == part_info->get_schema_version())) {
+      is_need_reroute_ = true;
+      LOG_WDIAG("fetch sub part meet schema version not match, need reroute", K(ret), KPC(newest_table_entry_), KPC(part_info));
+    }
     PROCESSOR_INCREMENT_DYN_STAT(GET_SUB_PART_FROM_REMOTE_SUCC);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, PARTITION_INFO, false, true);
   }
@@ -756,6 +845,8 @@ inline int ObTableEntryCont::handle_lookup_remote()
       break;
 
     case LOOKUP_TABLE_ENTRY_STATE:
+      ret = lookup_entry_remote();
+      break;
     default:
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("unexpect state", K_(state), K(ret));

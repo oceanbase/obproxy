@@ -216,14 +216,14 @@ struct TestProcAcceptCont : public event::ObContinuation
     INFO_NET("TEST", "TestProcAcceptCont : handle_start_accept");
     accept_sm_ = new(std::nothrow) TestAcceptSM(null_mutex_ ? (ObProxyMutex *)NULL : mutex_);
     if (!g_hot_upgrade) {
-      net_accept_action_ = static_cast<ObNetAcceptAction *>(g_net_processor.accept(
-          *accept_sm_, *options_));
+      g_net_processor.accept(
+          *accept_sm_, net_accept_action_, *options_);
       if (NULL != net_accept_action_) {
         g_server_fd = net_accept_action_->server_->fd_;
       }
     } else {
-      net_accept_action_ = static_cast<ObNetAcceptAction *>(g_net_processor.main_accept(
-          *accept_sm_, g_server_fd, *options_));
+       g_net_processor.main_accept(
+          *accept_sm_, g_server_fd, net_accept_action_, *options_);
     }
     started_ = true;
     return EVENT_CONT;

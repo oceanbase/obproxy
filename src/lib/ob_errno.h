@@ -856,6 +856,7 @@ namespace common
   static const int OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST = -10651;
   static const int OB_ERR_KV_ROWKEY_MISMATCH = -10652;
   static const int OB_ERR_KV_ROUTE_ENTRY_EXPIRE = -10653;
+  static const int OB_ERR_KV_ODP_SERVER_NET_ERROR = -10654;
   //for ob-redis
   static const int OB_ERR_REDIS_UNKNOWN_COMMAND = - 10690;
 
@@ -1622,6 +1623,8 @@ namespace common
 #define OB_ERR_KV_ODP_TIMEOUT__USER_ERROR_MSG "ODP-OBKV execution timeout"
 #define OB_ERR_KV_KEY_PARTITION_SHARD_REQUEST__USER_ERROR_MSG "ODP-OBKV key partition prohibits shard requests"
 #define OB_ERR_KV_ROWKEY_MISMATCH__USER_ERROR_MSG "ODP-OBKV the partition key cannot be parsed from rowkey"
+#define OB_ERR_KV_ROUTE_ENTRY_EXPIRE__USER_ERROR_MSG "ODP-OBKV route entry expired"
+#define OB_ERR_KV_ODP_SERVER_NET_ERROR__USER_ERROR_MSG "ODP-OBKV execute failed for server net error"
 //for ob-redis [-10690, -10700)
 #define OB_ERR_REDIS_UNKNOWN_COMMAND__USER_ERROR_MS "ERR unknown command '%.*s'"
 

@@ -100,6 +100,12 @@ public:
   virtual int get_conn_fd() { return 0; }
   virtual int set_tcp_init_cwnd(int init_cwnd) { UNUSED(init_cwnd); return 0; }
   virtual int apply_options() { return 0; }
+  virtual void set_net_write_timeout(ObHRTime timeout_in) { UNUSED(timeout_in); }
+  virtual void cancel_net_write_timeout() {}
+  virtual ObHRTime get_net_write_timeout() { return 0; }
+  virtual void set_net_read_timeout(ObHRTime timeout_in) { UNUSED(timeout_in); }
+  virtual void cancel_net_read_timeout() {}
+  virtual ObHRTime get_net_read_timeout() { return 0; }
 
   void clear_request_sent() { is_request_sent_ = false; }
   void set_addr(const common::ObAddr &addr) { addr_ = addr; }
@@ -163,7 +169,7 @@ public:
   // Attention!! before use post request, must comfirm:
   // 1. under the mutex_'s lock
   // 2. this client is_avail();
-  // 3. in ET_CALL(work) thread;
+  // 3. in ET_NET(work) thread;
   int post_request(event::ObContinuation *cont,
                    const ObMysqlRequestParam &request_param,
                    const int64_t timeout_ms,

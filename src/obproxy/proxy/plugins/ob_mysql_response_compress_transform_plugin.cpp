@@ -35,7 +35,6 @@ ObMysqlResponseCompressTransformPlugin::ObMysqlResponseCompressTransformPlugin(O
     local_reader_(NULL), local_transfer_reader_(NULL)
 {
   protocol_ = sm_->get_server_session_protocol();
-
   // get request seq
   req_seq_ = sm_->get_compressed_or_ob20_request_seq();
    // save sm_->server_session info now otherwise in `consume()` sm_->server_session has been reset
@@ -86,6 +85,8 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
     if (NULL == local_transfer_reader_) {
       local_transfer_reader_ = resp_analyzer_.alloc_mysql_pkt_reader();
     }
+
+    // [TODO] 这里 Tunnel 和 Plugin 共用一个数据结构存在潜在风险
     // the ObRespAnalyzeResult will be use both by tunnel and this class, and if tunnel analyze finished,
     // is_resp_completed_ will set true, here we set back to false to ensure compress_analyzer
     // work happy.
@@ -171,9 +172,13 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
       // Therefore, it is modified here that if the entire Tunnel is not over,
       //   the last bit of MySQL packet content will not be sent, and will not be sent until the entire Tunnel is over
       //   And with consume_size > 0 or resp_result.get_reserved_ok_len_of_compressed() == 0
-      //if ((!resp_result.is_last_ok_handled() || resp_analyzer_->is_stream_finished())
-      bool is_stream_finished = resp_analyzer_.is_stream_end();
-      if ((!resp_result.is_last_ok_handled() || is_stream_finished)
+
+      // 原判断为 (!resp_result.is_last_ok_handled() || resp_analyzer_.is_stream_end()) 这个条件可能两个值均为 False,
+      // 最后一个 OK Packet 已经重写或者裁剪掉了,is_last_ok_handled() == True,
+      // 但是 checksum tailer 并没有读取解析, is_stream_end() == False
+      // 这样整个表达式就为 False, 就不会调用到 produce 往下游写入数据
+      // 改为 is_stream_end -> is_resp_completed, 这里可以调用到 produce 写入数据, 可以确保将 MySQL Packet 写入到下游
+      if ((!resp_result.is_last_ok_handled() || resp_result.is_resp_completed())
           && (consume_size > 0 || resp_result.get_reserved_ok_len_of_compressed() == 0)) {
         // just send all data in local_transfer_reader_
         if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {

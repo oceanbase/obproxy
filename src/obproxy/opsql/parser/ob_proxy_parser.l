@@ -74,6 +74,13 @@ do {\
 #define RETURN_NON_RESERVED_KEYWORD(word_type) \
   { store_str(yytext, yyleng, yytext + yyleng, yyscanner); return word_type; }
 
+  /* need skip one/two '@' chars when store user/system variable, and return type */
+#define RETURN_USER_VARIABLE() \
+  { store_str(yytext + 1, yyleng - 1, yytext + yyleng, yyscanner); return USER_VARIABLE; }
+
+#define RETURN_SYSTEM_VARIABLE() \
+  { store_str(yytext + 2, yyleng - 2, yytext + yyleng, yyscanner); return SYSTEM_VARIABLE; }
+
 #define RETURN_NON_RESERVED_KEYWORD_WITH_QUOTE(word_type, quote_type) \
   { store_str_with_quote(quote_type, yytext + 1, yyleng - 2, yytext + yyleng, yyscanner); return word_type; }
 
@@ -350,7 +357,7 @@ comment_identifer       [\-\+]?{identifer}
 odp_comment_identifer   ([\-\+]?[A-Za-z0-9$_\-]*)
 
 non_newline             [^\n\r]
-sql_comment             ("--"{space}+{non_newline}*)|(#{non_newline}*)
+sql_comment             ("--"[ \t]+{non_newline}*)|(#{non_newline}*|"--"[\n\r])
 whitespace              ({space}+|{sql_comment})
 c_cmt_begin             \/\*
 select_hint_begin       (select{space}*(\/\*([^+*]|\*+[^*\/])*\*+\/{space}*)*(\/\*\+({space}*hint{space}+)?))
@@ -377,6 +384,12 @@ all_binlog_var         (\"{binlog_user_var}\"|\'{binlog_user_var}\'|\"{binlog_sy
 opt_sys_var_alias           (((@@global|@@session|@@local){space}*\.{space}*)|@@)
 binlog_user_var_alias       (@{space}*{binlog_user_var})
 binlog_sys_var_alias        ({opt_sys_var_alias}{binlog_sys_var})
+NOTASCII [\x80-\xFF]
+NOTASCII_GB_CHAR ({NOTASCII}|[\x81-\xfe][\x40-\xfe]|[\x81-\xfe][\x30-\x39][\x81-\xfe][\x30-\x39])
+system_variable  (@@[A-Za-z_][A-Za-z0-9_]*)|(@@[`][`A-Za-z_][`A-Za-z_]*)
+user_variable    (@([A-Za-z0-9_\.$]|{NOTASCII_GB_CHAR})*)|(@[`'\"]([`'\"A-Za-z0-9_\.$/%]|{NOTASCII_GB_CHAR})*)
+global_alias     @@global{space}*\.
+session_alias    @@session{space}*\.
 
 quote         '
 sqbegin       {quote}
@@ -492,6 +505,7 @@ UNIQUE           { return UNIQUE; }
 {stop_ddl_task}  { return STOP_DDL_TASK; }
 {retry_ddl_task} { return RETRY_DDL_TASK; }
 TABLEGROUP       { return TABLEGROUP; }
+JOIN             { return JOIN; }
 
  /* ps stmt */
 USING            { return USING; }
@@ -556,6 +570,9 @@ RELAYLOG         { RETURN_NON_RESERVED_KEYWORD(RELAYLOG); }
 
 GLOBAL           { RETURN_NON_RESERVED_KEYWORD(GLOBAL); }
 SESSION          { RETURN_NON_RESERVED_KEYWORD(SESSION); }
+
+{system_variable}   { RETURN_SYSTEM_VARIABLE(); }
+{user_variable}     { RETURN_USER_VARIABLE(); }
 
  /* no reserved keyword , don't forget to add these keyword in .y */
  /*refer：https://dev.mysql.com/doc/refman/5.6/en/keywords.html*/
@@ -786,6 +803,10 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <set_expr>{comma}|{multi_byte_comma}    { return ','; }
 <set_expr>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <set_expr>{number}                      { RETURN_NUMBER_VAL(); }
+<set_expr>{global_alias}                { RETURN_NON_RESERVED_KEYWORD(GLOBAL_ALIAS); }
+<set_expr>{session_alias}               { RETURN_NON_RESERVED_KEYWORD(SESSION_ALIAS); }
+<set_expr>{system_variable}             { RETURN_SYSTEM_VARIABLE(); }
+<set_expr>{user_variable}               { RETURN_USER_VARIABLE(); }
 <set_expr>{whitespace}                  { }
 <set_expr>[@=]                         { return yytext[0]; }
 <set_expr><<EOF>>                       { return END_P; }
@@ -1260,8 +1281,8 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"connection_id"               { SET_CONNECTION_ID(); RETURN_IGNORED_WORD(); }
 <in_expr>"sys_context"                 { SET_SYS_CONTEXT(); RETURN_IGNORED_WORD(); }
 <in_expr>"port"                        { return PORT; }
-<in_expr>"@@global{space}*\."          { return GLOBAL_ALIAS; }
-<in_expr>"@"                          { return yytext[0]; }
+<in_expr>{global_alias}                { return GLOBAL_ALIAS; }
+<in_expr>"@"                           { return yytext[0]; }
 <in_expr>{binlog_user_var_alias}       { return BINLOG_USER_VAR; }
 <in_expr>{binlog_sys_var_alias}        { return BINLOG_SYS_VAR; }
 <in_expr>"dbms_xa\."                   { SET_XA_RELATED(); }
@@ -1273,6 +1294,7 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_expr>"is_used_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"release_all_locks"           { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
 <in_expr>"release_lock"                { SET_TABLE_LOCK_RELATED(); RETURN_IGNORED_WORD(); }
+<in_expr>"join"                        { return JOIN; }
 <in_expr>{tx_read_only}                { RETURN_COL_NAME(TX_READ_ONLY); }
 <in_expr>{identifer}                   { RETURN_IGNORED_WORD(); }
 <in_expr><<EOF>>                       { return END_P; }
@@ -1305,10 +1327,11 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <in_no_select_query>.                  { RETURN_IGNORED_WORD(); }
 
 <prepare>"FROM"                        { return FROM; }
-<prepare>"@"                           { return yytext[0]; }
 <prepare>{identifer}                   { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <prepare>{dquote}                      { POP_STATE(); }
 <prepare>{quote}                       { POP_STATE(); }
+<prepare>{system_variable}             { RETURN_SYSTEM_VARIABLE(); }
+<prepare>{user_variable}               { RETURN_USER_VARIABLE(); }
 
 <in_anonymous_block>"BEGIN"            { POP_STATE(); RETURN_NON_RESERVED_KEYWORD(BEGI);}
 <in_anonymous_block>.                  {}

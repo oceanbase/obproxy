@@ -395,6 +395,12 @@ public:
    */
   virtual void cancel_inactivity_timeout() = 0;
 
+  virtual void set_net_write_timeout(const ObHRTime timeout_in) = 0;
+  virtual void cancel_net_write_timeout() = 0;
+  virtual ObHRTime get_net_write_timeout() = 0;
+  virtual void set_net_read_timeout(const ObHRTime timeout_in) = 0;
+  virtual void cancel_net_read_timeout() = 0;
+  virtual ObHRTime get_net_read_timeout() = 0;
 
   virtual void add_to_keep_alive_lru() = 0;
   virtual void remove_from_keep_alive_lru() = 0;

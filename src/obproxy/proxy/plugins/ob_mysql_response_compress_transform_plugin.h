@@ -98,8 +98,8 @@ public:
             && NULL != sm->client_session_
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && !sm->trans_state_.trans_info_.resp_result_.is_decompressed()
-            && (ObProxyProtocol::PROTOCOL_CHECKSUM == sm->get_server_session_protocol()
-                || ObProxyProtocol::PROTOCOL_OB20 == sm->get_server_session_protocol()));
+            && (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == sm->get_server_session_protocol()
+                || ObProxyProtocol::PROTOCOL_OCEANBASE_20 == sm->get_server_session_protocol()));
   }
 
 private:

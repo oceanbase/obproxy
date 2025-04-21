@@ -39,7 +39,8 @@ namespace proxy
 {
 ObServerSessionInfo::ObServerSessionInfo() :
     cap_(0), compatible_capability_(0), checksum_switch_(CHECKSUM_ON), is_inited_(false),
-    is_sharding_txn_session_(false), is_lock_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),
+    is_sharding_txn_session_(false), is_lock_session_(false), is_trans_coordinator_session_(false),
+    server_type_(DB_OB_MYSQL), shard_conn_(NULL),
     ps_id_(0), ps_id_pair_map_(), cursor_id_pair_map_(), allocator_(), text_ps_version_set_()
 {
   const int BUCKET_SIZE = 8;
@@ -118,6 +119,7 @@ void ObServerSessionInfo::reset()
 
   is_sharding_txn_session_ = false;
   is_lock_session_ = false;
+  is_trans_coordinator_session_ = false;
   destroy_ps_id_pair_map();
   destroy_cursor_id_pair_map();
   ob_server_.reset();

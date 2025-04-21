@@ -152,7 +152,7 @@ int ObSysVarSetProcessor::add_sys_var_renew_task(ObClusterResource &cr)
         mutex = NULL;
       }
       cr.dec_ref();
-    } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL))) {
+    } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_NET))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("schedule sysvar fetch task error", K(ret));
     }

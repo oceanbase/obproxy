@@ -160,10 +160,12 @@ inline int ObExprParser::parse_reqsql(const common::ObString &req_sql, int64_t p
   int   replace_sql_len = 0;
   if (OB_LIKELY(NULL != expr_sql_str)) {
     if (SELECT_STMT_PARSE_MODE == parse_mode_) {
-      if (NULL != (pos = strcasestr(expr_sql_str, "JOIN"))) {
-        // pos = JOIN
-      } else if (NULL != (pos = strcasestr(expr_sql_str, "WHERE"))) {
-        // pos = WHERE
+      const char *join_pos = strcasestr(expr_sql_str, "JOIN");
+      const char *where_pos = strcasestr(expr_sql_str, "WHERE");
+      if (NULL != join_pos && NULL != where_pos) {
+        pos = std::min(join_pos, where_pos);
+      } else {
+        pos = join_pos ? join_pos : where_pos;
       }
     } else if (OBPROXY_T_UPDATE == stmt_type) {
       if (NULL != (pos = strcasestr(expr_sql_str, "SET"))) {

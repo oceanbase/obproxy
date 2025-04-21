@@ -6,6 +6,7 @@ obproxy/proxy/mysqllib/ob_resp_packet_analyze_result.cpp\
 obproxy/proxy/mysqllib/ob_resp_analyze_result.h\
 obproxy/proxy/mysqllib/ob_resp_analyze_result.cpp\
 obproxy/proxy/mysqllib/ob_mysql_common_define.h\
+obproxy/proxy/mysqllib/ob_mysql_common_define.cpp\
 obproxy/proxy/mysqllib/ob_proxy_mysql_request.h\
 obproxy/proxy/mysqllib/ob_proxy_mysql_request.cpp\
 obproxy/proxy/mysqllib/ob_proxy_ob20_request.h\

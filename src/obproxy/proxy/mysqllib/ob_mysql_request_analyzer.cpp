@@ -174,6 +174,9 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
           }
           LOG_WDIAG("fail to dispatch mysql cmd", "analyze status",
                    ObProxyParserUtils::get_analyze_status_name(status), K(ret));
+        } else if ( ctx.large_request_threshold_len_ > 0
+                    && result.meta_.pkt_len_ > ctx.large_request_threshold_len_ - ObProxyMysqlRequest::PARSE_EXTRA_CHAR_NUM) {
+          client_request.set_large_request(true);
         }
       } else if (ANALYZE_CONT == status) {
         // we will analyze large request if we received enough packet(> request_buffer_len_)

@@ -104,6 +104,8 @@ public:
   bool is_connected_; // Flag for already connected.
   int sock_type_;
 
+  int64_t to_string(char *buffer, const int64_t size) const;
+
 protected:
   // Default options.
   static const ObNetVCOptions DEFAULT_OPTIONS;
@@ -144,6 +146,8 @@ public:
   int listen(const bool non_blocking = false,
              const int32_t recv_bufsize = 0,
              const int32_t send_bufsize = 0);
+
+  int64_t to_string(char *buffer, const int64_t size) const;
 
 public:
   // Client side (inbound) local IP address.

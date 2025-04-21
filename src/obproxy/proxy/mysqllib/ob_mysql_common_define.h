@@ -15,6 +15,7 @@
 
 #include <stdint.h>
 #include "rpc/obmysql/ob_mysql_packet.h"
+#include "lib/string/ob_string.h"
 
 namespace oceanbase
 {
@@ -43,8 +44,7 @@ static const int64_t RPC_NET_HEADER_LENGTH = 16;        // RPC Serivce header
 //  3   length of payload before compression
 static const int64_t MYSQL_COMPRESSED_HEALDER_LENGTH = 7;
 
-static const int64_t MYSQL_PACKET_MAX_LENGTH = 0xFFFFFF;
-static const int64_t MYSQL_PAYLOAD_MAX_LENGTH = (MYSQL_PACKET_MAX_LENGTH - 1);
+static const int64_t MYSQL_PACKET_MAX_LENGTH = 0xFFFFFF; // don't contain MYSQL packet header
 static const int64_t MYSQL_SHORT_PACKET_MAX_LENGTH = 2048; //for ok, eof
 //for hello pkt, the first pkt send by observer or mysql
 static const int64_t MYSQL_HELLO_PKT_MAX_LEN = 1024;
@@ -69,35 +69,18 @@ static const int64_t MYSQL_COMPRESSED_OB20_HEALDER_LENGTH = MYSQL_COMPRESSED_HEA
 
 enum class ObProxyProtocol
 {
-  PROTOCOL_NORMAL = 0,
-  PROTOCOL_CHECKSUM,
-  PROTOCOL_OB20,
+  PROTOCOL_MYSQL = 0,
+  PROTOCOL_COMPRESSED_MYSQL,
+  PROTOCOL_OCEANBASE_20,
   PROTOCOL_MAX,
 };
 
-const char * get_proxy_protocol_string(enum ObProxyProtocol protocol)
-{
-  const char *ret = "";
-  switch (protocol) {
-    case ObProxyProtocol::PROTOCOL_NORMAL:
-      ret = "MySQL";
-      break;
+static const common::ObString SERVER_PROTOCOL_AUTO = common::ObString::make_string("Auto");
+static const common::ObString SERVER_PROTOCOL_MYSQL = common::ObString::make_string("MySQL");
+static const common::ObString SERVER_PROTOCOL_OCEANBASE_20 = common::ObString::make_string("OceanBase 2.0");
+static const common::ObString SERVER_PROTOCOL_COMPRESSED_MYSQL = common::ObString::make_string("Compressed MySQL");
 
-    case ObProxyProtocol::PROTOCOL_CHECKSUM:
-      ret = "Compressed MySQL";
-      break;
-
-    case ObProxyProtocol::PROTOCOL_OB20:
-      ret = "OceanBase 2.0";
-      break;
-
-    default:
-      ret = "Unknown";
-      break;
-  }
-
-  return ret;
-}
+const common::ObString get_proxy_protocol_string(enum ObProxyProtocol protocol);
 
 // one of those types indicates that one mysql cmd response is finished
 enum ObMysqlRespEndingType
@@ -168,63 +151,7 @@ struct ObMysqlCompressedPacketHeader
   TO_STRING_KV(K_(compressed_len), K_(seq), K_(non_compressed_len));
 };
 
-bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
-{
-  bool ret = false;
-  switch (mysql_cmd) {
-    case obmysql::OB_MYSQL_COM_QUERY:
-    case obmysql::OB_MYSQL_COM_HANDSHAKE:
-    case obmysql::OB_MYSQL_COM_LOGIN:
-    case obmysql::OB_MYSQL_COM_PING:
-    case obmysql::OB_MYSQL_COM_INIT_DB:
-    case obmysql::OB_MYSQL_COM_QUIT:
-    case obmysql::OB_MYSQL_COM_DELETE_SESSION:
-    case obmysql::OB_MYSQL_COM_SLEEP:
-    case obmysql::OB_MYSQL_COM_FIELD_LIST:
-    case obmysql::OB_MYSQL_COM_CREATE_DB:
-    case obmysql::OB_MYSQL_COM_DROP_DB:
-    case obmysql::OB_MYSQL_COM_REFRESH:
-    case obmysql::OB_MYSQL_COM_SHUTDOWN:
-    case obmysql::OB_MYSQL_COM_STATISTICS:
-    case obmysql::OB_MYSQL_COM_PROCESS_INFO:
-    case obmysql::OB_MYSQL_COM_CONNECT:
-    case obmysql::OB_MYSQL_COM_PROCESS_KILL:
-    case obmysql::OB_MYSQL_COM_DEBUG:
-    case obmysql::OB_MYSQL_COM_TIME:
-    case obmysql::OB_MYSQL_COM_DELAYED_INSERT:
-    case obmysql::OB_MYSQL_COM_DAEMON:
-    case obmysql::OB_MYSQL_COM_RESET_CONNECTION:
-    // Prepared Statements(Binary Protocol)
-    case obmysql::OB_MYSQL_COM_STMT_PREPARE:
-    case obmysql::OB_MYSQL_COM_STMT_EXECUTE:
-    case obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
-    case obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA:
-    case obmysql::OB_MYSQL_COM_STMT_CLOSE:
-    case obmysql::OB_MYSQL_COM_STMT_RESET:
-    case obmysql::OB_MYSQL_COM_STMT_FETCH:
-    case obmysql::OB_MYSQL_COM_CHANGE_USER:
-    // binlog related
-    case obmysql::OB_MYSQL_COM_REGISTER_SLAVE:
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP:
-    case obmysql::OB_MYSQL_COM_BINLOG_DUMP_GTID:
-    // pieceinfo
-    case obmysql::OB_MYSQL_COM_STMT_SEND_PIECE_DATA:
-    case obmysql::OB_MYSQL_COM_STMT_GET_PIECE_DATA:
-    case obmysql::OB_MYSQL_COM_SET_OPTION:
-    case obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT:
-    case obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP:
-      ret = true;
-      break;
-    // Replication Protocol
-    case obmysql::OB_MYSQL_COM_TABLE_DUMP:
-    case obmysql::OB_MYSQL_COM_CONNECT_OUT:
-      ret = false;
-      break;
-    default:
-      break;
-  }
-  return ret;
-}
+bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd);
 
 } // end of namespace proxy
 } // end of namespace obproxy

@@ -103,7 +103,7 @@ static int delete_cluster_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &
     WDIAG_ICMD("fail to init for ObAlterResourceHandler", K(ret));
   } else {
     action = &handler->get_action();
-    if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_CALL))) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(handler, ET_NET))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       EDIAG_ICMD("fail to schedule ObAlterResourceHandler", K(ret));
       action = NULL;

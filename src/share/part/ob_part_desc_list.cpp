@@ -78,62 +78,67 @@ int ObPartDescList::get_part(ObNewRange &range,
   } else {
     bool found = false;
     bool casted = false;
+    bool valid_key_val = !range.start_key_.is_min_row() && !range.start_key_.is_max_row();
     // cast src_row and compare with part array
-    for (int64_t i = 0; i < part_array_size_ && !found; i++) {
-      if (i == default_part_array_idx_) {
-        continue;
-      }
-      for (int64_t j = 0; j < part_array_[i].rows_.count() && !found; j++) {
-        if (part_array_[i].rows_[j].get_count() == 0) {
-          ret = OB_ERR_UNEXPECTED;
-          COMMON_LOG(DEBUG, "no cells in the row", K(part_array_[i].rows_[j]), K(ret));
-        } else {
-          // if not cast, cast first
-          if (!casted && OB_FAIL(cast_row(src_row, part_array_[i].rows_.at(j), allocator, ctx))) {
-            COMMON_LOG(DEBUG, "fail to cast row");
-            continue;
-          } else {
-            casted = true;
-          }
-          // if casted, then compare
-          if (casted && src_row == part_array_[i].rows_.at(j)) {
-            found = true;
-            part_idx = i;
-            if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
-              COMMON_LOG(WDIAG, "fail to push part id", K(ret));
-            } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
-              COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
-            }
-          } else {}
+    if (valid_key_val) {
+      for (int64_t i = 0; i < part_array_size_ && !found; i++) {
+        if (i == default_part_array_idx_) {
+          continue;
         }
-      } // end for rows
-    } // end for part_array
+        for (int64_t j = 0; j < part_array_[i].rows_.count() && !found; j++) {
+          if (part_array_[i].rows_[j].get_count() == 0) {
+            ret = OB_ERR_UNEXPECTED;
+            COMMON_LOG(DEBUG, "no cells in the row", K(part_array_[i].rows_[j]), K(ret));
+          } else {
+            // if not cast, cast first
+            if (!casted && OB_FAIL(cast_row(src_row, part_array_[i].rows_.at(j), allocator, ctx))) {
+              COMMON_LOG(DEBUG, "fail to cast row");
+              continue;
+            } else {
+              casted = true;
+            }
+            // if casted, then compare
+            if (casted && src_row == part_array_[i].rows_.at(j)) {
+              found = true;
+              part_idx = i;
+              if (OB_FAIL(part_ids.push_back(part_array_[i].part_id_))) {
+                COMMON_LOG(WDIAG, "fail to push part id", K(ret));
+              } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
+                COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
+              }
+            } else {}
+          }
+        } // end for rows
+      } // end for part_array
+    }
 
+    // no matches
     if (!found && OB_INVALID_INDEX != default_part_array_idx_) {
-      // if no row matches, use default partition
-      part_idx = default_part_array_idx_;
-      COMMON_LOG(DEBUG, "will use default partition id", K(src_row), K(ret));
-      if (OB_FAIL(part_ids.push_back(part_array_[default_part_array_idx_].part_id_))) {
-        COMMON_LOG(WDIAG, "fail to push part id", K(ret));
-      } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[default_part_array_idx_]))) {
-        COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
-      }
+      // insert or provide valid partition key value in the sql
+      if (ctx.is_insert() || valid_key_val) {
+        part_idx = default_part_array_idx_;
+        // if no row matches, use default partition
+        COMMON_LOG(DEBUG, "will use default partition id", K(src_row), K(ret));
+        if (OB_FAIL(part_ids.push_back(part_array_[default_part_array_idx_].part_id_))) {
+          COMMON_LOG(WDIAG, "fail to push part id", K(ret));
+        } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[default_part_array_idx_]))) {
+          COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
+        }
+      // select and not provide valid partition key value int the sql
+      } else {}
     }
   }
   return ret;
 }
 
 int ObPartDescList::get_all_part_id_for_obkv(ObIArray<int64_t> &part_ids,
-                                             ObIArray<int64_t> &tablet_ids,
-                                             ObIArray<int64_t> &ls_ids)
+                                             ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
 
   for(int64_t part_idx = 0; part_idx < part_array_size_; ++part_idx) {
     if (OB_FAIL(get_part_by_num(part_idx, part_ids, tablet_ids))) {
       COMMON_LOG(WDIAG, "fail to call get_part_by_num", K(ret));
-    } else if (OB_FAIL(get_ls_id_by_num(part_idx, ls_ids))) {
-      COMMON_LOG(WDIAG, "fail to call get_ls_id_by_num", K(ret));
     }
   }
 
@@ -148,8 +153,7 @@ int ObPartDescList::get_part_for_obkv(ObNewRange &range,
                                       ObIAllocator &allocator,
                                       ObIArray<int64_t> &part_ids,
                                       ObPartDescCtx &ctx,
-                                      ObIArray<int64_t> &tablet_ids,
-                                      ObIArray<int64_t> &ls_ids)
+                                      ObIArray<int64_t> &tablet_ids)
 {
   int ret = OB_SUCCESS;
   ObNewRow src_row;
@@ -162,7 +166,7 @@ int ObPartDescList::get_part_for_obkv(ObNewRange &range,
     COMMON_LOG(WDIAG, "invalid argument, ", K_(part_array), K_(part_array_size), K(ret));
     // use the fisrt range as the type to cast
   } else if (range.is_whole_range() || ctx.calc_first_partition() || ctx.calc_last_partition() || ctx.need_get_whole_range()) {
-    if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids, ls_ids))) {
+    if (OB_FAIL(get_all_part_id_for_obkv(part_ids, tablet_ids))) {
       COMMON_LOG(WDIAG, "fail to call get_all_part_id_for_obkv", K(ret));
     }
   } else {
@@ -192,8 +196,6 @@ int ObPartDescList::get_part_for_obkv(ObNewRange &range,
               COMMON_LOG(WDIAG, "fail to push part id", K(ret));
             } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[i]))) {
               COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
-            } else if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[i]))) {
-              COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
             }
           } else {}
         }
@@ -207,8 +209,6 @@ int ObPartDescList::get_part_for_obkv(ObNewRange &range,
         COMMON_LOG(WDIAG, "fail to push part id", K(ret));
       } else if (NULL != tablet_id_array_ && OB_FAIL(tablet_ids.push_back(tablet_id_array_[default_part_array_idx_]))) {
         COMMON_LOG(WDIAG, "fail to push tablet id", K(ret));
-      } else if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[default_part_array_idx_]))) {
-        COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
       }
     }
   }
@@ -226,16 +226,6 @@ int ObPartDescList::get_part_by_num(const int64_t num, ObIArray<int64_t> &part_i
     COMMON_LOG(WDIAG, "fal to push tablet id", K(ret));
   }
   return ret;
-}
-
-int ObPartDescList::get_ls_id_by_num(const int64_t num, ObIArray<int64_t> &ls_ids)
-{
-  int ret = OB_SUCCESS;
-  int64_t part_idx = num % part_array_size_;
-  if (NULL != ls_id_array_ && OB_FAIL(ls_ids.push_back(ls_id_array_[part_idx]))) {
-    COMMON_LOG(WDIAG, "fail to push ls id", K(ret));
-  }
-  return  ret;
 }
 
 int ObPartDescList::cast_row(ObNewRow &src_row,
@@ -353,8 +343,11 @@ int ObPartDescList::build_obkv_part_array(ObIArray<ObObkvSinglePart> &single_par
 
   for (int i = 0; i < part_array_size_; ++i) {
     ObObkvSinglePart single_part;
-    if (OB_NOT_NULL(ls_id_array_) && OB_NOT_NULL(tablet_id_array_)) {
-      single_part.ls_id_ = ls_id_array_[i];
+    // if (OB_NOT_NULL(ls_id_array_) && OB_NOT_NULL(tablet_id_array_)) {
+    //   single_part.ls_id_ = ls_id_array_[i];
+    //   single_part.tablet_id_ = tablet_id_array_[i];
+    // }
+    if (OB_NOT_NULL(tablet_id_array_)) {
       single_part.tablet_id_ = tablet_id_array_[i];
     }
     if (OB_NOT_NULL(part_array_)) {

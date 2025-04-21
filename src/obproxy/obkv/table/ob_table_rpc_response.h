@@ -26,11 +26,19 @@ namespace obkv
 class ObRpcTableLoginResponse : public ObRpcResponse
 {
 public:
+  /* reserved1*/
   enum ObTableLoginFlag
   {
     LOGIN_FLAG_NONE = 0,
     REDIS_PROTOCOL_V2 = 1 << 0,
     LOGIN_FLAG_MAX = 1 << 1,
+  };
+  /* server capabilities*/
+  enum ObTableServerCapacity
+  {
+    CAPACITY_NONE = 0, // default
+    DISTRIBUTED_EXECUTE = 1 << 0, // for odp and client
+    CAPACITY_MAX = 1 << 31 // future
   };
   ObRpcTableLoginResponse() : login_res_() {}
   ~ObRpcTableLoginResponse() {}
@@ -47,6 +55,7 @@ public:
   }
 
   uint32_t get_server_capabilities() {return login_res_.server_capabilities_;}
+  bool is_support_distributed_execute() {return (login_res_.server_capabilities_ & DISTRIBUTED_EXECUTE) != 0;}
   const ObString &get_server_version() {return login_res_.server_version_;}
   const ObString &get_credential() {return login_res_.credential_;}
   uint64_t get_tenant_id() {return login_res_.tenant_id_;}

@@ -216,7 +216,7 @@ int ObProxyConnNumCheckCont::schedule_check_conn_num_cont(bool imm)
     int64_t delay_us = 0;
     if (imm) {
       // must be done in work thread
-      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, CONN_NUM_CHECK_ENTRY_START_EVENT))) {
+      if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET, CONN_NUM_CHECK_ENTRY_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule_check_conn_num event", K(ret));
       }

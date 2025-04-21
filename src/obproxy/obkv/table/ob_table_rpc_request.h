@@ -194,7 +194,8 @@ private:
 class ObRpcTableQueryRequest : public ObRpcRequest
 {
 public:
-  ObRpcTableQueryRequest() :  query_request_(), partition_ids_(), index_table_name_() {
+  ObRpcTableQueryRequest() :  query_request_(),
+    partition_ids_(common::ObModIds::OB_RPC_TABLE_QUERY, 4 * sizeof(int64_t)), index_table_name_() {
     index_table_name_buf_[0] = '\0';
   }
   ~ObRpcTableQueryRequest() {}
@@ -259,7 +260,7 @@ public:
   INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(query_request));
 private:
   ObTableQueryRequest query_request_;
-  ObSEArray<int64_t, 1> partition_ids_;
+  ObSEArray<int64_t, 1> partition_ids_; //not to optimize this array
   ObString index_table_name_;
   char index_table_name_buf_[common::OB_MAX_INDEX_TABLE_NAME_LENGTH];
 };
@@ -267,7 +268,8 @@ private:
 class ObRpcTableQueryAndMutateRequest : public ObRpcRequest
 {
 public:
-  ObRpcTableQueryAndMutateRequest() : query_and_mutate_request_(), partition_ids_(), index_table_name_()
+  ObRpcTableQueryAndMutateRequest() : query_and_mutate_request_(),
+      partition_ids_(common::ObModIds::OB_RPC_TABLE_QUERY, 4 * sizeof(int64_t)), index_table_name_()
   {
     index_table_name_buf_[0] = '\0';
   }
@@ -338,7 +340,8 @@ private:
 class ObRpcTableQuerySyncRequest : public ObRpcRequest
 {
 public:
-  ObRpcTableQuerySyncRequest() :  query_request_(), partition_ids_() {}
+  ObRpcTableQuerySyncRequest() :  query_request_(),
+      partition_ids_(common::ObModIds::OB_RPC_TABLE_QUERY, 4 * sizeof(int64_t)) {}
   ~ObRpcTableQuerySyncRequest() {}
   ObRpcTableQuerySyncRequest(ObRpcTableQuerySyncRequest &request) :ObRpcRequest() {
     set_credential(request.get_credential());
@@ -489,6 +492,7 @@ public:
                                 proxy::ObRpcReq &ob_rpc_req,
                                 proxy::ObProxyPartInfo &part_info,
                                 int64_t &partition_id) override;
+  virtual int handle_tablet_ls_id(proxy::ObRpcReq &ob_rpc_req, const OB_TABLET_TO_LS_MAP &tablet_ls_map);
 
   INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(ls_request));
 private:

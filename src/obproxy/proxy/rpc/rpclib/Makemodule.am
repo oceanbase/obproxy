@@ -26,4 +26,10 @@ obproxy/proxy/rpc/rpclib/ob_rpc_req_ctx_processor.cpp\
 obproxy/proxy/rpc/rpclib/ob_rpc_time_stat.h\
 obproxy/proxy/rpc/rpclib/ob_rpc_time_stat.cpp\
 obproxy/proxy/rpc/rpclib/ob_rpc_throttle.h\
-obproxy/proxy/rpc/rpclib/ob_rpc_throttle.cpp
+obproxy/proxy/rpc/rpclib/ob_rpc_throttle.cpp\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_cache.h\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_cache.cpp\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_entry.h\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_entry.cpp\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_processor.h\
+obproxy/proxy/rpc/rpclib/ob_tablet_ls_processor.cpp

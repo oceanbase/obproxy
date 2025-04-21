@@ -87,6 +87,7 @@ namespace event
 #define CONN_NUM_CHECK_EVENT_EVENTS_START         2400
 #define INDEX_ENTRY_EVENT_EVENTS_START            2500
 #define TABLEGROUP_ENTRY_EVENT_EVENTS_START       2600
+#define TABLET_LS_ENTRY_EVENT_EVENTS_START        2700
 #define RPC_RPOXY_EVENT_EVENTS_START              11200
 #define RPC_SERVER_NET_EVENT_EVENTS_START         12500
 #define RPC_CLIENT_NET_EVENT_EVENTS_START         12600
@@ -97,7 +98,9 @@ namespace event
 #define API_EVENT_EVENTS_START                    60000
 
 typedef int32_t ObEventThreadType;
-const int32_t ET_CALL = 0;
+// Net system uses event threads
+// so, the net thread group id is the event thread group id
+const int32_t ET_NET = 0;
 const int32_t MAX_EVENT_TYPES = 8; // conservative, these are dynamically allocated
 
 class ObEThread;

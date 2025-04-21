@@ -399,9 +399,9 @@ inline int ObProto20Utils::fill_proto20_header(char *hdr_start,
   uint16_t header_checksum = 0;
   int64_t pos = 0;
 
-  if (OB_UNLIKELY(compress_len > MYSQL_PAYLOAD_MAX_LENGTH)) {
+  if (OB_UNLIKELY(compress_len > MYSQL_PACKET_MAX_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_EDIAG("invalid compress_len", K(compress_len), K(MYSQL_PAYLOAD_MAX_LENGTH), K(ret));
+    LOG_EDIAG("invalid compress_len", K(compress_len), K(MYSQL_PACKET_MAX_LENGTH), K(ret));
   } else {
     if (!ob20_head_param.is_compressed_ob20()) {
       if (OB_FAIL(ObMySQLUtil::store_int3(hdr_start, header_len, compress_len, pos))) {

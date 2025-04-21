@@ -397,7 +397,7 @@ int ObTableQueryAsyncCache::remove_table_query_async_entry(const uint64_t key)
         LOG_WDIAG("fail to run todo list", K(ret));
       } else {
         entry = remove_entry(hash, key);
-        LOG_INFO("this entry will be removed from table query async cache", KPC(entry));
+        LOG_DEBUG("this entry will be removed from table query async cache", KPC(entry));
         if (NULL != entry) {
           entry->set_deleted_state();
           entry->dec_ref();
@@ -520,7 +520,7 @@ ObTableQueryAsyncCache &get_global_table_query_async_cache()
 int init_table_query_async_map_for_thread()
 {
   int ret = OB_SUCCESS;
-  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  const int64_t event_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   for (int64_t i = 0; (i < event_thread_count) && OB_SUCC(ret); ++i) {
     if (OB_FAIL(init_table_query_async_map_for_one_thread(i))) {
       LOG_WDIAG("fail to init table_query_async_map", K(i), K(ret));
@@ -533,7 +533,7 @@ int init_table_query_async_map_for_one_thread(int64_t index)
 {
   int ret = OB_SUCCESS;
   ObEThread **ethreads = NULL;
-  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_CALL])) {
+  if (OB_ISNULL(ethreads = g_event_processor.event_thread_[ET_NET])) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(EDIAG, "fail to get ET_NET thread", K(ret));
   } else if (OB_ISNULL(ethreads[index])) {
@@ -575,7 +575,7 @@ int ObTableQueryAsyncRefHashMap::clean_hash_map()
   for (int64_t i = 0; (i < sub_map_count) && OB_SUCC(ret); ++i) {
     for (EntryIterator it = begin(i); (it != end(i)) && OB_SUCC(ret); ++it) {
       if ((*it)->is_deleted_state()) {
-        LOG_INFO("this table query async entry will erase from tc map", KPC((*it)));
+        LOG_DEBUG("this table query async entry will erase from tc map", KPC((*it)));
         if (OB_FAIL(erase(it, i))) {
           LOG_WDIAG("fail to erase table query async entry", K(i), K(ret));
         }

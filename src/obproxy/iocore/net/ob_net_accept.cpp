@@ -295,7 +295,7 @@ int ObNetAccept::do_listen(const bool non_blocking)
     }
   } else {
     if (OB_FAIL(server_.listen(non_blocking, recv_bufsize_, send_bufsize_))) {
-      PROXY_NET_LOG(EDIAG, "fail to listen", K(server_.accept_addr_), KERRMSGS, K(ret));
+      PROXY_NET_LOG(WDIAG, "fail to listen", K(server_.accept_addr_), KERRMSGS, K(ret));
     } else {
       PROXY_NET_LOG(DEBUG, "succ to listen", K(server_.accept_addr_), K(ret));
     }
@@ -578,7 +578,7 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
   target_ethread = NULL;
   bool is_new_net_thread = false;
   int64_t event_thread_count = 0;
-  int64_t net_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  int64_t net_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   int64_t stack_size = get_global_proxy_config().stack_size;
 
   if (OB_FAIL(g_event_processor.spawn_net_threads(1, "ET_NET", stack_size))) {
@@ -586,8 +586,8 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
   } else {
     is_new_net_thread = true;
     event_thread_count = g_event_processor.event_thread_count_;
-    net_thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
-    target_ethread = g_event_processor.event_thread_[ET_CALL][net_thread_count - 1];
+    net_thread_count = g_event_processor.thread_count_for_type_[ET_NET];
+    target_ethread = g_event_processor.event_thread_[ET_NET][net_thread_count - 1];
     if (OB_FAIL(initialize_thread_for_net(target_ethread))) {
       PROXY_NET_LOG(EDIAG, "fail to initialize thread for net", K(ret));
     } else if (OB_FAIL(init_cs_map_for_one_thread(net_thread_count - 1))) {
@@ -615,7 +615,7 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
     } else if (OB_FAIL(g_ob_prometheus_processor.start_one_prometheus(net_thread_count - 1))) {
       PROXY_NET_LOG(EDIAG, "fail to start one prometheus", K(net_thread_count), K(ret));
     } else {
-      PROXY_NET_LOG(INFO, "new thread", K(ET_CALL), K(net_thread_count), KPC(target_ethread));
+      PROXY_NET_LOG(INFO, "new thread", K(ET_NET), K(net_thread_count), KPC(target_ethread));
     }
   }
 
@@ -623,8 +623,8 @@ int ObNetAccept::create_one_net_ethread(ObEThread*& target_ethread)
     delete target_ethread;
     target_ethread = NULL;
     g_event_processor.all_event_threads_[event_thread_count - 1] = NULL;
-    g_event_processor.event_thread_[ET_CALL][net_thread_count -1] = NULL;
-    g_event_processor.thread_count_for_type_[ET_CALL] -= 1;
+    g_event_processor.event_thread_[ET_NET][net_thread_count -1] = NULL;
+    g_event_processor.thread_count_for_type_[ET_NET] -= 1;
     g_event_processor.event_thread_count_ -= 1;
   }
   return ret;
@@ -918,7 +918,7 @@ ObNetAccept::ObNetAccept()
       sockopt_flags_(0),
       packet_mark_(0),
       packet_tos_(0),
-      etype_(ET_CALL),
+      etype_(ET_NET),
       is_inited_(false),
       period_(0),
       ep_(NULL)

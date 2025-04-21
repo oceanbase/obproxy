@@ -32,10 +32,12 @@ ObProxyPartOption::ObProxyPartOption() : part_func_type_(PARTITION_FUNC_TYPE_MAX
 
 ObProxyPartInfo::ObProxyPartInfo() : is_oracle_mode_(false)
                                    , has_generated_key_(false)
+                                   , has_part_func_key_(false)
                                    , has_unknown_part_key_(false)
                                    , is_template_table_(true)
                                    , is_primary_key_as_part_expr_(false)
                                    , part_level_(PARTITION_LEVEL_ZERO)
+                                   , part_func_key_level_(PARTITION_LEVEL_ZERO)
                                    , table_cs_type_(CS_TYPE_INVALID)
                                    , part_expr_()
                                    , sub_part_expr_()
@@ -47,6 +49,7 @@ ObProxyPartInfo::ObProxyPartInfo() : is_oracle_mode_(false)
                                    , part_key_info_()
                                    , part_mgr_(allocator_)
                                    , cluster_version_()
+                                   , schema_version_(0)
 {
 }
 
@@ -70,6 +73,7 @@ int64_t ObProxyPartInfo::to_string(char *buf, const int64_t buf_len) const
   J_KV(KP(this),
        K_(is_oracle_mode),
        K_(has_generated_key),
+       K_(has_part_func_key),
        K_(has_unknown_part_key),
        K_(is_template_table),
        K_(is_primary_key_as_part_expr),
@@ -77,6 +81,7 @@ int64_t ObProxyPartInfo::to_string(char *buf, const int64_t buf_len) const
        K_(table_cs_type),
        K_(first_part_option),
        K_(sub_part_option),
+       K_(schema_version),
        "part_key_info", ObProxyPartKeyInfoPrintWrapper(part_key_info_),
        K_(part_mgr),
        K_(part_columns),

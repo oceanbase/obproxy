@@ -82,29 +82,27 @@ void ObNetProcessor::ObAcceptOptions::reset()
   packet_tos_ = 0;
 }
 
-ObAction *ObNetProcessor::accept(ObContinuation &cont, const ObAcceptOptions &opt)
+int ObNetProcessor::accept(ObContinuation &cont, ObAction*& action, const ObAcceptOptions &opt)
 {
   PROXY_NET_LOG(DEBUG, "ObNetProcessor::accept",
                 "port", opt.local_port_,
                 "recv_bufsize", opt.recv_bufsize_,
                 "send_bufsize", opt.send_bufsize_,
                 "sockopt", opt.sockopt_flags_);
-  return static_cast<ObUnixNetProcessor *>(this)->accept_internal(cont, NO_FD, opt);
+  return static_cast<ObUnixNetProcessor *>(this)->accept_internal(cont, NO_FD, opt, action);
 }
 
-ObAction *ObNetProcessor::main_accept(ObContinuation &cont, int fd, const ObAcceptOptions &opt)
+int ObNetProcessor::main_accept(ObContinuation &cont, int fd, ObAction*& action, const ObAcceptOptions &opt)
 {
-  PROXY_NET_LOG(DEBUG, "ObNetProcessor::accept",
-                "port", opt.local_port_,
-                "recv_bufsize", opt.recv_bufsize_,
-                "send_bufsize", opt.send_bufsize_,
-                "sockopt", opt.sockopt_flags_);
+  PROXY_NET_LOG(DEBUG, "ObNetProcessor::accept", K(fd), "port", opt.local_port_,
+                "recv_bufsize", opt.recv_bufsize_, "send_bufsize", opt.send_bufsize_, "sockopt", opt.sockopt_flags_);
 
-  return static_cast<ObUnixNetProcessor *>(this)->accept_internal(cont, fd, opt);
+  return static_cast<ObUnixNetProcessor *>(this)->accept_internal(cont, fd, opt, action);
 }
 
-inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int fd,
-                                                     const ObAcceptOptions &opt)
+inline int ObUnixNetProcessor::accept_internal(ObContinuation &cont, int fd,
+                                               const ObAcceptOptions &opt,
+                                               ObAction*& action_ret)
 {
   int ret = OB_SUCCESS;
   ObEventThreadType upgraded_etype = opt.etype_; // set etype requires non-const ref.
@@ -112,7 +110,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
   ObIpEndpoint accept_ip; // local binding address.
   char thr_name[MAX_THREAD_NAME_LENGTH];
   ObNetAccept *na = NULL;
-  ObAction *action_ret = NULL;
+  action_ret = NULL;
 
   if (OB_ISNULL(na = create_net_accept())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -161,7 +159,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
     if (opt.frequent_accept_) {
       if (accept_threads_ > 0) {
         if (OB_FAIL(na->do_listen(BLOCKING))) {
-          PROXY_NET_LOG(EDIAG, "fail to do_listen BLOCKING", K(ret));
+          PROXY_NET_LOG(WDIAG, "fail to do_listen BLOCKING", K(ret));
         } else {
           for (int64_t i = 1; (i < accept_threads_) && OB_SUCC(ret); ++i) {
             if (OB_ISNULL(net_accept = new (std::nothrow) ObNetAccept())){
@@ -260,7 +258,7 @@ inline ObAction *ObUnixNetProcessor::accept_internal(ObContinuation &cont, int f
   } else if (NULL != na) {
     action_ret = na->action_;
   }
-  return action_ret;
+  return ret;
 }
 
 inline int ObUnixNetProcessor::connect_internal(
@@ -306,7 +304,7 @@ inline int ObUnixNetProcessor::connect_internal(
           PROXY_NET_LOG(WDIAG, "fail to schedule switch thread", "ethread", *(opt->ethread_), K(ret));
         }
       } else if (OB_UNLIKELY(!ethread->is_event_thread_type(opt->etype_))) {
-        //we need use ET_CALL thread for connect_up.
+        //we need use ET_NET thread for connect_up.
         //we will never arrive here now, here it's just for defense
         PROXY_NET_LOG(DEBUG, "connect to different thread", K(ethread->event_types_), K(opt->etype_));
         if (OB_ISNULL(g_event_processor.schedule_imm(vc, opt->etype_))) {

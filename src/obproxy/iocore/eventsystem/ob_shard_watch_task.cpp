@@ -23,11 +23,11 @@ namespace obproxy
 {
 namespace event
 {
-ObEventThreadType ET_SHARD_WATCH = ET_CALL;
+ObEventThreadType ET_SHARD_WATCH = ET_NET;
 ObShardWatchProcessor g_shard_watch_task_processor;
 
 // Note that if the number of task_threads is 0, all continuations scheduled for
-// ET_GRPC ends up running on ET_CALL (which is the net-threads).
+// ET_GRPC ends up running on ET_NET (which is the net-threads).
 int ObShardWatchProcessor::start(const int64_t shard_watch_threads, const int64_t stacksize)
 {
   int ret = OB_SUCCESS;

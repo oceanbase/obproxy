@@ -82,7 +82,7 @@ int ObEventProcessor::spawn_event_threads(
     LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else {
     new_thread_group_id = (ObEventThreadType)thread_group_count_;
-    net_thread_count = thread_count_for_type_[ET_CALL];
+    net_thread_count = thread_count_for_type_[ET_NET];
 
     ObEThread *t = NULL;
     for (int64_t i = 0; i < thread_count && OB_SUCC(ret); ++i) {
@@ -140,7 +140,7 @@ int ObEventProcessor::spawn_net_threads(const int64_t thread_count,
     LOG_WDIAG("invalid parameters", K(stacksize), K(ret));
   } else {
     ObEThread *t = NULL;
-    int64_t net_thread_count = thread_count_for_type_[ET_CALL];
+    int64_t net_thread_count = thread_count_for_type_[ET_NET];
     for (int64_t i = 0; i < thread_count && OB_SUCC(ret); ++i) {
       if (OB_ISNULL(t = new(std::nothrow) ObEThread(REGULAR, net_thread_count + i))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -149,30 +149,30 @@ int ObEventProcessor::spawn_net_threads(const int64_t thread_count,
         LOG_WDIAG("fail to init thread", K(i), K(ret));
       } else {
         all_event_threads_[event_thread_count_ + i] = t;
-        event_thread_[ET_CALL][net_thread_count + i] = t;
-        t->set_event_thread_type(ET_CALL);
+        event_thread_[ET_NET][net_thread_count + i] = t;
+        t->set_event_thread_type(ET_NET);
       }
     }
 
     if (OB_SUCC(ret)) {
       int32_t length = 0;
       for (int64_t i = 0; i < thread_count && OB_SUCC(ret); ++i) {
-        length = snprintf(thr_name, sizeof(thr_name), "[%s %ld]", et_name, thread_count_for_type_[ET_CALL] + i);
+        length = snprintf(thr_name, sizeof(thr_name), "[%s %ld]", et_name, thread_count_for_type_[ET_NET] + i);
         if (OB_UNLIKELY(length <= 0) || OB_UNLIKELY(length >= static_cast<int32_t>(sizeof(thr_name)))) {
           ret = OB_SIZE_OVERFLOW;
           LOG_WDIAG("fail to format thread name", K(length), K(ret));
-        } else if (OB_FAIL(event_thread_[ET_CALL][net_thread_count + i]->start(thr_name, stacksize))) {
-          LOG_WDIAG("fail to start event thread", K(ET_CALL), K(i), K(thread_count), K(ret));
+        } else if (OB_FAIL(event_thread_[ET_NET][net_thread_count + i]->start(thr_name, stacksize))) {
+          LOG_WDIAG("fail to start event thread", K(ET_NET), K(i), K(thread_count), K(ret));
         } else {/*do nothing*/}
       }
-      thread_count_for_type_[ET_CALL] += thread_count;
+      thread_count_for_type_[ET_NET] += thread_count;
       event_thread_count_ += thread_count;
     }
   }
 
   if (OB_SUCC(ret)) {
     LOG_DEBUG("succ to create tenant thread group", K(thr_name), K(thread_count),
-      K(event_thread_count_), K(thread_count_for_type_[ET_CALL]));
+      K(event_thread_count_), K(thread_count_for_type_[ET_NET]));
   }
   return ret;
 }
@@ -199,8 +199,8 @@ inline int ObEventProcessor::init_one_event_thread(const int64_t index)
     }
     if (OB_SUCC(ret)) {
       all_event_threads_[index] = t;
-      event_thread_[ET_CALL][index] = t;
-      t->set_event_thread_type(ET_CALL);
+      event_thread_[ET_NET][index] = t;
+      t->set_event_thread_type(ET_NET);
     }
   }
   return ret;
@@ -296,7 +296,7 @@ int ObEventProcessor::start(const int64_t net_thread_count, const int64_t stacks
     }
 
     if (OB_SUCC(ret)) {
-      thread_count_for_type_[ET_CALL] = cpu_num;
+      thread_count_for_type_[ET_NET] = cpu_num;
 
       int64_t core_id = -1;
       int64_t cpu_id = -1;

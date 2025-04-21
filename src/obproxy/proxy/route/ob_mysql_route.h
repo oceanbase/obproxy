@@ -103,7 +103,7 @@ class ObRouteParam
 public:
   ObRouteParam()
     : cont_(NULL), name_(), force_renew_(false), use_lower_case_name_(false),
-      is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false),
+      is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false), is_single_partition_table_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
       cluster_version_(0), ob_rpc_req_(NULL), src_type_(OB_PROXY_ROUTE_FOR_SQL), route_diagnosis_(NULL),
@@ -127,6 +127,7 @@ public:
   bool is_partition_table_route_supported_;
   bool need_pl_route_;// whether try pl route
   bool is_oracle_mode_;
+  bool is_single_partition_table_;
   bool is_need_force_flush_;
   ObMysqlRouteResult result_;
   ObMysqlProxy *mysql_proxy_;
@@ -171,6 +172,7 @@ inline void ObRouteParam::reset()
   force_renew_ = false;
   use_lower_case_name_ = false;
   is_oracle_mode_ = false;
+  is_single_partition_table_ = false;
   is_need_force_flush_ = false;
   mysql_proxy_ = NULL;
   client_request_ = NULL;

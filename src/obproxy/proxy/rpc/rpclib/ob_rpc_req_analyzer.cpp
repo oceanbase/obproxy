@@ -187,11 +187,16 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_request(ObProxyRpcReqAnalyzeCtx &ctx, ObR
       status = RPC_ANALYZE_NEW_ERROR;
       LOG_WDIAG("failed to serialize credential", K(ret), K(pos));
     } else {
-      if (obrpc::OB_TABLE_API_LS_EXECUTE == obkv_info.pcode_) {
+      if (obrpc::OB_TABLE_API_DIRECT_LOAD == obkv_info.pcode_) {
         ObRpcTableDirectLoadRequest *direct_load_request = dynamic_cast<ObRpcTableDirectLoadRequest *>(rpc_request);
+        obkv_info.set_direct_load_req(true);
         if (OB_NOT_NULL(direct_load_request)) {
           obkv_info.set_first_direct_load_request(direct_load_request->is_begin_request());
         }
+
+        LOG_DEBUG("to handle a direct load request", K(ret),
+                  "is_direct_load", obkv_info.is_direct_load_req(),
+                  "is_first_direct_load", obkv_info.is_first_direct_load_request(), K(rpc_trace_id));
       } else if (obrpc::OB_GET_PARTITIONS == obkv_info.pcode_) {
         obkv_info.is_internal_rpc_request_ = true;
       }
@@ -336,6 +341,14 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
         LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST "
                   "with set partition id, return OB_ERR_KV_ROUTE_ENTRY_EXPIRE", "error_code",
                 obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+      } else if (OB_SCHEMA_ERROR == obkv_info.rpc_origin_error_code_ && obkv_info.is_non_partition_table()) {
+        LOG_INFO("ObRpcRequestSM::handle_server_failed process non partition table meet OB_SCHEMA_ERROR, maybe it is single partition table",
+                 "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+        obkv_info.set_need_retry(true);
+        obkv_info.set_route_entry_dirty();
+        // obkv_info.set_non_partition_table(false);
+        obkv_info.is_single_partition_table_ = true;
+        ctx.dirty_table_entry_ = true;
       } else {
         LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST", "error_code",
                 obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
@@ -344,6 +357,7 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
       }
 
       ctx.dirty_table_entry_ = true;
+      ctx.dirty_partition_entry_ = true; //should set parition_entry to DIRTY as SAME(to set it invalid)
     } else if (obkv_info.is_bad_routing()) {
       obkv_info.set_need_retry(true);
       obkv_info.set_route_entry_dirty();
@@ -352,6 +366,10 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
                 "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
       // if received not master error, it means the partition locations of
       // the certain table entry has expired, so we need delay to update it;
+      if (OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST == obkv_info.rpc_origin_error_code_
+         || OB_TENANT_NOT_IN_SERVER == obkv_info.rpc_origin_error_code_) {
+        ctx.dirty_table_entry_ = true;
+      }
       ctx.dirty_partition_entry_ = true;
     } else {
       switch (obkv_info.rpc_origin_error_code_)
@@ -371,7 +389,6 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
       // To avoid frequent changes in the tenant ID, return 5150(OB_TENANT_NOT_IN_SERVER) directly and client client recalculate tenant id.
       // case OB_TENANT_NOT_IN_SERVER:
       case OB_TRANS_RPC_TIMEOUT:
-      case OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST:
         obkv_info.set_need_retry(true);
         obkv_info.set_route_entry_dirty();
         LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.rpc_origin_error_code_,
@@ -381,8 +398,20 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
         // the certain table entry has expired, so we need delay to update it;
         ctx.dirty_partition_entry_ = true;
         break;
+      case OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST:
+        //need update table entry to rebuild
+        obkv_info.set_need_retry(true);
+        obkv_info.set_route_entry_dirty();
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.rpc_origin_error_code_,
+                  "is_inner_request", obkv_info.is_inner_request_,
+                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+        // if received not master error, it means the partition locations of
+        // the certain table entry has expired, so we need delay to update it;
+        ctx.dirty_table_entry_ = true;
+        break;
       case OB_TENANT_NOT_IN_SERVER: // -5150
         ctx.dirty_table_entry_ = true;
+        ctx.dirty_partition_entry_ = true;
         LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code, just dirty table entry not retry",
                   "error_code", obkv_info.rpc_origin_error_code_,
                   "is_inner_request", obkv_info.is_inner_request_,
@@ -408,9 +437,13 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
   ObRpcTableQuerySyncResponse *query_response = NULL;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcTableQuerySyncRequest *sync_query_request = NULL;
 
   if (OB_ISNULL(query_response = dynamic_cast<ObRpcTableQuerySyncResponse *>(ob_rpc_req.get_rpc_response()))) {
     LOG_DEBUG("direct return response to client, no need to handle response", K(rpc_trace_id));
+  } else if (OB_ISNULL(sync_query_request = dynamic_cast<ObRpcTableQuerySyncRequest *>(ob_rpc_req.get_rpc_request()))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid rpc request to handle for query async response", K(rpc_trace_id));
   } else {
     LOG_DEBUG("handle_obkv_table_query_async_response for OB_TABLE_API_EXECUTE_QUERY_SYNC", K(rpc_trace_id));
 
@@ -421,6 +454,7 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
       LOG_DEBUG("process ObRpcTableQuerySyncResponse get query_async_entry is NULL", K(ret), K(obkv_info), KPC(query_async_entry), K(rpc_trace_id));
     } else {
       LOG_DEBUG("begin to process ObRpcTableQuerySyncResponse", KPC(query_async_entry), K(rpc_trace_id));
+      // ObTableQuerySyncRequest &sync_query = const_cast<ObTableQuerySyncRequest &>(sync_query_request->get_query_request());
 
       if (OB_SUCC(ret)) {
         /**
@@ -430,20 +464,40 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
          * 2. If there is no data
          *  2.1 If it is the last partition, set client_session_id and return, NOTICE：clean query_async_entry
          *  2.2 If it is not the last partition, you need to try again with the next partition.
+         * 3. If the query is QUERY_END, need to clean query_async_entry
+         *  3.1 If the type is QUERY_END, need directly clean query_async_entry no matter which partition is in
          */
         bool is_data = 0 != query_response->get_query_result().get_row_count();
         bool is_end = query_response->get_query_result().is_end_;
         bool need_clean_query_info = false;
+        const ObTableQuerySyncRequest &sync_query = sync_query_request->get_query_request();
+        int64_t scan_lease_timeout = query_response->get_rpc_timeout();
+        bool is_new_query_start = (sync_query.query_type_ == ObQueryOperationType::QUERY_START);
+        int64_t next_timeout = 0;
+
 
         // reset is_first
         query_async_entry->set_first_query(false);
 
-        if (query_async_entry->is_single_query_request()) {
-          // single
+        // update query_async_entry's lease time and renew time to delete
+        if (is_new_query_start && scan_lease_timeout != 0) {
+          query_async_entry->set_scan_lease_timeout(scan_lease_timeout);
+        }
+        next_timeout = query_async_entry->get_scan_lease_timeout() != 0 ?
+              query_async_entry->get_scan_lease_timeout() :
+              ob_rpc_req.get_rpc_request()->get_rpc_timeout(); //compatible with previous version
+
+        query_async_entry->update_timeout_ts(next_timeout);
+
+        if (ObQueryOperationType::QUERY_END == sync_query.query_type_) {
+          need_clean_query_info = true; // client to end fetch any more and to cleanup
+        } else if (query_async_entry->is_single_query_request() || obkv_info.is_server_support_distributed_execute_) {
+          // single or distributed
           if (is_end) {
             need_clean_query_info = true;   // clean query_async_entry
           } else {
-            LOG_DEBUG("single async query result", "current server session id", query_async_entry->get_server_query_session_id(),
+            LOG_DEBUG("single async query result or shard request but server support distributed",
+                        "current server session id", query_async_entry->get_server_query_session_id(),
                         "response server session id", query_response->get_query_result().query_session_id_, K(rpc_trace_id));
             query_async_entry->set_server_query_session_id(query_response->get_query_result().query_session_id_);
           }
@@ -466,7 +520,7 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
                         "response server session id", query_response->get_query_result().query_session_id_, K(rpc_trace_id));
               query_async_entry->set_server_query_session_id(query_response->get_query_result().query_session_id_);
             }
-          } else {
+          } else if (ObQueryOperationType::QUERY_RENEW != sync_query.query_type_) { //RENEW do nothing
             if (!is_end) {
               // This situation does not exist. The default is is_end to prevent the server from returning an exception and causing an obproxy exception.
               LOG_WDIAG("Async query get no data but response flag is not end", K(is_end), K(is_data), K(query_response), K(rpc_trace_id));
@@ -485,6 +539,7 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
           }
         }
 
+        //rewirte client query_session_id
         query_response->get_query_result().query_session_id_ = query_async_entry->get_client_query_session_id();
         ctx.need_rewrite_ = true;
 
@@ -519,6 +574,7 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
   } else {
     // decode and store credential
     int64_t pos = 0;
+    int64_t cluster_version = ob_rpc_req.get_cluster_version();
 
     const ObString &credential = login_response->get_credential();
     if (OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
@@ -526,6 +582,11 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
     } else {
       // set credential
       rpc_ctx->set_credential(obkv_info.credential_);
+      // set server capacities
+      // if observer version < 4.3.5.2(bp2), server_capacities is not inited as 0, will cause undefined behavior
+      if (!IS_CLUSTER_VERSION_BEFORE_4_3_5_2(cluster_version)) {
+        rpc_ctx->set_support_distributed_execute(login_response->is_support_distributed_execute());
+      }
       // add in global cache
       rpc_ctx->inc_ref();   //inc before add to cache
       if (OB_FAIL(get_global_rpc_req_ctx_cache().add_rpc_req_ctx_if_not_exist(*rpc_ctx, false))) {
@@ -538,7 +599,11 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
           ObRpcRedisInfo *redis_info = ob_rpc_req.get_redis_info();
           if (OB_NOT_NULL(redis_info)) {
             redis_info->set_rpc_credential(credential);
-            redis_info->set_redis_new_protocol(login_response->is_redis_new_protocol());
+            if (get_global_proxy_config().rpc_force_use_original_redis_protocol) {
+              redis_info->set_redis_new_protocol(false);
+            } else {
+              redis_info->set_redis_new_protocol(login_response->is_redis_new_protocol());
+            }
           }
         }
       }
@@ -684,6 +749,7 @@ int ObProxyRpcReqAnalyzer::handle_obkv_login_rewrite(ObRpcReq &ob_rpc_req)
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   ObRpcReqCtx *rpc_ctx = NULL;
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  int64_t cluster_version = ob_rpc_req.get_cluster_version();
 
   if (obkv_info.is_auth()
     && OB_NOT_NULL(orig_auth_req = dynamic_cast<obkv::ObRpcTableLoginRequest *>(ob_rpc_req.get_rpc_request()))
@@ -691,6 +757,11 @@ int ObProxyRpcReqAnalyzer::handle_obkv_login_rewrite(ObRpcReq &ob_rpc_req)
 
     orig_auth_req->set_tenant_name(rpc_ctx->get_tenant_name());
     orig_auth_req->set_user_name(rpc_ctx->get_user_name());
+    if (orig_auth_req->get_client_type() == 3 && IS_CLUSTER_VERSION_BEFORE_4_3_5_2(cluster_version)) {
+      // client_type == 3(hbase client) is used in server distributation capacity
+      // to compatible with old server, need set it to 2
+      orig_auth_req->set_client_type(2);
+    }
     int64_t request_len = orig_auth_req->get_encode_size();
     int64_t pos = 0;
     int64_t buf_len = 0;
@@ -920,10 +991,14 @@ int ObProxyRpcReqAnalyzer::reset_obkv_request_before_send(ObRpcReq &ob_rpc_req)
         LOG_DEBUG("reset_obkv_request_before_send for query_async", KPC(query_async_entry));
         ObTableQuerySyncRequest &sync_query = const_cast<ObTableQuerySyncRequest &>(sync_query_request->get_query_request());
         sync_query.query_session_id_ = query_async_entry->get_server_query_session_id();
-        if (query_async_entry->is_first_query()) {
-          sync_query.query_type_ = ObQueryOperationType::QUERY_START;
-        } else {
-          sync_query.query_type_ = ObQueryOperationType::QUERY_NEXT;
+        //QUERY_END and QUERY_RENEW not to change it
+        if (ObQueryOperationType::QUERY_START == sync_query.query_type_
+              || ObQueryOperationType::QUERY_NEXT == sync_query.query_type_) {
+          if (query_async_entry->is_first_query()) {
+            sync_query.query_type_ = ObQueryOperationType::QUERY_START;
+          } else {
+            sync_query.query_type_ = ObQueryOperationType::QUERY_NEXT;
+          }
         }
       }
     } else {
@@ -1082,6 +1157,13 @@ int ObProxyRpcReqAnalyzer::build_empty_query_response(ObRpcReq &ob_rpc_req)
         memcpy(&meta.ez_header_, &(request->get_packet_meta().ez_header_), sizeof(meta.ez_header_));
         memcpy(&meta.rpc_header_, &(request->get_packet_meta().rpc_header_), sizeof(meta.rpc_header_));
         meta.rpc_header_.flags_ &= (uint16_t)~(ObRpcPacketHeader::REQUIRE_REROUTING_FLAG);  // clear reroute flag
+      }
+
+      if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == obkv_info.pcode_) {
+        //query_sync end of resultset to avoid fetch in next
+        ObRpcTableQuerySyncResponse *query_response =
+                dynamic_cast<ObRpcTableQuerySyncResponse *>(response);
+        query_response->get_query_result().is_end_ = true;
       }
 
       meta.rpc_header_.flags_ |= obrpc::ObRpcPacketHeader::RESP_FLAG;

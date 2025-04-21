@@ -20,7 +20,9 @@
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "rpc/obrpc/ob_rpc_result_code.h"
 #include "proxy/rpc/redis/ob_rpc_redis_info.h"
+#include "proxy/rpc/rpclib/ob_tablet_ls_entry.h"
 #include "common/ob_common_types.h"
+#include "obkv/table/ob_proxy_rpc_serialize_utils.h"
 
 namespace oceanbase
 {
@@ -37,6 +39,8 @@ class ObIOBufferReader;
 }
 namespace obkv
 {
+class ObTableSingleOp;
+class ObTableOperation;
 enum class ObTableEntityType;
 
 using namespace oceanbase::obrpc;
@@ -44,6 +48,7 @@ using namespace oceanbase::obproxy::proxy;
 
 static const int64_t SUB_REQ_COUNT = 2;
 static const int64_t ROWKEY_COLUMNS_COUNT = 2;
+static const int64_t DEFAULT_TABLET_OP_COUNT = 1;
 
 typedef common::ObIArray<common::ObObj> ROWKEY_VALUE_PARAM;
 typedef common::ObIArray<common::ObString> ROWKEY_COLUMN_PARAM;
@@ -56,6 +61,13 @@ typedef common::ObSEArray<ObRpcFieldBuf, SUB_REQ_COUNT> SUB_REQUEST_BUF_ARR;
 typedef common::ObSEArray<ROWKEY_VALUE, SUB_REQ_COUNT> SUB_REQUEST_ROWKEY_VAL_ARR;
 typedef common::ObSEArray<ROWKEY_COLUMN, SUB_REQ_COUNT> SUB_REQUEST_ROWKEY_COLUMNS_ARR;
 typedef common::ObSEArray<RANGE_VALUE, SUB_REQ_COUNT> SUB_REQUEST_RANGE_ARR;
+
+#define ROWKEY_VALUE_OBJ(rowkey_value) \
+    ROWKEY_VALUE rowkey_value(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj))
+#define ROWKEY_COLUMN_OBJ(rowkey_column) \
+    ROWKEY_COLUMN rowkey_column(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObString))
+#define RANGE_VALUE_OBJ(range_value) \
+    RANGE_VALUE range_value(common::ObModIds::OB_RPC_TABLE_TABLE_OPERATION, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj))
 
 
 class ObRpcSubReqBuf
@@ -265,6 +277,12 @@ public:
   virtual void set_ls_id(int64_t ls_id) {
     UNUSED(ls_id);
   }
+
+  virtual int handle_tablet_ls_id(proxy::ObRpcReq &ob_rpc_req, const OB_TABLET_TO_LS_MAP &tablet_ls_map) {
+    UNUSED(ob_rpc_req);
+    UNUSED(tablet_ls_map);
+    return 0;
+  }
   virtual common::ObString get_credential() const { return common::ObString(); };
   virtual common::ObString get_table_name() const { return common::ObString(); };
   virtual bool is_hbase_request() const { return false; }
@@ -284,6 +302,12 @@ public:
 
   int64_t get_sub_req_count() const { return sub_request_count_; }
   int get_sub_req_buf_arr(common::ObIArray<ObRpcFieldBuf> &single_ops, const ObIArray<int64_t> &indexes) const;
+
+  // template <typename T>
+  // int get_and_init_sub_req_buf_arr(common::ObIArray<ODP_IGNORE_FIELD_TYPE(T)> &single_table_ops, const ObIArray<int64_t> &indexes) const;
+  int get_and_init_sub_req_buf_arr(common::ObIArray<ODP_IGNORE_FIELD_TYPE(ObTableSingleOp)> &single_table_ops, const ObIArray<int64_t> &indexes) const;
+  int get_and_init_sub_req_buf_arr(common::ObIArray<ODP_IGNORE_FIELD_TYPE(ObTableOperation)> &single_table_ops, const ObIArray<int64_t> &indexes) const;
+
   const SUB_REQUEST_BUF_ARR *get_sub_req_buf_arr() const { return sub_request_buf_arr_; }
   SUB_REQUEST_BUF_ARR *get_sub_req_buf_arr() { return sub_request_buf_arr_; }
   const SUB_REQUEST_ROWKEY_VAL_ARR *get_sub_req_rowkey_val_arr() const { return sub_request_rowkey_val_arr_; }
@@ -298,14 +322,12 @@ public:
   int calc_partition_id_by_sub_rowkey(common::ObArenaAllocator &allocator,
                                       proxy::ObProxyPartInfo &part_info,
                                       const int64_t sub_req_index,
-                                      int64_t &partition_id,
-                                      int64_t &ls_id);
+                                      int64_t &partition_id);
 
   int calc_partition_id_by_sub_range(common::ObArenaAllocator &allocator,
                                       proxy::ObProxyPartInfo &part_info,
                                       const int64_t sub_req_index,
-                                      ObIArray<int64_t> &partition_id,
-                                      ObIArray<int64_t> &ls_id);
+                                      ObIArray<int64_t> &partition_id);
 
   void reverse_partition_ids(ObIArray<int64_t> &partition_ids_);
 
@@ -388,6 +410,7 @@ public:
   const ObRpcPacketMeta &get_packet_meta() const {return rpc_packet_meta_;}
   const ObRpcResultCode &get_result_code() const {return rpc_result_code_;}
   ObRpcResultCode &get_result_code() {return rpc_result_code_;}
+  int64_t get_rpc_timeout() const { return rpc_packet_meta_.rpc_header_.timeout_ ;}
   // this function must be called after setting the rpc_packet_meta
   virtual void reset();
   // derived classes parse different rpc packets by overriding this function
@@ -435,7 +458,8 @@ private:
 class ObRpcRedisRequest
 {
 public:
-  ObRpcRedisRequest() : redis_args_(NULL), meta_info_(NULL), partition_ids_(), rowkey_(), redis_db_(0) {}
+  ObRpcRedisRequest() : redis_args_(NULL), meta_info_(NULL), partition_ids_(),
+      rowkey_(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj)), redis_db_(0) {}
   virtual ~ObRpcRedisRequest() {};
   virtual int decode(ObSEArray<ObString, COMMON_REDIS_ARGS_COUNT> *redis_args, uint64_t redis_db) = 0;
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) const = 0;

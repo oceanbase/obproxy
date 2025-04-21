@@ -31,6 +31,7 @@ class ObMysqlProxy;
 namespace obutils
 {
 static const char *const CFG_DUMP_NAME = "./obproxy_config.bin";
+static const char *const CFG_DUMP_YAML_NAME = "./obproxy_config.yaml";
 static const char *const CFG_SERVER_INFO_DUMP_NAME = "./obproxy_config_server_info.json";
 static const char *const CFG_SERVER_SHARD_INFO_DUMP_NAME = "./obproxy_shard_config_server_info.json";
 static const char *const CFG_RSLIST_INFO_DUMP_NAME = "./obproxy_rslist_info.json";
@@ -48,7 +49,7 @@ public:
   static int execute_config_update_sql(proxy::ObMysqlProxy &sql_proxy);
 
   // dump obproxy config to file
-  static int dump2file(const ObProxyConfig &proxy_config);
+  static int dump2file(const ObProxyConfig &proxy_config, const bool is_yaml_format = false);
   static int load_config_from_sqlite(ObProxyConfig &proxy_config);
   static bool is_user_visible(const common::ObConfigItem &item);
   static bool is_memory_visible(const common::ObConfigItem &item);

@@ -57,7 +57,10 @@ struct ObRpcServerMilestones
     MEMSET(this, 0, sizeof(ObRpcServerMilestones));
   }
 
-  TO_STRING_KV(K_(server_write_begin), K_(server_write_end), K_(server_read_begin), K_(server_read_end));
+  TO_STRING_KV(K_(server_begin), K_(server_write_begin), K_(server_write_end), K_(server_read_begin), K_(server_read_end));
+
+  // server entry time
+  ObHRTime server_begin_;
 
   // server
   ObHRTime server_write_begin_;
@@ -69,7 +72,13 @@ struct ObRpcServerMilestones
 struct ObRpcMilestones
 {
   ObRpcMilestones()
-      : server_first_write_begin_(0), pl_lookup_begin_(0), pl_lookup_end_(0),
+      : server_first_write_begin_(0), analyze_request_begin_(0), analyze_request_end_(0),
+        analyze_response_begin_(0), analyze_response_end_(0),
+        ctx_lookup_begin_(0), ctx_lookup_end_(0),
+        query_async_lookup_begin_(0), query_async_lookup_end_(0),
+        index_entry_lookup_begin_(0), index_entry_lookup_end_(0),
+        table_group_lookup_begin_(0), table_group_lookup_end_(0),
+        pl_lookup_begin_(0), pl_lookup_end_(0),
         pl_process_begin_(0), pl_process_end_(0), congestion_control_begin_(0),
         congestion_control_end_(0), congestion_process_begin_(0), congestion_process_end_(0),
         cluster_resource_create_begin_(0), cluster_resource_create_end_(0)
@@ -113,6 +122,10 @@ struct ObRpcMilestones
   ObHRTime pl_lookup_begin_;
   ObHRTime pl_lookup_end_;
 
+  // TableGroup lookup
+  ObHRTime tablet_ls_lookup_begin_;
+  ObHRTime tablet_ls_lookup_end_;
+
   // pl process
   ObHRTime pl_process_begin_;
   ObHRTime pl_process_end_;
@@ -155,11 +168,13 @@ struct ObRpcReqCmdTimeStat
   ObHRTime index_entry_lookup_time_;
   ObHRTime tablegroup_entry_lookup_time_;
   ObHRTime rpc_ctx_lookup_time_;
+  ObHRTime tablet_ls_entry_lookup_time_;
 
   ObHRTime congestion_control_time_;
   ObHRTime congestion_process_time_;
 
   ObHRTime build_server_request_time_;
+  ObHRTime server_init_time_;
   ObHRTime prepare_send_request_to_server_time_;
   ObHRTime server_request_write_time_;
 

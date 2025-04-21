@@ -227,7 +227,7 @@ int ObMysqlProxyCont::sync_post_request(const ObString &sql, ObClientMysqlRespWr
     } else if (OB_ISNULL(mutex_ = mysql_client_->get_common_mutex())) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("common mutex is null", K(ret));
-    } else if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_CALL, MYSQL_PROXY_POST_REQUEST_EVENT))) {
+    } else if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET, MYSQL_PROXY_POST_REQUEST_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to schedule blocking post request", K(ret));
     }

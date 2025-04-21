@@ -33,7 +33,7 @@ class ObProxyRpcReqQueryOp : public ObProxyRpcReqOperator
 {
 public:
   ObProxyRpcReqQueryOp(proxy::ObRpcReq *input, common::ObIAllocator &allocator)
-    : ObProxyRpcReqOperator(input, allocator), query_resp_(NULL), resp_array_()
+    : ObProxyRpcReqOperator(input, allocator), query_resp_(NULL), resp_array_(common::ObModIds::OB_RPC_TABLE_QUERY_RESULT, sizeof(proxy::ObRpcReq *) * 4)
   {
     set_rpc_op_type(PHY_RPC_RANGE_SCAN);
   }

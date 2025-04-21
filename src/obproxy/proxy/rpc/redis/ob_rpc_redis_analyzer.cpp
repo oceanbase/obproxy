@@ -577,7 +577,7 @@ int ObRpcRedisAnalyzer::build_packet_meta_for_table_request(proxy::ObRpcReq &rpc
     // packet_header.tenant_id_ = 1;
     // packet_header.tenant_id_ = 1002; //TODO need update it
     packet_header.tenant_id_ = redis_info->get_tenant_id();
-    packet_header.priv_tenant_id_ = 1;
+    packet_header.priv_tenant_id_ = redis_info->get_tenant_id();
     packet_header.flags_ = ObRpcPacketHeader::RPC_HEADER_DEFAULT_FLAG;
     packet_header.session_id_ = 0;
     packet_header.timeout_ = obutils::get_global_proxy_config().rpc_redis_operation_timeout * 1000; // unit ns

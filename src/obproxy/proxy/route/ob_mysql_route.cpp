@@ -60,6 +60,7 @@ int64_t ObRouteParam::to_string(char *buf, const int64_t buf_len) const
        K_(need_pl_route),
        K_(is_oracle_mode),
        K_(is_need_force_flush),
+       K_(is_single_partition_table),
        K_(tenant_version),
        K_(timeout_us),
        K_(current_idc_name),
@@ -1176,6 +1177,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       // !!Attention client_request should not be used in scheduled cont
       param_.client_request_ = param.client_request_;         //used by sql service 
       param_.ob_rpc_req_ = param.ob_rpc_req_; //used by rpc service
+      param_.is_single_partition_table_ = param.is_single_partition_table_; // used by rpc service
       param_.client_info_ = param.client_info_;
       param_.route_ = param.route_;
       param_.src_type_ = param.src_type_;

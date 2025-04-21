@@ -101,7 +101,7 @@ int ObMetadbCreateCont::handle_create_complete(void *data)
       --retry_count_;
       LOG_INFO("fail to create metadb, will retry", "remain retry count", retry_count_, K(data));
       if (OB_ISNULL(pending_action_ = g_event_processor.schedule_in(
-              this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), ET_CALL, METADB_CREATE_START_EVENT))) {
+              this, HRTIME_MSECONDS(RETRY_INTERVAL_MS), ET_NET, METADB_CREATE_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule fetch rslist task", K(ret));
       }
@@ -153,8 +153,8 @@ int ObMetadbCreateCont::create_metadb(ObMysqlProxy *meta_proxy)
     LOG_EDIAG("fail to alloc ObMetadbCreateCont", K(ret));
   } else {
     // create cluster resource must be done in work thread
-    if (!self_ethread().is_event_thread_type(ET_CALL)) {
-      if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL, METADB_CREATE_START_EVENT))) {
+    if (!self_ethread().is_event_thread_type(ET_NET)) {
+      if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_NET, METADB_CREATE_START_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("fail to schedule create metadb cluster resource event", K(ret));
       }

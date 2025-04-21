@@ -59,6 +59,7 @@ class ObClientSessionIDList;
 class ObTableRefHashMap;
 class ObIndexRefHashMap;
 class ObTableGroupRefHashMap;
+class ObTabletLsRefHashMap;
 class ObTableQueryAsyncRefHashMap;
 class ObRpcReqCtxRefHashMap;
 class ObRpcRedisMonitorRefHashMap;
@@ -348,6 +349,7 @@ public:
   proxy::ObClientSessionIDList &get_client_session_id_list() { return *cs_id_list_; }
   proxy::ObIndexRefHashMap &get_index_map() { return *index_map_; }
   proxy::ObTableGroupRefHashMap &get_tablegroup_map() { return *tablegroup_map_; }
+  proxy::ObTabletLsRefHashMap &get_tablet_ls_map() { return *tablet_ls_map_; }
   proxy::ObTableQueryAsyncRefHashMap &get_table_query_async_map() { return *table_query_async_map_; }
   proxy::ObRpcReqCtxRefHashMap &get_rpc_req_ctx_map() { return *rpc_req_ctx_map_; }
   proxy::ObRpcRedisMonitorRefHashMap &get_rpc_redis_monitor_map() { return *rpc_redis_monitor_map_; }
@@ -412,6 +414,7 @@ public:
   proxy::ObIndexRefHashMap *index_map_;
   proxy::ObTableQueryAsyncRefHashMap *table_query_async_map_;
   proxy::ObTableGroupRefHashMap *tablegroup_map_;
+  proxy::ObTabletLsRefHashMap *tablet_ls_map_;
   proxy::ObRpcReqCtxRefHashMap *rpc_req_ctx_map_;
   proxy::ObRpcRedisMonitorRefHashMap *rpc_redis_monitor_map_;
   proxy::ObTableRefHashMap *table_map_;

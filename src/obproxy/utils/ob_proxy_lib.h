@@ -130,6 +130,7 @@ static const int64_t OB_DEFAULT_CLUSTER_ID = 0;
 
 //const size for proxy
 static const int64_t OB_PROXY_CONFIG_BUFFER_SIZE = 16 * 1024;
+static const int64_t OB_PROXY_CONFIG_YAML_BUFFER_SIZE = 128 * 1024;
 enum ObContMagic
 {
   OB_CONT_MAGIC_ALIVE = 0xAABBCCDD,

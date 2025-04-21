@@ -56,6 +56,67 @@ int ObSqlParseResult::set_real_table_name(const char *table_name, int64_t len)
   return ret;
 }
 
+int ObSqlParseResult::set_db_table_name(ObString &table_name,
+                                        const ObProxyParseQuoteType table_name_quote,
+                                        ObString &database_name,
+                                        const ObProxyParseQuoteType database_name_quote,
+                                        ObString &alias_table_name,
+                                        const ObProxyParseQuoteType alias_quote,
+                                        const bool use_lower_case_name/*false*/)
+{
+  int ret = OB_SUCCESS;
+  ObProxyParseString pstring_database_name{};
+  ObProxyParseString pstring_table_name{};
+  ObProxyParseString package_name{};
+  ObProxyParseString alias_name{};
+  ObProxyParseString dblink_name{};
+  ObProxyParseString pstring_join_table_name{};
+  ObProxyParseString pstring_join_database_name{};
+  ObProxyParseString pstring_join_table_alias_name{};
+  bool is_dblink_name = false;
+  pstring_database_name.str_ = database_name.ptr();
+  pstring_database_name.str_len_ = database_name.length();
+  pstring_database_name.quote_type_ = database_name_quote;
+  pstring_table_name.str_ = table_name.ptr();
+  pstring_table_name.str_len_ = table_name.length();
+  pstring_table_name.quote_type_ = table_name_quote;
+  alias_name.str_ = alias_table_name.ptr();
+  alias_name.str_len_ = alias_table_name.length();
+  alias_name.quote_type_ = alias_quote;
+  if (OB_FAIL(set_db_table_name(pstring_database_name, package_name,
+        pstring_table_name, alias_name, dblink_name, pstring_join_table_name,
+        pstring_join_database_name, pstring_join_table_alias_name,
+        is_dblink_name, use_lower_case_name))) {
+    LOG_WDIAG("fail to set db_table_name", K(ret));
+  }
+  return ret;
+}
+
+int ObSqlParseResult::set_string_info(const ObProxyParseString &src,
+                                      ObConfigVariableString &dest,
+                                      ObProxyParseQuoteType &quote,
+                                      const int64_t MAX_LENGTH,
+                                      const bool use_lower_case_name)
+{
+  int ret = OB_SUCCESS;
+  if (NULL != src.str_ && 0 != src.str_len_) {
+    if (OB_UNLIKELY(src.str_len_ > MAX_LENGTH)
+        || OB_UNLIKELY(src.str_len_ < 0)) {
+      ret = OB_INVALID_ARGUMENT;
+      LOG_WDIAG("invalid argument", K(MAX_LENGTH), K(ret));
+    } else if (OB_FAIL(dest.rewrite(src.str_, src.str_len_))) {
+        LOG_WDIAG("fail to rewrite dest memory", K(ret));
+    } else {
+      if (use_lower_case_name) {
+        dest.to_lower_case();
+      }
+      quote = src.quote_type_;
+    }
+  }// src != NULL
+
+  return ret;
+}
+
 int ObSqlParseResult::set_db_name(const ObProxyParseString &database_name,
                                          const bool use_lower_case_name/*false*/,
                                          const bool drop_origin_db_table_name /*false*/)
@@ -91,6 +152,9 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
                                                const ObProxyParseString &table_name,
                                                const ObProxyParseString &alias_name,
                                                const ObProxyParseString &dblink_name,
+                                               const ObProxyParseString &join_table_name,
+                                               const ObProxyParseString &join_database_name,
+                                               const ObProxyParseString &join_table_alias_name,
                                                bool &is_dblink_name,
                                                const bool use_lower_case_name/*false*/,
                                                const bool drop_origin_db_table_name /*false*/)
@@ -115,6 +179,15 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
     }
   }
 
+  // add join_table_name
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(set_string_info(join_table_name, join_table_name_,
+                  join_table_name_quote_, OB_MAX_TABLE_NAME_LENGTH,
+                  use_lower_case_name))) {
+      LOG_WDIAG("fail to set join_table_name", K_(join_table_name.str_len), K(ret));
+    }
+  }
+
   if (OB_SUCC(ret)) {
     // assign package name when table name is valid
     if (OB_UNLIKELY(NULL != package_name.str_ && 0 != package_name.str_len_)) {
@@ -136,7 +209,25 @@ inline int ObSqlParseResult::set_db_table_name(const ObProxyParseString &databas
   // assign database name when table name is valid
   if (OB_SUCC(ret)) {
     if (OB_FAIL(set_db_name(database_name, use_lower_case_name, drop_origin_db_table_name))) {
-      LOG_WDIAG("fail to set db name", K(database_name.str_len_), K(ret));
+      LOG_WDIAG("fail to set db name", K_(database_name.str_len), K(ret));
+    }
+  }
+
+  // add join_database_name
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(set_string_info(join_database_name, join_database_name_,
+                  join_database_name_quote_, OB_MAX_DATABASE_NAME_LENGTH,
+                  use_lower_case_name))) {
+      LOG_WDIAG("fail to set join db name", K_(join_database_name.str_len), K(ret));
+    }
+  }
+
+  // add join_alias_name
+  if (OB_SUCC(ret)) {
+    if (OB_FAIL(set_string_info(join_table_alias_name, join_table_alias_name_,
+                  join_alias_name_quote_, OB_MAX_TABLE_NAME_LENGTH,
+                  use_lower_case_name))) {
+      LOG_WDIAG("fail to set join alias name", K_(join_table_alias_name.str_len), K(ret));
     }
   }
 
@@ -715,6 +806,9 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
                                   parse_result.table_info_.table_name_,
                                   parse_result.table_info_.alias_name_,
                                   parse_result.table_info_.dblink_name_,
+                                  parse_result.table_info_.join_table_name_,
+                                  parse_result.table_info_.join_database_name_,
+                                  parse_result.table_info_.join_table_alias_name_,
                                   is_dblink_name_,
                                   use_lower_case_name,
                                   drop_origin_db_table_name))) {

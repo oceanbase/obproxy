@@ -88,7 +88,7 @@ class ObEThread;
  * are reentrant.
  * ObThread Groups (ObEvent types):
  * When the ObEventProcessor is started, the first group of threads is
- * spawned and it is assigned the special id ET_CALL. Depending on the
+ * spawned and it is assigned the special id ET_NET. Depending on the
  * complexity of the state machine or protocol, you may be interested
  * in creating additional threads and the ObEventProcessor gives you the
  * ability to create a single thread or an entire group of threads. In
@@ -177,20 +177,20 @@ public:
    *         of this callback.
    */
   ObEvent *schedule_imm(ObContinuation *c,
-                        const ObEventThreadType event_type = ET_CALL,
+                        const ObEventThreadType event_type = ET_NET,
                         const int callback_event = EVENT_IMMEDIATE,
                         void *cookie = NULL);
 
   ObEvent *schedule_imm_with_range(ObContinuation *c,
                                    int64_t thread_border,
-                                   const ObEventThreadType event_type = ET_CALL,
+                                   const ObEventThreadType event_type = ET_NET,
                                    const int callback_event = EVENT_IMMEDIATE,
                                    void *cookie = NULL);
 
   // provides the same functionality as schedule_imm and also signals the
   // thread immediately
   ObEvent *schedule_imm_signal(ObContinuation *cont,
-                               const ObEventThreadType event_type = ET_CALL,
+                               const ObEventThreadType event_type = ET_NET,
                                const int callback_event = EVENT_IMMEDIATE,
                                void *cookie = NULL);
   /**
@@ -217,7 +217,7 @@ public:
    */
   ObEvent *schedule_at(ObContinuation *cont,
                        const ObHRTime atimeout_at,
-                       const ObEventThreadType event_type = ET_CALL,
+                       const ObEventThreadType event_type = ET_NET,
                        const int callback_event = EVENT_INTERVAL,
                        void *cookie = NULL);
 
@@ -244,7 +244,7 @@ public:
    */
   ObEvent *schedule_in(ObContinuation *cont,
                        const ObHRTime atimeout_in,
-                       const ObEventThreadType event_type = ET_CALL,
+                       const ObEventThreadType event_type = ET_NET,
                        const int callback_event = EVENT_INTERVAL,
                        void *cookie = NULL);
 
@@ -270,12 +270,12 @@ public:
    */
   ObEvent *schedule_every(ObContinuation *cont,
                           const ObHRTime aperiod,
-                          const ObEventThreadType event_type = ET_CALL,
+                          const ObEventThreadType event_type = ET_NET,
                           const int callback_event = EVENT_INTERVAL,
                           void *cookie = NULL);
 
   ObEvent *prepare_schedule_imm(ObContinuation *cont,
-                                const ObEventThreadType event_type = ET_CALL,
+                                const ObEventThreadType event_type = ET_NET,
                                 const int callback_event = EVENT_IMMEDIATE,
                                 void *cookie = NULL);
 
@@ -285,7 +285,7 @@ public:
    * Initializes the ObEventProcessor and its associated threads. Spawns the
    * specified number of threads, initializes their state information and
    * sets them running. It creates the initial thread group, represented
-   * by the event type ET_CALL.
+   * by the event type ET_NET.
    *
    * @param net_thread_count
    * @param stacksize
@@ -476,7 +476,7 @@ inline int ObEventProcessor::check_schedule_input(ObContinuation *cont,
   if (OB_ISNULL(cont)) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_EVENT_LOG(EDIAG, "invalid parameters, ObContinuation is NULL", K(ret));
-  } else if (OB_UNLIKELY(event_type >= MAX_EVENT_TYPES) || OB_UNLIKELY(event_type < ET_CALL)) {
+  } else if (OB_UNLIKELY(event_type >= MAX_EVENT_TYPES) || OB_UNLIKELY(event_type < ET_NET)) {
     ret = common::OB_INVALID_ARGUMENT;
     PROXY_EVENT_LOG(EDIAG, "invalid parameters", K(event_type), K(ret));
   } else if (OB_UNLIKELY(0 == thread_count_for_type_[event_type])) {

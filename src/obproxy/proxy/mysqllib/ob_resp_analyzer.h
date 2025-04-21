@@ -44,7 +44,7 @@ class ObRespAnalyzer
 {
 public:
   ObRespAnalyzer()
-    : protocol_(ObProxyProtocol::PROTOCOL_OB20),
+    : protocol_(ObProxyProtocol::PROTOCOL_OCEANBASE_20),
       analyze_mode_(ObRespAnalyzeMode::SIMPLE_MODE),
       protocol_mode_(ObMysqlProtocolMode::OCEANBASE_MYSQL_PROTOCOL_MODE),
       req_cmd_(obmysql::OB_MYSQL_COM_SLEEP), last_ob_seq_(0),
@@ -198,9 +198,9 @@ private:
 bool ObRespAnalyzer::is_stream_end()
 {
   bool ret = false;
-  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OB20 == protocol_ || ObProxyProtocol::PROTOCOL_CHECKSUM == protocol_)) {
+  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_ || ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == protocol_)) {
     ret = is_compressed_stream_end_;
-  } else if (ObProxyProtocol::PROTOCOL_NORMAL == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_MYSQL == protocol_) {
     ret = is_mysql_stream_end_;
   }
   return ret;
@@ -209,11 +209,11 @@ int ObRespAnalyzer::stream_analyze_packets(ObString data, ObRespAnalyzeResult &r
 {
   int ret = OB_SUCCESS;
 
-  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OB20 == protocol_)) {
+  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_)) {
     ret = stream_analyze_compressed_oceanbase(data, resp_result);
-  } else if (ObProxyProtocol::PROTOCOL_CHECKSUM == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == protocol_) {
     ret = stream_analyze_compressed_mysql(data, resp_result);
-  } else if (ObProxyProtocol::PROTOCOL_NORMAL == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_MYSQL == protocol_) {
     ret = stream_analyze_mysql(data, resp_result);
     resp_result.set_reserved_ok_len_of_mysql(reserved_len_);
   } else {
@@ -255,11 +255,11 @@ bool ObRespAnalyzer::is_last_mysql_pkt()
 bool ObRespAnalyzer::is_last_pkt()
 {
   bool ret = false;
-  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OB20 == protocol_)) {
+  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_)) {
     ret = is_last_oceanbase_pkt();
-  } else if (ObProxyProtocol::PROTOCOL_CHECKSUM == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == protocol_) {
     ret = is_last_compressed_pkt();
-  } else if (ObProxyProtocol::PROTOCOL_NORMAL == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_MYSQL == protocol_) {
     ret = is_last_mysql_pkt();
   }
   return ret;
@@ -274,7 +274,7 @@ bool ObRespAnalyzer::need_analyze_all_packets(bool need_receive_completed, ObRes
   bool ret = false;
   if (need_receive_completed) {
     ret = true;
-  } else if (OB_LIKELY(ObProxyProtocol::PROTOCOL_NORMAL != protocol_)) {
+  } else if (OB_LIKELY(ObProxyProtocol::PROTOCOL_MYSQL != protocol_)) {
     ret = is_decompress_mode();
   } else {
     ret = !resp_result.is_resultset_resp() && OB_MYSQL_COM_BINLOG_DUMP != req_cmd_ && OB_MYSQL_COM_BINLOG_DUMP_GTID != req_cmd_;
@@ -295,7 +295,7 @@ void ObRespAnalyzer::reset()
   stream_mysql_state_ = STREAM_INVALID;
   dealloc_mysql_pkt_buf();
 
-  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  protocol_ = ObProxyProtocol::PROTOCOL_MAX;
   protocol_mode_ = ObMysqlProtocolMode::OCEANBASE_MYSQL_PROTOCOL_MODE;
   analyze_mode_ = ObRespAnalyzeMode::SIMPLE_MODE;
   req_cmd_ = OB_MYSQL_COM_SLEEP;

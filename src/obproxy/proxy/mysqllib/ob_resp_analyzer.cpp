@@ -51,10 +51,10 @@ int ObRespAnalyzer::init(
   req_cmd_ = req_cmd;
   protocol_mode_ = protocol_mode;
   analyze_mode_ = analyze_mode;
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     last_ob_seq_ = last_ob_req;
     request_id_ = request_id;
-  } else if (protocol == ObProxyProtocol::PROTOCOL_CHECKSUM) {
+  } else if (protocol == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL) {
     last_compressed_seq_ = last_compressed_seq;
     request_id_ = 0;
   }
@@ -89,7 +89,7 @@ int ObRespAnalyzer::init(
   reset();
   int ret = OB_SUCCESS;
   stream_mysql_state_ = STREAM_MYSQL_HEADER;
-  protocol_ = ObProxyProtocol::PROTOCOL_NORMAL;
+  protocol_ = ObProxyProtocol::PROTOCOL_MYSQL;
   req_cmd_ = req_cmd;
   protocol_mode_ = protocol_mode;
   params_.is_extra_ok_for_stats_ = is_extra_ok_for_stats;
@@ -826,17 +826,17 @@ int ObRespAnalyzer::analyze_one_packet_header(
 {
   int ret = OB_SUCCESS;
   // oceanbase 2.0 pkt
-  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OB20 == protocol_)) {
+  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_)) {
     if (params_.is_compressed_) {
       ret = ObRespAnalyzerUtil::analyze_one_compressed_ob20_packet(reader, result);
     } else {
       ret = ObProto20Utils::analyze_one_ob20_packet_header(reader, result, false);
     }
   // compressed mysql pkt
-  } else if (ObProxyProtocol::PROTOCOL_CHECKSUM == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == protocol_) {
     ret = ObMysqlAnalyzerUtils::analyze_one_compressed_packet(reader, result);
   // mysql pkt
-  } else if (ObProxyProtocol::PROTOCOL_NORMAL == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_MYSQL == protocol_) {
     ret = ObRespAnalyzerUtil::analyze_one_mysql_packet(reader, result, req_cmd_);
   } else {
     ret = OB_ERR_UNEXPECTED;
@@ -857,14 +857,14 @@ int ObRespAnalyzer::analyze_one_packet_header(
     LOG_WDIAG("fail to analyze one compressed packet", K(ret));
   } else if (ANALYZE_DONE == result.status_) { // one compressed packet received completely
     // compressed mysql or oceanabse 2.0
-    if (ObProxyProtocol::PROTOCOL_NORMAL != protocol_) {
+    if (ObProxyProtocol::PROTOCOL_MYSQL != protocol_) {
       if (is_last_pkt(result)) {    // only has one compressed packet
         resp_result.set_is_resultset_resp(false);
         analyze_mode_ = DECOMPRESS_MODE;
       } else {
         resp_result.set_is_resultset_resp(true);
         // only works for oceanbase 2.0 exclude prepare and prepare-execute
-        if (ObProxyProtocol::PROTOCOL_OB20 == protocol_
+        if (ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_
             && !params_.is_compressed_
             && req_cmd_ != OB_MYSQL_COM_STMT_PREPARE
             && req_cmd_ != OB_MYSQL_COM_STMT_PREPARE_EXECUTE) {
@@ -938,7 +938,7 @@ int ObRespAnalyzer::analyze_all_packets(
 {
   int ret = OB_SUCCESS;
   // compressed mysql or oceanbase 2.0 pkts
-  if (ObProxyProtocol::PROTOCOL_NORMAL != protocol_) {
+  if (ObProxyProtocol::PROTOCOL_MYSQL != protocol_) {
     ObIOBufferReader *mysql_pkt_reader = NULL;
     if (is_decompress_mode() && OB_ISNULL(mysql_pkt_reader = alloc_mysql_pkt_reader())) {
       ret = OB_ERR_UNEXPECTED;
@@ -1806,7 +1806,7 @@ void ObRespAnalyzer::handle_last_eof(const char *pkt_end, uint32_t pkt_len)
 bool ObRespAnalyzer::is_last_pkt(const ObAnalyzeHeaderResult &result)
 {
   bool ret = false;
-  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OB20 == protocol_)) {
+  if (OB_LIKELY(ObProxyProtocol::PROTOCOL_OCEANBASE_20 == protocol_)) {
     int64_t non_compressed_len = result.compressed_mysql_header_.non_compressed_len_;
     int64_t ob20_packet_len = result.ob20_header_.payload_len_ + OB20_PROTOCOL_HEADER_TAILER_LENGTH;
     // compressed oceanbase 2.0
@@ -1827,7 +1827,7 @@ bool ObRespAnalyzer::is_last_pkt(const ObAnalyzeHeaderResult &result)
     } else {
       ret = result.ob20_header_.flag_.is_last_packet();
     }
-  } else if (ObProxyProtocol::PROTOCOL_CHECKSUM == protocol_) {
+  } else if (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == protocol_) {
     ret = result.compressed_mysql_header_.seq_ == last_compressed_seq_;
   } else {
     // can not determine whether it's the last packet

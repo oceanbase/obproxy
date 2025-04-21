@@ -163,6 +163,7 @@ public:
   void set_entry_expired_direct_for_rpc();
   void set_table_entry_expire_for_rpc();
   bool is_table_entry_enough_old_cache() const;
+  void set_need_rebuild_as_single_partition_table();
 
 private:
   const ObProxyReplicaLocation *get_leader_replica() const;
@@ -850,6 +851,14 @@ inline void ObServerRoute::set_table_entry_expire_for_rpc() /** it will expire w
   if (NULL != table_entry_) {
     table_entry_->set_entry_expired_direct_for_rpc();
     PROXY_LOG(INFO, "this table entry will set to expire", KPC_(table_entry));
+  }
+}
+
+inline void ObServerRoute::set_need_rebuild_as_single_partition_table()
+{
+  if (NULL != table_entry_) {
+    table_entry_->set_need_rebuild_as_single_partition_table();
+    PROXY_LOG(INFO, "this table entry is single partition table", KPC_(table_entry));
   }
 }
 

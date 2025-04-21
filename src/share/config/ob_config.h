@@ -85,6 +85,20 @@ public:
     OB_CONFIG_MULTI_LEVEL_VIP,
     OB_CONFIG_MULTI_LEVEL_MAX
   };
+  enum ObConfigType
+  {
+    OB_CONFIG_DEFAULT_TYPE = 0,
+    OB_CONFIG_INTLIST_TYPE,
+    OB_CONFIG_STRLIST_TYPE,
+    OB_CONFIG_INTEGRAL_TYPE,
+    OB_CONFIG_DOUBLE_TYPE,
+    OB_CONFIG_CAPACITY_TYPE,
+    OB_CONFIG_TIME_TYPE,
+    OB_CONFIG_INT_TYPE,
+    OB_CONFIG_MOMENT_TYPE,
+    OB_CONFIG_BOOL_TYPE,
+    OB_CONFIG_STRING_TYPE,
+  };
   ObConfigItem();
   virtual ~ObConfigItem();
   ObConfigItem(const ObConfigItem& item);
@@ -187,6 +201,8 @@ public:
   bool is_initial_value_set() const { return is_initial_value_set_; }
   int64_t version() const { return version_; }
   ObConfigLevel config_level() const {return config_level_;}
+  ObConfigType config_type() const { return config_type_; }
+  const char* config_type_to_str() const;
 
   virtual bool operator >(const char *) const { return false; }
   virtual bool operator >=(const char *) const { return false; }
@@ -213,6 +229,7 @@ protected:
   char visible_level_str_[OB_MAX_CONFIG_VISIBLE_LEVEL_LEN];
   char range_str_[OB_RANGE_STR_BUFSIZ];
   ObConfigLevel config_level_;
+  ObConfigType config_type_;
 };
 
 // ObVariableLenConfigItem作用：
@@ -254,7 +271,7 @@ class ObConfigIntListItem
   : public ObConfigItem
 {
 public:
-  ObConfigIntListItem() : value_(), initial_value_() {}
+  ObConfigIntListItem() : value_(), initial_value_() { config_type_ = OB_CONFIG_INTLIST_TYPE; }
   ObConfigIntListItem(ObConfigContainer *container,
                       const char *name,
                       const char *def,
@@ -397,7 +414,7 @@ class ObConfigIntegralItem
   : public ObConfigItem
 {
 public:
-  ObConfigIntegralItem() : value_(0), initial_value_(0) {}
+  ObConfigIntegralItem() : value_(0), initial_value_(0) { config_type_ = OB_CONFIG_INTEGRAL_TYPE; }
   virtual ~ObConfigIntegralItem() {}
   virtual void free() override;
 
@@ -444,7 +461,7 @@ class ObConfigDoubleItem
   : public ObConfigItem
 {
 public:
-  ObConfigDoubleItem() : value_(0.0), initial_value_(0.0) {}
+  ObConfigDoubleItem() : value_(0.0), initial_value_(0.0) { config_type_ = OB_CONFIG_DOUBLE_TYPE; }
   ObConfigDoubleItem(ObConfigContainer *container,
                      const char *name,
                      const char *def,
@@ -513,7 +530,7 @@ class ObConfigCapacityItem
   : public ObConfigIntegralItem
 {
 public:
-  ObConfigCapacityItem() {}
+  ObConfigCapacityItem() { config_type_ = OB_CONFIG_CAPACITY_TYPE; }
   ObConfigCapacityItem(ObConfigContainer *container,
                        const char *name,
                        const char *def,
@@ -550,7 +567,7 @@ class ObConfigTimeItem
   : public ObConfigIntegralItem
 {
 public:
-  ObConfigTimeItem() {}
+  ObConfigTimeItem() { config_type_ = OB_CONFIG_TIME_TYPE; }
   ObConfigTimeItem(ObConfigContainer *container,
                    const char *name,
                    const char *def,
@@ -593,7 +610,7 @@ class ObConfigIntItem
   : public ObConfigIntegralItem
 {
 public:
-  ObConfigIntItem() {}
+  ObConfigIntItem() { config_type_ = OB_CONFIG_INT_TYPE; }
   ObConfigIntItem(ObConfigContainer *container,
                   const char *name,
                   const char *def,
@@ -629,7 +646,7 @@ class ObConfigMomentItem
   : public ObConfigItem
 {
 public:
-  ObConfigMomentItem() : value_(), initial_value_() {}
+  ObConfigMomentItem() : value_(), initial_value_() { config_type_ = OB_CONFIG_MOMENT_TYPE; }
   ObConfigMomentItem(ObConfigContainer *container,
                      const char *name,
                      const char *def,
@@ -670,7 +687,7 @@ class ObConfigBoolItem
   : public ObConfigItem
 {
 public:
-  ObConfigBoolItem() : value_(false), initial_value_(false) {}
+  ObConfigBoolItem() : value_(false), initial_value_(false) { config_type_ = OB_CONFIG_BOOL_TYPE; }
   ObConfigBoolItem(ObConfigContainer *container,
                    const char *name,
                    const char *def,
@@ -704,6 +721,7 @@ public:
   ObConfigStringItem()
   {
     MEMSET(initial_value_str_, 0, sizeof(initial_value_str_));
+    config_type_ = OB_CONFIG_STRING_TYPE;
   }
   ObConfigStringItem(ObConfigContainer *container,
                      const char *name,

@@ -35,7 +35,8 @@ int ObFuncExprResolver::resolve(const ObProxyParamNode *node, ObProxyExpr *&expr
   return ret;
 }
 
-int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *node, ObProxyExpr *&expr)
+int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *node,
+                                                     ObProxyExpr *&expr)
 {
   int ret = OB_SUCCESS;
 
@@ -118,7 +119,8 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
         } else {
           ObProxyParamNodeList *child = func_expr_node->child_;
           ObProxyParamNode* tmp_param_node = child->head_;
-
+          LOG_DEBUG("recursive_resolve part key func",
+                    "func_type", get_expr_type_name(func_expr->get_expr_type()));
           for (int64_t i = 0; OB_SUCC(ret) && i < child->child_num_; i++) {
             ObProxyExpr *proxy_expr = NULL;
             if (OB_FAIL(recursive_resolve_proxy_expr(tmp_param_node, proxy_expr))) {
@@ -171,82 +173,8 @@ int ObFuncExprResolver::create_func_expr_by_type(const ObFuncExprNode *func_expr
   } else if (FALSE_IT(func_name = ObString(func_expr_node->func_name_.str_len_, func_expr_node->func_name_.str_))) {
   } else if (OB_FAIL(ObProxyExprFactory::get_type_by_name(func_name, type))) {
     LOG_WDIAG("fail to get func type by name", K(func_name), K(type), K(ret));
-  } else {
-    switch (type) {
-      case OB_PROXY_EXPR_TYPE_NONE: {
-        ret = OB_ERR_FUNCTION_UNKNOWN;
-        LOG_INFO("unsupported function", K(func_name), K(ret));
-        break;
-      }
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_DATE: {
-        ObProxyExprToTime *todate_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, todate_expr))) {
-          LOG_WDIAG("create proxy to_date failed", K(ret));
-        } else {
-          todate_expr->set_target_type(ObDateTimeType);
-          func_expr = todate_expr;
-        }
-        break;
-      }
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP: {
-        ObProxyExprToTime *totimestamp_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, totimestamp_expr))) {
-          LOG_WDIAG("create proxy to_timestamp failed", K(ret));
-        } else {
-          totimestamp_expr->set_target_type(ObTimestampNanoType);
-          func_expr = totimestamp_expr;
-        }
-        break;
-      }
-      case OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS: {
-        ObProxyExprToDays *todays_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS, todays_expr))) {
-          LOG_WDIAG("create proxy to_timestamp failed", K(ret));
-        } else {
-          todays_expr->set_target_type(ObIntType);
-          func_expr = todays_expr;
-        }
-        break;
-      }
-      // fall through
-      case OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP:
-      case OB_PROXY_EXPR_TYPE_FUNC_DATE:
-      case OB_PROXY_EXPR_TYPE_FUNC_TIME: {
-        ObProxyExprToTime *timestamp_expr = NULL;
-        if (OB_FAIL(ctx_.expr_factory_->create_proxy_expr(
-                OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP, timestamp_expr))) {
-          LOG_WDIAG("create proxy to_timestamp failed", K(ret));
-        } else {
-          ObObjType target_type = ObNullType;
-          switch (type) {
-            case OB_PROXY_EXPR_TYPE_FUNC_TIMESTAMP: {
-              target_type = lib::is_oracle_mode() ? ObTimestampNanoType : ObTimestampType;
-              break;
-            }
-            case OB_PROXY_EXPR_TYPE_FUNC_DATE: {
-              target_type = ObDateTimeType;
-              break;
-            }
-            case OB_PROXY_EXPR_TYPE_FUNC_TIME: {
-              target_type = ObTimeType;
-              break;
-            }
-            default: {
-              break;
-            }
-          }
-          timestamp_expr->set_target_type(target_type);
-          func_expr = timestamp_expr;
-        }
-        break;
-      }
-      default: {
-        if (OB_FAIL(ctx_.expr_factory_->create_func_expr(type, func_expr))) {
-          LOG_WDIAG("create func expr failed", K(ret));
-        }
-        break;
-      }
-    }
+  } else if (OB_FAIL(ctx_.expr_factory_->create_func_expr(type, func_expr))) {
+    LOG_WDIAG("create func expr failed", K(ret));
   }
 
   return ret;

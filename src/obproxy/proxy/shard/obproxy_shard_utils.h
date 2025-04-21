@@ -153,17 +153,18 @@ public:
                                    hash::ObHashMap<ObString, ObString> &table_name_map,
                                    const ObString &table_name, const ObString &real_table_name);
 
-private:
-  static bool is_read_stmt(ObClientSessionInfo &session_info,
-                           ObMysqlTransact::ObTransState &trans_state,
-                           obutils::ObSqlParseResult &parse_result);
-  static bool is_unsupport_type_in_multi_stmt(obutils::ObSqlParseResult& parse_result);
   static int change_connector(dbconfig::ObDbConfigLogicDb &logic_db_info,
                               ObMysqlClientSession &client_session,
                               ObMysqlTransact::ObTransState &trans_state,
                               dbconfig::ObShardConnector * const prev_shard_conn,
                               dbconfig::ObShardConnector *shard_conn,
                               bool allow_cross_shards = false);
+
+private:
+  static bool is_read_stmt(ObClientSessionInfo &session_info,
+                           ObMysqlTransact::ObTransState &trans_state,
+                           obutils::ObSqlParseResult &parse_result);
+  static bool is_unsupport_type_in_multi_stmt(obutils::ObSqlParseResult& parse_result);
   static int handle_dml_request(ObMysqlClientSession &client_session,
                                 ObMysqlTransact::ObTransState &trans_state,
                                 const ObString &origin_table_name,

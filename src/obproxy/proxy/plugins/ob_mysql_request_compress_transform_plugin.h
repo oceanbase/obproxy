@@ -125,7 +125,8 @@ public:
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
                   "server_protocol", sm->get_server_protocol());
     return (ObMysqlTransact::need_use_tunnel(sm->trans_state_)
-            && (sm->get_server_protocol() != ObProxyProtocol::PROTOCOL_NORMAL));
+            && (sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_OCEANBASE_20
+                || sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL));
   }
 
 private:

@@ -10,6 +10,8 @@
  * See the Mulan PubL v2 for more details.
  */
 
+#define USING_LOG_PREFIX PROXY_SS
+
 #include "proxy/mysql/ob_mysql_server_session.h"
 #include "proxy/mysql/ob_mysql_sm.h"
 #include "prometheus/ob_sql_prometheus.h"
@@ -612,13 +614,24 @@ int ObServerAddrLookupHandler::lookup_server_addr(const ObMysqlClientSession &cs
   const ObProxySessionPrivInfo &target_priv_info = cs.get_session_info().get_priv_info();
   if (priv_info.has_all_privilege_) {
     has_privilege = true;
-  } else if (!cs.get_session_info().is_sharding_user() && priv_info.is_same_tenant(target_priv_info)) {
-    if (priv_info.has_super_privilege() || priv_info.is_same_user(target_priv_info)) {
+  } else if (!cs.get_session_info().is_sharding_user()) {
+    if (OB_UNLIKELY(!priv_info.is_same_cluster(target_priv_info))) {
+      query_info.errcode_ = OB_ERR_KILL_DENIED;
+      LOG_WDIAG("different cluster", K(query_info.errcode_));
+    } else if (priv_info.is_sys_tenant()) {
+      LOG_WDIAG("curr user is xxx@sys in same cluster, has privilege to kill this client session");
       has_privilege = true;
+    } else if (priv_info.is_same_tenant(target_priv_info)) {
+      if (priv_info.has_super_privilege() || priv_info.is_same_user(target_priv_info)) {
+        has_privilege = true;
+      } else {
+        query_info.errcode_ = OB_ERR_KILL_DENIED;
+        LOG_WDIAG("same cluster.tenant, but different user, not the owner to others",
+                    K(query_info.errcode_));
+      }
     } else {
       query_info.errcode_ = OB_ERR_KILL_DENIED;
-      PROXY_SS_LOG(WDIAG, "same cluster.tenant, but different user, not the owner to others",
-                   K(query_info.errcode_));
+      DEBUG_ICMD("same cluster, but different tenant, not the owner to execute kill", K(query_info.errcode_));
     }
   } else if (cs.get_session_info().is_sharding_user()) {
     if (priv_info.is_same_logic_user(target_priv_info)) {
@@ -641,7 +654,8 @@ int ObServerAddrLookupHandler::lookup_server_addr(const ObMysqlClientSession &cs
       query_info.server_addr_.assign(cs.get_cur_server_session()->get_netvc()->get_remote_addr());
       query_info.real_conn_id_ = ss->get_server_sessid();
       query_info.errcode_ = OB_ENTRY_EXIST;
-      PROXY_SS_LOG(DEBUG, "target used server session is existed");
+      query_info.group_id_ = cs.get_session_info().get_group_id();
+      PROXY_SS_LOG(DEBUG, "target used server session is existed", K(query_info));
     } else {
       query_info.errcode_ = OB_SUCCESS;
       PROXY_SS_LOG(DEBUG, "target used server session is not existed, response ok packet");

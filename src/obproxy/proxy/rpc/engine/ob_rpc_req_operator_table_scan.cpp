@@ -105,7 +105,7 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_batch_request(proxy::ObRpcRe
     PARTITION_ID_MAP &partid_to_index_map = batch_request->get_partition_id_map();
     PARTITION_ID_MAP::iterator it = partid_to_index_map.begin();
     PARTITION_ID_MAP::iterator end = partid_to_index_map.end();
-    ObSEArray<ObRpcReq *, 4> rpc_reqs;
+    ObSEArray<ObRpcReq *, 4> rpc_reqs; //temp variables not to change it
     for (; OB_SUCC(ret) && it != end; it++) {
       int64_t partition_id = it->first;
       ObSEArray<int64_t, 4> &index = it->second;
@@ -396,6 +396,9 @@ int ObProxyRpcReqTableScanOp::execute_rpc_request()
     LOG_WDIAG("invalid input for ObProxyRpcReqTableScanOp", K(ret), K_(rpc_trace_id));
   } else if (OB_FAIL(handle_shard_rpc_request(input, parallel_param_))) {
     LOG_WDIAG("handle shard rpc request failed", K(ret), K_(rpc_trace_id));
+  } else if (parallel_param_.count() == 0) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid sharding request to handling", K(ret), K_(rpc_trace_id));
   } else {
     input->set_snet_state(proxy::ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_HANDLING);
   }

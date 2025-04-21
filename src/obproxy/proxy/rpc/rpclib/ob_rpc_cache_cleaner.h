@@ -36,6 +36,8 @@ class ObTableGroupCache;
 class ObTableGroupEntry;
 class ObRpcReqCtxCache;
 class ObRpcReqCtx;
+class ObTabletLsCache;
+class ObTabletLsEntry;
 // every work thread has one cache cleaner
 class ObRpcCacheCleaner : public event::ObContinuation
 {
@@ -45,7 +47,8 @@ public:
 
   int init(ObTableQueryAsyncCache &table_query_async_cache,
            ObTableGroupCache &tablegroup_cache,
-           ObRpcReqCtxCache &rpc_ctx_cache,
+           ObRpcReqCtxCache  &rpc_ctx_cache,
+           ObTabletLsCache   &tablet_ls_cache,
            const ObCountRange &range, const int64_t total_count,
            const int64_t idx, const int64_t clean_interval_us);
   int main_handler(int event, void *data);
@@ -54,6 +57,7 @@ public:
   static int schedule_one_cache_cleaner(int64_t index);
 
   bool is_tablegroup_entry_expired(ObTableGroupEntry &entry);
+  bool is_tablet_ls_entry_expired(ObTabletLsEntry &entry);
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
   int set_clean_interval(const int64_t interval);
@@ -72,6 +76,9 @@ private:
     CLEAN_RPC_CTX_CACHE_ACTION,
     CLEAN_THREAD_CACHE_RPC_CTX_ACTION,
     CLEAN_THREAD_CACHE_REDIS_MONITOR_ACTION,
+    EXPIRE_TABLET_LS_ENTRY_ACTION,
+    CLEAN_TABLET_LS_CACHE_ACTION,
+    CLEAN_THREAD_CACHE_TABLET_LS_ENTRY_ACTION,
     IDLE_CLEAN_ACTION
   };
 
@@ -93,6 +100,12 @@ private:
   int clean_tablegroup_cache();
   int clean_one_sub_bucket_tablegroup_cache(const int64_t bucket_idx, const int64_t clean_count);
 
+
+  bool is_tablet_ls_cache_expire_time_changed();
+  int do_expire_tablet_ls_entry();
+  int clean_tablet_ls_cache();
+  int clean_one_sub_bucket_tablet_ls_cache(const int64_t bucket_idx, const int64_t clean_count);
+
 private:
   const static int64_t RETRY_LOCK_INTERVAL_MS = 10; // 10ms
 
@@ -100,6 +113,9 @@ private:
   const static int64_t PART_TABLEGROUP_ENTRY_MIN_COUNT = 10;
   
   const static int64_t MAX_COLSE_CLIENT_SESSION_RETYR_TIME = 5;
+
+  const static int64_t AVG_TABLET_LS_ENTRY_SIZE = 512; // 512 bytes
+  const static int64_t PART_TABLET_LS_ENTRY_MIN_COUNT = 10;
 
   bool is_inited_;
   bool triggered_;
@@ -111,11 +127,15 @@ private:
   ObTableGroupCache *tablegroup_cache_;
   ObTableQueryAsyncCache *table_query_async_cache_;
   ObRpcReqCtxCache *rpc_ctx_cache_;
+  ObTabletLsCache *tablet_ls_cache_;
   ObCountRange tablegroup_cache_range_;
   ObCountRange table_query_async_cache_range_;
   ObCountRange rpc_ctx_cache_range_;
+  ObCountRange tablet_ls_cache_range_;
   common::ObSEArray<int64_t, 8> tablegroup_cache_deleted_cr_version_; // for expir index entry
   int64_t tablegroup_cache_last_expire_time_us_;
+  common::ObSEArray<int64_t, 8> tablet_ls_cache_deleted_cr_version_; // for expir index entry
+  int64_t tablet_ls_cache_last_expire_time_us_;
   int64_t tc_part_clean_count_; // table cache every partition clean count
   event::ObAction *pending_action_;
   DISALLOW_COPY_AND_ASSIGN(ObRpcCacheCleaner);

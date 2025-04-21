@@ -48,7 +48,7 @@ public:
 
   ObTableQueryAsyncEntry()
     : common::ObSharedRefCount(), client_query_session_id_(0), server_query_session_id_(0), current_position_(0),
-      table_id_(0), data_table_id_(0), tablet_ids_(), timeout_ts_(0), first_query_(false), need_retry_(false),
+      table_id_(0), data_table_id_(0), tablet_ids_(common::ObModIds::OB_RPC_TABLE_QUERY, sizeof(int64_t)), timeout_ts_(0), scan_lease_timeout_(0), first_query_(false), need_retry_(false),
       need_terminal_(false), global_index_query_(false), server_info_set_(false), partition_table_(false), server_info_(),
       state_(BORN), total_len_(0) {}
   ~ObTableQueryAsyncEntry() {}
@@ -61,6 +61,7 @@ public:
     data_table_id_ = 0;
     tablet_ids_.reset();
     timeout_ts_ = 0;
+    scan_lease_timeout_ = 0;
     need_retry_ = false;
     need_terminal_ = false;
     first_query_ = false;
@@ -85,12 +86,15 @@ public:
   void set_data_table_id(int64_t data_table_id) { data_table_id_ = data_table_id; }
   void add_current_position() { current_position_++; }
   void reset_tablet_ids() { tablet_ids_.reset(); current_position_ = 0; }
+  void set_scan_lease_timeout(int64_t timeout) { scan_lease_timeout_ = timeout; }
+
   uint64_t get_client_query_session_id() const { return client_query_session_id_; }
   uint64_t get_server_query_session_id() const { return server_query_session_id_; }
   int64_t get_current_position() const { return current_position_; }
   int64_t get_table_id() const { return table_id_; }
   int64_t get_data_table_id() const { return data_table_id_; }
   int64_t get_timeout_ts() const { return timeout_ts_; }
+  int64_t get_scan_lease_timeout() const { return scan_lease_timeout_; }
   common::ObIArray<int64_t> &get_tablet_ids() { return tablet_ids_; }
   const ObConnectionAttributes &get_server_info() const { return server_info_; }
 
@@ -133,8 +137,9 @@ public:
   int64_t current_position_;
   int64_t table_id_;
   int64_t data_table_id_;                     // 全局索引情况下使用
-  common::ObSEArray<int64_t, 1> tablet_ids_;
+  common::ObSEArray<int64_t, 1> tablet_ids_; //TODO need adjust it for memory
   int64_t timeout_ts_;
+  int64_t scan_lease_timeout_; //only update by response rpc_timeout of START SCAN query in each query
   bool first_query_;
   bool need_retry_;
   bool need_terminal_;

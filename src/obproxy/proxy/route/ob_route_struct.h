@@ -444,6 +444,7 @@ public:
   // Atttention!! this func only use to avoid entry frequently updating
   bool is_need_update() const;
   bool is_enougth_old() const;
+  bool is_schema_version_changed_to_update(const int64_t schema_version) const;
   void set_tenant_version(const uint64_t tenant_version) { tenant_version_ = tenant_version; }
   uint64_t get_tenant_version() const { return tenant_version_; }
   int64_t get_time_for_expired() const { return time_for_expired_; }
@@ -486,6 +487,13 @@ inline bool ObRouteEntry::is_need_update() const
   }
 
   return (is_dirty && can_update);
+}
+
+inline bool ObRouteEntry::is_schema_version_changed_to_update(const int64_t schema_version) const
+{
+  bool need_to_update_by_change = obutils::get_global_proxy_config().is_need_skip_delay_interval_schema_changed;
+  // swtch is on, and table entry schema version is newer than current paritin entry's
+  return need_to_update_by_change && (schema_version_ < schema_version);
 }
 
 inline bool ObRouteEntry::is_enougth_old() const

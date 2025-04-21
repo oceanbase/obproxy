@@ -348,8 +348,25 @@ int ObCheckVersionCont::finish_task(void *data)
       ObString cluster_version;
       PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(handler, "cluster_version", cluster_version);
       int64_t version = 0;
-      for (int64_t i = 0; i < cluster_version.length() && cluster_version[i] != '.'; i++) {
-        version = version * 10 + cluster_version[i] - '0';
+      int64_t shift_num = 32;
+      // for (int64_t i = 0; i < cluster_version.length() && cluster_version[i] != '.'; i++) {
+      //   version = version * 10 + cluster_version[i] - '0';
+      // }
+      /*
+        for example: 4.3.5.2 -> 4* 2^32 + 3* 2^16 + 5*2^8 + 2
+        we only care whether version > 4.x
+      */
+      for (int64_t i = 0; i < cluster_version.length(); i++) {
+        if (cluster_version[i] == '.') {
+          continue;
+        } else {
+          if ( i == cluster_version.length() - 1) {
+            shift_num = 0;
+          }
+          const uint64_t version_num = cluster_version[i] - '0';
+          version += (version_num << shift_num);
+          shift_num /= 2;
+        }
       }
 
       cr_->cluster_version_ = version;
@@ -1137,7 +1154,7 @@ int ObClusterResourceCreateCont::add_async_task()
           mutex = NULL;
         }
         created_cr_->dec_ref();
-      } else if (!self_ethread().is_event_thread_type(ET_CALL)) {
+      } else if (!self_ethread().is_event_thread_type(ET_NET)) {
         ret = OB_INNER_STAT_ERROR;
         LOG_EDIAG("schedule cluster build cont must be in work thread", K_(self_ethread().event_types), K(&self_ethread()), K(ret));
       } else {
@@ -2003,7 +2020,7 @@ bool ObClusterResource::inc_and_test_deleting_complete()
 {
   bool complete = false;
   int64_t complete_count = ATOMIC_AAF(&deleting_completed_thread_num_, 1);
-  int64_t thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
+  int64_t thread_count = g_event_processor.thread_count_for_type_[ET_NET];
   if (complete_count == thread_count) {
     complete = true;
   }
@@ -2014,7 +2031,7 @@ int ObClusterResource::stop_refresh_server_state()
 {
   int ret = OB_SUCCESS;
   if (NULL != ss_refresh_cont_) {
-    if (OB_ISNULL(g_event_processor.schedule_imm(ss_refresh_cont_, ET_CALL, DESTROY_SERVER_STATE_EVENT))) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(ss_refresh_cont_, ET_NET, DESTROY_SERVER_STATE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(ss_refresh_cont), K(ret));
     }
@@ -2027,7 +2044,7 @@ int ObClusterResource::stop_detect_server_state()
 {
   int ret = OB_SUCCESS;
   if (NULL != detect_server_state_cont_) {
-    if (OB_ISNULL(g_event_processor.schedule_imm(detect_server_state_cont_, ET_CALL, DESTROY_SERVER_STATE_EVENT))) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(detect_server_state_cont_, ET_NET, DESTROY_SERVER_STATE_EVENT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(detect_server_state_cont), K(ret));
     }
@@ -2940,8 +2957,8 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
         LOG_WDIAG("fail to stop detect server state", K(ret));
       } else {
         // push to every work thread
-        int64_t thread_count = g_event_processor.thread_count_for_type_[ET_CALL];
-        ObEThread **threads = g_event_processor.event_thread_[ET_CALL];
+        int64_t thread_count = g_event_processor.thread_count_for_type_[ET_NET];
+        ObEThread **threads = g_event_processor.event_thread_[ET_NET];
         ObCacheCleaner *cleaner = NULL;
         ObEThread *ethread = NULL;
         ObResourceDeleteActor *actor = NULL;
@@ -3061,7 +3078,7 @@ int ObResourcePoolProcessor::add_cluster_delete_task(const ObString &cluster_nam
   ObClusterDeleteCont *cont = NULL;
   if (OB_FAIL(ObClusterDeleteCont::alloc(cluster_name, cluster_id, cont))) {
     LOG_WDIAG("fail to alloc ObClusterDeleteCont", K(cluster_name), K(cluster_id), K(ret));
-  } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_CALL))) {
+  } else if (OB_ISNULL(g_event_processor.schedule_imm(cont, ET_NET))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("fail to schedule metadb rebuild task", K(ret));
   }

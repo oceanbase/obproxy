@@ -13,6 +13,7 @@
 #ifndef OBPROXY_PRIVILEGE_CHECK_H
 #define OBPROXY_PRIVILEGE_CHECK_H
 
+#include "lib/ob_define.h"
 #include "share/schema/ob_schema_struct.h"
 #include "sql/resolver/ob_stmt_type.h"
 #include "utils/ob_proxy_lib.h"
@@ -83,6 +84,7 @@ public:
   bool is_same_logic_user(const ObProxySessionPrivInfo &other_priv_info) const;
   bool has_super_privilege() const { return OB_TEST_PRIVS(user_priv_set_, OB_PRIV_SUPER); }
   bool has_process_privilege() const { return OB_TEST_PRIVS(user_priv_set_, OB_PRIV_PROCESS); }
+  bool is_sys_tenant() const { return tenant_name_.case_compare(common::OB_SYS_TENANT_NAME) == 0; }
   static bool is_user_priv_set_available(const ObPrivSet user_priv_set) { return -1 != user_priv_set; };
   ObProxyUserName get_proxy_user_name() const { return ObProxyUserName(user_name_, tenant_name_, cluster_name_); }
 
@@ -90,7 +92,7 @@ public:
                K_(tenant_name), K_(user_name));
 
 public:
-  bool has_all_privilege_;  //proxyadmin or root@sys
+  bool has_all_privilege_;  // root@proxysys
   uint32_t cs_id_;
   ObPrivSet user_priv_set_;
 

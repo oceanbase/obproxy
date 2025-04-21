@@ -45,9 +45,6 @@ namespace obproxy
 namespace net
 {
 
-// Net system uses event threads
-// so, the net thread group id is the event thread group id
-#define ET_NET ET_CALL
 
 static const int NO_FD = -1;
 

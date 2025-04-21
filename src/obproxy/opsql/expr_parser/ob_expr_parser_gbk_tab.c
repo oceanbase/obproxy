@@ -300,42 +300,6 @@ static inline ObProxyFunctionType get_reverse_func(ObProxyFunctionType type)
   return ret_type;
 }
 
-static inline int64_t get_mask(ObProxyFunctionType type, ObProxyPartKeyLevel level)
-{
-  int64_t mask = 0;
-  int64_t flag = NO_BOUND_FLAG;
-  switch (type) {
-    case F_COMP_EQ:
-    case F_COMP_NSEQ:
-      flag = BOTH_BOUND_FLAG;
-      break;
-    case F_COMP_GE:
-    case F_COMP_GT:
-      flag = LOW_BOUND_FLAG;
-      break;
-    case F_COMP_LE:
-    case F_COMP_LT:
-      flag = HIGH_BOUND_FLAG;
-      break;
-    default:
-      break;
-  }
-  switch (level) {
-    case PART_KEY_LEVEL_ONE:
-      mask = GET_FIRST_PART_MASK(flag);
-      break;
-    case PART_KEY_LEVEL_TWO:
-      mask = GET_SUB_PART_MASK(flag);
-      break;
-    case PART_KEY_LEVEL_BOTH:
-      mask = GET_FIRST_PART_MASK(flag) | GET_SUB_PART_MASK(flag);
-      break;
-    default:
-      break;
-  }
-  return mask;
-}
-
 static inline void set_part_key_column_idx(ObExprParseResult *result, ObProxyParseString *column_name)
 {
   int64_t i = 0;
@@ -1112,17 +1076,17 @@ static const yytype_int8 yyrhs[] =
 /* YYRLINE[YYN] -- source line where rule number YYN was defined.  */
 static const yytype_uint16 yyrline[] =
 {
-       0,   617,   617,   618,   620,   621,   622,   623,   625,   626,
-     627,   629,   630,   632,   634,   635,   636,   637,   638,   639,
-     641,   642,   643,   644,   645,   647,   648,   649,   650,   651,
-     661,   670,   680,   681,   682,   683,   684,   685,   686,   688,
-     689,   691,   693,   694,   696,   697,   698,   699,   700,   707,
-     715,   723,   731,   739,   747,   756,   757,   758,   760,   761,
-     763,   764,   772,   778,   779,   780,   782,   787,   794,   801,
-     805,   811,   817,   823,   828,   833,   839,   845,   851,   857,
-     863,   869,   875,   876,   877,   878,   884,   889,   894,   895,
-     896,   897,   899,   903,   908,   909,   914,   918,   923,   929,
-     939,   949,   950,   952,   953
+       0,   581,   581,   582,   584,   585,   586,   587,   589,   590,
+     591,   593,   594,   596,   598,   599,   600,   601,   602,   603,
+     605,   606,   607,   608,   609,   611,   612,   613,   614,   615,
+     625,   634,   644,   645,   646,   647,   648,   649,   650,   652,
+     653,   655,   657,   658,   660,   661,   662,   663,   664,   671,
+     679,   687,   695,   703,   711,   720,   721,   722,   724,   725,
+     727,   728,   736,   742,   743,   744,   746,   751,   758,   765,
+     769,   775,   781,   787,   792,   797,   803,   809,   815,   821,
+     827,   833,   839,   840,   841,   842,   848,   853,   858,   859,
+     860,   861,   863,   867,   872,   873,   878,   882,   887,   893,
+     903,   913,   914,   916,   917
 };
 #endif
 
@@ -3062,6 +3026,9 @@ yyreturn:
 
 void yyerror(YYLTYPE* yylloc, ObExprParseResult* p, char* s, ...)
 {
+  UNUSED(yylloc);
+  UNUSED(p);
+  UNUSED(s);
   // do nothing
 }
 

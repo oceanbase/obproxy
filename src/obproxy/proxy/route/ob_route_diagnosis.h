@@ -733,12 +733,14 @@ public:
     ObString &token,
     ObProxyExprType expr_type,
     ObProxyExprType generated_func,
+    ObProxyExprType part_key_func,
     ObObj &obj)
     : ObDiagnosisBase(RESOLVE_TOKEN, ret, alloc) {
       token_type_ = token_type;
       deep_copy_string(alloc_, token, token_);
       expr_type_ = expr_type;
       generated_func_ = generated_func;
+      part_key_func_ = part_key_func;
       if (obj.need_deep_copy()) {
         char *obj_buf = NULL;
         int64_t obj_buf_size = obj.get_deep_copy_size();
@@ -756,6 +758,7 @@ public:
     token_type_ = ObProxyTokenType::TOKEN_NONE;
     expr_type_ = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
     generated_func_ = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
+    part_key_func_ = ObProxyExprType::OB_PROXY_EXPR_TYPE_NONE;
   }
   int64_t diagnose(char *buf, const int64_t buf_len, int &warn, const char* next_line) const;
   int64_t to_string(char *buf, const int64_t buf_len) const;
@@ -765,6 +768,7 @@ public:
   ObString token_;
   ObProxyExprType expr_type_;
   ObProxyExprType generated_func_;
+  ObProxyExprType part_key_func_;
   ObObj resolved_obj_;
 };
 
@@ -853,7 +857,7 @@ public:
 };
 
 // ObSEArray's CallBack for diagnosis point
-// will be called in ObSEArray::use() and ::reset()
+// will be called in ObSEArray::reuse() and ::reset()
 class ObDiagnosisPointClearCallBack
 {
 public:
@@ -1016,6 +1020,7 @@ public:
     ObString &token,
     ObProxyExprType expr_type,
     ObProxyExprType generated_func_type,
+    ObProxyExprType part_key_func,
     ObObj &obj);
   void diagnosis_resolve_expr(
     int ret,
@@ -1214,6 +1219,7 @@ inline void ObRouteDiagnosis::diagnosis_resolve_token(
   ObString &token,
   ObProxyExprType expr_type,
   ObProxyExprType generated_func_type,
+  ObProxyExprType part_key_func,
   ObObj &obj)
 {
   _ROUTE_DIAGNOSIS_POINT(
@@ -1224,6 +1230,7 @@ inline void ObRouteDiagnosis::diagnosis_resolve_token(
     token,
     expr_type,
     generated_func_type,
+    part_key_func,
     obj);
 }
 

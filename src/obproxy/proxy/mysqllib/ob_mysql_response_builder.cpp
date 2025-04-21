@@ -115,7 +115,7 @@ int ObMysqlResponseBuilder::build_prepare_execute_xa_start_resp(ObMIOBuffer &mio
   ObIOBufferReader *tmp_mio_reader = NULL;
   ObMIOBuffer *tmp_mio_buf = &mio_buf;
 
-  if (protocol == ObProxyProtocol::PROTOCOL_OB20) {
+  if (protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
     if (OB_ISNULL(tmp_mio_buf = new_empty_miobuffer())) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to new miobuffer", K(ret));
@@ -245,7 +245,7 @@ int ObMysqlResponseBuilder::build_prepare_execute_xa_start_resp(ObMIOBuffer &mio
       LOG_WDIAG("fail to write prepare execute packets of resp of xa start hold", K(ret));
     }
 
-    if (OB_SUCC(ret) && protocol == ObProxyProtocol::PROTOCOL_OB20) {
+    if (OB_SUCC(ret) && protocol == ObProxyProtocol::PROTOCOL_OCEANBASE_20) {
       Ob20ProtocolHeader &ob20_head = client_session.get_session_info().ob20_request_.ob20_header_;
       uint8_t compressed_seq = static_cast<uint8_t>(client_session.get_compressed_seq() + 1);
       Ob20HeaderParam ob20_head_param(client_session.get_cs_id(), ob20_head.request_id_, compressed_seq,
@@ -280,7 +280,6 @@ int ObMysqlResponseBuilder::build_select_tx_ro_resp(ObMIOBuffer &mio_buf,
   field.cname_ = client_request.get_parse_result().get_col_name();
   field.org_cname_ = client_request.get_parse_result().get_col_name();
   field.type_ = OB_MYSQL_TYPE_LONGLONG;
-  field.charsetnr_ = CS_TYPE_BINARY;
   field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // get filed value
@@ -391,7 +390,6 @@ int ObMysqlResponseBuilder::build_select_route_addr_resp(ObMIOBuffer &mio_buf,
   field.cname_ = OBPROXY_ROUTE_ADDR_NAME;
   field.org_cname_ = OBPROXY_ROUTE_ADDR_NAME;
   field.type_ = OB_MYSQL_TYPE_VARCHAR;
-  field.charsetnr_ = CS_TYPE_BINARY;
   field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // get filed value
@@ -442,7 +440,6 @@ int ObMysqlResponseBuilder::build_select_proxy_version_resp(ObMIOBuffer &mio_buf
     field.org_cname_ = OBPROXY_PROXY_VERSION_NAME;
   }
   field.type_ = OB_MYSQL_TYPE_VARCHAR;
-  field.charsetnr_ = CS_TYPE_BINARY;
   field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // get filed value
@@ -483,7 +480,6 @@ int ObMysqlResponseBuilder::build_select_proxy_status_resp(ObMIOBuffer &mio_buf,
   field.cname_ = OBPROXY_PROXY_STATUS_NAME;
   field.org_cname_ = OBPROXY_PROXY_STATUS_NAME;
   field.type_ = OB_MYSQL_TYPE_VARCHAR;
-  field.charsetnr_ = CS_TYPE_BINARY;
   field.flags_ = OB_MYSQL_BINARY_FLAG;
 
   // get filed value

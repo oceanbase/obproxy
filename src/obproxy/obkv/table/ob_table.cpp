@@ -119,7 +119,8 @@ ODP_DEF_DESERIALIZE(ObITableEntity)
   ObObj value;
   // shallow copy
   if (OB_SUCC(ret)) {
-    ROWKEY_VALUE rpc_req_rowkey_val;
+    // ROWKEY_VALUE rpc_req_rowkey_val(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj));
+    ROWKEY_VALUE_OBJ(rpc_req_rowkey_val);
     int64_t rowkey_size = -1;
     OB_UNIS_DECODE(rowkey_size);
     if (OB_SUCC(ret) && OB_FAIL(rpc_req_rowkey_val.prepare_allocate(rowkey_size))) {
@@ -420,7 +421,12 @@ int ObITableEntity::add_retrieve_property(const ObString &prop_name)
 }
 
 ////////////////////////////////////////////////////////////////
-ObTableEntity::ObTableEntity() : properties_buf_(), redis_text_(), is_lazy_mode_(true), is_redis_mode_(false) {}
+ObTableEntity::ObTableEntity() :
+    rowkey_(common::ObModIds::OB_RPC_TABLE_ENTITY, sizeof(ObObj) * ROWKEY_COLUMNS_COUNT),
+    properties_names_(common::ObModIds::OB_RPC_TABLE_ENTITY, sizeof(ObString) * ROWKEY_COLUMNS_COUNT),
+    properties_values_(common::ObModIds::OB_RPC_TABLE_ENTITY, sizeof(ObObj) * ROWKEY_COLUMNS_COUNT),
+    rowkey_names_(common::ObModIds::OB_RPC_TABLE_ENTITY, sizeof(ObString) * ROWKEY_COLUMNS_COUNT),
+    properties_buf_(), redis_text_(), is_lazy_mode_(true), is_redis_mode_(false) {}
 
 ObTableEntity::~ObTableEntity()
 {
@@ -980,6 +986,19 @@ void ObTableBatchOperation::reset()
   is_same_properties_names_ = true;
 }
 
+int ObTableBatchOperation::init_empty_table_operations(int64_t size)
+{
+  int ret = OB_SUCCESS;
+  table_operations_.reserve(size);
+  OB_IGNORE_TABLE_OPERATION operation;
+  for (int64_t i = 0; OB_SUCC(ret) && i < size; i++) {
+    if (OB_FAIL(table_operations_.push_back(operation))) {
+      LOG_WDIAG("invalid to init table operation for batch operation", K(ret), K(i), K(size));
+    }
+  }
+  return ret;
+}
+
 OB_DEF_SERIALIZE(ObTableBatchOperation,)
 {
   int ret = OB_SUCCESS;
@@ -1012,15 +1031,18 @@ ODP_DEF_DESERIALIZE(ObTableBatchOperation,)
   OB_UNIS_DECODE(batch_size);
   if (OB_FAIL(rpc_request->init_rowkey_info(batch_size))) {
     LOG_WDIAG("fail to init rpc request", K(ret));
+  } else if (OB_FAIL(init_empty_table_operations(batch_size))) {
+    LOG_WDIAG("fail to init empty table_operation for batch request", K(ret));
   }
   for (int64_t i = 0; OB_SUCCESS == ret && i < batch_size; ++i) {
-    OB_IGNORE_TABLE_OPERATION table_operation;
+    // OB_IGNORE_TABLE_OPERATION table_operation;
     char *origin_buf = const_cast<char*>(buf + pos);
     int64_t origin_pos = pos;
+    OB_IGNORE_TABLE_OPERATION &table_operation = table_operations_.at(i);
     if (OB_FAIL(table_operation.deserialize(buf, data_len, pos, rpc_request))) {
       LOG_WDIAG("fail to deserialize table operation", K(ret));
-    } else if (OB_FAIL(table_operations_.push_back(table_operation))) {
-      LOG_WDIAG("failed to push back", K(ret));
+    // } else if (OB_FAIL(table_operations_.push_back(table_operation))) {
+    //   LOG_WDIAG("failed to push back", K(ret));
     } else if (OB_FAIL(rpc_request->add_sub_req_buf(ObRpcFieldBuf(origin_buf, pos - origin_pos)))) {
       LOG_WDIAG("fail to add sub req buf", K(ret));
     }
@@ -1162,6 +1184,19 @@ int ObTableBatchOperationResult::push_back(const ObTableOperationResult &res)
   return table_operations_result_.push_back(res);
 }
 
+int ObTableBatchOperationResult::init_empty_table_operation_result(int64_t size)
+{
+  int ret = OB_SUCCESS;
+  table_operations_result_.reserve(size);
+  ObTableOperationResult operation;
+  for (int64_t i = 0; OB_SUCC(ret) && i < size; i++) {
+    if (OB_FAIL(table_operations_result_.push_back(operation))) {
+      LOG_WDIAG("invalid to init table operation result for batch operation", K(ret), K(i), K(size));
+    }
+  }
+  return ret;
+}
+
 OB_DEF_SERIALIZE(ObTableBatchOperationResult,)
 {
   int ret = OB_SUCCESS;
@@ -1182,16 +1217,20 @@ OB_DEF_DESERIALIZE(ObTableBatchOperationResult,)
   UNF_UNUSED_DES;
   int64_t batch_size = 0;
   OB_UNIS_DECODE(batch_size);
-  ObTableOperationResult table_operation_result;
   reset();
-  for (int64_t i = 0; OB_SUCCESS == ret && i < batch_size; ++i) {
-    if (OB_FAIL(table_operation_result.deserialize(buf, data_len, pos))) {
-      LOG_WDIAG("fail to decode array item", K(ret), K(i), K(batch_size), K(data_len), K(pos),
-                K(table_operation_result));
-    } else if (OB_FAIL(table_operations_result_.push_back(table_operation_result))) {
-      LOG_WDIAG("fail to add item to array", K(ret), K(i), K(batch_size));
-    }
-  } // end for
+  if (OB_FAIL(init_empty_table_operation_result(batch_size))) {
+    LOG_WDIAG("failed to init empty table batch operation result array", K(ret), K(batch_size));
+  } else {
+    for (int64_t i = 0; OB_SUCCESS == ret && i < batch_size; ++i) {
+      ObTableOperationResult &table_operation_result = table_operations_result_.at(i);
+      if (OB_FAIL(table_operation_result.deserialize(buf, data_len, pos))) {
+        LOG_WDIAG("fail to decode array item", K(ret), K(i), K(batch_size), K(data_len), K(pos),
+                  K(table_operation_result));
+      // } else if (OB_FAIL(table_operations_result_.push_back(table_operation_result))) {
+      //   LOG_WDIAG("fail to add item to array", K(ret), K(i), K(batch_size));
+      }
+    } // end for
+  }
   return ret;
 }
 ////////////////////////////////////////////////////////////////
@@ -1499,35 +1538,40 @@ ODP_DEF_DESERIALIZE(ObTableQuery)
     if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &count))) {
       LOG_WDIAG("fail to decode key ranges count", K(ret));
     }
-    RANGE_VALUE range_value;
-    if (OB_FAIL(range_value.prepare_allocate(count))) {
-      LOG_WDIAG("fail to prepare_allocate for range valu ", K(ret));
-    }
-    for (int64_t i = 0; OB_SUCC(ret) && i < count; i++) {
-      ObObj array[OB_MAX_ROWKEY_COLUMN_NUMBER * 2];
-      ObNewRange copy_range;
-      ObNewRange &key_range = range_value.at(i);
-      copy_range.start_key_.assign(array, OB_MAX_ROWKEY_COLUMN_NUMBER);
-      copy_range.end_key_.assign(array + OB_MAX_ROWKEY_COLUMN_NUMBER, OB_MAX_ROWKEY_COLUMN_NUMBER);
-      if (IS_CLUSTER_VERSION_LESS_THAN_V4(rpc_request->get_cluster_version())) {
-        if (OB_FAIL(copy_range.deserialize(buf, data_len, pos))) {
-          LOG_WDIAG("fail to deserialize range", K(ret));
-        }
-      } else {
-        if (OB_FAIL(copy_range.deserialize_v4(buf, data_len, pos))) {
-          LOG_WDIAG("fail to deserialize range", K(ret));
-        }
-      }
-      if (OB_SUCC(ret)) {
-        if (OB_FAIL(common::deep_copy_range(rpc_request->allocator_, copy_range, key_range))) {
-          LOG_WDIAG("fail to deep copy range", K(ret));
-        } else if (OB_FAIL(key_ranges_.push_back(key_range))) {
-          LOG_WDIAG("fail to add key range to array", K(ret));
-        }
-      }
-    }
-    if (OB_SUCC(ret) && OB_FAIL(rpc_request->add_sub_req_range(range_value))) {
+    // RANGE_VALUE range_value_tmp(common::ObModIds::OB_RPC_TABLE_TABLE_OPERATION, ROWKEY_COLUMNS_COUNT * sizeof(common::ObNewRange)); //todo need update it
+    RANGE_VALUE_OBJ(range_value_tmp);
+    //put empty range_value firstly, to avoid copy range_value to repeate construct ObNewRange object.
+    if (OB_SUCC(ret) && OB_FAIL(rpc_request->add_sub_req_range(range_value_tmp))) {
       LOG_WDIAG("fail to add_sub_req_range", K(ret));
+    } else {
+      int64_t arr_index = rpc_request->get_sub_req_range_arr()->count() - 1;
+      RANGE_VALUE &range_value = rpc_request->get_sub_req_range_arr()->at(arr_index);
+      if (OB_FAIL(range_value.prepare_allocate(count))) {
+        LOG_WDIAG("fail to prepare_allocate for range value ", K(ret));
+      }
+      for (int64_t i = 0; OB_SUCC(ret) && i < count; i++) {
+        ObObj array[OB_MAX_ROWKEY_COLUMN_NUMBER * 2];
+        ObNewRange copy_range;
+        ObNewRange &key_range = range_value.at(i);
+        copy_range.start_key_.assign(array, OB_MAX_ROWKEY_COLUMN_NUMBER);
+        copy_range.end_key_.assign(array + OB_MAX_ROWKEY_COLUMN_NUMBER, OB_MAX_ROWKEY_COLUMN_NUMBER);
+        if (IS_CLUSTER_VERSION_LESS_THAN_V4(rpc_request->get_cluster_version())) {
+          if (OB_FAIL(copy_range.deserialize(buf, data_len, pos))) {
+            LOG_WDIAG("fail to deserialize range", K(ret));
+          }
+        } else {
+          if (OB_FAIL(copy_range.deserialize_v4(buf, data_len, pos))) {
+            LOG_WDIAG("fail to deserialize range", K(ret));
+          }
+        }
+        if (OB_SUCC(ret)) {
+          if (OB_FAIL(common::deep_copy_range(rpc_request->allocator_, copy_range, key_range))) {
+            LOG_WDIAG("fail to deep copy range", K(ret));
+          } else if (OB_FAIL(key_ranges_.push_back(key_range))) {
+            LOG_WDIAG("fail to add key range to array", K(ret));
+          }
+        }
+      }
     }
   }
   if (OB_SUCC(ret)) {
@@ -1689,7 +1733,7 @@ const ObString ObHTableConstants::VALUE_CNAME_STR = ObString::make_string(VALUE_
 
 ObHTableFilter::ObHTableFilter()
     :is_valid_(false),
-     select_column_qualifier_(),
+     select_column_qualifier_(common::ObModIds::OB_RPC_TABLE_ENTITY, 16 * sizeof(ObString)),
      min_stamp_(ObHTableConstants::INITIAL_MIN_STAMP),
      max_stamp_(ObHTableConstants::INITIAL_MAX_STAMP),
      max_versions_(1),
@@ -1853,9 +1897,10 @@ OB_DEF_DESERIALIZE(ObHTableFilter,)
 
 ////////////////////////////////////////////////////////////////
 ObTableQueryResult::ObTableQueryResult()
-    :row_count_(0),
-     proxy_agg_data_buf_(),
-     allocator_(ObModIds::TABLE_PROC),
+    :properties_names_(common::ObModIds::OB_RPC_TABLE_QUERY_RESULT, ROWKEY_COLUMNS_COUNT * sizeof(ObString)),
+     row_count_(0),
+     proxy_agg_data_buf_(common::ObModIds::OB_RPC_TABLE_QUERY_RESULT, SUB_REQ_COUNT * sizeof(common::ObDataBuffer)),
+     allocator_(ObModIds::OB_RPC_TABLE_PROC),
      fixed_result_size_(0),
      curr_idx_(0)
 {
@@ -2729,7 +2774,8 @@ ODP_DEF_DESERIALIZE(ObTableSingleOpEntity)
       // deserialize and record rowkey and properties info in lazy mode for single entity
       // we need row key and properties info to build bitmap of sub req
       if (OB_SUCC(ret)) {
-        ROWKEY_VALUE rowkey_value;
+        // ROWKEY_VALUE rowkey_value(common::ObModIds::OB_RPC_TABLE_ROWKEY, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj));
+        ROWKEY_VALUE_OBJ(rowkey_value);
         if (OB_FAIL(rowkey_value.prepare_allocate(rowkey_size))) {
           LOG_WDIAG("fail to pre allocate mem for rowkey value", K(ret));
         }
@@ -3084,12 +3130,17 @@ OB_DEF_DESERIALIZE(ObTableTabletOpResult,)
   UNF_UNUSED_DES;
   int64_t single_op_size = 0;
   OB_UNIS_DECODE(single_op_size);
+
+  if (OB_FAIL(single_op_result_.prepare_allocate(single_op_size))) {
+    LOG_WDIAG("failed to prepare_allocate for single op result", K(ret), K(single_op_size));
+  }
+
   for (int64_t i = 0; OB_SUCC(ret) && i < single_op_size; ++i) {
-    ObTableSingleOpResult single_op_result;
+    ObTableSingleOpResult &single_op_result = single_op_result_.at(i);
     OB_UNIS_DECODE(single_op_result);
-    if (OB_SUCC(ret) && OB_FAIL(single_op_result_.push_back(single_op_result))) {
-      LOG_WDIAG("fail to add item to array", K(ret), K(i), K(single_op_size));
-    }
+    // if (OB_SUCC(ret) && OB_FAIL(single_op_result_.push_back(single_op_result))) {
+    //   LOG_WDIAG("fail to add item to array", K(ret), K(i), K(single_op_size));
+    // }
   } // end for
   return ret;
 }

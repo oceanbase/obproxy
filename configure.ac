@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.3.3.0],
+            [4.3.4.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.3.3.0"
+    obapi_version="4.3.4.0"
     AC_SUBST(obapi_version)
 
     AC_ARG_VAR([TOPDIR], [The path of the project])
@@ -58,18 +58,18 @@
     if test "$withval" = "yes"; then
       case "$host_cpu" in
         *aarch64* )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -Wno-psabi -Wno-address-of-packed-member -fno-omit-frame-pointer"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=generic -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -finline-functions -fno-strict-aliasing -mtune=generic -march=armv8-a+crc -fno-omit-frame-pointer"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=generic"
         ;;
         * )
-          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -Wno-deprecated -Wno-invalid-offsetof -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-address-of-packed-member -fno-omit-frame-pointer"
-          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=core2 -Wno-psabi -Wno-sign-compare"
+          AM_CXXFLAGS="-g -O2 -D_OB_VERSION=1000 -D_NO_EXCEPTION -D__STDC_LIMIT_MACROS -D__STDC_CONSTANT_MACROS -DNDEBUG -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -Wformat -finline-functions -fno-strict-aliasing -mtune=core2 -fno-omit-frame-pointer"
+          AM_CFLAGS="-g -O2 -D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -DNDEBUG -finline-functions -fno-strict-aliasing -mtune=core2"
         ;;
       esac
     fi
     ],
-    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wformat -Wno-invalid-offsetof -Wno-deprecated -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic -Wno-psabi -Wno-sign-compare -Wno-address-of-packed-member"
-      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g -Wno-psabi  -Wno-sign-compare"
+    [ AM_CXXFLAGS="-D__STDC_LIMIT_MACROS -D_OB_VERSION=1000 -D__STDC_CONSTANT_MACROS -D_NO_EXCEPTION -g -Wformat -fno-strict-aliasing -fno-omit-frame-pointer -mtune=generic"
+      AM_CFLAGS="-D_OB_VERSION=1000 -DCOMPATIBLE -D__USE_LARGEFILE64 -D_FILE_OFFSET_BITS=64 -D_LARGE_FILE -D_LARGEFILE_SOURCE -D_LARGEFILE64_SOURCE -fno-omit-frame-pointer -g"
         ]
     )
 
@@ -82,6 +82,9 @@
     [use clang's compile optimize (default is NO)]),
     [
     if test "$withval" = "yes"; then
+      # BOLT
+      AM_CXXFLAGS="${AM_CXXFLAGS} -Wl,--emit-relocs"
+      AM_CFLAGS="${AM_CFLAGS} -Wl,--emit-relocs"
       case "$host_cpu" in
         *aarch64* )
         # do nothing
@@ -91,9 +94,6 @@
           AM_CXXFLAGS="${AM_CXXFLAGS} -fprofile-sample-use=${TOPDIR}/fdo/obproxy.prof -funique-internal-linkage-names -fdebug-info-for-profiling -Wl,--no-rosegment"
           AM_CFLAGS="${AM_CFLAGS} -fprofile-sample-use=${TOPDIR}/fdo/obproxy.prof -funique-internal-linkage-names -fdebug-info-for-profiling -Wl,--no-rosegment"
 
-          # BOLT
-          AM_CXXFLAGS="${AM_CXXFLAGS} -Wl,--emit-relocs"
-          AM_CFLAGS="${AM_CFLAGS} -Wl,--emit-relocs"
 
           # LTO
           # AM_CXXFLAGS="${AM_CXXFLAGS} -flto"
@@ -475,8 +475,58 @@
     ])
 
     # warnings todo
-    AM_CXXFLAGS="${AM_CXXFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-overloaded-virtual -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
-    AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-unused-parameter -Wno-unused-function -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-overloaded-virtual -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
+    AM_CXXFLAGS="${AM_CXXFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-invalid-offsetof -Wno-address-of-packed-member -Wno-deprecated -Wno-psabi -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
+    AM_CFLAGS="${AM_CFLAGS} -fuse-ld=lld -Wall -Wextra -Wno-deprecated -Wno-psabi -Wno-ignored-qualifiers -Wno-deprecated-copy -Wno-sign-compare -Wno-varargs -Wno-overloaded-virtual -Wno-sign-conversion -Wno-string-plus-int -Wno-shorten-64-to-32 -Wno-delete-non-abstract-non-virtual-dtor -Wno-unused-command-line-argument -Wno-inconsistent-missing-override -Wno-mismatched-tags -Wno-dynamic-class-memaccess -Wno-format-security -Wno-reinterpret-base-class -Wl,--allow-multiple-definition"
+
+    ## 编译器告警相关选项列表
+
+    ##-Wall：启用所有常见的警告信息。这是一个非常常用的选项，用于开启一系列标准警告。
+
+    ##-Wextra：除了-Wall之外，还启用一些额外的警告信息。这通常包括对未使用的变量、不必要的类型转换等更严格的检查。
+
+    ##-Wno-invalid-offsetof：禁用关于offsetof宏使用的无效警告。当尝试获取非POD类型的成员偏移量时，可能会触发这个警告。
+
+    ##-Wno-address-of-packed-member：禁止因访问packed结构体成员地址而产生的警告。Packed结构体中的成员可能跨越字节边界，直接取其地址可能导致未对齐访问。
+
+    ##-Wno-unused-parameter：忽略函数中定义但未使用的参数所引发的警告。有时出于API兼容性考虑，需要保留某些参数即使它们实际上并不被使用。
+
+    ##-Wno-unused-function：不显示未使用函数的警告。对于库文件或者模板实现来说，可能存在很多不会立即调用的函数。
+
+    ##-Wno-deprecated：关闭对已弃用功能的警告。当使用了标记为过时的功能或方法时，编译器会发出警告提示开发者注意。
+
+    ##-Wno-psabi：抑制与PSABI（Procedure Call Standard for the ARM Architecture）相关的警告。这类警告通常涉及ABI兼容性问题。
+
+    ##-Wno-ignored-qualifiers：忽略由于类型限定符被忽略而导致的警告。例如，在返回值上指定const修饰符通常会被编译器忽略。
+
+    ##-Wno-deprecated-copy：不报告因复制构造函数/赋值操作符默认生成且已被删除而产生的警告。适用于C++11及以上版本。
+
+    ##-Wno-sign-compare：取消符号整数与无符号整数之间比较的警告。虽然这种比较可能是错误的，但在某些情况下是故意为之。
+
+    ##-Wno-varargs：阻止与变长参数列表相关联的警告。比如，如果一个函数声明了...作为最后一个参数，但是没有正确处理它。
+
+    ##-Wno-overloaded-virtual：避免覆盖虚函数时出现的潜在歧义警告。当基类中有多个同名但不同签名的虚函数时可能发生这种情况。
+
+    ##-Wno-sign-conversion：关闭由于有符号和无符号整数之间隐式转换引起的警告。尽管这可能导致意外的行为，但在某些上下文中这是可接受的。
+
+    ##-Wno-string-plus-int：不警告字符串字面量与整数相加的情况。这通常是非法操作，除非是在特定条件下有意为之。
+
+    ##-Wno-shorten-64-to-32：允许从64位整数到32位整数的截断而不发出警告。这可能丢失数据，但在某些应用中可能是预期行为。
+
+    ##-Wno-delete-non-abstract-non-virtual-dtor：不警告非抽象类中非虚析构函数的删除操作。这对于单例模式等特殊场景下的资源管理是有意义的。
+
+    ##-Wno-unused-command-line-argument：忽略命令行上未识别的参数。当使用了编译器不支持的选项时，这可以防止编译失败。
+
+    ##-Wno-inconsistent-missing-override：当派生类中重写基类虚函数但忘记加上override关键字时，不产生警告。override有助于提高代码清晰度并捕获错误。
+
+    ##-Wno-mismatched-tags：解决结构体或联合体标签名称不匹配的问题。在跨文件引用时偶尔会出现此类问题。
+
+    ##-Wno-dynamic-class-memaccess：对于动态分配的对象使用静态成员访问方式时不发出警告。尽管这通常是错误的，但在某些设计模式下可能是合理的。
+
+    ##-Wno-format-security：取消格式化字符串安全性的警告。这些警告旨在预防如格式化字符串漏洞等问题，但如果已经采取了其他安全措施，则可以忽略。
+
+    ##-Wno-reinterpret-base-class：不对通过reinterpret_cast将派生类指针转换为其基类指针的操作提出警告。尽管这不是最佳实践，但在某些低级编程中可能有必要这样做。
+
+    ##-Wl,--allow-multiple-definition：链接阶段允许符号多重定义。这在构建共享库或某些特殊配置下可能有用，但通常应尽量避免以保持程序的一致性和稳定性。
 
     # gcc toolchain
     AM_CXXFLAGS="${AM_CXXFLAGS} --gcc-toolchain=$TOOLS_DIR"
