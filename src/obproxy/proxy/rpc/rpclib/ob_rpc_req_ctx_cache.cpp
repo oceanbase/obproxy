@@ -397,7 +397,7 @@ int ObRpcReqCtxCache::add_rpc_req_ctx(ObRpcReqCtx &ctx, bool direct_add)
           ObRpcReqCtx *tmp_ctx = insert_entry(hash, key, &ctx);
           if (NULL != tmp_ctx) {
             LOG_DEBUG("remove from table rpc ctx", KPC(tmp_ctx));
-            // tmp_ctx->set_deleted_state();
+            tmp_ctx->set_deleting_state();
             tmp_ctx->dec_ref();
             tmp_ctx = NULL;
           }

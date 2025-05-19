@@ -116,6 +116,15 @@ void ObRpcServerNetHandler::destroy()
     free_miobuffer(read_buffer_);
     read_buffer_ = NULL;
   }
+  if (OB_LIKELY(NULL != net_entry_.write_buffer_)) {
+    free_miobuffer(net_entry_.write_buffer_);
+    net_entry_.write_buffer_ = NULL;
+  }
+
+  if (OB_LIKELY(NULL != net_entry_.read_buffer_)) {
+    free_miobuffer(net_entry_.read_buffer_);
+    net_entry_.read_buffer_ = NULL;
+  }
   buf_reader_ = NULL;
 
 #ifdef USE_MYSQL_DEBUG_LISTS
@@ -169,6 +178,10 @@ int ObRpcServerNetHandler::new_connection(net::ObNetVConnection &new_vc)
     //TODO need add it later after assign cluster and tenant info for server_net_entry
     //RPC_SESSION_PROMETHEUS_STAT(, PROMETHEUS_CURRENT_SESSION, false, 1);
 
+    if (OB_UNLIKELY(NULL != read_buffer_)) {
+      free_miobuffer(read_buffer_);
+      read_buffer_ = NULL;
+    }
     read_buffer_ = new_empty_miobuffer(MYSQL_BUFFER_SIZE);
     if (OB_LIKELY(NULL != read_buffer_)) {
       buf_reader_ = read_buffer_->alloc_reader();
@@ -411,7 +424,7 @@ int ObRpcServerNetHandler::state_server_new_connection(int event, void *data)
                          K_(server_ip), K_(local_ip), K(ret));
           }
         }
-        if (OB_ISNULL(net_entry_.write_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE))) {
+        if (OB_ISNULL(net_entry_.write_buffer_) && (OB_ISNULL(net_entry_.write_buffer_ = new_miobuffer(MYSQL_BUFFER_SIZE)))) {
           ret = OB_ERR_UNEXPECTED;
           PROXY_SS_LOG(WDIAG, "[ObRpcServerNetHandler::state_server_new_connection] write_buffer is null",
                        K_(ss_id), K_(server_ip), K_(local_ip));
@@ -422,6 +435,7 @@ int ObRpcServerNetHandler::state_server_new_connection(int event, void *data)
         ret = OB_ERR_UNEXPECTED;
         PROXY_SS_LOG(WDIAG, "server entry failed to do_io_read", K_(ss_id), K_(server_ip), K_(local_ip), K(ret));
       } else if (OB_ISNULL(net_entry_.write_vio_ = do_io_write(this, 0, NULL))) {
+        ret = OB_ERR_UNEXPECTED;
         PROXY_SS_LOG(WDIAG, "server entry failed to do_io_write", K_(ss_id), K_(server_ip), K_(local_ip), K(ret));
       } else {
         //has init a empty server net entry

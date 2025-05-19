@@ -1158,6 +1158,7 @@ int ObRpcRequestSM::init_request_meta_info()
                   "tenant_name", obkv_info.tenant_name_,
                   "cluster_name", obkv_info.cluster_name_,
                   "partition_id", obkv_info.get_partition_id(),
+                  "is_server_support_distributed_execute", obkv_info.is_server_support_distributed_execute_,
                   K_(rpc_trace_id)
                   );
     }
@@ -3985,6 +3986,11 @@ int ObRpcRequestSM::setup_rpc_request_retry()
       if (obkv_info.is_need_ls_id()) {
         obkv_info.set_tablet_ls_entry_dirty();
       }
+      if (obkv_info.is_rpc_ls_entry_need_retry()) {
+        if (pll_info_.route_.set_table_entry_dirty()) { //schema changed get tablet->ls failed
+          get_pl_task_flow_controller().handle_new_task();
+        }
+      }
       // For global index retry logic, there are mainly two situations here
        // 1. Use the main table routing to report error -10500, splice it into a global index table, and try again
        // 2. Using global index table routing, error -10500 is reported. This situation is usually caused by using the old cache. In this case, normal retry logic is used, and the main table routing is used.
@@ -4599,6 +4605,10 @@ int ObRpcRequestSM::state_rpc_internal_get_partition(int event, void *data)
 
     if (result->rpc_calc_error_ || OB_ISNULL(result->table_entry_)) {
       ret = result->rpc_error_code_;
+      if (OB_UNLIKELY(OB_SUCCESS == ret)) {
+        ret = OB_TABLE_NOT_EXIST;
+        LOG_WDIAG("table entry is null, maybe table not exist", K(ret), K_(rpc_trace_id));
+      }
       result->ref_reset();     // need to free table entry and partition entry
       LOG_WDIAG("fail to get table entry", K_(sm_id), K(ret), K_(rpc_trace_id));
     } else {

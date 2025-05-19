@@ -483,6 +483,15 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
   if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
+  } else if (obkv_info.is_server_support_distributed_execute_ && is_hbase_request() && partition_ids.count() >= 1) {
+    int64_t idx = rand()%(partition_ids.count());
+    if (OB_UNLIKELY(idx < 0 || idx >= partition_ids.count())) {
+      idx = 0;
+    }
+    partition_id = partition_ids.at(idx);
+    obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
+    obkv_info.set_partition_id(0);
+    set_partition_id(0);
   } else if (partition_ids.count() == 1) {
     partition_id = partition_ids.at(0);
     obkv_info.set_definitely_single(true);
@@ -493,12 +502,6 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
     if (is_aggregate_query()) {
       ret = common::OB_NOT_SUPPORTED;
       LOG_WDIAG("query request with aggregate is a shard request", K(ret), K(rpc_trace_id));
-    } else if (obkv_info.is_server_support_distributed_execute_) {
-      // TODO support random/first/most
-      partition_id = partition_ids.at(0);
-      obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
-      obkv_info.set_partition_id(0);
-      set_partition_id(0);
     } else {
       obkv_info.set_shard(true);
       partition_id = common::OB_INVALID_INDEX;
@@ -625,22 +628,25 @@ int ObRpcTableQueryAndMutateRequest::calc_partition_id(common::ObArenaAllocator 
   if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
+  } else if (obkv_info.is_server_support_distributed_execute_ && is_hbase_request() && partition_ids.count() >= 1) {
+    int64_t idx = rand()%(partition_ids.count());
+    if (OB_UNLIKELY(idx < 0 || idx >= partition_ids.count())) {
+      idx = 0;
+    }
+    partition_id = partition_ids.at(idx);
+    set_partition_id(0);
+    obkv_info.set_partition_id(0);
   } else if (partition_ids.count() == 1) {
     partition_id = partition_ids.at(0);
     set_partition_id(partition_ids.at(0));
     obkv_info.set_definitely_single(true);
     obkv_info.set_partition_id(partition_ids.at(0));
     obkv_info.set_ls_id(partition_ids.at(0));
-  } else if (partition_ids.count() > 1 && !obkv_info.is_server_support_distributed_execute_) {
+  } else if (partition_ids.count() > 1) {
     ret = OB_NOT_SUPPORTED;
     partition_id = common::OB_INVALID_INDEX;
     LOG_WDIAG("OB_TABLE_API_QUERY_AND_MUTATE get more than one partition_id, not support", K(ret), K(partition_ids),
               K(rpc_trace_id));
-  } else if (partition_ids.count() > 1 && obkv_info.is_server_support_distributed_execute_) {
-    // TODO need use random partition_id
-    partition_id = partition_ids.at(0);
-    set_partition_id(0);
-    obkv_info.set_partition_id(0);
   } else {
     obkv_info.set_empty_query_result(true);
     partition_id = common::OB_INVALID_INDEX;
@@ -776,6 +782,22 @@ int ObRpcTableQuerySyncRequest::calc_partition_id(common::ObArenaAllocator &allo
   if (OB_FAIL(calc_partition_id_by_sub_range(allocator, part_info, 0, partition_ids))) {
     LOG_WDIAG("fail to calc part id for table query", K(ret), K(rpc_trace_id));
   } else if (OB_FALSE_IT(set_partition_ids(partition_ids))) {
+  } else if (obkv_info.is_server_support_distributed_execute_ && is_hbase_request() && partition_ids.count() >= 1) {
+    int64_t idx = rand()%(partition_ids.count());
+    if (OB_UNLIKELY(idx < 0 || idx >= partition_ids.count())) {
+      idx = 0;
+    }
+    partition_id = partition_ids.at(idx);
+    obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
+    obkv_info.set_partition_id(0);
+    set_partition_id(0);
+    if (OB_NOT_NULL(query_async_entry)) {
+      query_async_entry->reset_tablet_ids();
+      query_async_entry->get_tablet_ids().push_back(partition_id);
+    } else {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
+    }
   } else if (partition_ids.count() == 1) {
     partition_id = partition_ids.at(0);
     obkv_info.set_definitely_single(true);
@@ -790,30 +812,15 @@ int ObRpcTableQuerySyncRequest::calc_partition_id(common::ObArenaAllocator &allo
       LOG_WARN("single async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
     }
   } else if (partition_ids.count() > 1) {
-    if (obkv_info.is_server_support_distributed_execute_) {
-      // TODO support random/first/most
-      partition_id = partition_ids.at(0);
-      obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
-      obkv_info.set_partition_id(0);
-      set_partition_id(0);
-      if (OB_NOT_NULL(query_async_entry)) {
-        query_async_entry->reset_tablet_ids();
-        query_async_entry->get_tablet_ids().push_back(partition_id);
-      } else {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
-      }
+    obkv_info.set_partition_id(partition_ids.at(0));
+    partition_id = partition_ids.at(0);
+    set_partition_id(partition_ids.at(0));
+    if (OB_NOT_NULL(query_async_entry)) {
+      query_async_entry->reset_tablet_ids();
+      query_async_entry->get_tablet_ids().assign(partition_ids);
     } else {
-      obkv_info.set_partition_id(partition_ids.at(0));
-      partition_id = partition_ids.at(0);
-      set_partition_id(partition_ids.at(0));
-      if (OB_NOT_NULL(query_async_entry)) {
-        query_async_entry->reset_tablet_ids();
-        query_async_entry->get_tablet_ids().assign(partition_ids);
-      } else {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
-      }
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("shard async query without query_async_entry", K(ret), K(obkv_info), K(rpc_trace_id));
     }
   } else {
     obkv_info.set_empty_query_result(true);
@@ -986,6 +993,10 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
     }
     for (int64_t i = 0; i < tablet_ops.count() && OB_SUCC(ret); ++i) {
       int64_t single_ops_count = tablet_ops.at(i).get_single_ops().count();
+      int64_t idx = rand()%single_ops_count;
+      if (idx < 0 || idx >= single_ops_count) {
+        idx = 0;
+      }
       for (int64_t j = 0; j < single_ops_count && OB_SUCC(ret); j++) {
         // partition id calculation depends on op_type
         if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, offset, tablet_id))) {
@@ -994,7 +1005,7 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
           LOG_WDIAG("fail to record log stream id/ tablet_id/ index", K(ls_id), K(tablet_id), "tablet_index", i,
                     "single_index", j, "offset", offset, K(ret));
         } else {
-          if (OB_UNLIKELY(i == 0 && j == 0)) {
+          if (OB_UNLIKELY(i == 0 && j == idx)) {
             set_partition_id(tablet_id);
           }
           offset++;
@@ -1005,18 +1016,17 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
       if (OB_SUCC(ret)) {
         // we still use tablet id to determine whether this is a single partition req
         // because if one ls_id contians multi tabelt_id, we have to rewrite whole req
-        if (tablet_id_index_map_.size() == 1) {
-          obkv_info.set_definitely_single(true);
-          obkv_info.set_ls_id(ls_id);
-          obkv_info.set_partition_id(tablet_id);
-          partition_id = tablet_id;
-        } else if (tablet_id_index_map_.size() > 1 && obkv_info.is_server_support_distributed_execute_) {
-          // TODO support random/first/most
+        if (obkv_info.is_server_support_distributed_execute_ && is_hbase_request() && tablet_id_index_map_.size() >= 1) {
           obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
           obkv_info.set_partition_id(0);
           partition_id = first_partition_id_;
           set_ls_id(common::ObLSID::INVALID_LS_ID);
-        } else if (tablet_id_index_map_.size() > 1 && !obkv_info.is_server_support_distributed_execute_) {
+        } else if (tablet_id_index_map_.size() == 1) {
+          obkv_info.set_definitely_single(true);
+          obkv_info.set_ls_id(ls_id);
+          obkv_info.set_partition_id(tablet_id);
+          partition_id = tablet_id;
+        } else if (tablet_id_index_map_.size() > 1) {
           obkv_info.set_shard(true);
           partition_id = common::OB_INVALID_INDEX;
         } else {

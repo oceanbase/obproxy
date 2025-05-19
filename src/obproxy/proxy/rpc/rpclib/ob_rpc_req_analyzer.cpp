@@ -564,17 +564,20 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
   const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
   ObRpcTableLoginResponse *login_response = NULL;
+  ObRpcTableLoginRequest *login_request = NULL;
 
   if (OB_ISNULL(rpc_ctx = obkv_info.rpc_ctx_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("handle login result but rpc_ctx is NULL", K(ret), K(rpc_trace_id));
-  } else if (OB_ISNULL(login_response = dynamic_cast<ObRpcTableLoginResponse *>(ob_rpc_req.get_rpc_response()))) {
+  } else if (OB_ISNULL(login_response = dynamic_cast<ObRpcTableLoginResponse *>(ob_rpc_req.get_rpc_response()))
+          || OB_ISNULL(login_request = dynamic_cast<ObRpcTableLoginRequest *>(ob_rpc_req.get_rpc_request()))) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("handle login result but login_response is NULL", K(ret), K(rpc_trace_id));
+    LOG_WDIAG("handle login result but login_response or login_request_is NULL", K(login_request), K(login_response), K(ret), K(rpc_trace_id));
   } else {
     // decode and store credential
     int64_t pos = 0;
     int64_t cluster_version = ob_rpc_req.get_cluster_version();
+    bool need_add_rpc_ctx_directly = false;
 
     const ObString &credential = login_response->get_credential();
     if (OB_FAIL(serialization::decode(credential.ptr(), credential.length(), pos, obkv_info.credential_))) {
@@ -584,16 +587,21 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
       rpc_ctx->set_credential(obkv_info.credential_);
       // set server capacities
       // if observer version < 4.3.5.2(bp2), server_capacities is not inited as 0, will cause undefined behavior
-      if (!IS_CLUSTER_VERSION_BEFORE_4_3_5_2(cluster_version)) {
+      if (!IS_CLUSTER_VERSION_BEFORE_4_3_5_2(cluster_version) && 3 == login_request->get_client_type()) {
         rpc_ctx->set_support_distributed_execute(login_response->is_support_distributed_execute());
+        need_add_rpc_ctx_directly = true;
+        LOG_DEBUG("obkv login response", K(login_response->is_support_distributed_execute()));
       }
       // add in global cache
       rpc_ctx->inc_ref();   //inc before add to cache
-      if (OB_FAIL(get_global_rpc_req_ctx_cache().add_rpc_req_ctx_if_not_exist(*rpc_ctx, false))) {
+      if (OB_FAIL(!need_add_rpc_ctx_directly && get_global_rpc_req_ctx_cache().add_rpc_req_ctx_if_not_exist(*rpc_ctx, false))) {
         LOG_WDIAG("fail to add rpc ctx", KPC(rpc_ctx), K(ret));
         rpc_ctx->dec_ref();
+      } else if (OB_FAIL(need_add_rpc_ctx_directly && get_global_rpc_req_ctx_cache().add_rpc_req_ctx(*rpc_ctx, false))) {
+        LOG_WDIAG("fail to add rpc ctx directly", KPC(rpc_ctx), K(ret));
+        rpc_ctx->dec_ref();
       } else {
-        LOG_DEBUG("succ to add rpc ctx into global cache", KPC(rpc_ctx), K(rpc_trace_id));
+        LOG_DEBUG("succ to add rpc ctx into global cache", KPC(rpc_ctx), K(need_add_rpc_ctx_directly), K(rpc_trace_id));
         //set credential value for redis
         if (ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) {
           ObRpcRedisInfo *redis_info = ob_rpc_req.get_redis_info();
@@ -757,6 +765,7 @@ int ObProxyRpcReqAnalyzer::handle_obkv_login_rewrite(ObRpcReq &ob_rpc_req)
 
     orig_auth_req->set_tenant_name(rpc_ctx->get_tenant_name());
     orig_auth_req->set_user_name(rpc_ctx->get_user_name());
+    LOG_DEBUG("obkv rewrite login before", K(orig_auth_req->get_client_type()));
     if (orig_auth_req->get_client_type() == 3 && IS_CLUSTER_VERSION_BEFORE_4_3_5_2(cluster_version)) {
       // client_type == 3(hbase client) is used in server distributation capacity
       // to compatible with old server, need set it to 2
@@ -781,6 +790,7 @@ int ObProxyRpcReqAnalyzer::handle_obkv_login_rewrite(ObRpcReq &ob_rpc_req)
         buf[pos++] = '\0';
         // ob_rpc_req.set_request_buf_len(request_len);
         ob_rpc_req.set_request_len(request_len);
+        LOG_DEBUG("obkv rewrite login after", K(orig_auth_req->get_client_type()));
       }
     }
   } else {

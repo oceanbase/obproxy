@@ -141,6 +141,7 @@ public:
                K_(user_name),
                K_(database_name),
                K_(full_name),
+               K_(is_server_support_distributed_execute),
                KP_(cluster_resource),
                KP_(dummy_entry),
                "dummy_ldc_item_count", dummy_ldc_.count(),

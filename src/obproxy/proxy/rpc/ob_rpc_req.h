@@ -442,7 +442,11 @@ public:
   bool is_query_request() const { return obrpc::OB_TABLE_API_EXECUTE_QUERY == pcode_ || obrpc::OB_TABLE_API_QUERY_AND_MUTATE == pcode_ || obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC == pcode_; }
   bool is_inner_req_retrying() const { return is_inner_request_ && inner_req_retries_ > 0; }
   bool is_internal_get_partition_request() const { return obrpc::OB_GET_PARTITIONS == pcode_; }
-  bool is_need_ls_id() const { return is_lsop_request() && (!is_inner_request_|| is_inner_req_retrying()) && !is_server_support_distributed_execute_; } //TODO need add other condition for next
+  // only lsop need get ls_id
+  // 1.lsop请求且是分区表
+  // 2.不是子请求或者子请求重试中
+  // 3.只有hbase请求且开启分布式能力才不需要获取ls_id
+  bool is_need_ls_id() const { return is_lsop_request() && !is_non_partition_table() && (!is_inner_request_|| is_inner_req_retrying()) && !(is_hbase_request() && is_server_support_distributed_execute_); } //TODO need add other condition for next
   bool is_rpc_ls_entry_need_retry() const { return is_rpc_ls_entry_need_retry_; }
 
   bool     is_not_master_error() const {  //used by sub request to retry(just for route error);
@@ -482,7 +486,7 @@ public:
       bret = (route_error_retry || global_index_retry || query_async_retry || rpc_ls_entry_need_retry);
     } else {
       bret = (inner_req_retries_ < sub_req_retry_limit
-          && ((pcode_ == obrpc::OB_TABLE_API_LS_EXECUTE && route_error_retry)
+          && ((pcode_ == obrpc::OB_TABLE_API_LS_EXECUTE && (route_error_retry || rpc_ls_entry_need_retry))
               || (pcode_ != obrpc::OB_TABLE_API_LS_EXECUTE && route_error_retry && (is_not_master_error() || 0 == get_error_code()))));
     }
     return bret;
