@@ -70,7 +70,7 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
   } else {
     obkv_info.set_pcode(meta.rpc_header_.pcode_);
     obkv_info.set_meta_flag(meta.rpc_header_.flags_);
-    obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
+    // obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;   // set tenant id
     analyze_pos = meta.rpc_header_.hlen_ + RPC_NET_HEADER;
 
     // analyze response meta
@@ -135,6 +135,8 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
           }
         }
       } else {
+        // only request keep tenant_id
+        obkv_info.tenant_id_ = meta.rpc_header_.tenant_id_;
         // alloc rpc request
         if (OB_FAIL(ob_rpc_req.alloc_rpc_request())) {
           LOG_WDIAG("fail to call alloc_rpc_request", K(ob_rpc_req), K(ret), K(rpc_trace_id));
