@@ -689,6 +689,8 @@ LOG_MOD_END(STORAGETEST)
                                                                    info_string, ##args)
 #define _STORAGETEST_LOG(level, info_string, args...) _OB_SUB_MOD_LOG(STORAGETEST, TEST, level,  \
                                                                   info_string, ##args)
+#define SESSION_POOL_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(SESSION, POOL, level,               \
+                                                                  info_string, ##args)
 
 // liboblog submod definition
 #define OBLOG_FETCHER_LOG(level, fmt, args...) OB_SUB_MOD_LOG(TLOG, FETCHER, level, fmt, ##args)

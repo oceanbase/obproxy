@@ -216,7 +216,7 @@ function do_rpm()
   cp ${PACKAGE}-${OBPROXY_VERSION}.tar.gz ${TMP_DIR}/SOURCES
   cd ${TMP_DIR}/BUILD
   echo "[BUILD] make rpms..._prefix=${PREFIX} spec_file=${SPEC_FILE}"
-  rpmbuild --define "_topdir ${TMP_DIR}" --define "NAME ${PACKAGE}" --define "VERSION ${OBPROXY_VERSION}" --define "_prefix ${PREFIX}" --define "RELEASE ${RELEASE}" --define "rpm_path ${TOPDIR}" -ba ${TOPDIR}/deps/3rd/${SPEC_FILE} || exit 2
+  rpmbuild --define "_topdir ${TMP_DIR}" --define "NAME ${PACKAGE}" --define "VERSION ${OBPROXY_VERSION}" --define "_prefix ${PREFIX}" --define "RELEASEID ${RELEASE}" --define "rpm_path ${TOPDIR}" -ba ${TOPDIR}/deps/3rd/${SPEC_FILE} || exit 2
   echo "[BUILD] make rpms done."
 
   cd ${TOPDIR}

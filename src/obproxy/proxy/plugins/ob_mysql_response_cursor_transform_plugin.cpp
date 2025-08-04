@@ -37,7 +37,7 @@ ObMysqlResponseCursorTransformPlugin *ObMysqlResponseCursorTransformPlugin::allo
 
 ObMysqlResponseCursorTransformPlugin::ObMysqlResponseCursorTransformPlugin(ObApiTransaction &transaction)
   : ObTransformationPlugin(transaction, ObTransformationPlugin::RESPONSE_TRANSFORMATION),
-    local_reader_(NULL), local_buffer_(NULL), pkt_reader_(),
+    local_produce_reader_(NULL), local_analyze_reader_(NULL), local_buffer_(NULL), pkt_reader_(),
     resultset_state_(RESULTSET_HEADER), column_num_(0), pkt_count_(0),
     have_cursor_(false), field_types_()
 {
@@ -46,18 +46,37 @@ ObMysqlResponseCursorTransformPlugin::ObMysqlResponseCursorTransformPlugin(ObApi
   // 因为 consume() 的参数 reader 对应的 ObMIOBuffer 如果数据量太大将无法扩容, 继续读取数据会造成数据流 Hung
   if (OB_ISNULL(local_buffer_ = new_empty_miobuffer())) {
     PROXY_API_LOG(EDIAG, "fail to alloc memory for local_buffer_");
-  } else if (OB_ISNULL(local_reader_ = local_buffer_->alloc_reader())) {
+  } else if (OB_ISNULL(local_analyze_reader_ = local_buffer_->alloc_reader())) {
     PROXY_API_LOG(EDIAG, "fail to alloc reader of local_buffer_");
-  } else {}
+  } else if (OB_ISNULL(local_produce_reader_ = local_buffer_->alloc_reader())) {
+    PROXY_API_LOG(EDIAG, "fail to alloc reader of local_buffer_");
+  }
+}
+
+void ObMysqlResponseCursorTransformPlugin::free_local_buffer()
+{
+  if (NULL != local_analyze_reader_) {
+    local_analyze_reader_->dealloc();
+    local_analyze_reader_ = NULL;
+  }
+
+  if (NULL != local_produce_reader_) {
+    local_produce_reader_->dealloc();
+    local_produce_reader_ = NULL;
+  }
+
+  if (NULL != local_buffer_) {
+    free_miobuffer(local_buffer_);
+    local_buffer_ = NULL;
+  }
 }
 
 void ObMysqlResponseCursorTransformPlugin::destroy()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin destroy", K(this));
   ObTransformationPlugin::destroy();
-
+  free_local_buffer();
   reset();
-
   op_reclaim_free(this);
 }
 
@@ -75,24 +94,25 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin::consume happen");
   int ret = OB_SUCCESS;
+  event::ObIOBufferReader *produce_reader = NULL;
 
-
-  if (local_reader_ == NULL || local_buffer_ == NULL) {
+  if (local_analyze_reader_ == NULL || local_buffer_ == NULL) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_API_LOG(EDIAG, "unexpected null ptr", KP(local_reader_), KP(local_buffer_), K(ret));
+    PROXY_API_LOG(EDIAG, "unexpected null ptr", KP(local_analyze_reader_), KP(local_buffer_), K(ret));
   } else {
-    int64_t forward_len = 0;
+    int64_t forward_len = 0;  // 往下游 produce 的数据大小
     if (RESULTSET_END != resultset_state_) {
       int64_t written = 0;
+      produce_reader = local_produce_reader_;
       if (OB_FAIL(local_buffer_->write(reader, reader->read_avail(), written))) {  // 并没有真正拷贝内存, 仅克隆 block
         PROXY_API_LOG(EDIAG, "fail to alloc reader of local_buffer_", K(ret));
       } else if (reader->read_avail() != written) {
         PROXY_API_LOG(EDIAG, "fail to write all data to local_buffer_", K(written), K(reader->read_avail()));
       } else {
         ObMysqlAnalyzeResult result;
-        while (OB_SUCC(ret) && local_reader_->read_avail() > 0) {
-          if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_reader_, result))) {
-            PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_reader_), K(ret));
+        while (OB_SUCC(ret) && local_analyze_reader_->read_avail() > 0) {
+          if (OB_FAIL(ObProxyParserUtils::analyze_one_packet(*local_analyze_reader_, result))) {
+            PROXY_API_LOG(EDIAG, "fail to analyze one packet", K(local_analyze_reader_), K(ret));
           } else {
             if (ANALYZE_DONE == result.status_) {
               if (result.is_error_packet()) {
@@ -101,7 +121,7 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
 
               switch(resultset_state_) {
               case RESULTSET_HEADER :
-                if (OB_FAIL(handle_resultset_header(local_reader_))) {
+                if (OB_FAIL(handle_resultset_header(local_analyze_reader_))) {
                   PROXY_API_LOG(EDIAG, "handle resultset header failed", K(ret));
                 }
                 break;
@@ -110,7 +130,7 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
                   // just for defence
                   ret = OB_UNKNOWN_PACKET;
                   PROXY_API_LOG(EDIAG, "unknown decode state", K_(column_num), K_(pkt_count), K(result), K(ret));
-                } else if (OB_FAIL(handle_resultset_field(local_reader_))) {
+                } else if (OB_FAIL(handle_resultset_field(local_analyze_reader_))) {
                   PROXY_API_LOG(EDIAG, "handle resultset field", K(ret));
                 }
                 break;
@@ -129,7 +149,7 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
                 if (result.is_eof_packet()) {
                   // 读完所有的 Row Packet 之后不需要再解析了
                   resultset_state_ = RESULTSET_END;
-                } else if (OB_FAIL(handle_resultset_row(local_reader_, sm_, field_types_, have_cursor_, column_num_))) {
+                } else if (OB_FAIL(handle_resultset_row(local_analyze_reader_, sm_, field_types_, have_cursor_, column_num_))) {
                   PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
                 }
                 break;
@@ -139,10 +159,10 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
 
               if (OB_FAIL(ret)) {
               } else if (RESULTSET_END == resultset_state_) {
-                forward_len += local_reader_->read_avail();
-                local_reader_->consume_all();
+                forward_len += local_analyze_reader_->read_avail();
+                local_analyze_reader_->consume_all();
                 break;
-              } else if (OB_FAIL(local_reader_->consume(result.meta_.pkt_len_))) {
+              } else if (OB_FAIL(local_analyze_reader_->consume(result.meta_.pkt_len_))) {
                 PROXY_API_LOG(EDIAG, "fail to consume local analyze reader", K(result.meta_.pkt_len_), K(ret));
               } else {
                 forward_len += result.meta_.pkt_len_;
@@ -154,15 +174,26 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
         }
       }
     } else {
+      // RESULTSET_END 状态, 说明已经不需要读 reader 里面的 packet 内容了
+      // 直接将 reader 的数据全部写入下游
       forward_len = reader->read_avail();
+      produce_reader = reader;
     }
 
     int64_t actual_size = 0;
-    if (OB_SUCC(ret)
-        && forward_len > 0
-        && forward_len != (actual_size = produce(reader, forward_len))) {
-      ret = OB_ERR_UNEXPECTED;
-      PROXY_API_LOG(EDIAG, "fail to produce", "expected size", forward_len, "actual size", actual_size, K(ret));
+    if (OB_SUCC(ret) && forward_len > 0) {
+      if (forward_len != (actual_size = produce(produce_reader, forward_len))) {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_API_LOG(EDIAG, "fail to produce", "expected size", forward_len, "actual size", actual_size, K(ret));
+      // local_produce_reader_ 中已经被解析的数据写入下游后要及时 consume
+      // 因为下次进入这个函数时会有新的数据写入到 local_buffer_
+      // reader 中的数据写入下游后不用管,因为在外部会调用 reader->consume_all()
+      } else if (produce_reader == local_produce_reader_) {
+        if (OB_FAIL(local_produce_reader_->consume(forward_len))) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_API_LOG(EDIAG, "fail to consume data from local_produce_reader", K(ret), K(forward_len));
+        }
+      }
     }
   }
 
@@ -268,7 +299,7 @@ int ObMysqlResponseCursorTransformPlugin::handle_resultset_row(event::ObIOBuffer
               ObMysqlClientSession *client_session = sm->get_client_session();
               ObMysqlServerSession *server_session = sm->get_server_session();
               if (OB_ISNULL(server_session)) {
-                server_session = client_session->get_server_session();
+                server_session = client_session->get_last_server_session();
               }
 
               uint32_t client_cursor_id = client_session->inc_and_get_cursor_id();
@@ -457,17 +488,7 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
 void ObMysqlResponseCursorTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin::handle_input_complete happen");
-
-  if (NULL != local_reader_) {
-    local_reader_->dealloc();
-    local_reader_ = NULL;
-  }
-
-  if (NULL != local_buffer_) {
-    free_miobuffer(local_buffer_);
-    local_buffer_ = NULL;
-  }
-
+  free_local_buffer();
   set_output_complete();
 }
 

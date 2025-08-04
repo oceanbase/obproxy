@@ -52,7 +52,8 @@ public:
   int commit(bool is_success);
 
   bool check_and_inc_conn(common::ObString& cluster_name,
-      common::ObString& tenant_name, common::ObString& ip_name);
+      common::ObString& tenant_name, common::ObString& ip_name,
+      int64_t& cur_used_connections, int64_t& max_connections);
 
   int inc_conn(common::ObString& cluster_name, common::ObString& tenant_name, common::ObString& ip_name,
       int64_t& cur_used_connections);

@@ -461,6 +461,9 @@ int ObTableProcessor::handle_lookup_global_cache_done(
               }
             } else {
               te_cont->handle_event(te_event, NULL);
+              if (LOOKUP_REMOTE_FOR_UPDATE_OP == op) {
+                LOG_DEBUG("begin to lookup table entry remote for update", K(table_param));
+              }
             }
           }
           if (OB_FAIL(ret) && (NULL != te_cont)) {

@@ -476,7 +476,7 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
         int64_t scan_lease_timeout = query_response->get_rpc_timeout();
         bool is_new_query_start = (sync_query.query_type_ == ObQueryOperationType::QUERY_START);
         int64_t next_timeout = 0;
-
+        bool need_return_empty_response = false;
 
         // reset is_first
         query_async_entry->set_first_query(false);
@@ -490,6 +490,14 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
               ob_rpc_req.get_rpc_request()->get_rpc_timeout(); //compatible with previous version
 
         query_async_entry->update_timeout_ts(next_timeout);
+
+        // TODO:prevent client timeout
+        // if (common::ObTimeUtility::current_time() < ob_rpc_req.get_client_net_timeout_us()) {
+        //   int64_t remain_time = ob_rpc_req.get_client_net_timeout_us() - common::ObTimeUtility::current_time();
+        //   if (remain_time < (ob_rpc_req.get_rpc_request()->get_rpc_timeout() / 2)) {
+        //     need_return_empty_response = true;
+        //   }
+        // }
 
         if (ObQueryOperationType::QUERY_END == sync_query.query_type_) {
           need_clean_query_info = true; // client to end fetch any more and to cleanup
@@ -530,6 +538,24 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
             }
             if (query_async_entry->is_last_tablet()) {
               need_clean_query_info = true;
+            } else if (OB_UNLIKELY(need_return_empty_response)) {
+              if (OB_FAIL(ObProxyRpcReqAnalyzer::build_empty_query_response(ob_rpc_req))) {
+              LOG_WDIAG("failed to build empty query response", K(ret), K(rpc_trace_id));
+              } else {
+                ObRpcTableQuerySyncResponse *query_response =
+                  dynamic_cast<ObRpcTableQuerySyncResponse *>(ob_rpc_req.get_rpc_response());
+                if (OB_ISNULL(query_response)) {
+                  ret = OB_ERR_UNEXPECTED;
+                  LOG_WDIAG("invliad rpc async query response to handle, cloud not to be here", K(ret), K(rpc_trace_id));
+                } else {
+                  query_response->get_query_result().is_end_ = false;
+                  query_async_entry->add_current_position();
+                  query_async_entry->set_server_query_session_id(0);
+                  query_async_entry->set_first_query(true);
+                  query_async_entry->reset_server_info();
+                  LOG_DEBUG("just directly return empty response for query request", K(is_data), K(is_end), K(rpc_trace_id));
+                }
+              }
             } else {
               query_async_entry->add_current_position();
               query_async_entry->set_server_query_session_id(0);
@@ -1057,6 +1083,7 @@ int ObProxyRpcReqAnalyzer::handle_obkv_request_rewrite(ObRpcReq &ob_rpc_req)
             ret = handle_obkv_serialize_request(ob_rpc_req);
             break;
           case obrpc::OB_TABLE_API_DIRECT_LOAD:
+          case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
             //do nothing
             break;
           default:
@@ -1250,6 +1277,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_request_size(const ObRpcPacketCode pcode, int
   case obrpc::OB_GET_PARTITIONS:
     size = sizeof(ObRpcTableGetRouteRequest);
     break;
+  case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+    size = sizeof(ObRpcTableMetaRequest);
+    break;
   default:
     size = 0;
     ret = OB_NOT_SUPPORTED;
@@ -1299,6 +1329,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_response_size(const ObRpcPacketCode pcode, in
     break;
   case obrpc::OB_GET_PARTITIONS:
     size = sizeof(ObRpcTableGetRouteResponse);
+    break;
+  case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+    size = sizeof(ObRpcTableMetaResponse);
     break;
   default:
     size = 0;

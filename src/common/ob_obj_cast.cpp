@@ -6650,7 +6650,6 @@ int ObObjCasterV2::to_type(const ObObjType expect_type,
       }
     }
   }
-  LOG_DEBUG("process to_type", K(ret), "in_type", in_obj.get_type(), K(in_obj), K(expect_type), K(out_obj), K(lbt()));
   return ret;
 }
 

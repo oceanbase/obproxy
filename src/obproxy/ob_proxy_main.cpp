@@ -40,6 +40,12 @@
 #include "obproxy/prometheus/ob_memory_prometheus.h"
 #include "obproxy/prometheus/ob_prometheus_info.h"
 
+#include "obproxy/proxy/mysqllib/ob_session_field_mgr.h"
+
+#include "lib/signal/ob_libunwind.h"
+#include "lib/utility/ob_backtrace.h"
+#include "lib/signal/ob_signal_utils.h"
+#include <sys/utsname.h>
 
 using namespace oceanbase::common;
 using namespace oceanbase::lib;
@@ -56,6 +62,9 @@ namespace obproxy
 static const int64_t OB_MAX_LOG_FILE_NAME_LEN = 128;
 
 ObProxyMain *ObProxyMain ::instance_ = NULL;
+static __thread int64_t g_coredump_num = 0;
+uint64_t g_rlimit_core = 0;
+#define COMMON_FMT "timestamp=%ld, tid=%ld, tname=%s, trace_id=%s, \nlbt=%s"
 
 int ObProxyMain::print_args(const int argc, char *const argv[]) const
 {
@@ -70,6 +79,36 @@ int ObProxyMain::print_args(const int argc, char *const argv[]) const
     MPRINT("%s", argv[argc - 1]);
   }
   return ret;
+}
+
+void ObProxyMain::print_limit(const char *name, const int resource)
+{
+  struct rlimit limit;
+  if (0 == getrlimit(resource, &limit)) {
+    if (RLIM_INFINITY == limit.rlim_cur) {
+      MPRINT("[%s] %-24s = %s", __func__, name, "unlimited");
+    } else {
+      MPRINT("[%s] %-24s = %ld", __func__, name, limit.rlim_cur);
+    }
+  }
+  if (RLIMIT_CORE == resource) {
+    g_rlimit_core = limit.rlim_cur;
+  }
+}
+
+void ObProxyMain::print_all_limits()
+{
+  OB_LOG(INFO, "============= *begin obproxy limit report * =============");
+  print_limit("RLIMIT_CORE",RLIMIT_CORE);
+  print_limit("RLIMIT_CPU",RLIMIT_CPU);
+  print_limit("RLIMIT_DATA",RLIMIT_DATA);
+  print_limit("RLIMIT_FSIZE",RLIMIT_FSIZE);
+  print_limit("RLIMIT_LOCKS",RLIMIT_LOCKS);
+  print_limit("RLIMIT_MEMLOCK",RLIMIT_MEMLOCK);
+  print_limit("RLIMIT_NOFILE",RLIMIT_NOFILE);
+  print_limit("RLIMIT_NPROC",RLIMIT_NPROC);
+  print_limit("RLIMIT_STACK",RLIMIT_STACK);
+  OB_LOG(INFO, "============= *stop obproxy limit report* ===============");
 }
 
 void ObProxyMain::destroy()
@@ -299,6 +338,7 @@ int ObProxyMain::parse_short_opt(const int32_t c, const char *value, ObProxyOpti
       break;
     } case 'C': {
       dump_config_to_yaml();
+      dump_version_to_file();
       ret = OB_NOT_RUNNING;
       break;
     }
@@ -470,6 +510,41 @@ void ObProxyMain::dump_config_to_yaml() const
 
 }
 
+void ObProxyMain::dump_version_to_file() const
+{
+  int ret = OB_SUCCESS;
+  constexpr int64_t MAX_VERSION_LEN = 512;
+  char version_info[MAX_VERSION_LEN] = "";
+  struct utsname uts;
+  if (0 != ::uname(&uts)) {
+    ret = OB_ERR_SYS;
+    LOG_WDIAG("call uname failed", K(ret));
+  } else {
+    // obproxy-4.2.1.8-11503.el7.x86_64.rpm
+    // PACKAGE_VERSION: 4.3.5.0
+    // RELEASEID: 11503.el7
+    // uts.machine: x86_64
+    int len = 0;
+    len = snprintf(version_info, MAX_VERSION_LEN,
+                "{\"software package\":\"obproxy-%s-%s.%s.rpm\"}",
+                PACKAGE_VERSION, RELEASEID, uts.machine);
+    if (OB_UNLIKELY(len < 0 || len > MAX_VERSION_LEN)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to snprintf version_info", K(ret));
+    } else {
+      char cwd[ObLayout::MAX_PATH_LENGTH]{};
+      if (OB_ISNULL(getcwd(cwd, sizeof(cwd)))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to get current dir", K(ret));
+      } else if (OB_FAIL(ObProxyFileUtils::write_to_file(cwd, CFG_DUMP_SOFTWARE_PACKAGE, version_info,
+                                                         len, false))) {
+        LOG_WDIAG("fail to write file to dir", K(cwd), K(CFG_DUMP_SOFTWARE_PACKAGE), K(len), K(ret));
+      }
+    }
+  }
+
+}
+
 int ObProxyMain::start(const int argc, char *const argv[])
 {
   int ret = OB_SUCCESS;
@@ -518,7 +593,10 @@ int ObProxyMain::start(const int argc, char *const argv[])
       LOG_EDIAG("fail to init random seed", K(ret));
     } else if (OB_FAIL(init_data_type())) {
       LOG_EDIAG("fail to init partition calculation related", K(ret));
+    } else if (OB_FAIL(Trie::init_sys_var_trie())) {
+      LOG_EDIAG("fail to init sys var trie", K(ret));
     } else {
+      print_all_limits();
       init_proc_map_info();
       ObMemLeakChecker::init_all_mem_leak_checker();
       app_info_.setup(PACKAGE_STRING, APP_NAME, RELEASEID);
@@ -603,7 +681,6 @@ int ObProxyMain::handle_inherited_sockets(const int argc, char *const argv[])
         }
       }
     }
-    LOG_INFO("handle inherited sockets info", K(info));
   }
 
   return ret;
@@ -665,12 +742,6 @@ int ObProxyMain::init_signal()
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGTERM))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
-#ifndef USING_ASAN
-  } else if (OB_FAIL(add_sig_direct_catched(action, SIGABRT))) {
-    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
-  } else if (OB_FAIL(add_sig_direct_catched(action, SIGSEGV))) {
-    LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
-#endif
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR1))) {
     LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
   } else if (OB_FAIL(add_sig_direct_catched(action, SIGUSR2))) {
@@ -698,6 +769,31 @@ int ObProxyMain::init_signal()
   } else {
     LOG_DEBUG("succ to init_signal");
   }
+  return ret;
+}
+
+int ObProxyMain::init_crash_error_signal()
+{
+  int ret = OB_SUCCESS;
+
+#ifndef USING_ASAN
+  bool enable_crash_error_log = get_global_proxy_config().enable_crash_error_log;
+  if (enable_crash_error_log) {
+    struct sigaction action;
+    if (OB_FAIL(add_sig_direct_catched(action, SIGABRT))) {
+      LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+    } else if (OB_FAIL(add_sig_direct_catched(action, SIGBUS))) {
+      LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+    } else if (OB_FAIL(add_sig_direct_catched(action, SIGFPE))) {
+      LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+    } else if (OB_FAIL(add_sig_direct_catched(action, SIGSEGV))) {
+      LOG_WDIAG("fail to add_sig_direct_catched", K(ret));
+    } else {
+      LOG_INFO("succ to init crash error signal");
+    }
+  }
+#endif
+
   return ret;
 }
 
@@ -731,7 +827,7 @@ int ObProxyMain::add_sig_direct_catched(struct sigaction &action, const int sig,
 {
   int ret = OB_SUCCESS;
   sigemptyset(&action.sa_mask);
-  action.sa_handler = sig_direct_handler;
+  action.sa_sigaction = sig_direct_handler;
   action.sa_flags = flag;
   if (OB_UNLIKELY(0 != sigaction(sig, &action, NULL))) {
     ret = OB_ERR_UNEXPECTED;
@@ -900,9 +996,8 @@ extern "C" {
 }
 #endif
 
-void ObProxyMain::sig_direct_handler(const int sig)
+void ObProxyMain::sig_direct_handler(int sig, siginfo_t *si, void *contextg)
 {
-  struct sigaction action;
   switch (sig) {
     case SIGUSR1: {
       ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
@@ -965,10 +1060,11 @@ void ObProxyMain::sig_direct_handler(const int sig)
       break;
     }
     case SIGABRT:
+    case SIGBUS:
+    case SIGFPE:
     case SIGSEGV:
-      add_sig_default_catched(action, SIGABRT);
-      add_sig_default_catched(action, SIGSEGV);
-      ob_abort();
+      coredump_cb(sig, si->si_code, si->si_addr, contextg);
+      // the program won't execute from now on
     default: {
       break;
     }
@@ -979,6 +1075,75 @@ void ObProxyMain::sig_direct_handler(const int sig)
       LOG_ERROR("receive signal", K(sig));
     }
   }
+}
+
+void ObProxyMain::coredump_cb(volatile int sig, volatile int sig_code, void* volatile sig_addr, void *context)
+{
+  int ret = OB_SUCCESS;
+  UNUSED(ret);
+  if (g_coredump_num++ < 1) {
+    timespec time = {0, 0};
+    clock_gettime(CLOCK_REALTIME, &time);
+    int64_t ts = time.tv_sec * 1000000 + time.tv_nsec / 1000;
+    // thread_name
+    char tname[16];
+    prctl(PR_GET_NAME, tname);
+    auto *trace_id = ObCurTraceId::get_trace_id();
+    char trace_id_buf[128] = {'\0'};
+    if (trace_id != nullptr) {
+      int64_t pos = trace_id->safe_to_string(trace_id_buf, sizeof(trace_id_buf));
+      if (pos < sizeof(trace_id_buf)) {
+        trace_id_buf[pos]= '\0';
+      }
+    }
+
+    // backtrace
+    char bt[512] = {'\0'};
+    int64_t len = 0;
+    const ucontext_t *con = (ucontext_t *)context;
+#if defined(__x86_64__)
+    int64_t ip = con->uc_mcontext.gregs[REG_RIP];
+    int64_t bp = con->uc_mcontext.gregs[REG_RBP]; // stack base
+    safe_backtrace(bt, sizeof(bt) - 1, &len);
+#elif defined(__aarch64__)
+    int64_t ip = con->uc_mcontext.regs[30];
+    int64_t bp = con->uc_mcontext.regs[29];
+    void* addrs[64];
+    int n_addr = light_backtrace(addrs, ARRAYSIZEOF(addrs), bp);
+    len += safe_parray(bt, sizeof(bt) - 1, (int64_t*)addrs, n_addr);
+#else
+    int64_t ip = -1;
+    int64_t bp = -1;
+#endif
+    bt[len++] = '\0';
+
+    char print_buf[1024];
+    char rlimit_core[32] = "unlimited";
+    if (UINT64_MAX != g_rlimit_core) {
+      snprintf(rlimit_core, sizeof(rlimit_core), "%lu", g_rlimit_core);
+    }
+    char crash_info[128] = "CRASH ERROR!!!";
+    ssize_t print_len = snprintf(print_buf, sizeof(print_buf),
+                                 "%s IP=%lx, RBP=%lx, sig=%d, sig_code=%d, sig_addr=%p, RLIMIT_CORE=%s, " COMMON_FMT,
+                                  crash_info, ip, bp, sig, sig_code, sig_addr, rlimit_core,
+                                  ts, GETTID(), tname, trace_id_buf, bt);
+    if (print_len <= 0
+        || print_len > sizeof(print_buf)) {
+      print_len = sizeof(print_buf);
+    }
+
+    char end[] = "\n";
+    struct iovec iov[2];
+    memset(iov, 0, sizeof(iov));
+    iov[0].iov_base = print_buf;
+    iov[0].iov_len = print_len;
+    iov[1].iov_base = end;
+    iov[1].iov_len = strlen(end);
+    writev(STDERR_FILENO, iov, sizeof(iov) / sizeof(iov[0]));
+  }
+  // Reset back to the default handler
+  signal(sig, SIG_DFL);
+  raise(sig);
 }
 
 void ObProxyMain::print_memory_usage()

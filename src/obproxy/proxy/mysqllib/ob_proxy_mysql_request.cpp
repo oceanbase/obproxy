@@ -70,7 +70,7 @@ ObProxyMysqlRequest::ObProxyMysqlRequest()
     req_pkt_len_(0), req_buf_for_prepare_execute_(NULL),
     req_buf_for_prepare_execute_len_(0), result_(), ps_result_(NULL),
     user_identity_(USER_TYPE_NONE), is_internal_cmd_(false), is_kill_query_(false),
-    is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false)
+    is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false), expr_parse_second_sql_()
 {
   sql_id_buf_[0] = '\0';
   is_for_update_sql_.valid_ = false;
@@ -214,6 +214,26 @@ bool ObProxyMysqlRequest::is_for_update_sql()
   return is_for_update_sql_.value_;
 }
 
+int ObProxyMysqlRequest::preprocess_multi_sql(ObIArray<common::ObString> &sql_array)
+{
+  int ret = OB_SUCCESS;
+  const int64_t PARSE_EXTRA_CHAR_NUM = 2;
+  for (int64_t i = 0; i < sql_array.count() && OB_SUCC(ret); ++i) {
+    ObString& sql = sql_array.at(i);
+    char *sql_buf = NULL;
+    const int64_t total_sql_length = sql.length() + PARSE_EXTRA_CHAR_NUM;
+    if (OB_ISNULL(sql_buf = static_cast<char*>(allocator_.alloc(total_sql_length)))) {
+      ret = OB_REACH_MEMORY_LIMIT;
+      LOG_WDIAG("fail to alloc memory for sql_buf", K(total_sql_length), K(ret));
+    } else {
+      MEMCPY(sql_buf ,sql.ptr(), sql.length());
+      MEMSET(sql_buf + sql.length(), '\0', PARSE_EXTRA_CHAR_NUM);
+      sql.assign_ptr(sql_buf, sql.length());
+    }
+  }
+  return ret;
+}
+
 void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
 {
   if (OB_UNLIKELY(NULL != cmd_info_)) {
@@ -237,6 +257,7 @@ void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
   user_identity_ = USER_TYPE_NONE;
   req_pkt_len_ = 0;
   enable_server_kill_connection_ = false;
+  expr_parse_second_sql_.reset();
   allocator_.reuse();
   sql_id_buf_[0] = '\0';
   is_for_update_sql_.valid_ = false;

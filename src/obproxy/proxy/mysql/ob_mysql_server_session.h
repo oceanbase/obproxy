@@ -18,6 +18,7 @@
 #include "obutils/ob_proxy_json_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_utils.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
+#include "rpc/obmysql/packet/ompk_handshake.h"
 
 namespace oceanbase
 {
@@ -30,13 +31,16 @@ namespace proxy
 
 class ObMysqlClientSession;
 
-enum ObMSSState
+enum ObServerSessionState
 {
-  MSS_INIT = 0,
-  MSS_ACTIVE,
-  MSS_KA_CLIENT_SLAVE,
-  MSS_KA_SHARED,
-  MSS_MAX
+  INIT = 0,
+  KEEP_ALIVE_ACTIVE,                          // current in using
+  KEEP_ALIVE_CLIENT_SLAVE,                    // bound or last bound
+  KEEP_ALIVE_LOCAL_SHARED,                    // local session pool
+  KEEP_ALIVE_GLOBAL_SHARED,                   // global session pool
+  KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET,         // global session pool not be reset now
+  KEEP_ALIVE_GLOBAL_SHARED_IN_RESET,          // reset connection
+  STATE_MAX
 };
 
 enum ObServerSessionMagic
@@ -51,7 +55,6 @@ public:
   ObMysqlServerSessionHashKey() :
     local_ip_(NULL), server_ip_(NULL), auth_user_(NULL) {}
   ~ObMysqlServerSessionHashKey() {}
-
   bool equal (const ObMysqlServerSessionHashKey& rhs) const
   {
     if (!net::ops_ip_addr_port_eq(server_ip_->sa_, rhs.server_ip_->sa_)) {
@@ -72,33 +75,54 @@ public:
     return true;
   }
 
+  bool operator== (const ObMysqlServerSessionHashKey& rhs) const { return this->equal(rhs); }
+
   TO_STRING_KV(KPC_(local_ip), KPC_(server_ip), KPC_(auth_user));
 
   const net::ObIpEndpoint *local_ip_;
   const net::ObIpEndpoint *server_ip_;
   const ObString *auth_user_;
 };
+#define close_and_destroy_session(session)   \
+  if (session != NULL) {    \
+    session->do_io_close(); \
+    session->destroy(); \
+    session = NULL; \
+  }
+
+#define destroy_session_if_io_closed(session)    \
+  if (session != NULL && session->is_io_closed()) { \
+    session->destroy(); \
+  } \
+  session = NULL;
 
 class ObMysqlServerSession : public event::ObVConnection
 {
 public:
   ObMysqlServerSession()
       : event::ObVConnection(NULL), common_addr_(), local_ip_(), server_ip_(), auth_user_(),
-        server_sessid_(0), ss_id_(0), transact_count_(0), state_(MSS_INIT), cur_compressed_seq_(0),
-        server_trans_stat_(0), read_buffer_(NULL), is_from_pool_(false), is_pool_session_(false),
+        proxy_id_(0), server_sessid_(0), ss_id_(0), transact_count_(0), state_(INIT), cur_compressed_seq_(0),
+        server_trans_stat_(0), read_buffer_(NULL),
         has_global_session_lock_(false), create_time_(0), last_active_time_(0),
         timeout_event_(obutils::OB_TIMEOUT_UNKNOWN_EVENT), timeout_record_(0),
         is_inited_(false), magic_(MYSQL_SS_MAGIC_DEAD), server_vc_(NULL),
         buf_reader_(NULL), session_info_(), client_session_(NULL)
   {
     ObRandom rand1;
+    need_reset_by_change_user_ = false;
+    is_io_closed_ = false;
     request_id_ = rand1.get_int32(0, UINT24_MAX);
+    memset(server_scramble_buf_, 0, sizeof(server_scramble_buf_));
+    if (OB_NOT_NULL(reset_conn_buf_ = event::new_empty_miobuffer_internal())) {
+      reset_conn_reader_ = reset_conn_buf_->alloc_reader();
+    }
   }
   virtual ~ObMysqlServerSession() { }
 
   void destroy();
   int new_connection(ObMysqlClientSession &client_session, net::ObNetVConnection &new_vc);
 
+  bool is_io_closed() { return is_io_closed_; }
   int reset_read_buffer()
   {
     int ret = common::OB_SUCCESS;
@@ -115,6 +139,9 @@ public:
 
   event::ObIOBufferReader *get_reader() { return buf_reader_; };
 
+  event::ObMIOBuffer *get_reset_conn_buf() { return reset_conn_buf_; }
+  event::ObIOBufferReader *get_reset_conn_reader() { return reset_conn_reader_; };
+
   virtual event::ObVIO *do_io_read(event::ObContinuation *c,
                                    const int64_t nbytes = INT64_MAX,
                                    event::ObMIOBuffer *buf = 0);
@@ -125,13 +152,11 @@ public:
   virtual void do_io_close(const int lerrno = -1);
   virtual void do_io_shutdown(const event::ShutdownHowToType howto);
   virtual void reenable(event::ObVIO *vio);
-
-  int release();
   net::ObNetVConnection *get_netvc() const { return server_vc_; }
 
   inline void set_client_session(ObMysqlClientSession &client_session) { client_session_ = &client_session; }
   inline void clear_client_session() { client_session_ = NULL; }
-  inline ObMysqlClientSession *get_client_session() { return client_session_; }
+  inline ObMysqlClientSession *get_client_session() const { return client_session_; }
   inline ObServerSessionInfo &get_session_info() { return session_info_; }
   inline const ObServerSessionInfo &get_session_info() const { return session_info_; }
   const char *get_state_str() const;
@@ -142,15 +167,27 @@ public:
   void cancel_inactivity_timeout();
 
   // server cap judgement
+  ObProxyProtocol get_server_protocol()
+  {
+    if (is_ob_protocol_v2_supported()) {
+      return ObProxyProtocol::PROTOCOL_OCEANBASE_20;
+    } else if (is_compressed_mysql_supported()) {
+      return ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL;
+    } else {
+      return ObProxyProtocol::PROTOCOL_MYSQL;
+    }
+  }
   bool is_ob_protocol_v2_supported() const { return session_info_.is_ob_protocol_v2_supported(); }
-  bool is_checksum_supported() const { return session_info_.is_checksum_supported(); }
+  bool is_compressed_mysql_supported() const { return session_info_.is_compressed_mysql_supported(); }
   bool is_checksum_on() const { return session_info_.is_checksum_on(); }
   bool is_extra_ok_packet_for_stats_enabled() const { return session_info_.is_extra_ok_packet_for_stats_enabled(); }
+  bool is_change_user_reset_session_supported() const { return session_info_.is_change_user_reset_session_supported(); }
   bool is_full_link_trace_supported() const { return session_info_.is_full_link_trace_supported(); }
   bool is_full_link_trace_ext_enabled() const {
     return session_info_.is_full_link_trace_ext_supported();
   }
-
+  uint32_t get_proxy_id() const { return proxy_id_; }
+  void set_proxy_id(const uint32_t proxy_id) { proxy_id_ = proxy_id; }
   uint32_t get_server_sessid() const { return server_sessid_; }
   void set_server_sessid(const uint32_t server_sessid) { server_sessid_ = server_sessid; }
 
@@ -176,6 +213,14 @@ public:
     key.auth_user_ = &auth_user_;
     return key;
   }
+  void set_authentication(const ObString &scramble);
+  const ObString get_scramble_string() { return ObString(server_scramble_buf_); }
+  bool need_reset_by_change_user() { return need_reset_by_change_user_; }
+  void set_need_reset_by_change_user(bool v) { need_reset_by_change_user_ = v; }
+  bool is_destroyed();
+  bool can_use_connection_pool();
+  int migrate_from_session_pool_thread();
+  int migrate_to_session_pool_thread();
 
   DECLARE_TO_STRING;
 
@@ -192,11 +237,11 @@ public:
   net::ObIpEndpoint server_ip_;
   ObString auth_user_;
   char full_name_buf_[OB_PROXY_FULL_USER_NAME_MAX_LEN];
-
+  uint32_t proxy_id_;
   uint32_t server_sessid_;
   int64_t ss_id_;
   int64_t transact_count_;
-  ObMSSState state_;
+  ObServerSessionState state_;
 
   uint32_t request_id_;
   // current compressed_seq not the next
@@ -216,9 +261,6 @@ public:
   // to being acquired and parsing the header without
   // changing the buffer we are doing I/O on.
   event::ObMIOBuffer *read_buffer_;
-
-  bool is_from_pool_;
-  bool is_pool_session_;
   bool has_global_session_lock_;
   ObProxySchemaKey schema_key_;
   int64_t create_time_;
@@ -231,14 +273,17 @@ private:
   int64_t get_round_trip_time() const { return RTT_BETWEEN_PROXY_AND_SERVER; }
 
 private:
-  bool is_inited_;
+  bool is_inited_: 1;
+  bool need_reset_by_change_user_: 1; // need send com_change_user to reset this session
+  bool is_io_closed_: 1; // mark whether do_io_close() called
   int magic_;
   net::ObNetVConnection *server_vc_;
-
   event::ObIOBufferReader *buf_reader_;
-
   ObServerSessionInfo session_info_;
   ObMysqlClientSession *client_session_;
+  event::ObMIOBuffer *reset_conn_buf_;
+  event::ObIOBufferReader *reset_conn_reader_;
+  char server_scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE + 1];
   DISALLOW_COPY_AND_ASSIGN(ObMysqlServerSession);
 };
 
@@ -309,6 +354,27 @@ private:
   event::ObAction action_;
   CSIDHanders cs_id_array_;
   DISALLOW_COPY_AND_ASSIGN(ObServerAddrLookupHandler);
+};
+
+class ObServerSessionMatchRules
+{
+public:
+  ObServerSessionMatchRules() { MEMSET(this, 0, sizeof(ObServerSessionMatchRules)); }
+  bool enable_oceanbase_20_protocol_: 1;
+  bool enable_oceanbase_20_compress_: 1;
+  bool enable_compressed_mysql_protocol_: 1;
+  bool enable_full_link_trace_: 1;
+  bool enable_client_session_id_v2_: 1;
+  uint32_t proxy_id_;
+  obmysql::ObMySQLCapabilityFlags client_mysql_cap_;
+  bool is_matched(const ObMysqlServerSession *session) const;
+  TO_STRING_KV("enable_ob20", enable_oceanbase_20_protocol_,
+               "enable_ob20_compress", enable_oceanbase_20_compress_,
+               "enable_compressed_mysql", enable_compressed_mysql_protocol_,
+               "enable_flt", enable_full_link_trace_,
+               "enable_cs_id_v2", enable_client_session_id_v2_,
+               "client_cap", client_mysql_cap_.capability_,
+               "proxy_id", proxy_id_);
 };
 
 } // end of namespace proxy

@@ -160,7 +160,7 @@ public:
 
   int check_user_identity(const ObString &user_name, const ObString &tenant_name, const ObString &cluster_name);
   int save_user_login_info(ObClientSessionInfo &session_info, ObHSRResult &hsr_result);
-  void analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool is_mysql_req_in_ob20 = false);
+  int analyze_mysql_request(ObMysqlAnalyzeStatus &status, const bool is_mysql_req_in_ob20 = false);
   int analyze_login_request(ObRequestAnalyzeCtx &ctx, ObMysqlAnalyzeStatus &status);
   int analyze_change_user_request();
   int analyze_ps_prepare_request();
@@ -179,10 +179,10 @@ public:
   int analyze_close_reset_request();
   int analyze_ps_prepare_execute_request();
   int need_setup_client_transform_transfer(bool &need);
-  bool check_connection_throttle();
+  bool check_connection_throttle(int64_t &currently_open, int64_t &max_client_connection);
   bool can_pass_white_list();
   int analyze_capacity_flag_from_client();
-  bool check_vt_connection_throttle();
+  bool check_vt_connection_throttle(int64_t& cur_used_connections, int64_t& max_connections);
   bool is_partition_table_route_supported();
   bool is_pl_route_supported();
   int handle_saved_session_variables();
@@ -219,10 +219,10 @@ public:
 
   void clear_client_entry();
   void clear_server_entry();
-  bool can_server_session_release();
-  void release_server_session_to_pool();
+  bool can_use_connection_pool();
+  void release_server_session_to_client();
   void release_server_session();
-  bool need_close_last_used_ss();
+  bool need_close_last_used_server_session();
 
   ObProxyProtocol get_server_session_protocol() const;
   ObProxyProtocol get_client_session_protocol() const;
@@ -339,7 +339,6 @@ public:
   void do_server_addr_lookup();
   int do_observer_open();
   int do_oceanbase_internal_observer_open(ObMysqlServerSession *&selected_session);
-  int do_normal_internal_observer_open(ObMysqlServerSession *&selected_session);
   int do_internal_observer_open();
   void do_internal_request();
   int do_internal_request_for_sharding_init_db(event::ObMIOBuffer *buf);
@@ -502,7 +501,7 @@ private:
   event::ObIOBufferReader *client_buffer_reader_;
 
   ObMysqlVCTableEntry *server_entry_;
-  ObMysqlServerSession *server_session_;
+  ObMysqlServerSession *server_session_;          // server_session_ 设置为 NULL 的时候同时需要清理 server_entry_
   event::ObIOBufferReader *server_buffer_reader_;
 
   MysqlSMHandler default_handler_;
@@ -705,10 +704,29 @@ inline void ObMysqlSM::clear_client_entry()
   }
 }
 
-inline void ObMysqlSM::clear_server_entry()
+// Description of session pointers
+// * ObMysqlTunnelProducer/Consumer::vc_     : 仅使用, 但是不会 destroy server_session_ 的
+// * ObMysqlSM::server_entry_                : 仅标记关联 server_session_ 与 p/c, 对 vc 无控制权
+// * ObMysqlSM::server_session_              : 可以销毁 server_session_
+// * session object                          : 被指向 的会话对象
+
+// Relations between them
+// Producer/Consumer::vc_
+// -(setup_xx_transfer_xxx)-> ObMysqlSM::server_entry_
+//                            -(attach_server_session)-> ObMysqlSM::server_session_
+//                                                       -(attach_server_session)-> session object
+
+// Rules of cleanup:
+// 1. server_entry_->in_tunnel == true  -> [x] server_session_->destroy() | [x] server_entry_ = null
+// 2. server_entry_->in_tunnel == false -> [√] server_session_->destroy() | [√] server_entry_ = null
+
+void ObMysqlSM::clear_server_entry()
 {
-  if (NULL != server_session_) {
-    vc_table_.cleanup_entry(server_entry_);
+  if (server_entry_ != NULL || NULL != server_session_) {
+    if (server_entry_ != NULL) {
+      vc_table_.cleanup_entry(server_entry_);
+    }
+    destroy_session_if_io_closed(server_session_);
     server_entry_ = NULL;
     server_session_ = NULL;
   }
@@ -732,7 +750,7 @@ inline void ObMysqlSM::clear_entries()
       PROXY_LOG(WDIAG, "vc_table failed to cleanup client entry", K_(server_entry), K_(sm_id));
     }
     if (OB_LIKELY(server_entry_->vc_ == NULL)) {
-      server_session_ = NULL;       // vc is equivalent to session
+      destroy_session_if_io_closed(server_session_);
     }
     server_entry_ = NULL;
   }

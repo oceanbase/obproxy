@@ -136,6 +136,8 @@ int ObProxyExprFactory::register_proxy_expr()
 
     REG_EXPR("TESTLOAD", OB_PROXY_EXPR_TYPE_FUNC_TESTLOAD, ObProxyExprTestLoad, ObNullType);
     REG_EXPR("SPLIT", OB_PROXY_EXPR_TYPE_FUNC_SPLIT, ObProxyExprSplit, ObNullType);
+    REG_EXPR("YEAR", OB_PROXY_EXPR_TYPE_FUNC_YEAR, ObProxyExprYear, ObIntType);
+    REG_EXPR("MONTH", OB_PROXY_EXPR_TYPE_FUNC_MONTH, ObProxyExprMonth, ObIntType);
     REG_EXPR("TO_DAYS", OB_PROXY_EXPR_TYPE_FUNC_TO_DAYS, ObProxyExprToDays, ObIntType);
     REG_EXPR("TO_DATE", OB_PROXY_EXPR_TYPE_FUNC_TO_DATE, ObProxyExprToTime, ObDateTimeType); // special case will not call
     REG_EXPR("TO_TIMESTAMP", OB_PROXY_EXPR_TYPE_FUNC_TO_TIMESTAMP, ObProxyExprToTime, ObTimestampNanoType); // special case will not call

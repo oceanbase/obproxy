@@ -34,7 +34,7 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_ICMD_SHOW_TRACE:
     case OBPROXY_T_ICMD_SHOW_INFO:
     case OBPROXY_T_ICMD_SHOW_PS:
-    case OBPROXY_T_ICMD_SHOW_KV:
+    case OBPROXY_T_ICMD_SHOW_RPC:
     case OBPROXY_T_ICMD_ALTER_CONFIG:
     case OBPROXY_T_ICMD_ALTER_RESOURCE:
     case OBPROXY_T_ICMD_KILL_SESSION:
@@ -252,6 +252,9 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBRPC_OBKV_TABLE_API_LS_EXECUTE:
       str_ret = "OB_TABLE_API_LS_EXECUTE";
       break;
+    case OBRPC_OBKV_TABLE_API_META_INFO_EXECUTE:
+      str_ret = "OB_TABLE_API_META_INFO_EXECUTE";
+      break;
     // end rpc
 
     case OBPROXY_T_INVALID:
@@ -327,8 +330,8 @@ const char* get_obproxy_stmt_name(const ObProxyBasicStmtType type)
     case OBPROXY_T_ICMD_SHOW_PS:
       str_ret = "OBPROXY_T_ICMD_SHOW_PS";
       break;
-    case OBPROXY_T_ICMD_SHOW_KV:
-      str_ret = "OBPROXY_T_ICMD_SHOW_KV";
+    case OBPROXY_T_ICMD_SHOW_RPC:
+      str_ret = "OBPROXY_T_ICMD_SHOW_RPC";
       break;
     case OBPROXY_T_ICMD_ALTER_CONFIG:
       str_ret = "OBPROXY_T_ICMD_ALTER_CONFIG";
@@ -533,6 +536,9 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
     case OBPROXY_T_SUB_INVALID:
       str_ret = "OBPROXY_T_SUB_INVALID";
       break;
+    case OBPROXY_T_SUB_PROXYSM_RPC:
+      str_ret = "OBPROXY_T_SUB_PROXYSM_RPC";
+      break;
     case OBPROXY_T_SUB_NET_THREAD:
       str_ret = "OBPROXY_T_SUB_NET_THREAD";
       break;
@@ -566,6 +572,8 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
     case OBPROXY_T_SUB_KV_THREAD:
       str_ret = "OBPROXY_T_SUB_KV_THREAD";
       break;
+    case OBPROXY_T_SUB_KV_REQUESTSTAT:
+      str_ret = "OBPROXY_T_SUB_KV_REQUESTSTAT";
     case OBPROXY_T_SUB_CONGEST_ALL:
       str_ret = "OBPROXY_T_SUB_CONGEST_ALL";
       break;
@@ -624,7 +632,19 @@ const char* get_obproxy_sub_stmt_name(const ObProxyBasicStmtSubType type)
       str_ret = "OBPROXY_T_SUB_ROUTE_ROUTINE";
       break;
     case OBPROXY_T_SUB_ROUTE_GLOBALINDEX:
-      str_ret = "OBPROXY_T_SUB_ROUTE_INDEX";
+      str_ret = "OBPROXY_T_SUB_ROUTE_GLOBALINDEX";
+      break;
+    case OBPROXY_T_SUB_ROUTE_TABLEGROUP:
+      str_ret = "OBPROXY_T_SUB_ROUTE_TABLEGROUP";
+      break;
+    case OBPROXY_T_SUB_ROUTE_QUERYASYNC:
+      str_ret = "OBPROXY_T_SUB_ROUTE_QUERYASYNC";
+      break;
+    case OBPROXY_T_SUB_ROUTE_TABLETLS:
+      str_ret = "OBPROXY_T_SUB_ROUTE_TABLETLS";
+      break;
+    case OBPROXY_T_SUB_ROUTE_RPCCTX:
+      str_ret = "OBPROXY_T_SUB_ROUTE_RPCCTX";
       break;
     case OBPROXY_T_SUB_SHOW_ELASTIC_ID:
       str_ret = "OBPROXY_T_SUB_SHOW_ELASTIC_ID";

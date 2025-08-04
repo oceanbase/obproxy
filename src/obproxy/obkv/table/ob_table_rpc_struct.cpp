@@ -1458,3 +1458,8 @@ OB_SERIALIZE_MEMBER(ObObkvGetRouteRequest,
                     tenant_name_,
                     database_name_,
                     force_renew_);
+
+OB_SERIALIZE_MEMBER(ObTableMetaRequest,
+                     credential_,
+                     meta_type_,
+                     data_);

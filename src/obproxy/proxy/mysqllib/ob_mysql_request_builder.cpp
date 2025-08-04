@@ -14,6 +14,8 @@
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
 #include "proxy/mysql/ob_mysql_sm.h"
 #include "lib/utility/ob_2_0_sess_veri.h"
+#include "rpc/obmysql/packet/ompk_change_user.h"
+#include "obproxy/proxy/mysqllib/ob_mysql_packet_rewriter.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obmysql;
@@ -250,14 +252,14 @@ int ObMysqlRequestBuilder::build_xa_start_request(ObMysqlSM *sm,
   return ret;
 }
 
-int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
+int ObMysqlRequestBuilder::build_request_from_packet_str(
     ObMysqlSM *sm,
+    const ObString &packet_str,
     event::ObMIOBuffer &mio_buf,
-    ObClientSessionInfo &client_info,
     ObMysqlServerSession *server_session,
-    const ObProxyProtocol ob_proxy_protocol)
+    const ObProxyProtocol ob_proxy_protocol,
+    const ObIArray<ObObJKV> *extra_info)
 {
-  common::ObString packet(client_info.auth_switch_resp_.len(), client_info.auth_switch_resp_.ptr());
   int ret = OB_SUCCESS;
   uint8_t next_compress_seq = 0;
   ObServerSessionInfo &server_info = server_session->get_session_info();
@@ -272,7 +274,7 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
                                     sm->get_client_session()->is_trans_internal_routing(), is_proxy_switch_route,
                                     is_compressed_ob20, compression_level);
     DEC_AND_INC_SHARED_REF(ob20_head_param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
-    if (OB_FAIL(ObMysqlOB20PacketWriter::write_raw_packet(mio_buf, packet, ob20_head_param))) {
+    if (OB_FAIL(ObMysqlOB20PacketWriter::write_raw_packet(mio_buf, packet_str, ob20_head_param, extra_info))) {
       LOG_WDIAG("fail to write request packet in ob20", K(ret));
     } else {
       next_compress_seq = ob20_head_param.get_compressed_seq();
@@ -282,11 +284,11 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
     ObCompressedHeaderParam param(next_compress_seq, server_info.is_checksum_on(), sm->compression_algorithm_.level_);
     DEC_AND_INC_SHARED_REF(param.get_protocol_diagnosis_ref(), sm->protocol_diagnosis_);
     if (need_compress) {
-      if (OB_FAIL(ObMysqlPacketWriter::write_compressed_raw_packet(mio_buf, packet, param))) {
+      if (OB_FAIL(ObMysqlPacketWriter::write_compressed_raw_packet(mio_buf, packet_str, param))) {
         LOG_WDIAG("fail to write request packet in compressed mysql", K(ob_proxy_protocol), K(ret));
       }
     } else {
-      if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(mio_buf, packet))) {
+      if (OB_FAIL(ObMysqlPacketWriter::write_raw_packet(mio_buf, packet_str))) {
         LOG_WDIAG("fail to write request packet in mysql", K(ob_proxy_protocol), K(ret));
       }
     }
@@ -297,11 +299,9 @@ int ObMysqlRequestBuilder::build_saved_auth_switch_resp(
   if (OB_SUCC(ret)) {
     server_session->set_cur_compressed_seq(next_compress_seq - 1);
   }
-  LOG_DEBUG("write saved auth switch resp to client buffer", K(ret));
+
   return ret;
 }
-
-
 int ObMysqlRequestBuilder::build_prepare_request(ObMysqlSM *sm,
                                                  ObMIOBuffer &mio_buf,
                                                  ObClientSessionInfo &client_info,
@@ -352,6 +352,161 @@ int ObMysqlRequestBuilder::build_text_ps_prepare_request(ObMysqlSM *sm,
   } else {
     LOG_DEBUG("will sync text ps prepare", K(sql), K(cmd));
   }
+
+  return ret;
+}
+
+int ObMysqlRequestBuilder::add_connect_attr(const char *key, const char *value,
+                                            OMPKChangeUser &change_user)
+{
+  ObStringKV str_kv;
+  str_kv.key_.assign_ptr(key, static_cast<int32_t>(STRLEN(key)));
+  str_kv.value_.assign_ptr(value, static_cast<int32_t>(STRLEN(value)));
+  return change_user.add_connect_attr(str_kv);
+}
+
+int ObMysqlRequestBuilder::add_connect_attr(const char *key, const common::ObString &value,
+                                            OMPKChangeUser &change_user)
+{
+  ObStringKV str_kv;
+  str_kv.key_.assign_ptr(key, static_cast<int32_t>(STRLEN(key)));
+  str_kv.value_.assign_ptr(value.ptr(), value.length());
+  return change_user.add_connect_attr(str_kv);
+}
+
+int ObMysqlRequestBuilder::build_reset_session_request(ObMysqlSM *sm,
+                                                       ObMIOBuffer &mio_buf,
+                                                       ObClientSessionInfo &client_info,
+                                                       ObMysqlServerSession *server_session,
+                                                       const ObProxyProtocol ob_proxy_protocol)
+{
+  int ret = OB_SUCCESS;
+
+  OMPKChangeUser change_user_req;
+  OMPKHandshakeResponse &handshake_resp = client_info.get_login_req().get_hsr_result().response_;
+  ObMySQLCapabilityFlags cap_flag = handshake_resp.get_capability_flags();
+  net::ObUnixNetVConnection* unix_vc = static_cast<net::ObUnixNetVConnection *>(server_session->get_netvc());
+  cap_flag.cap_flags_.OB_CLIENT_CONNECT_ATTRS = 1;
+  cap_flag.cap_flags_.OB_CLIENT_SESSION_TRACK = 1;
+  cap_flag.cap_flags_.OB_CLIENT_SSL = unix_vc->using_ssl();
+
+  bool is_first_login = sm->trans_state_.is_handshake_req_phase();
+  ObSEArray<ObObJKV, 3> extra_info;
+  ObString database;
+  if (is_first_login) {
+    // 登录使用会话连接池
+    // 客户端如果正在登录就直接使用 handshake response 中的 database
+    database = handshake_resp.get_database();
+   } else {
+    // 切路由使用会话连接池
+    // 客户端如果正在登录 client info 里面还没有信息
+    database = client_info.get_database_name();
+
+    // COM_CHANGE_USER 中不同步 sess info, 在用户切路由后的第一个请求中同步 sess info
+    //if (ObProxyProtocol::PROTOCOL_OCEANBASE_20 == ob_proxy_protocol) {
+    //  ObSqlString sess_info_value;
+    //  if (OB_FAIL(ObProxyTraceUtils::build_sync_sess_info(extra_info, sess_info_value, sm, true))) {
+    //    LOG_WDIAG("fail to build related extra info", K(ret));
+    //  }
+    //}
+  }
+
+  change_user_req.set_database(database);
+  change_user_req.set_mysql_capability(cap_flag);
+  change_user_req.set_username(client_info.get_priv_info().user_name_);
+  change_user_req.set_character_set(client_info.get_ncharacter_set_connection());
+  change_user_req.set_auth_plugin_name(handshake_resp.get_auth_plugin_name());
+  change_user_req.set_auth_response(handshake_resp.get_auth_response());
+  change_user_req.reset_connect_attr();
+
+  ObHandshakeResponseParam param;
+  ObMysqlClientSession *client_session = sm->client_session_;
+  const ObString &proxy_scramble = client_session->get_scramble_string();
+  const ObString &server_scramble = server_session->get_scramble_string();
+
+  ObAddr client_addr = client_session->get_real_client_addr(const_cast<net::ObNetVConnection *>(server_session->get_netvc()));
+
+  bool find_client_ip = false;
+  for (int64_t i = 0; OB_SUCC(ret) && i < handshake_resp.get_connect_attrs().count(); ++i) {
+    ObStringKV kv;
+    // transit conn attrs OB_MYSQL_OB_CLIENT
+    if (OB_FAIL(handshake_resp.get_connect_attrs().at(i, kv))) {
+      LOG_WDIAG("fail access handshake response connect attrs", K(i), K(ret));
+    } else if (kv.key_.prefix_match(OB_MYSQL_OB_CLIENT)) {
+      if (OB_FAIL(change_user_req.get_connect_attrs().push_back(kv))) {
+        LOG_WDIAG("fail push back transparent transmit connect attrs", K(kv), K(ret));
+      } else { /* succ */ }
+    } else if (!find_client_ip
+                && sm->trans_state_.mysql_config_params_->enable_client_ip_checkout_
+                && 0 == kv.key_.case_compare(OB_MYSQL_CLIENT_IP)
+                && !kv.value_.empty()){
+      snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", kv.value_.length(), kv.value_.ptr());
+      find_client_ip = true;
+    } else { /* do nothing */ }
+  }
+
+  // fill params
+  if (OB_FAIL(param.write_proxy_conn_id_buf(client_session->get_proxy_sessid()))) {
+    LOG_WDIAG("fail to write_proxy_conn_id_buf", K(ret), K(client_session->get_proxy_sessid()));
+  } else if (is_first_login && OB_FAIL(param.write_global_vars_version_buf(static_cast<int64_t>(0)))) {
+    LOG_WDIAG("fail to write_global_vars_version_buf", K(ret));
+  } else if (!is_first_login && OB_FAIL(param.write_global_vars_version_buf(client_info.get_global_vars_version()))) {
+    LOG_WDIAG("fail to write_global_vars_version_buf", K(ret), K(client_info.get_global_vars_version()));
+  } else if (!proxy_scramble.empty() && OB_FAIL(param.write_proxy_scramble(proxy_scramble, server_scramble))) {
+    LOG_WDIAG("fail to write_proxy_scramble", K(ret), K(proxy_scramble), K(server_scramble), K(client_info.get_global_vars_version()));
+  } else if (OB_FAIL(!find_client_ip && param.write_client_addr_buf(client_addr))) {
+    LOG_WDIAG("fail to write_client_addr_buf", K(ret), K(client_addr));
+  } else if (OB_FAIL(param.write_client_port_buf(client_addr.get_port()))) {
+    LOG_WDIAG("fail to write_client_port_buf", K(ret), K(client_addr.get_port()));
+  } else if (OB_FAIL(param.write_cs_id_buf(client_session->get_cs_id()))) {
+    LOG_WDIAG("fail to write_cs_id_buf", K(ret), K(client_session->get_cs_id()));
+  } else if (OB_FAIL(param.write_connected_time_buf(client_session->get_connected_time()))) {
+    LOG_WDIAG("fail to write_connected_time_buf", K(ret), K(client_session->get_connected_time()));
+  } else if (OB_FALSE_IT(param.proxy_idc_name_ = sm->multi_level_config_->proxy_idc_name_)) {
+  // add connection attributes
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_CONNECTION_ID, param.proxy_conn_id_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add proxy_sessid", K(param.proxy_conn_id_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_GLOBAL_VARS_VERSION, param.global_vars_version_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add global vars version", K(param.global_vars_version_buf_), K(ret));
+  } else if (param.is_proxy_scramble_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_SCRAMBLE, param.proxy_scramble_, change_user_req))) {
+    LOG_WDIAG("fail to add global vars version", K(param.proxy_scramble_), K(ret));
+  } else if (param.is_client_ip_valid() && OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_IP, param.client_ip_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add client ip", K(param.client_ip_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_PORT, param.client_port_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add client port", K(param.client_port_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_SESSION_ID, param.cs_id_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add connected time", K(param.cs_id_buf_), K(ret));
+  } else if (OB_FAIL(add_connect_attr(OB_MYSQL_CLIENT_CONNECT_TIME, param.connected_time_buf_, change_user_req))) {
+    LOG_WDIAG("fail to add connected time", K(param.connected_time_buf_), K(ret));
+  } else if (!param.proxy_idc_name_.empty() && OB_FAIL(add_connect_attr(OB_MYSQL_PROXY_IDC_NAME, param.proxy_idc_name_, change_user_req))) {
+    LOG_WDIAG("fail to add proxy idc name", K(param.proxy_idc_name_), K(ret));
+  } else {
+    char change_user_req_buf[4096];
+    int64_t pos = 0;
+    int64_t buf_len = 4096;
+    change_user_req.set_seq(1); // client expected to receive the ok/auth switch of seq==2
+    if (OB_FAIL(ObMySQLPacket::encode_packet(change_user_req_buf, buf_len, pos, change_user_req))) {
+      LOG_WDIAG("fail to serialize change user request", K(ret), K(pos));
+    } else {
+      LOG_DEBUG("succ to serialize change user request to reset session status", K(pos));
+      ObString change_user_req_str(pos, change_user_req_buf);
+      if (OB_FAIL(build_request_from_packet_str(sm, change_user_req_str, mio_buf, server_session, ob_proxy_protocol, &extra_info))) {
+        LOG_WDIAG("fail to build_request_from_packet_str", K(ret));
+      } else {
+        SESSION_POOL_LOG(DEBUG, "succ to build com_stmt_change_user to reset session",
+                                "proxy_sessid", client_session->get_proxy_sessid(),
+                                "server_addr", server_session->server_ip_,
+                                "client_addr", client_addr,
+                                "user",client_info.get_priv_info().user_name_,
+                                "db", change_user_req.get_database(),
+                                "charset", change_user_req.get_character_set(),
+                                K(proxy_scramble),
+                                K(server_scramble),
+                                "connected_time", client_session->get_connected_time());
+                    }
+    }
+  }
+
 
   return ret;
 }

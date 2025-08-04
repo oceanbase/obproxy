@@ -21,13 +21,16 @@ namespace obproxy
 {
 namespace proxy
 {
-void deep_copy_string(ObIAllocator *alloc, ObString &src, ObString &dest) {
+void deep_copy_string(ObIAllocator *alloc, const ObString &src, ObString &dest) {
   char *c = NULL;
   const static char *fail = "fail_to_alloc_memory";
   size_t len = src.length();
   if (OB_ISNULL(alloc)) {
     LOG_WDIAG("can not alloc mem for route diagnosis point because allocator is NULL");
     dest.assign_ptr(fail, (ObString::obstr_size_t) strlen(fail));
+  } else if (OB_UNLIKELY(src.empty())) {
+    dest.reset();
+    // just return
   } else if (len != 0 && NULL == (c = (char*) alloc->alloc(len))) {
     LOG_WDIAG("fail to alloc mem for route diagnosis point", K(len));
     dest.assign_ptr(fail, (ObString::obstr_size_t) strlen(fail));
@@ -591,8 +594,10 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
          ObRouteInfoType::USE_LAST_SESSION == route_info_type_ ||
          ObRouteInfoType::USE_COORDINATOR_SESSION == route_info_type_ ||
          ObRouteInfoType::USE_CACHED_SESSION == route_info_type_ ||
+         ObRouteInfoType::USE_LAST_INSERT_ID_SESSION == route_info_type_ ||
          ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_ ||
-         ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_)) {
+         ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_ ||
+         ObRouteInfoType::USE_BINLOG_SERVICE_LOOKUP == route_info_type_)) {
       DIAGNOSE_WARN("Unexpected invalid server addr")
     } else if (ObRouteInfoType::USE_PREPARE_EXECUTED_ADDR == route_info_type_) {
       DIAGNOSE_INFO("Will route to the OBServer which already executed a prepare_execute_stmt");
@@ -629,6 +634,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
         } else {
           DIAGNOSE_INFO("Will route to last connected server(%s)", svr_buf);
         }
+      } else if (ObRouteInfoType::USE_LAST_INSERT_ID_SESSION == route_info_type_) {
+        DIAGNOSE_INFO("Will route to last insert id server(%s)", svr_buf);
       } else if (ObRouteInfoType::USE_CACHED_SESSION == route_info_type_) {
         DIAGNOSE_INFO("Will route to cached connected server(%s)", svr_buf);
       } else if (ObRouteInfoType::USE_SINGLE_LEADER == route_info_type_) {
@@ -636,6 +643,8 @@ int64_t ObDiagnosisRouteInfo::diagnose(char *buf, const int64_t buf_len, int &wa
       } else if (ObRouteInfoType::USE_SINGLE_LEADERS_FOLLOWER == route_info_type_) {
         ObString policy = get_route_policy_enum_string(route_policy_);
         DIAGNOSE_INFO("Will route to tenant's single leader's follower node(%s) with the SAME_IDC, route_policy = %.*s", svr_buf, policy.length(), policy.ptr());
+      } else if (ObRouteInfoType::USE_BINLOG_SERVICE_LOOKUP == route_info_type_) {
+        DIAGNOSE_INFO("Will route to configured binlog_service_ip(%s)", svr_buf);
       }
     }
   )
@@ -984,14 +993,14 @@ int64_t ObDiagnosisFetchTableRelatedData::to_string(char *buf, const int64_t buf
           J_COMMA();
           J_KV("has_unknown_part_key", part->has_unknown_part_key());
         }
-        if (!part->get_part_columns().empty()) {
+        if (!part->get_first_part_columns().empty()) {
           J_COMMA();
-          BUF_PRINTF("part_expr:\"");
-          for (int i = 0; i < part->get_part_columns().count(); i++) {
+          BUF_PRINTF("first part_expr:\"");
+          for (int i = 0; i < part->get_first_part_columns().count(); i++) {
             if (i != 0) {
               J_COMMA();
             }
-            BUF_PRINTF("%.*s", part->get_part_columns().at(i).length(), part->get_part_columns().at(i).ptr());
+            BUF_PRINTF("%.*s", part->get_first_part_columns().at(i).length(), part->get_first_part_columns().at(i).ptr());
           }
           BUF_PRINTF("\"");
         }

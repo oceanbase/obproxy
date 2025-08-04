@@ -319,6 +319,7 @@ inline bool ob_is_otimestampe_tc(ObObjType type) { return ObOTimestampTC == ob_o
 inline bool ob_is_time_tc(ObObjType type) { return ObTimeTC == ob_obj_type_class(type); }
 inline bool ob_is_string_tc(ObObjType type) { return ObStringTC == ob_obj_type_class(type); }
 inline bool ob_is_text_tc(ObObjType type) { return ObTextTC == ob_obj_type_class(type); }
+inline bool ob_is_large_text(ObObjType type) { return ObTextType <= type && ObLongTextType >= type; }
 inline bool ob_is_nvarchar2(const ObObjType type) { return ObNVarchar2Type == type; }
 inline bool ob_is_nchar(const ObObjType type) { return ObNCharType == type; }
 inline bool ob_is_string_type(ObObjType type) { return ob_is_string_tc(type) || ob_is_text_tc(type); }
@@ -365,7 +366,8 @@ inline bool is_obj_type_supported(ObObjType type)
           || ob_is_nchar(type)
           || ob_is_decimal_int_type(type)
           || ob_is_mysql_datetime_or_datetime(type)
-          || ob_is_mysql_date_or_date(type);
+          || ob_is_mysql_date_or_date(type)
+          || ob_is_large_text(type);
 }
 
 // to_string adapter

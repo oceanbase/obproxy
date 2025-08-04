@@ -1628,6 +1628,17 @@ public:
   ObSEArray<ObObkvSinglePart, 4> sub_parts_;
 };
 
+class ObTableMetaResponse final : public ObTableResult
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObTableMetaResponse() : data_() {}
+  ~ObTableMetaResponse() {}
+  TO_STRING_KV(K_(data));
+public:
+  ObString data_;
+};
+
 } // end namespace obkv
 } // end namespace obproxy
 } // end namespace oceanbase

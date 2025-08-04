@@ -18,6 +18,7 @@
 #include "proxy/mysqllib/ob_mysql_ob20_packet_write.h"
 #include "proxy/mysql/ob_mysql_server_session.h"
 #include "proxy/mysqllib/ob_compressed_header_param.h"
+#include "rpc/obmysql/packet/ompk_change_user.h"
 
 namespace oceanbase
 {
@@ -41,6 +42,10 @@ typedef int (*BuildFunc)(ObMysqlSM *sm, event::ObMIOBuffer &, ObClientSessionInf
 class ObMysqlRequestBuilder
 {
 public:
+
+  static int add_connect_attr(const char *key, const char *value, OMPKChangeUser &change_user);
+  static int add_connect_attr(const char *key, const common::ObString &value, OMPKChangeUser &change_user);
+
   static int build_request_packet(ObString sql,
                                   obmysql::ObMySQLCmd cmd,
                                   ObMysqlSM *sm,
@@ -122,12 +127,6 @@ public:
                                     ObMysqlServerSession *server_session,
                                     const ObProxyProtocol ob_proxy_protocol);
 
-  static int build_saved_auth_switch_resp(ObMysqlSM *sm,
-                                          event::ObMIOBuffer &mio_buf,
-                                          ObClientSessionInfo &client_info,
-                                          ObMysqlServerSession *server_session,
-                                          const ObProxyProtocol ob_proxy_protocol);
-
   // build mysql request packet
   static int build_mysql_request(event::ObMIOBuffer &mio_buf,
                                  const obmysql::ObMySQLCmd cmd,
@@ -150,12 +149,25 @@ public:
                                            ObMysqlServerSession *server_session,
                                            const ObProxyProtocol ob_proxy_protocol);
 
+  static int build_reset_session_request(ObMysqlSM *sm,
+                                         event::ObMIOBuffer &mio_buf,
+                                         ObClientSessionInfo &client_info,
+                                         ObMysqlServerSession *server_session,
+                                         const ObProxyProtocol ob_proxy_protocol);
+
   // build mysql init sql request packet
   static int build_init_sql_request_packet(ObMysqlSM *sm,
                                            event::ObMIOBuffer &mio_buf,
                                            ObClientSessionInfo &client_info,
                                            ObMysqlServerSession *server_session,
                                            const ObProxyProtocol ob_proxy_protocol);
+
+  static int build_request_from_packet_str(ObMysqlSM *sm,
+                                           const ObString &packet_str,
+                                           event::ObMIOBuffer &mio_buf,
+                                           ObMysqlServerSession *server_session,
+                                           const ObProxyProtocol ob_proxy_protocol,
+                                           const ObIArray<ObObJKV> *extra_info = NULL);
 };
 
 inline int ObMysqlRequestBuilder::build_first_login_packet(ObMysqlSM *sm,

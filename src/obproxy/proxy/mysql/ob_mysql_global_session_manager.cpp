@@ -37,13 +37,9 @@ ObMysqlServerSessionList::ObMysqlServerSessionList() : ObContinuation(NULL)
 
 void ObMysqlServerSessionList::reset()
 {
-  total_count_ = 0;
-  free_count_ = 0;
-  using_count_ = 0;
-  max_used_ = 0;
-  create_count_ = 0;
-  destroy_count_ = 0;
+  idle_count_ = 0;
   last_log_time_ = 0;
+  pool_ = NULL;
 }
 ObMysqlServerSessionList::~ObMysqlServerSessionList() {
   local_ip_pool_.reset();
@@ -74,6 +70,8 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
     LOG_WDIAG("data is null", K(ret));
   } else {
     switch (event) {
+    case VC_EVENT_WRITE_COMPLETE:
+    case VC_EVENT_WRITE_READY:
     case VC_EVENT_READ_READY:
     // The server sent us data. This is unexpected so
     // close the connection
@@ -98,62 +96,96 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
     ObIpEndpoint server_ip(net_vc->get_remote_addr());
     hash_key.local_ip_ = &local_ip;
     hash_key.server_ip_ = &server_ip;
-    LOG_DEBUG("Enter main_handler", K(event), "event:", ObMysqlDebugNames::get_event_name(event), K(local_ip), K(server_ip));
+    SESSION_POOL_LOG(DEBUG, "session pool main handler",
+                            "ethread", this_ethread(),
+                            "vc", net_vc,
+                            "event", ObMysqlDebugNames::get_event_name(event), K(local_ip), K(server_ip));
     bool found = false;
+    bool destroy = false;
     {
       //code block for lock
-      DRWLock::WRLockGuard guard(rwlock_);
+      DRWLock::WRLockGuard guard(get_ss_list_rwlock());
       if (OB_LIKELY(NULL != (ss = local_ip_pool_.get(hash_key)))
           && OB_LIKELY(ss->get_netvc() == net_vc)) {
         // We've found our server session. Remove it from
         // our lists and close it down
         found = true;
-        LOG_DEBUG("[session_pool] session received io notice ", K(event), "ss_id", ss->ss_id_, K(ss));
-        if (OB_LIKELY(MSS_KA_SHARED == ss->state_)) {
-          // Out of the pool! Now!
-          if (OB_FAIL(remove_from_list(ss))) {
-            //impossible happen here
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WDIAG("no server_session found in shared pool", K(ret));
+        if (OB_LIKELY(KEEP_ALIVE_GLOBAL_SHARED_IN_RESET == ss->state_)) {
+          if (VC_EVENT_READ_READY == event) {
+            ss->state_ = KEEP_ALIVE_GLOBAL_SHARED;
+            if (ss->get_reader() != NULL) {
+              // consume resp packet of com_reset_conection
+              SESSION_POOL_LOG(DEBUG, "receive reset connection resp from server ingore it",
+                               K(ss->get_reader()->read_avail()),
+                               K(server_ip), K(local_ip));
+              ss->get_reader()->consume_all();
+              ss->get_reset_conn_reader()->consume_all();
+              OBPROXY_POOL_LOG(TRACE, "reset_session: ok", "server_event", ObMysqlDebugNames::get_event_name(event),
+                                      "server_sessid", ss->server_sessid_, "ss_id", ss->ss_id_,
+                                      "server_addr", ss->server_ip_, "session_state", ss->get_state_str(), "local_addr", ss->local_ip_,
+                                      "dbkey", ss->schema_key_.dbkey_.config_string_, "cur_request_id", ss->get_server_request_id(),
+                                      "cur_compressed_seq", ss->get_cur_compressed_seq(),
+                                      "ob_capability", ss->get_session_info().get_server_ob_capability(),
+                                      "server_vc", ss->get_netvc());
+            } else {
+              destroy = true;
+              SESSION_POOL_LOG(DEBUG, "receive resp from server ingore it but reader is null", K(*ss));
+            }
+          } else {
+            // do nothing for VC_EVENT_WRITE_COMPLETE and VC_EVENT_WRITE_READY:
           }
+        } else if (OB_LIKELY(KEEP_ALIVE_GLOBAL_SHARED == ss->state_
+                             || KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET == ss->state_)) {
+          SESSION_POOL_LOG(DEBUG, "session idle timeout", "ss_id", ss->ss_id_, "event", ObMysqlDebugNames::get_event_name(event),
+                                  "server_sessid", ss->server_sessid_, "server_ip", ss->server_ip_);
+          destroy = true;
+        } else {
+          SESSION_POOL_LOG(WDIAG, "unexpected session state", "ss_id", ss->ss_id_,
+                                  "server_sessid", ss->server_sessid_, "state", ss->state_);
+          destroy = true;
+        }
+
+        if (destroy) {
+          // Out of the pool! Now!
+          remove_from_list_and_pool(ss);
           // Drop connection on this end.
           //mark has lock to prevent double lock in remove
+           OBPROXY_POOL_LOG(TRACE, "close_session", "server_event", ObMysqlDebugNames::get_event_name(event),
+                                   "server_sessid", ss->server_sessid_, "ss_id", ss->ss_id_,
+                                   "server_addr", ss->server_ip_, "session_state", ss->get_state_str(), "local_addr", ss->local_ip_,
+                                   "dbkey", ss->schema_key_.dbkey_.config_string_, "cur_request_id", ss->get_server_request_id(),
+                                   "cur_compressed_seq", ss->get_cur_compressed_seq(), "ob_capability", ss->get_session_info().get_server_ob_capability(),
+                                   "server_buffer_read", ss->get_reader(),
+                                   "server_vc", ss->get_netvc());
           ss->has_global_session_lock_ = true;
-          ss->do_io_close();
-        } else {
-          LOG_DEBUG("not expected state", K(ss->state_));
+          close_and_destroy_session(ss);
         }
       }
+
     }
 
     if (OB_UNLIKELY(!found)) {
-      // We failed to find our session.  This can only be the result
-      // of a programming flaw
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("Connection leak from mysql keep-alive system", K(ret));
+      SESSION_POOL_LOG(INFO, "ignore event, server session has been acquired",
+                             "event", ObMysqlDebugNames::get_event_name(event),
+                             "server_ip", server_ip, "local_ip", local_ip);
     }
   }
   return VC_EVENT_NONE;
 }
 void ObMysqlServerSessionList::purge_session_list()
 {
-  DRWLock::WRLockGuard guard(rwlock_);
+  DRWLock::WRLockGuard guard(get_ss_list_rwlock());
   while (!server_session_list_.empty()) {
     ObMysqlServerSession* session = (ObMysqlServerSession*)server_session_list_.pop();
-    if (OB_ISNULL(session)) {
-      LOG_WDIAG("unexpected session is NULL");
-    } else {
-      // will remove from local_ip_pool when close
-      session->has_global_session_lock_ = true;
-      session->do_io_close();
-    }
+    session->has_global_session_lock_ = true;
+    close_and_destroy_session(session);
   }
   local_ip_pool_.reset();
 }
 void ObMysqlServerSessionList::do_kill_session()
 {
   LOG_DEBUG("do_kill_session", K(common_addr_));
-  DRWLock::WRLockGuard guard(rwlock_);
+  DRWLock::WRLockGuard guard(get_ss_list_rwlock());
   LocalIPHashTable::iterator spot = local_ip_pool_.begin();
   LocalIPHashTable::iterator last = local_ip_pool_.end();
   net::ObIpEndpoint local_ip;
@@ -169,95 +201,89 @@ void ObMysqlServerSessionList::do_kill_session()
     }
   }
 }
-/*
- * add when server_session create
- * add to local_ip_pool and incr total_count
- */
-int ObMysqlServerSessionList::add_server_session(ObMysqlServerSession* server_session)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(server_session)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("server_session is null, invalid argument");
-  } else {
-    net::ObIpEndpoint local_ip;
-    local_ip.assign(server_session->get_netvc()->get_local_addr());
-    DRWLock::WRLockGuard guard(rwlock_);
-    ret = local_ip_pool_.set_refactored(server_session);
-    if (ret != OB_SUCCESS && ret != OB_HASH_EXIST) {
-      LOG_WDIAG("add to local_ip_pool_ failed", K(ret), K(local_ip));
-    } else {
-      ret = OB_SUCCESS;
-      ATOMIC_INC(&total_count_);
-      ATOMIC_INC(&create_count_);
-      LOG_DEBUG("succ add to local_ip_pool_", K(total_count_), K(server_session->ss_id_),
-                K(server_session->auth_user_), K(server_session->server_ip_), K(local_ip));
-    }
-  }
-  return ret;
-}
-/*
- * remove when server_ession do_io_close()
- * remove from local_ip_pool
- */
-int ObMysqlServerSessionList::remove_server_session(const ObMysqlServerSession* server_session)
-{
-  int ret = OB_SUCCESS;
-  if (OB_ISNULL(server_session)) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("server_session is null, invalid argument");
-  } else if (server_session->has_global_session_lock_) {
-    ret =  remove_server_session_internal(server_session);
-  } else {
-    DRWLock::WRLockGuard guard(rwlock_);
-    ret =  remove_server_session_internal(server_session);
-  }
-  return ret;
-}
-int ObMysqlServerSessionList::remove_server_session_internal(const ObMysqlServerSession* server_session)
-{
-  int ret = OB_SUCCESS;
-  ObMysqlServerSession* ss_to_remove = NULL;
-  if (OB_ISNULL(ss_to_remove = local_ip_pool_.remove(ObLocalIPHashing::key(server_session)))) {
-    LOG_INFO("remove failed", K(server_session->ss_id_), K(server_session->auth_user_),
-             K(server_session->server_ip_));
-  } else {
-    ATOMIC_DEC(&total_count_);
-    ATOMIC_INC(&destroy_count_);
-    LOG_DEBUG("succ removed",  K(total_count_), K(destroy_count_), K(server_session->ss_id_), K(server_session->auth_user_),
-              K(server_session->server_ip_));
-  }
-  return ret;
-}
 
-ObMysqlServerSession* ObMysqlServerSessionList::acquire_from_list()
+// 从原子链表 server_session_list_ 获取 server session
+ObMysqlServerSession* ObMysqlServerSessionList::acquire_first_from_list()
 {
-  DRWLock::RDLockGuard guard(rwlock_);
+  DRWLock::WRLockGuard guard(get_ss_list_rwlock());
   ObMysqlServerSession* ss = (ObMysqlServerSession*)server_session_list_.pop();
   if (ss != NULL) {
-    ATOMIC_DEC(&free_count_);
-    using_count_ = total_count_ - free_count_;
-    if (using_count_ > max_used_) {
-      max_used_ = using_count_;
-    }
+    //ATOMIC_DEC(&free_count_);
+    //using_count_ = total_count_ - free_count_;
+    //if (using_count_ > max_used_) {
+    //  max_used_ = using_count_;
+    //}
+    local_ip_pool_.remove(ss);
     ss->cancel_inactivity_timeout();
-    ss->state_ = MSS_ACTIVE;
-    LOG_DEBUG("acquire_from_list", K(ss->server_ip_), K(ss->auth_user_), K(free_count_), K(using_count_), K(max_used_));
+    ss->state_ = KEEP_ALIVE_ACTIVE;
+    LOG_DEBUG("acquire_first_from_list", K(ss->server_ip_), K(ss->auth_user_));
   } else {
-    LOG_DEBUG("acquire_from_list is null", K(free_count_));
+    LOG_DEBUG("acquire_first_from_list is null");
   }
   return ss;
 }
 
-// just release, if fail outer will close the session, do not close here
+ObMysqlServerSession* ObMysqlServerSessionList::acquire_matched_from_list(const ObServerSessionMatchRules &rules)
+{
+  ObMysqlServerSession *matched_ss = NULL;
+  {
+    DRWLock::WRLockGuard guard(get_ss_list_rwlock());
+    ObMysqlServerSession *cur_ss = (ObMysqlServerSession*)server_session_list_.head();
+    while (OB_NOT_NULL(cur_ss)) {
+      if (rules.is_matched(cur_ss)) {
+        matched_ss = cur_ss;
+        server_session_list_.remove(matched_ss);
+        local_ip_pool_.remove(matched_ss);
+        break;
+      } else {
+        cur_ss = static_cast<ObMysqlServerSession *>(server_session_list_.next(cur_ss));
+      }
+    }
+  }
+
+  if (matched_ss != NULL) {
+    int ret = OB_SUCCESS;
+    ObEThread *session_pool_thread = matched_ss->get_netvc()->thread_;
+    if (OB_FAIL(matched_ss->migrate_from_session_pool_thread()))  {
+      SESSION_POOL_LOG(EDIAG, "fail to migrate vc from ET_SESS_POOL to ET_NET", K(ret));
+      close_and_destroy_session(matched_ss);
+    } else {
+      ATOMIC_DEC(&idle_count_);
+      OBPROXY_POOL_LOG(TRACE, "acquire_session",
+        "ss_id", matched_ss->ss_id_,
+        "server_sessid", matched_ss->server_sessid_,
+        "server_addr", matched_ss->server_ip_,
+        "session_state", matched_ss->get_state_str(),
+        "local_addr", matched_ss->local_ip_,
+        "dbkey", matched_ss->schema_key_.dbkey_.config_string_,
+        "cur_request_id", matched_ss->get_server_request_id(),
+        "cur_compressed_seq", matched_ss->get_cur_compressed_seq(),
+        "ob_capability", matched_ss->get_session_info().get_server_ob_capability(),
+        "server_vc", matched_ss->get_netvc(),
+        KP(this_ethread()), KP(session_pool_thread));
+      matched_ss->cancel_inactivity_timeout();
+      matched_ss->state_ = KEEP_ALIVE_ACTIVE;
+      LOG_DEBUG("acquire_first_from_list", K(matched_ss),
+                K(matched_ss->server_ip_), K(matched_ss->auth_user_));
+    }
+  } else {
+    LOG_DEBUG("acquire_first_from_list is null");
+  }
+  return matched_ss;
+}
+
+// 放入原子链表 server_session_list_
 int ObMysqlServerSessionList::release_to_list(ObMysqlServerSession& server_session)
 {
   int ret = OB_SUCCESS;
+
   ObUnixNetVConnection *server_vc = static_cast<ObUnixNetVConnection*>(server_session.get_netvc());
   // Now we need to issue a read on the connection to detect
   // if it closes on us. We will get called back in the
   // continuation for this bucket, ensuring we have the lock
-  if (OB_ISNULL(server_vc)) {
+
+  if (OB_FAIL(ret)) {
+  } else if (OB_ISNULL(server_vc)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("server vc is null", K(ret));
   } else if (!server_vc->read_.enabled_) {
@@ -271,78 +297,69 @@ int ObMysqlServerSessionList::release_to_list(ObMysqlServerSession& server_sessi
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("do_io_write error", K(ret));
   } else {
-    // we probably don't need the active timeout set, but will leave it for now
-    if (total_count_ > ObMysqlSessionUtils::get_session_max_conn(server_session.schema_key_)) {
-      ret = OB_SESSION_POOL_FULL_ERROR;
-      LOG_DEBUG("session pool is full", K(server_session.ss_id_), K(server_session.auth_user_),
-                K(server_session.server_ip_), K(total_count_), K(free_count_));
+    server_vc->set_inactivity_timeout(HRTIME_USECONDS(get_global_proxy_config().session_pool_idle_timeout));
+    server_vc->set_active_timeout(server_vc->get_active_timeout());
+    server_session.clear_client_session();
+    net::ObIpEndpoint local_ip;
+    local_ip.assign(server_session.get_netvc()->get_local_addr());
+    server_session.state_ = KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET;
+    ObEThread *session_pool_thread = NULL;
+    // 先迁移 vc 到 ET_SESS_POOL 线程, 再将 vc 放入 local_ip_pool_
+    // 如果先放入 local_ip_pool_ 就有可能在迁移 vc 之前就被获取出去了
+    if (OB_FAIL(server_session.migrate_to_session_pool_thread())) {
+        LOG_WDIAG("fail to migrate server session", K(ret));
     } else {
-      server_vc->set_inactivity_timeout(ObMysqlSessionUtils::get_session_idle_timeout_ms(server_session.schema_key_));
-      server_vc->set_active_timeout(server_vc->get_active_timeout());
-      server_session.clear_client_session();
-      server_session_list_.push(&server_session);
-      int64_t old_count = free_count_;
-      int64_t new_count = ATOMIC_AAF(&free_count_, 1);
-      LOG_DEBUG("release_to_list succ", K(server_session.ss_id_), K(server_session.auth_user_),
-                K(server_session.server_ip_), K(old_count), K(new_count), K(total_count_));
+      if (server_session.get_netvc() != NULL) {
+        session_pool_thread = server_session.get_netvc()->thread_;
+      }
+      {
+        DRWLock::WRLockGuard guard(get_ss_list_rwlock());
+        if (OB_FAIL(local_ip_pool_.set_refactored(&server_session))) {
+          server_session_list_.remove(&server_session);
+          LOG_WDIAG("add to local_ip_pool_ failed", K(ret), K(local_ip));
+        } else {
+          server_session_list_.push(&server_session);
+        }
+      }
+      if (OB_SUCC(ret)) {
+        ATOMIC_INC(&idle_count_);
+        OBPROXY_POOL_LOG(TRACE, "release_session", "ss_id", server_session.ss_id_, "server_sessid", server_session.server_sessid_,
+                                "server_addr", server_session.server_ip_, "session_state", server_session.get_state_str(),
+                                "local_addr", server_session.local_ip_, "dbkey", server_session.schema_key_.dbkey_.config_string_,
+                                "cur_request_id", server_session.get_server_request_id(), "cur_compressed_seq", server_session.get_cur_compressed_seq(),
+                                "ob_capability", server_session.get_session_info().get_server_ob_capability(),
+                                "server_vc", server_session.get_netvc(),
+                                KP(this_ethread()), KP(session_pool_thread));
+        LOG_DEBUG("succ add to local_ip_pool_", K(idle_count_), K(server_session.ss_id_), K(server_session.auth_user_),
+                                                K(server_session.server_ip_), K(local_ip));
+      }
     }
+
   }
   return ret;
 }
 
-int ObMysqlServerSessionList::remove_from_list(ObMysqlServerSession* server_session)
+void ObMysqlServerSessionList::remove_from_list_and_pool(ObMysqlServerSession* server_session)
 {
-  int ret = OB_SUCCESS;
-  // is locked in main_handler
-  ObMysqlServerSession* ss_to_remove = NULL;
-  if (OB_ISNULL(ss_to_remove = (ObMysqlServerSession*)server_session_list_.remove(server_session))) {
-    LOG_WDIAG("should not null here", K(server_session->ss_id_), K(server_session->auth_user_),
-             K(server_session->server_ip_));
-  } else {
-    int64_t old_count = free_count_;
-    int64_t new_count = ATOMIC_SAF(&free_count_, 1);
-    LOG_DEBUG("remove from list succ", K(server_session->ss_id_), K(server_session->auth_user_),
-              K(server_session->server_ip_), K(old_count), K(new_count));
-  }
-  return ret;
+  server_session_list_.remove(server_session);
+  local_ip_pool_.remove(ObLocalIPHashing::key(server_session));
+  pool_->decr_idle_session_count();
 }
+
 int ObMysqlServerSessionList::do_pool_log(const ObProxySchemaKey& schema_key, bool force_log)
 {
+  UNUSED(force_log);
   int ret = OB_SUCCESS;
-  int64_t max_conn = ObMysqlSessionUtils::get_session_max_conn(schema_key);
   //log when reach ratio
-  int64_t ratio = get_global_proxy_config().session_pool_stat_log_ratio;
-  int64_t used_conn = total_count_ - free_count_;
   const ObString& dbkey = schema_key.dbkey_.config_string_;
-  int64_t min_conn = ObMysqlSessionUtils::get_session_min_conn(schema_key);
-  int64_t total_count = total_count_;
-  int64_t free_count = free_count_;
-  int64_t using_count = total_count - free_count;
-  int64_t max_used = max_used_;
-  int64_t create_count = create_count_;
-  int64_t destroy_count = destroy_count_;
-  if (force_log) {
-    int64_t now_time = event::get_hrtime();
-    last_log_time_ = now_time;
-    OBPROXY_POOL_STAT_LOG(INFO, "session_pool_stat:", K(dbkey), K(max_conn), K(min_conn), K(total_count), K(free_count),
-        K(using_count), K(max_used), K(create_count),K(destroy_count), K(common_addr_), K(force_log));
-  } else if (used_conn >= max_conn * ratio / 10000) {
-    int64_t now_time = event::get_hrtime();
-    int64_t interval_time = HRTIME_USECONDS(get_global_proxy_config().session_pool_stat_log_interval);
-    if (now_time - last_log_time_ >= interval_time) {
-      last_log_time_ = now_time;
-      OBPROXY_POOL_STAT_LOG(INFO, "session_pool_stat:", K(dbkey), K(max_conn), K(min_conn), K(total_count), K(free_count),
-        K(using_count), K(max_used), K(create_count),K(destroy_count), K(common_addr_), K(force_log));
-    } else {
-      LOG_DEBUG("reach ratio and no need log", K(interval_time), K(last_log_time_),
-        K(now_time), K(used_conn), K(max_conn), K(min_conn), K(schema_key));
-    }
-  }
+  int64_t now_time = event::get_hrtime();
+  last_log_time_ = now_time;
+  OBPROXY_POOL_STAT_LOG(INFO, "session_pool_stat", K(dbkey),  "server_addr", common_addr_.ip_endpoint_, K_(idle_count));
   return ret;
 }
 
 ObMysqlServerSessionListPool::ObMysqlServerSessionListPool()
-  : client_session_count_(0), schema_server_addr_info_(NULL)
+  : idle_session_count_(0), schema_server_addr_info_(NULL)
 {
 }
 
@@ -371,49 +388,28 @@ int64_t ObMysqlServerSessionListPool::get_current_session_conn_count(
   int64_t conn_count = 0;
   int ret = OB_SUCCESS;
   ObMysqlServerSessionList* ss_list = NULL;
-  if (OB_FAIL(accquire_server_seession_list(key, ss_list))) {
+  if (OB_FAIL(acquire_ss_list(key, ss_list))) {
   } else {
-    conn_count = ss_list->total_count_;
+    conn_count = ss_list->idle_count_;
     ss_list->dec_ref();
   }
   return conn_count;
 }
 
-int64_t ObMysqlServerSessionListPool::incr_client_session_count()
+int64_t ObMysqlServerSessionListPool::incr_idle_session_count()
 {
-  int64_t old_count = client_session_count_;
-  int64_t new_count = ATOMIC_AAF(&client_session_count_, 1);
-  LOG_DEBUG("after incr now_count", K(old_count), K(new_count), K(schema_key_));
+  int64_t new_count = ATOMIC_AAF(&idle_session_count_, 1);
+  SESSION_POOL_LOG(DEBUG, "incr idle session", "idle_session_count", new_count, K(schema_key_));
   return new_count;
 }
-int64_t ObMysqlServerSessionListPool::decr_client_session_count()
+int64_t ObMysqlServerSessionListPool::decr_idle_session_count()
 {
-  int64_t old_count = client_session_count_;
-  int64_t new_count = ATOMIC_SAF(&client_session_count_, 1);
-  LOG_DEBUG("after decr now_count", K(old_count), K(new_count), K(schema_key_));
+  int64_t new_count = ATOMIC_SAF(&idle_session_count_, 1);
+  SESSION_POOL_LOG(DEBUG, "decr idle session", "idle_session_count", new_count, K(schema_key_));
   return new_count;
 }
-int ObMysqlServerSessionListPool::do_close_extra_session_conn(const ObCommonAddr &key,
-    int64_t need_close_num)
-{
-  int ret = OB_SUCCESS;
-  int64_t close_num = 0;
-  ObMysqlServerSession* ss = NULL;
-  for (; OB_SUCC(ret) && close_num < need_close_num; ++close_num) {
-    if (OB_FAIL(acquire_server_session(key, ss, false))) {
-    } else {
-      if (ss != NULL) {
-        //need set to shared as aquire set it active
-        ss->state_ = MSS_KA_SHARED;
-        ss->do_io_close();
-        ss = NULL;
-      }
-    }
-  }
-  LOG_INFO("do_close_extra_session_conn", K(key),  K(need_close_num), K(close_num));
-  return ret;
-}
-int ObMysqlServerSessionListPool::accquire_server_seession_list(const ObCommonAddr& key,
+
+int ObMysqlServerSessionListPool::acquire_ss_list(const ObCommonAddr& key,
   ObMysqlServerSessionList* &ss_list)
 {
   int ret = OB_SUCCESS;
@@ -431,69 +427,79 @@ int ObMysqlServerSessionListPool::accquire_server_seession_list(const ObCommonAd
  int ObMysqlServerSessionListPool::acquire_server_session(
   const ObCommonAddr &key,
   ObMysqlServerSession* &server_session,
-  bool new_client)
+  ObServerSessionMatchRules *rules)
 {
   int ret = OB_SUCCESS;
   ObMysqlServerSessionList* ss_list = NULL;
-  if (new_client) {
-    // here inc is to avoid concurrent acquire
-    int64_t new_count = incr_client_session_count();
-    int64_t max_conn = ObMysqlSessionUtils::get_session_max_conn(schema_key_);
-    if (new_count > max_conn) {
-      decr_client_session_count();
-      ret = OB_SESSION_POOL_FULL_ERROR;
-      LOG_INFO("reach_client_session_max_count", K(schema_key_.dbkey_), K(max_conn), K(client_session_count_));
-    }
-  }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(accquire_server_seession_list(key, ss_list))) {
-    } else if (NULL != (server_session = (ObMysqlServerSession*)ss_list->acquire_from_list())) {
-      LOG_DEBUG("acquire_session succ", K(schema_key_.dbkey_),
-                K(key), K(client_session_count_), KP(server_session));
+    if (OB_FAIL(acquire_ss_list(key, ss_list))) {
+    } else if (rules != NULL && NULL != (server_session = (ObMysqlServerSession*)ss_list->acquire_matched_from_list(*rules))) {
+      LOG_DEBUG("acquire_matched_from_list succ", K(schema_key_.dbkey_),
+                K(key), K(idle_session_count_), KP(server_session));
+    } else if (rules == NULL && NULL != (server_session = (ObMysqlServerSession*)ss_list->acquire_first_from_list())) {
+      LOG_DEBUG("acquire_first_from_list succ", K(schema_key_.dbkey_),
+                K(key), K(idle_session_count_), KP(server_session));
     }
-    if (new_client && (OB_FAIL(ret) || NULL == server_session)) {
-      ret = OB_SUCCESS;
-      decr_client_session_count(); //before has inc, when get fail or null should decr
-      LOG_DEBUG("acquire null session", K(schema_key_.dbkey_), K(key));
-    }
-    if (ss_list != NULL) {
-      ss_list->do_pool_log(schema_key_);
-      ss_list->dec_ref();
+    if (server_session != NULL) {
+      decr_idle_session_count();
+      if (ss_list != NULL) {
+        ss_list->dec_ref();
+      }
     }
   }
   return ret;
 }
 
-int ObMysqlServerSessionListPool::acquire_server_session(const ObCommonAddr &addr,
-    const ObString &auth_user,
-    ObMysqlServerSession* &server_session,
-    bool new_client)
-{
-  UNUSED(auth_user);
-  return acquire_server_session(addr, server_session, new_client);
-}
-
-int ObMysqlServerSessionListPool::release_session(ObMysqlServerSession &ss)
+int ObMysqlServerSessionListPool::release_server_session(ObMysqlServerSession &ss)
 {
   int ret = OB_SUCCESS;
   const ObString& dbkey = ss.schema_key_.dbkey_.config_string_;
   ss.last_active_time_ = ObTimeUtility::current_time();
-  LOG_DEBUG("release_session", K(ss.ss_id_), K(ss.auth_user_),
+  LOG_DEBUG("[ObMysqlServerSessionListPool::release_session]", K(ss.ss_id_), K(ss.auth_user_),
             K(ss.server_ip_), K(dbkey), K(ss.last_active_time_));
   ObCommonAddr& key = ss.common_addr_;
   ObMysqlServerSessionList* ss_list = NULL;
-  ss.state_ = MSS_KA_SHARED;
-  decr_client_session_count();
-  if (OB_FAIL(accquire_server_seession_list(key, ss_list))) {
-  } else {
-    int64_t max_count = ObMysqlSessionUtils::get_session_max_conn(schema_key_);
-    if (ss_list->total_count_ <= max_count) {
-      ret = ss_list->release_to_list(ss);
-    } else {
-      ret = OB_SESSION_POOL_FULL_ERROR;
-      LOG_INFO("session pool is full", K(dbkey), K(ss_list->total_count_), K(max_count));
+  if (OB_FAIL(acquire_ss_list(key, ss_list))) {
+    LOG_DEBUG("not exist in map", K(ret), K(dbkey));
+    DRWLock::WRLockGuard guard(rwlock_);
+    if (OB_FAIL(server_session_list_pool_.get_refactored(ss.common_addr_, ss_list))) {
+      if (OB_ISNULL(ss_list = op_alloc(ObMysqlServerSessionList))) {
+        LOG_EDIAG("fail to allocate ", K(dbkey));
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+      } else if (OB_FAIL(ss_list->init())) {
+        LOG_EDIAG("fail to init ss_list", K(dbkey));
+        ret = OB_ERR_UNEXPECTED;
+        op_free(ss_list);
+        ss_list = NULL;
+      } else {
+        ss_list->pool_ = this;
+        ss_list->auth_user_.set_value(ss.auth_user_);
+        ss_list->server_ip_ = ss.server_ip_;
+        ss_list->common_addr_ = ss.common_addr_;
+        ss_list->inc_ref();
+        if (OB_FAIL(server_session_list_pool_.unique_set(ss_list))) {
+          LOG_WDIAG("add to map failed", K(ss.common_addr_), K(ret));
+          ss_list->dec_ref();
+          ss_list = NULL;
+          ret = OB_ERR_UNEXPECTED;
+        } else {
+          ss_list->inc_ref();
+          LOG_DEBUG("add to session list succ", K(schema_key_), K(ss.common_addr_), K(idle_session_count_));
+        }
+      }
     }
-    LOG_DEBUG("after release_session", K(ss_list->total_count_), K(ss_list->free_count_), K(dbkey), K(ret));
+  } else if (OB_ISNULL(ss_list)) {
+    LOG_WDIAG("ss_list should not null here", K(dbkey));
+    ret = OB_ERR_UNEXPECTED;
+  }
+
+  if (OB_SUCC(ret)) {
+    add_server_addr_if_not_exist(ss.common_addr_);
+    if (OB_FAIL(ss_list->release_to_list(ss))) {
+      LOG_WDIAG("fail to release server session to ss_list", K(ret));
+    } else {
+      incr_idle_session_count();
+    }
     ss_list->dec_ref();
   }
   return ret;
@@ -553,84 +559,7 @@ int  ObMysqlServerSessionListPool::do_kill_session_by_ssid(int64_t ss_id)
   if (found == false) {
     ret = OB_ERR_UNEXPECTED;
   }
-  return ret;
-}
-
-
-//add when server_session create
-int ObMysqlServerSessionListPool::add_server_session(ObMysqlServerSession& ss)
-{
-  int ret = OB_SUCCESS;
-  const ObString& dbkey = ss.schema_key_.dbkey_.config_string_;
-  ObCommonAddr& common_addr = ss.common_addr_;
-  LOG_DEBUG("add_server_session", K(ss.ss_id_), K(ss.auth_user_),
-            K(ss.server_ip_), K(dbkey));
-  ObMysqlServerSessionList* ss_list = NULL;
-  if (OB_FAIL(accquire_server_seession_list(common_addr, ss_list))) {
-    LOG_DEBUG("not exist in map", K(ret), K(dbkey));
-    DRWLock::WRLockGuard guard(rwlock_);
-    if (OB_FAIL(server_session_list_pool_.get_refactored(common_addr, ss_list))) {
-      if (OB_ISNULL(ss_list = op_alloc(ObMysqlServerSessionList))) {
-        LOG_EDIAG("fail to allocate ", K(dbkey));
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-      } else if (OB_FAIL(ss_list->init())) {
-        LOG_EDIAG("fail to init ss_list", K(dbkey));
-        ret = OB_ERR_UNEXPECTED;
-        op_free(ss_list);
-        ss_list = NULL;
-      } else {
-        ss_list->auth_user_.set_value(ss.auth_user_);
-        ss_list->server_ip_ = ss.server_ip_;
-        ss_list->common_addr_ = ss.common_addr_;
-        ss_list->inc_ref();
-        if (OB_FAIL(server_session_list_pool_.unique_set(ss_list))) {
-          LOG_WDIAG("add to map failed", K(common_addr), K(ret));
-          ss_list->dec_ref();
-          ss_list = NULL;
-          ret = OB_ERR_UNEXPECTED;
-        } else {
-          ss_list->inc_ref();
-          LOG_DEBUG("add to session list succ", K(schema_key_), K(common_addr), K(client_session_count_));
-        }
-      }
-    }
-  } else if (OB_ISNULL(ss_list)) {
-    LOG_WDIAG("ss_list should not null here", K(dbkey));
-    ret = OB_ERR_UNEXPECTED;
-  }
-  if (OB_SUCC(ret)) {
-    add_server_addr_if_not_exist(ss.common_addr_);
-    if (OB_SUCC(ss_list->add_server_session(&ss))) {
-      incr_client_session_count();
-    }
-  }
-  if (OB_NOT_NULL(ss_list)) {
-    ss_list->dec_ref();
-    ss_list = NULL;
-  }
-  LOG_DEBUG("add_server_session", K(dbkey), K(ret));
-  return ret;
-}
-// remove when server_ession do_io_close()
-int ObMysqlServerSessionListPool::remove_server_session(const ObMysqlServerSession& ss)
-{
-  int ret = OB_SUCCESS;
-  const ObString& dbkey = ss.schema_key_.dbkey_.config_string_;
-  const ObCommonAddr& key = ss.common_addr_;
-  ObMysqlServerSessionList* ss_list = NULL;
-  if (OB_FAIL(accquire_server_seession_list(key, ss_list))) {
-    LOG_WDIAG("not in map", K(dbkey));
-  } else if (OB_ISNULL(ss_list)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("session_list is null", K(dbkey));
-  } else {
-    if (ss.state_ == MSS_ACTIVE || ss.state_ == MSS_KA_CLIENT_SLAVE) {
-      decr_client_session_count();
-    }
-    ret = ss_list->remove_server_session(&ss);
-    ss_list->dec_ref();
-    LOG_DEBUG("remove_server_session from ss_list", K(dbkey));
-  }
+  UNUSED(ss_id);
   return ret;
 }
 
@@ -713,6 +642,8 @@ int32_t ObMysqlServerSessionListPool::get_fail_count(const ObCommonAddr& addr)
   return fail_count;
 }
 
+
+
 ObMysqlGlobalSessionManager::~ObMysqlGlobalSessionManager()
 {
   DRWLock::WRLockGuard guard(rwlock_);
@@ -724,6 +655,7 @@ ObMysqlGlobalSessionManager::~ObMysqlGlobalSessionManager()
   }
   global_session_pool_.reset();
 }
+
 int ObMysqlGlobalSessionManager::purge_session_manager_keepalives(const ObString& dbkey)
 {
   int ret = OB_SUCCESS;
@@ -753,23 +685,6 @@ ObMysqlServerSessionListPool* ObMysqlGlobalSessionManager::get_server_session_li
     server_session_list_pool->inc_ref();
   }
   return server_session_list_pool;
-}
-
-int ObMysqlGlobalSessionManager::do_close_extra_session_conn(const ObProxySchemaKey& schema_key,
-    const ObCommonAddr& common_addr_,
-    int64_t need_close_num)
-{
-  int ret = OB_SUCCESS;
-  const common::ObString& dbkey = schema_key.dbkey_.config_string_;
-  ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
-  if (OB_ISNULL(server_session_list_pool)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("can not be this, in map can not null", K(dbkey));
-  } else {
-    ret = server_session_list_pool->do_close_extra_session_conn(common_addr_, need_close_num);
-    server_session_list_pool->dec_ref();
-  }
-  return ret;
 }
 
 int ObMysqlGlobalSessionManager::add_schema_if_not_exist(const ObProxySchemaKey& schema_key,
@@ -822,74 +737,41 @@ int ObMysqlGlobalSessionManager::remove_schema_if_exist(const ObProxySchemaKey& 
   return ret;
 }
 
-//add when server_session create
-int ObMysqlGlobalSessionManager::add_server_session(ObMysqlServerSession& server_session)
-{
-  int ret = OB_SUCCESS;
-  const ObString& dbkey = server_session.schema_key_.dbkey_.config_string_;
-  if (dbkey.empty()) {
-    LOG_WDIAG("dbkey should not empty");
-    ret = OB_ERR_UNEXPECTED;
-    return ret;
-  }
-  ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
-  if (OB_ISNULL(server_session_list_pool)) {
-    // add when not exists
-    ret = add_schema_if_not_exist(server_session.schema_key_, server_session_list_pool);
-    LOG_DEBUG("server_session_list_pool is null, add now ", K(dbkey), K(ret));
-  }
-  if (OB_SUCC(ret)) {
-    // add ito pool
-    LOG_DEBUG("add server_session to server_session_list_pool", K(dbkey));
-    ret = server_session_list_pool->add_server_session(server_session);
-    server_session_list_pool->dec_ref();
-  }
-  return ret;
-}
-// remove when server_session do_io_close()
-int ObMysqlGlobalSessionManager::remove_server_session(const ObMysqlServerSession& server_session)
-{
-  int ret = OB_SUCCESS;
-  const ObString& dbkey = server_session.schema_key_.dbkey_.config_string_;
-  ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
-  if (OB_ISNULL(server_session_list_pool)) {
-    LOG_WDIAG("invalid, should not null here", K(dbkey));
-  } else {
-    LOG_DEBUG("remove_server_session ", K(dbkey));
-    ret = server_session_list_pool->remove_server_session(server_session);
-  }
-  return ret;
-}
-int ObMysqlGlobalSessionManager::acquire_server_session(const ObProxySchemaKey& schema_key,
+// 获取会话连接池中的 server session
+int ObMysqlGlobalSessionManager::acquire_server_session(
+    const ObProxySchemaKey& schema_key,
     const ObCommonAddr &addr,
-    const ObString &auth_user,
     ObMysqlServerSession *&server_session,
-    bool new_client)
+    ObServerSessionMatchRules *rules)
 {
   int ret = OB_SUCCESS;
   const common::ObString& dbkey = schema_key.dbkey_.config_string_;
   ObMysqlServerSessionListPool* server_session_list_pool = get_server_session_list_pool(dbkey);
   if (OB_ISNULL(server_session_list_pool)) {
     if (OB_FAIL(add_schema_if_not_exist(schema_key, server_session_list_pool))) {
-      LOG_WDIAG("add schema failed when not exist", K(dbkey), K(auth_user));
+      LOG_WDIAG("add schema failed when not exist", K(dbkey));
     }
   }
   if (OB_ISNULL(server_session_list_pool)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("should not null here", K(dbkey), K(auth_user));
+    LOG_WDIAG("should not null here", K(dbkey));
   } else {
-    ret = server_session_list_pool->acquire_server_session(addr, auth_user, server_session, new_client);
+    ret = server_session_list_pool->acquire_server_session(addr, server_session, rules);
     server_session_list_pool->dec_ref();
+  }
+
+  if (OB_NOT_NULL(server_session)) {
+    server_session->set_need_reset_by_change_user(true);
   }
   return ret;
 }
-// will handle fail and close ,always return succ
-int ObMysqlGlobalSessionManager::release_session(ObMysqlServerSession &to_release)
+// 将 server session 放回会话连接池
+int ObMysqlGlobalSessionManager::release_server_session(ObMysqlServerSession &to_release)
 {
   int ret = OB_SUCCESS;
   const ObString& dbkey = to_release.schema_key_.dbkey_.config_string_;
   ObMysqlServerSessionListPool* server_session_list_pool = NULL;
-  LOG_DEBUG("release_session", K(dbkey));
+  LOG_DEBUG("[ObMysqlGlobalSessionManager::release_session]", K(dbkey));
   if (dbkey.empty()) {
     LOG_WDIAG("dbkey should not empty");
     ret = OB_ERR_UNEXPECTED;
@@ -897,11 +779,11 @@ int ObMysqlGlobalSessionManager::release_session(ObMysqlServerSession &to_releas
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("server_session_list_pool is null, should not here", K(dbkey));
   } else {
-    ret = server_session_list_pool->release_session(to_release);
+    ret = server_session_list_pool->release_server_session(to_release);
     server_session_list_pool->dec_ref();
   }
   if (OB_FAIL(ret)) {
-    to_release.do_io_close();
+    LOG_DEBUG("[ObMysqlGlobalSessionManager::release_session] fail to release session to global pool", K(ret), K(to_release));
     ret = OB_SUCCESS;
   }
   return ret;
@@ -1009,10 +891,12 @@ int ObMysqlGlobalSessionManager::get_all_session_list_pool(common::ObIArray<ObMy
   int ret = OB_SUCCESS;
   DRWLock::RDLockGuard guard(rwlock_);
   SessionPoolListHashTable::iterator last = global_session_pool_.end();
-  for (SessionPoolListHashTable::iterator spot = global_session_pool_.begin(); spot != last; ++spot) {
+  for (SessionPoolListHashTable::iterator spot = global_session_pool_.begin(); OB_SUCC(ret) && spot != last; ++spot) {
     ObMysqlServerSessionListPool* server_session_list_pool = &(*spot);
     server_session_list_pool->inc_ref();
-    all_session_list_pool.push_back(server_session_list_pool);
+    if (OB_FAIL(all_session_list_pool.push_back(server_session_list_pool))) {
+      SESSION_POOL_LOG(EDIAG, "fail to push back server_session_list_pool", K(ret));
+    }
   }
   return ret;
 }

@@ -88,6 +88,7 @@ public:
   const common::ObString &get_value_string() const { return second_string_; }
   const common::ObString &get_cluster_string() const { return first_string_; }
   const common::ObString &get_large_key_string() const { return second_string_; }
+  const common::ObString &get_rpc_req_type_string() const { return first_string_; }
 
   proxy::ObProxyProtocol get_protocol() const { return protocol_; }
   proxy::Ob20HeaderParam &get_ob20_head_param() { return ob20_param_; }

@@ -11,11 +11,16 @@
  */
 
 #include "common/ob_common_utility.h"
+#include "lib/coro/co_var.h"
 
 namespace oceanbase
 {
 namespace common
 {
+
+_RLOCAL(char*, g_stackaddr);
+_RLOCAL(size_t, g_stacksize);
+
 const char *print_server_role(const ObServerRole server_role)
 {
   const char *role_string = NULL;
@@ -99,5 +104,32 @@ int check_stack_overflow(bool &is_overflow,
   }
   return ret;
 }
+
+int get_stackattr(void *&stackaddr, size_t &stacksize)
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(g_stackaddr != nullptr)) {
+    stackaddr = g_stackaddr;
+    stacksize = g_stacksize;
+  } else {
+    pthread_attr_t attr;
+    if (OB_UNLIKELY(0 != pthread_getattr_np(pthread_self(), &attr))) {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(ERROR, "cannot get thread params", K(ret));
+    } else if (OB_UNLIKELY(0 != pthread_attr_getstack(&attr, &stackaddr, &stacksize))) {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(ERROR, "cannot get thread statck params", K(ret));
+    } else if (OB_UNLIKELY(0 != pthread_attr_destroy(&attr))) {
+      ret = OB_ERR_UNEXPECTED;
+      COMMON_LOG(ERROR, "destroy thread attr failed", K(ret));
+    }
+    if (OB_SUCC(ret)) {
+      g_stackaddr = static_cast<char*>(stackaddr);
+      g_stacksize = stacksize;
+    }
+  }
+  return ret;
+}
+
 } // end of namespace common
 } // end of namespace oceanbse

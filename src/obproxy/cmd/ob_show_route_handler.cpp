@@ -171,7 +171,7 @@ enum
   OB_GIC_MAX_GLOBAL_INDEX_COLUMN_ID,
 };
 
-const ObProxyColumnSchema GLOBAL_INDEX_COLUMN_ARRAY[OB_RPC_MAX_ROUTE_COLUMN_ID] = {
+const ObProxyColumnSchema GLOBAL_INDEX_COLUMN_ARRAY[OB_GIC_MAX_GLOBAL_INDEX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_GIC_TABLE_ID,        "table_id",             OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_GIC_DATA_TABLE_ID,   "data_table_id",        OB_MYSQL_TYPE_LONGLONG),
     ObProxyColumnSchema::make_schema(OB_GIC_INDEX_TABLE_NAME,"index_table_name",     OB_MYSQL_TYPE_VARCHAR),
@@ -186,13 +186,136 @@ const ObProxyColumnSchema GLOBAL_INDEX_COLUMN_ARRAY[OB_RPC_MAX_ROUTE_COLUMN_ID] 
     ObProxyColumnSchema::make_schema(OB_GIC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
 };
 
+// TableGroupColumn
+enum
+{
+  OB_TGC_TENANT_ID = 0,
+  OB_TGC_TABLE_GROUP_NAME,
+  OB_TGC_DATABASE_NAME,
+  OB_TGC_SHARDING,
+  OB_TGC_STATE,
+  OB_TGC_CR_VERSION,
+  OB_TGC_SCHEMA_VERSION,
+  OB_TGC_CREATE,
+  OB_TGC_LAST_VALID,
+  OB_TGC_LAST_ACCESS,
+  OB_TGC_LAST_UPDATE,
+  OB_TGC_EXPIRE_TIME,
+  OB_TGC_RELATIVE_EXPIRE_TIME,
+  OB_TGC_MAX_TABLE_GROUP_COLUMN_ID,
+};
+
+const ObProxyColumnSchema TABLE_GROUP_COLUMN_ARRAY[OB_TGC_MAX_TABLE_GROUP_COLUMN_ID] = {
+    ObProxyColumnSchema::make_schema(OB_TGC_TENANT_ID,      "tenant_id",             OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TGC_TABLE_GROUP_NAME,"tablegroup_name",      OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_DATABASE_NAME,   "database_name",        OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_SHARDING,        "sharding",             OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_STATE,           "state",                OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_CR_VERSION,      "cluster_version",      OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TGC_SCHEMA_VERSION,  "schema_version",       OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TGC_CREATE,          "create_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_LAST_VALID,      "last_valid_time",      OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_LAST_ACCESS,     "last_access_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_LAST_UPDATE,     "last_update_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_EXPIRE_TIME,     "expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TGC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
+};
+
+// QueryAsyncColumn
+enum
+{
+  OB_QAC_CLIENT_QUERY_SESSION_ID = 0,
+  OB_QAC_SERVER_QUERY_SESSION_ID,
+  OB_QAC_CURRENT_POSITION,
+  OB_QAC_TABLE_ID,
+  OB_QAC_DATA_TABLE_ID,
+  OB_QAC_GLOBAL_INDEX_QUERY,
+  OB_QAC_FIRST_QUERY,
+  OB_QAC_SERVER_INFO,
+  OB_QAC_STATE,
+  OB_QAC_TIMEOUT,
+  OB_QAC_SCAN_LEASE_TIMEOUT,
+  OB_QAC_MAX_QUERY_ASYNC_COLUMN_ID,
+};
+
+const ObProxyColumnSchema QUERY_ASYNC_COLUMN_ARRAY[OB_QAC_MAX_QUERY_ASYNC_COLUMN_ID] = {
+    ObProxyColumnSchema::make_schema(OB_QAC_CLIENT_QUERY_SESSION_ID,"client_query_session_id", OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_QAC_SERVER_QUERY_SESSION_ID,"server_query_session_id", OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_QAC_CURRENT_POSITION,       "current_position",        OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_QAC_TABLE_ID,               "table_id",                OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_QAC_DATA_TABLE_ID,          "data_table_id",           OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_QAC_GLOBAL_INDEX_QUERY,     "global_index_query",      OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_QAC_FIRST_QUERY,            "first_query",             OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_QAC_SERVER_INFO,            "server_info",             OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_QAC_STATE,                  "state",                   OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_QAC_TIMEOUT,                "next_timeout",            OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_QAC_SCAN_LEASE_TIMEOUT,     "scan_lease_timeout",      OB_MYSQL_TYPE_LONGLONG),
+};
+
+// TabletLsColumn
+enum
+{
+  OB_TLC_TENANT_ID = 0,
+  OB_TLC_TABLE_ID,
+  OB_TLC_STATE,
+  OB_TLC_CR_VERSION,
+  OB_TLC_SCHEMA_VERSION,
+  OB_TLC_CREATE,
+  OB_TLC_LAST_VALID,
+  OB_TLC_LAST_ACCESS,
+  OB_TLC_LAST_UPDATE,
+  OB_TLC_EXPIRE_TIME,
+  OB_TLC_RELATIVE_EXPIRE_TIME,
+  OB_TLC_TABLET_TO_LS_MAP,
+  OB_TLC_MAX_TABLET_LS_COLUMN_ID,
+};
+
+const ObProxyColumnSchema TABLET_LS_COLUMN_ARRAY[OB_TLC_MAX_TABLET_LS_COLUMN_ID] = {
+    ObProxyColumnSchema::make_schema(OB_TLC_TENANT_ID,      "tenant_id",             OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TLC_TABLE_ID,        "table_id",             OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TLC_STATE,           "state",                OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_CR_VERSION,      "cluster_version",      OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TLC_SCHEMA_VERSION,  "schema_version",       OB_MYSQL_TYPE_LONGLONG),
+    ObProxyColumnSchema::make_schema(OB_TLC_CREATE,          "create_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_LAST_VALID,      "last_valid_time",      OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_LAST_ACCESS,     "last_access_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_LAST_UPDATE,     "last_update_time",     OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_EXPIRE_TIME,     "expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_RELATIVE_EXPIRE_TIME,     "relative_expire_time",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_TLC_TABLET_TO_LS_MAP, "tablet_to_ls_map",    OB_MYSQL_TYPE_VARCHAR),
+};
+
+// RpcCtxColumn
+enum
+{
+  OB_RCC_CLUSTER_NAME = 0,
+  OB_RCC_TENANT_NAME,
+  OB_RCC_USER_NAME,
+  OB_RCC_DATABASE_NAME,
+  OB_RCC_FULL_NAME,
+  OB_RCC_SUPPORT_DISTRIBUTATION,
+  OB_RCC_MAX_RPC_CTX_COLUMN_ID,
+};
+
+const ObProxyColumnSchema RPC_CTX_COLUMN_ARRAY[OB_RCC_MAX_RPC_CTX_COLUMN_ID] = {
+    ObProxyColumnSchema::make_schema(OB_RCC_CLUSTER_NAME,    "cluster_name",         OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RCC_TENANT_NAME,     "tenant_name",          OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RCC_USER_NAME,       "user_name",            OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RCC_DATABASE_NAME,   "database_name",        OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RCC_FULL_NAME,       "full_name",            OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_RCC_SUPPORT_DISTRIBUTATION,"is_support_distributation",OB_MYSQL_TYPE_VARCHAR),
+};
+
 int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *valid_timebuf,
                        char *access_timebuf, char *update_timebuf, char *expire_timebuf,
-                       char *relative_expire_timebuf, const uint32_t buf_len);
+                       char *relative_expire_timebuf, const int64_t relative_expire_time_us, const uint32_t buf_len);
+
+int format_entry_time(char *timebuf, const int64_t time_us, const uint32_t buf_len);
 
 ObShowRouteHandler::ObShowRouteHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
   : ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()), list_bucket_(0)
 {
+  tablet_ls_size_ = info.get_first_int() > 0 ? info.get_first_int() : 5;
   if (!info.get_large_key_string().empty()) {
     int32_t min_len =std::min(info.get_large_key_string().length(), static_cast<int32_t>(OB_MAX_CONFIG_VALUE_LEN));
     MEMCPY(value_str_, info.get_large_key_string().ptr(), min_len);
@@ -456,6 +579,246 @@ int ObShowRouteHandler::handle_show_global_index(int event, void *data)
   return event_ret;
 }
 
+int ObShowRouteHandler::handle_show_table_group(int event, void *data)
+{
+  int event_ret = EVENT_DONE;
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_argument_valid(event, data))) {
+    ret = OB_INVALID_ARGUMENT;
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+  } else if (OB_FAIL(dump_header())) {
+    WDIAG_ICMD("fail to dump header", K(ret));
+  } else {
+    ObTableGroupCache &table_group_cache = get_global_tablegroup_cache();
+    bool terminate = false;
+    ObTableGroupEntry *entry = NULL;
+    TableGroupIter it;
+    for (; (list_bucket_ < MT_HASHTABLE_PARTITIONS) && (OB_SUCC(ret)) && !terminate; ++list_bucket_) {
+      ObProxyMutex *bucket_mutex = table_group_cache.lock_for_key(list_bucket_);
+      MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
+      if (!lock_bucket.is_locked()) {
+        DEBUG_ICMD("fail to try lock cache, schedule in again", K_(list_bucket), K(event_ret));
+        terminate = true;
+        if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          EDIAG_ICMD("fail to schedule self", K(ret));
+        } else {
+          event_ret = EVENT_CONT;
+        }
+      } else {
+        DEBUG_ICMD("start traversing ObTableGroupEntry", K_(list_bucket));
+        if (OB_FAIL(table_group_cache.run_todo_list(list_bucket_))) {
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
+        } else {
+          entry = table_group_cache.first_entry(list_bucket_, it);
+          while (NULL != entry && OB_SUCC(ret)) {
+            if (OB_FAIL(dump_table_group_item(*entry))) {
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
+            } else {
+              entry = table_group_cache.next_entry(list_bucket_, it);
+            }
+          }//end of while
+        }//end of else
+      }//end of locked
+    }//end of for list_bucket_
+
+    if (!terminate && OB_SUCC(ret)) {
+      DEBUG_ICMD("finish traversing all entry");
+      if (OB_FAIL(encode_eof_packet())) {
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
+      } else {
+        INFO_ICMD("succ to dump table group entry");
+        event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
+      }
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    event_ret = internal_error_callback(ret);
+  }
+  return event_ret;
+}
+
+int ObShowRouteHandler::handle_show_query_async(int event, void *data)
+{
+  int event_ret = EVENT_DONE;
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_argument_valid(event, data))) {
+    ret = OB_INVALID_ARGUMENT;
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+  } else if (OB_FAIL(dump_header())) {
+    WDIAG_ICMD("fail to dump header", K(ret));
+  } else {
+    ObTableQueryAsyncCache &query_async_cache = get_global_table_query_async_cache();
+    bool terminate = false;
+    ObTableQueryAsyncEntry *entry = NULL;
+    TableQueryAsyncIter it;
+    for (; (list_bucket_ < MT_HASHTABLE_PARTITIONS) && (OB_SUCC(ret)) && !terminate; ++list_bucket_) {
+      ObProxyMutex *bucket_mutex = query_async_cache.lock_for_key(list_bucket_);
+      MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
+      if (!lock_bucket.is_locked()) {
+        DEBUG_ICMD("fail to try lock cache, schedule in again", K_(list_bucket), K(event_ret));
+        terminate = true;
+        if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          EDIAG_ICMD("fail to schedule self", K(ret));
+        } else {
+          event_ret = EVENT_CONT;
+        }
+      } else {
+        DEBUG_ICMD("start traversing ObTableQueryAsyncEntry", K_(list_bucket));
+        if (OB_FAIL(query_async_cache.run_todo_list(list_bucket_))) {
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
+        } else {
+          entry = query_async_cache.first_entry(list_bucket_, it);
+          while (NULL != entry && OB_SUCC(ret)) {
+            if (OB_FAIL(dump_query_async_item(*entry))) {
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
+            } else {
+              entry = query_async_cache.next_entry(list_bucket_, it);
+            }
+          }//end of while
+        }//end of else
+      }//end of locked
+    }//end of for list_bucket_
+
+    if (!terminate && OB_SUCC(ret)) {
+      DEBUG_ICMD("finish traversing all entry");
+      if (OB_FAIL(encode_eof_packet())) {
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
+      } else {
+        INFO_ICMD("succ to dump query async entry");
+        event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
+      }
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    event_ret = internal_error_callback(ret);
+  }
+  return event_ret;
+}
+
+int ObShowRouteHandler::handle_show_tablet_ls(int event, void *data)
+{
+  int event_ret = EVENT_DONE;
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_argument_valid(event, data))) {
+    ret = OB_INVALID_ARGUMENT;
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+  } else if (OB_FAIL(dump_header())) {
+    WDIAG_ICMD("fail to dump header", K(ret));
+  } else {
+    ObTabletLsCache &tablet_ls_cache = get_global_tablet_ls_cache();
+    bool terminate = false;
+    ObTabletLsEntry *entry = NULL;
+    TabletLsIter it;
+    for (; (list_bucket_ < MT_HASHTABLE_PARTITIONS) && (OB_SUCC(ret)) && !terminate; ++list_bucket_) {
+      ObProxyMutex *bucket_mutex = tablet_ls_cache.lock_for_key(list_bucket_);
+      MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
+      if (!lock_bucket.is_locked()) {
+        DEBUG_ICMD("fail to try lock cache, schedule in again", K_(list_bucket), K(event_ret));
+        terminate = true;
+        if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          EDIAG_ICMD("fail to schedule self", K(ret));
+        } else {
+          event_ret = EVENT_CONT;
+        }
+      } else {
+        DEBUG_ICMD("start traversing ObTabletLsEntry", K_(list_bucket));
+        if (OB_FAIL(tablet_ls_cache.run_todo_list(list_bucket_))) {
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
+        } else {
+          entry = tablet_ls_cache.first_entry(list_bucket_, it);
+          while (NULL != entry && OB_SUCC(ret)) {
+            if (OB_FAIL(dump_tablet_ls_item(*entry))) {
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
+            } else {
+              entry = tablet_ls_cache.next_entry(list_bucket_, it);
+            }
+          }//end of while
+        }//end of else
+      }//end of locked
+    }//end of for list_bucket_
+
+    if (!terminate && OB_SUCC(ret)) {
+      DEBUG_ICMD("finish traversing all entry");
+      if (OB_FAIL(encode_eof_packet())) {
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
+      } else {
+        INFO_ICMD("succ to dump tablet ls entry");
+        event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
+      }
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    event_ret = internal_error_callback(ret);
+  }
+  return event_ret;
+}
+
+int ObShowRouteHandler::handle_show_rpc_ctx(int event, void *data)
+{
+  int event_ret = EVENT_DONE;
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_argument_valid(event, data))) {
+    ret = OB_INVALID_ARGUMENT;
+    WDIAG_ICMD("invalid argument, it should not happen", K(event), K(data), K_(is_inited), K(ret));
+  } else if (OB_FAIL(dump_header())) {
+    WDIAG_ICMD("fail to dump header", K(ret));
+  } else {
+    ObRpcReqCtxCache &rpc_ctx_cache = get_global_rpc_req_ctx_cache();
+    bool terminate = false;
+    ObRpcReqCtx *entry = NULL;
+    RpcReqCtxIter it;
+    for (; (list_bucket_ < MT_HASHTABLE_PARTITIONS) && (OB_SUCC(ret)) && !terminate; ++list_bucket_) {
+      ObProxyMutex *bucket_mutex = rpc_ctx_cache.lock_for_key(list_bucket_);
+      MUTEX_TRY_LOCK(lock_bucket, bucket_mutex, this_ethread());
+      if (!lock_bucket.is_locked()) {
+        DEBUG_ICMD("fail to try lock cache, schedule in again", K_(list_bucket), K(event_ret));
+        terminate = true;
+        if (OB_ISNULL(g_event_processor.schedule_in(this, MYSQL_LIST_RETRY, ET_TASK))) {
+          ret = OB_ALLOCATE_MEMORY_FAILED;
+          EDIAG_ICMD("fail to schedule self", K(ret));
+        } else {
+          event_ret = EVENT_CONT;
+        }
+      } else {
+        DEBUG_ICMD("start traversing rpc ctx", K_(list_bucket));
+        if (OB_FAIL(rpc_ctx_cache.run_todo_list(list_bucket_))) {
+          LOG_WDIAG("fail to run todo list", K(list_bucket_), K(ret));
+        } else {
+          entry = rpc_ctx_cache.first_entry(list_bucket_, it);
+          while (NULL != entry && OB_SUCC(ret)) {
+            if (OB_FAIL(dump_rpc_ctx_item(*entry))) {
+              LOG_WDIAG("fail to dump_item", KPC(entry), K(ret));
+            } else {
+              entry = rpc_ctx_cache.next_entry(list_bucket_, it);
+            }
+          }//end of while
+        }//end of else
+      }//end of locked
+    }//end of for list_bucket_
+
+    if (!terminate && OB_SUCC(ret)) {
+      DEBUG_ICMD("finish traversing all entry");
+      if (OB_FAIL(encode_eof_packet())) {
+        WDIAG_ICMD("fail to encode eof packet", K(ret));
+      } else {
+        INFO_ICMD("succ to dump rpc ctx");
+        event_ret = handle_callback(INTERNAL_CMD_EVENTS_SUCCESS, NULL);
+      }
+    }
+  }
+
+  if (OB_FAIL(ret)) {
+    event_ret = internal_error_callback(ret);
+  }
+  return event_ret;
+}
+
 int ObShowRouteHandler::fill_table_entry_name()
 {
   int ret = OB_SUCCESS;
@@ -540,6 +903,30 @@ int ObShowRouteHandler::dump_header()
       }
       case OBPROXY_T_SUB_ROUTE_GLOBALINDEX: {
         if (OB_FAIL(encode_header(GLOBAL_INDEX_COLUMN_ARRAY, OB_GIC_MAX_GLOBAL_INDEX_COLUMN_ID))) {
+          WDIAG_ICMD("fail to encode header", K(ret));
+        }
+        break;
+      }
+      case OBPROXY_T_SUB_ROUTE_TABLEGROUP: {
+        if (OB_FAIL(encode_header(TABLE_GROUP_COLUMN_ARRAY, OB_TGC_MAX_TABLE_GROUP_COLUMN_ID))) {
+          WDIAG_ICMD("fail to encode header", K(ret));
+        }
+        break;
+      }
+      case OBPROXY_T_SUB_ROUTE_QUERYASYNC: {
+        if (OB_FAIL(encode_header(QUERY_ASYNC_COLUMN_ARRAY, OB_QAC_MAX_QUERY_ASYNC_COLUMN_ID))) {
+          WDIAG_ICMD("fail to encode header", K(ret));
+        }
+        break;
+      }
+      case OBPROXY_T_SUB_ROUTE_TABLETLS: {
+        if (OB_FAIL(encode_header(TABLET_LS_COLUMN_ARRAY, OB_TLC_MAX_TABLET_LS_COLUMN_ID))) {
+          WDIAG_ICMD("fail to encode header", K(ret));
+        }
+        break;
+      }
+      case OBPROXY_T_SUB_ROUTE_RPCCTX: {
+        if (OB_FAIL(encode_header(RPC_CTX_COLUMN_ARRAY, OB_RCC_MAX_RPC_CTX_COLUMN_ID))) {
           WDIAG_ICMD("fail to encode header", K(ret));
         }
         break;
@@ -633,6 +1020,7 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
     cells[OB_RC_SERVER_ADDR].set_varchar(server_addr.string());
 
     const uint32_t buf_len = 64;
+    int64_t relative_expire_time_us = get_global_table_cache().get_cache_expire_time_us();
     char create_timebuf[buf_len];
     char valid_timebuf[buf_len];
     char access_timebuf[buf_len];
@@ -641,7 +1029,7 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
     char relative_expire_timebuf[buf_len];
 
     if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-        update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
+        update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
       WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
     } else {
       cells[OB_RC_CREATE].set_varchar(create_timebuf);
@@ -666,7 +1054,7 @@ int ObShowRouteHandler::dump_table_item(const ObTableEntry &entry)
 
 int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *valid_timebuf,
                        char *access_timebuf, char *update_timebuf, char *expire_timebuf,
-                       char *relative_expire_time, const uint32_t buf_len)
+                       char *relative_expire_time, const int64_t relative_expire_time_us, const uint32_t buf_len)
 {
   int ret = OB_SUCCESS;
   struct tm struct_tm;
@@ -744,7 +1132,8 @@ int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *va
     }
   }
   if (OB_SUCC(ret)) {
-    time_us = usec_to_sec(get_global_table_cache().get_cache_expire_time_us());
+    time_us = usec_to_sec(relative_expire_time_us);
+    // time_us = usec_to_sec(get_global_table_cache().get_cache_expire_time_us());
     if (OB_ISNULL(localtime_r(&time_us, &struct_tm))) {
       ret = OB_ERR_UNEXPECTED;
       WDIAG_ICMD("fail to converts the calendar time timep to broken-time representation", K(time_us), K(ret));
@@ -754,6 +1143,41 @@ int extract_entry_time(const ObRouteEntry &entry, char *create_timebuf, char *va
         ret = OB_BUF_NOT_ENOUGH;
         WDIAG_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", buf_len,
                   K(expire_timebuf), K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+int format_entry_time(char *timebuf, const int64_t time_us, const uint32_t buf_len)
+{
+  int ret = OB_SUCCESS;
+  struct tm struct_tm;
+  MEMSET(&struct_tm, 0, sizeof(struct tm));
+  size_t strftime_len = 0;
+  if (OB_ISNULL(localtime_r(&time_us, &struct_tm))) {
+    ret = OB_ERR_UNEXPECTED;
+    WDIAG_ICMD("fail to converts the calendar time timep to broken-time representation", K(time_us), K(ret));
+  } else {
+    strftime_len = strftime(timebuf, buf_len, "%Y-%m-%d %H:%M:%S", &struct_tm);
+    if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= buf_len)) {
+      ret = OB_BUF_NOT_ENOUGH;
+      WDIAG_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", buf_len,
+                K(timebuf), K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    time_t time = usec_to_sec(time_us);
+    if (OB_ISNULL(localtime_r(&time, &struct_tm))) {
+      ret = OB_ERR_UNEXPECTED;
+      WDIAG_ICMD("fail to converts the calendar time timep to broken-time representation", K(time_us), K(ret));
+    } else {
+      strftime_len = strftime(timebuf, buf_len, "%Y-%m-%d %H:%M:%S", &struct_tm);
+      if (OB_UNLIKELY(strftime_len <= 0) || OB_UNLIKELY(strftime_len >= buf_len)) {
+        ret = OB_BUF_NOT_ENOUGH;
+        WDIAG_ICMD("timebuf is not enough", K(strftime_len), "timebuf length", buf_len,
+                  K(timebuf), K(ret));
       }
     }
   }
@@ -794,6 +1218,7 @@ int ObShowRouteHandler::dump_partition_item(const ObPartitionEntry &entry)
     cells[OB_RPC_SERVER_ADDR].set_varchar(server_addr.string());
 
     const uint32_t buf_len = 64;
+    const int64_t relative_expire_time_us = get_global_partition_cache().get_cache_expire_time_us();
     char create_timebuf[buf_len];
     char valid_timebuf[buf_len];
     char access_timebuf[buf_len];
@@ -802,7 +1227,7 @@ int ObShowRouteHandler::dump_partition_item(const ObPartitionEntry &entry)
     char relative_expire_timebuf[buf_len];
 
     if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-        update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
+        update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
       WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
     } else {
       cells[OB_RPC_CREATE].set_varchar(create_timebuf);
@@ -840,6 +1265,7 @@ int ObShowRouteHandler::dump_global_index_item(const ObIndexEntry &entry)
     cells[OB_GIC_SCHEMA_VERSION].set_int(entry.get_schema_version());
 
     const uint32_t buf_len = 64;
+    const int64_t relative_expire_time_us = get_global_index_cache().get_cache_expire_time_us();
     char create_timebuf[buf_len];
     char valid_timebuf[buf_len];
     char access_timebuf[buf_len];
@@ -848,7 +1274,7 @@ int ObShowRouteHandler::dump_global_index_item(const ObIndexEntry &entry)
     char relative_expire_timebuf[buf_len];
 
     if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-        update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
+        update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
       WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
     } else {
       cells[OB_GIC_CREATE].set_varchar(create_timebuf);
@@ -871,6 +1297,190 @@ int ObShowRouteHandler::dump_global_index_item(const ObIndexEntry &entry)
   return ret;
 }
 
+int ObShowRouteHandler::dump_table_group_item(const ObTableGroupEntry &entry)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_SUCC(ret)) {
+    ObNewRow row;
+    ObObj cells[OB_TGC_MAX_TABLE_GROUP_COLUMN_ID];
+    cells[OB_TGC_TENANT_ID].set_int(entry.get_tenant_id());
+    cells[OB_TGC_TABLE_GROUP_NAME].set_varchar(entry.get_tablegroup_name());
+    cells[OB_TGC_DATABASE_NAME].set_varchar(entry.get_database_name());
+    cells[OB_TGC_SHARDING].set_varchar(entry.get_sharding());
+    cells[OB_TGC_STATE].set_varchar(entry.get_route_entry_state());
+    cells[OB_TGC_CR_VERSION].set_int(entry.get_cr_version());
+    cells[OB_TGC_SCHEMA_VERSION].set_int(entry.get_schema_version());
+
+    const uint32_t buf_len = 64;
+    const int64_t relative_expire_time_us = get_global_tablegroup_cache().get_cache_expire_time_us();
+    char create_timebuf[buf_len];
+    char valid_timebuf[buf_len];
+    char access_timebuf[buf_len];
+    char update_timebuf[buf_len];
+    char expire_timebuf[buf_len];
+    char relative_expire_timebuf[buf_len];
+
+    if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
+        update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
+      WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
+    } else {
+      cells[OB_TGC_CREATE].set_varchar(create_timebuf);
+      cells[OB_TGC_LAST_VALID].set_varchar(valid_timebuf);
+      cells[OB_TGC_LAST_ACCESS].set_varchar(access_timebuf);
+      cells[OB_TGC_LAST_UPDATE].set_varchar(update_timebuf);
+      cells[OB_TGC_EXPIRE_TIME].set_varchar(expire_timebuf);
+      cells[OB_TGC_RELATIVE_EXPIRE_TIME].set_varchar(relative_expire_timebuf);
+
+      row.cells_ = cells;
+      row.count_ = OB_TGC_MAX_TABLE_GROUP_COLUMN_ID;
+      if (OB_FAIL(encode_row_packet(row))) {
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
+      } else {
+        DEBUG_ICMD("succ to encode row packet", K(entry));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObShowRouteHandler::dump_query_async_item(const ObTableQueryAsyncEntry &entry)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_SUCC(ret)) {
+    ObNewRow row;
+    ObObj cells[OB_QAC_MAX_QUERY_ASYNC_COLUMN_ID];
+    cells[OB_QAC_CLIENT_QUERY_SESSION_ID].set_uint64(entry.client_query_session_id_);
+    cells[OB_QAC_SERVER_QUERY_SESSION_ID].set_uint64(entry.server_query_session_id_);
+    cells[OB_QAC_CURRENT_POSITION].set_int(entry.current_position_);
+    cells[OB_QAC_TABLE_ID].set_int(entry.table_id_);
+    cells[OB_QAC_DATA_TABLE_ID].set_int(entry.data_table_id_);
+    cells[OB_QAC_SCAN_LEASE_TIMEOUT].set_int(entry.scan_lease_timeout_);
+    cells[OB_QAC_GLOBAL_INDEX_QUERY].set_varchar(entry.is_global_index_query()? "Y":"N");
+    cells[OB_QAC_FIRST_QUERY].set_varchar(entry.is_first_query() ? "Y" : "N");
+    cells[OB_QAC_STATE].set_varchar(entry.get_query_async_state());
+    // TODO CZL add create time
+
+    const uint32_t buf_len = 64;
+    char next_timeout_timebuf[buf_len];
+
+    ObSqlString server_addr;
+    char ip_port_buf[MAX_IP_ADDR_LENGTH];
+    memset(ip_port_buf, 0, sizeof(ip_port_buf));
+    if (FALSE_IT(entry.get_server_info().addr_.to_plain_string(ip_port_buf, MAX_IP_ADDR_LENGTH))) {
+      WDIAG_ICMD("fail to get server_info", K(ret));
+    } else if (OB_FAIL(server_addr.append_fmt("server:%s", ip_port_buf))) {
+      WDIAG_ICMD("fail to append server_addr", K(ret));
+    } else if (OB_FAIL(format_entry_time(next_timeout_timebuf, entry.get_timeout_ts(), buf_len))) {
+      WDIAG_ICMD("fail to format_entry_time", K(ret));
+    } else {
+      cells[OB_QAC_SERVER_INFO].set_varchar(server_addr.string());
+      cells[OB_QAC_TIMEOUT].set_varchar(next_timeout_timebuf);
+
+      row.cells_ = cells;
+      row.count_ = OB_QAC_MAX_QUERY_ASYNC_COLUMN_ID;
+      if (OB_FAIL(encode_row_packet(row))) {
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
+      } else {
+        DEBUG_ICMD("succ to encode row packet", K(entry));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObShowRouteHandler::dump_tablet_ls_item(const ObTabletLsEntry &entry)
+{
+  int ret = OB_SUCCESS;
+  int64_t i = 0;
+  OB_TABLET_TO_LS_MAP::const_iterator iter = entry.get_tablet_ls_map_const().begin();
+  OB_TABLET_TO_LS_MAP::const_iterator end = entry.get_tablet_ls_map_const().end();
+  ObSqlString tablet_to_ls_map;
+  while (iter != end && OB_SUCC(ret) && i < tablet_ls_size_) {
+    char tablet_to_ls[MAX_TABLET_TO_LS_LENGTH];
+    memset(tablet_to_ls, 0, sizeof(tablet_to_ls));
+    int64_t len = snprintf(tablet_to_ls, MAX_TABLET_TO_LS_LENGTH, "%ld->%ld", iter->first, iter->second);
+    if (OB_UNLIKELY(len < 0)) {
+      ret = OB_ERR_UNEXPECTED;
+      WDIAG_ICMD("fail to fmt tablet_to_ls", K(ret), K(i));
+    } else if (OB_FAIL(tablet_to_ls_map.append_fmt("map[%ld]=%s; ", i, tablet_to_ls))) {
+      WDIAG_ICMD("fail to append tablet_to_ls", K(i), K(ret));
+    } else {
+      iter ++;
+      i++;
+    }
+  }
+  if (OB_SUCC(ret)) {
+    ObNewRow row;
+    ObObj cells[OB_TLC_MAX_TABLET_LS_COLUMN_ID];
+    cells[OB_TLC_TENANT_ID].set_int(entry.get_tenant_id());
+    cells[OB_TLC_TABLE_ID].set_int(entry.get_table_id());
+    cells[OB_TLC_TABLET_TO_LS_MAP].set_varchar(tablet_to_ls_map.string());
+    cells[OB_TLC_STATE].set_varchar(entry.get_route_entry_state());
+    cells[OB_TLC_CR_VERSION].set_int(entry.get_cr_version());
+    cells[OB_TLC_SCHEMA_VERSION].set_int(entry.get_schema_version());
+
+    const uint32_t buf_len = 64;
+    const int64_t relative_expire_time_us = get_global_tablet_ls_cache().get_cache_expire_time_us();
+    char create_timebuf[buf_len];
+    char valid_timebuf[buf_len];
+    char access_timebuf[buf_len];
+    char update_timebuf[buf_len];
+    char expire_timebuf[buf_len];
+    char relative_expire_timebuf[buf_len];
+
+    if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
+        update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
+      WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
+    } else {
+      cells[OB_TLC_CREATE].set_varchar(create_timebuf);
+      cells[OB_TLC_LAST_VALID].set_varchar(valid_timebuf);
+      cells[OB_TLC_LAST_ACCESS].set_varchar(access_timebuf);
+      cells[OB_TLC_LAST_UPDATE].set_varchar(update_timebuf);
+      cells[OB_TLC_EXPIRE_TIME].set_varchar(expire_timebuf);
+      cells[OB_TLC_RELATIVE_EXPIRE_TIME].set_varchar(relative_expire_timebuf);
+
+      row.cells_ = cells;
+      row.count_ = OB_TLC_MAX_TABLET_LS_COLUMN_ID;
+      if (OB_FAIL(encode_row_packet(row))) {
+        WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
+      } else {
+        DEBUG_ICMD("succ to encode row packet", K(entry));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObShowRouteHandler::dump_rpc_ctx_item(const ObRpcReqCtx &entry)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_SUCC(ret)) {
+    ObNewRow row;
+    ObObj cells[OB_RCC_MAX_RPC_CTX_COLUMN_ID];
+    cells[OB_RCC_CLUSTER_NAME].set_varchar(entry.get_cluster_name());
+    cells[OB_RCC_TENANT_NAME].set_varchar(entry.get_tenant_name());
+    cells[OB_RCC_USER_NAME].set_varchar(entry.get_user_name());
+    cells[OB_RCC_DATABASE_NAME].set_varchar(entry.get_database_name());
+    cells[OB_RCC_FULL_NAME].set_varchar(entry.get_full_username());
+    cells[OB_RCC_SUPPORT_DISTRIBUTATION].set_varchar(entry.is_support_distributed_execute() ? "Y" : "N");
+
+    row.cells_ = cells;
+    row.count_ = OB_RCC_MAX_RPC_CTX_COLUMN_ID;
+    if (OB_FAIL(encode_row_packet(row))) {
+      WDIAG_ICMD("fail to encode row packet", K(row), K(ret));
+    } else {
+      DEBUG_ICMD("succ to encode row packet", K(entry));
+    }
+  }
+  return ret;
+}
+
 int ObShowRouteHandler::dump_routine_item(const ObRoutineEntry &entry)
 {
   int ret = OB_SUCCESS;
@@ -890,6 +1500,7 @@ int ObShowRouteHandler::dump_routine_item(const ObRoutineEntry &entry)
   cells[OB_RRC_ROUTE_SQL].set_varchar(entry.get_route_sql());
 
   const uint32_t buf_len = 64;
+  const int64_t relative_expire_time_us = get_global_routine_cache().get_cache_expire_time_us();
   char create_timebuf[buf_len];
   char valid_timebuf[buf_len];
   char access_timebuf[buf_len];
@@ -898,7 +1509,7 @@ int ObShowRouteHandler::dump_routine_item(const ObRoutineEntry &entry)
   char relative_expire_timebuf[buf_len];
 
   if (OB_FAIL(extract_entry_time(entry, create_timebuf, valid_timebuf, access_timebuf,
-      update_timebuf, expire_timebuf, relative_expire_timebuf, buf_len))) {
+      update_timebuf, expire_timebuf, relative_expire_timebuf, relative_expire_time_us, buf_len))) {
     WDIAG_ICMD("fail to extract_entry_time", K(entry), K(ret));
   } else {
     cells[OB_RRC_CREATE].set_varchar(create_timebuf);
@@ -941,6 +1552,14 @@ static int show_route_cmd_callback(ObContinuation *cont, ObInternalCmdInfo &info
       SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_routine);
     } else if (OBPROXY_T_SUB_ROUTE_GLOBALINDEX == info.get_sub_cmd_type()) {
       SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_global_index);
+    } else if (OBPROXY_T_SUB_ROUTE_TABLEGROUP == info.get_sub_cmd_type()) {
+      SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_table_group);
+    } else if (OBPROXY_T_SUB_ROUTE_QUERYASYNC == info.get_sub_cmd_type()) {
+      SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_query_async);
+    } else if (OBPROXY_T_SUB_ROUTE_TABLETLS == info.get_sub_cmd_type()) {
+      SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_tablet_ls);
+    } else if (OBPROXY_T_SUB_ROUTE_RPCCTX == info.get_sub_cmd_type()) {
+      SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_rpc_ctx);
     } else {
       SET_CONTINUATION_HANDLER(handler, &ObShowRouteHandler::handle_show_table);
     }

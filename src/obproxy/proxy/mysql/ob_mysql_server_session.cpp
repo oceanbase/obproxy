@@ -32,9 +32,19 @@ namespace obproxy
 {
 namespace proxy
 {
+int ObMysqlServerSession::migrate_from_session_pool_thread()
+{
+  return static_cast<ObUnixNetVConnection*>(server_vc_)->migrate_from_session_pool_thread();
+}
+
+int ObMysqlServerSession::migrate_to_session_pool_thread()
+{
+  return static_cast<ObUnixNetVConnection*>(server_vc_)->migrate_to_session_pool_thread();
+}
+
 void ObMysqlServerSession::destroy()
 {
-  PROXY_SS_LOG(DEBUG, "ObMysqlServerSession::destroy()", K(ss_id_), K(server_sessid_));
+  PROXY_SS_LOG(DEBUG, "ObMysqlServerSession::destroy()", K(this), K(ss_id_), K(server_sessid_));
   if (OB_UNLIKELY(NULL != server_vc_) || OB_UNLIKELY(NULL == read_buffer_)
       || OB_UNLIKELY(0 != server_trans_stat_)) {
     PROXY_SS_LOG(WDIAG, "the server session cannot be destroyed", K(server_vc_),
@@ -42,21 +52,35 @@ void ObMysqlServerSession::destroy()
   }
   is_inited_ = false;
   magic_ = MYSQL_SS_MAGIC_DEAD;
+
   if (NULL != buf_reader_) {
     int ret = OB_SUCCESS;
-    if (OB_FAIL(buf_reader_->consume(buf_reader_->read_avail()))) {
+    if (OB_FAIL(buf_reader_->consume_all())) {
       PROXY_SS_LOG(WDIAG, "fail to consume ", K(ret));
     }
   }
+
   if (OB_LIKELY(NULL != read_buffer_)) {
     free_miobuffer(read_buffer_);
     read_buffer_ = NULL;
   }
+
+  if (reset_conn_buf_ != NULL) {
+    free_miobuffer(reset_conn_buf_);
+    reset_conn_buf_ = NULL;
+  }
+
   session_info_.reset();
   buf_reader_ = NULL;
   mutex_.release();
   schema_key_.reset();
   op_reclaim_free(this);
+}
+
+__attribute__((no_sanitize("address")))
+bool ObMysqlServerSession::is_destroyed()
+{
+  return magic_ == MYSQL_SS_MAGIC_DEAD;
 }
 
 int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, ObNetVConnection &new_vc)
@@ -70,20 +94,22 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
     server_vc_ = &new_vc;
     mutex_ = new_vc.mutex_;
 
-    if (client_session.is_session_pool_client()) {
-      is_pool_session_ = true;
+    if (client_session.is_enable_session_conn_pool()) {
       if (OB_FAIL(ObMysqlSessionUtils::init_schema_key_with_client_session(schema_key_, client_session_))) {
         PROXY_SS_LOG(WDIAG, "init_schema_key_with_client_session failed", K(ret));
       } else if (OB_FAIL(ObMysqlSessionUtils::init_common_addr_with_client_session(common_addr_, server_ip_, client_session_))) {
         PROXY_SS_LOG(WDIAG, "init_common_addr_with_client_session failed", K(ret));
-      } else {
-        OBPROXY_POOL_LOG(INFO, "new_connection", K(schema_key_), K(local_ip_), K(server_ip_));
       }
     }
 
     if (OB_SUCC(ret)) {
       // Unique server session identifier.
       ss_id_ = get_next_ss_id();
+      if (client_session.is_cs_id_v2()) {
+        extract_proxy_id_v2(client_session.get_cs_id(), proxy_id_);
+      } else {
+        proxy_id_ = 0;
+      }
 
       magic_ = MYSQL_SS_MAGIC_ALIVE;
       MYSQL_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, 1); // Update the true global stat
@@ -105,16 +131,13 @@ int ObMysqlServerSession::new_connection(ObMysqlClientSession &client_session, O
         } else {
           DBServerType server_type = client_session.get_session_info().get_server_type();
           session_info_.set_server_type(server_type);
+          state_ = INIT;
+          is_inited_ = true;
           PROXY_SS_LOG(INFO, "server session born", K_(ss_id), K_(server_ip),
                        "cs_id", client_session.get_cs_id(),
                        "proxy_sessid", client_session.get_proxy_sessid(),
-                       K(server_type));
-          state_ = MSS_INIT;
-          is_inited_ = true;
-          if (is_pool_session_) {
-            ret = get_global_session_manager().add_server_session(*this);
-            create_time_ = ObTimeUtility::current_time();
-          }
+                       K(server_type), K(*this));
+          create_time_ = ObTimeUtility::current_time();
         }
       } else {
         ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -143,70 +166,82 @@ void ObMysqlServerSession::do_io_shutdown(const ShutdownHowToType howto)
   server_vc_->do_io_shutdown(howto);
 }
 
+// do_io_close 解除和 client session 的关联了
 void ObMysqlServerSession::do_io_close(const int alerrno)
 {
-  bool need_print = true;
-  if(NULL != client_session_ &&
-     client_session_->get_session_info().get_priv_info().user_name_ == ObProxyTableInfo::DETECT_USERNAME_USER) {
-    need_print = false;
-  }
+  if (!is_io_closed_) {
+    bool need_print = true;
+    if(NULL != client_session_ &&
+       client_session_->get_session_info().get_priv_info().user_name_ == ObProxyTableInfo::DETECT_USERNAME_USER) {
+      need_print = false;
+    }
 
-  if (need_print) {
-    PROXY_SS_LOG(INFO, "server session do_io_close", K(*this), KP(server_vc_), KP(this));
-  }
-  if (MSS_ACTIVE == state_) {
-    MYSQL_DECREMENT_DYN_STAT(CURRENT_SERVER_TRANSACTIONS);
-    --server_trans_stat_;
-  }
-
-  MYSQL_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
-  MYSQL_SUM_DYN_STAT(TRANSACTIONS_PER_SERVER_CON, transact_count_);
-
-  if (OB_LIKELY(NULL != client_session_)) {
-    SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_CURRENT_SESSION, false, -1);
-    if (this == client_session_->get_cur_server_session()) {
-      client_session_->set_cur_server_session(NULL);
-      // client bound server session closed, record server sess info to build diagnosis info
-      ObConnDiagRecord &conn_record = client_session_->conn_record_;
-      if (OB_LIKELY(ObConnectionDiagnosisTrace::is_enable_diagnosis_log(get_global_proxy_config().connection_diagnosis_option))) {
-        conn_record.cur_server_sess_id_ = server_sessid_;
-        conn_record.cur_server_sess_dst_addr_ = server_ip_;
-        if (server_vc_ != NULL) {
-          net::ops_ip_copy(conn_record.cur_server_sess_src_addr_, server_vc_->get_local_addr());
+    if (need_print) {
+      if (IS_DEBUG_ENABLED()) {
+        PROXY_SS_LOG(DEBUG, "server session do_io_close", K(*this), KP(server_vc_), KP(this));
+      } else {
+        if (client_session_ != NULL) {
+          PROXY_SS_LOG(INFO, "server session do_io_close", KP(this),
+                             "ss_id", ss_id_, "server_sessid", server_sessid_, "server_addr", server_ip_,
+                             "server_vc", server_vc_,
+                             "ob_server_cap", session_info_.get_server_ob_capability(),
+                             "client_session", *client_session_);
+        } else {
+          PROXY_SS_LOG(INFO, "server session do_io_close", KP(this),
+                             "ss_id", ss_id_, "server_sessid", server_sessid_, "server_addr", server_ip_,
+                             "server_vc", server_vc_,
+                             "ob_server_cap", session_info_.get_server_ob_capability());
         }
       }
     }
-    if (this == client_session_->get_lii_server_session()) {
-      client_session_->set_lii_server_session(NULL);
+    if (KEEP_ALIVE_ACTIVE == state_) {
+      MYSQL_DECREMENT_DYN_STAT(CURRENT_SERVER_TRANSACTIONS);
+      --server_trans_stat_;
     }
-    if (this == client_session_->get_server_session()) {
-      client_session_->set_server_session(NULL);
-    }
-    if (this == client_session_->get_last_bound_server_session()) {
-      client_session_->set_last_bound_server_session(NULL);
-    }
-    if (server_ip_ == client_session_->get_trans_coordinator_ss_addr()) {
-      client_session_->get_trans_coordinator_ss_addr().reset();
-    }
-    if (need_print) {
-      PROXY_SS_LOG(INFO, "server session is closing", K_(ss_id), K_(server_sessid), K_(server_ip),
-          "cs_id", client_session_->get_cs_id(),
-          "proxy_sessid", client_session_->get_proxy_sessid());
-    }
-  } else {
-    PROXY_SS_LOG(INFO, "server session has not bound to client session", K(*this));
-  }
 
-  if (NULL != server_vc_) {
-    if (is_pool_session_) {
-      get_global_session_manager().remove_server_session(*this);
-      OBPROXY_POOL_LOG(INFO, "close_session", K(schema_key_), K(local_ip_), K(server_ip_));
-    }
-    server_vc_->do_io_close(alerrno);
-    server_vc_ = NULL;
-  }
+    MYSQL_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
+    MYSQL_SUM_DYN_STAT(TRANSACTIONS_PER_SERVER_CON, transact_count_);
 
-  destroy();
+    if (OB_LIKELY(NULL != client_session_)) {
+      SESSION_PROMETHEUS_STAT(client_session_->get_session_info(), PROMETHEUS_CURRENT_SESSION, false, -1);
+      if (this == client_session_->get_cur_server_session()) {
+        client_session_->set_cur_server_session(NULL);
+        // client bound server session closed, record server sess info to build diagnosis info
+        ObConnDiagRecord &conn_record = client_session_->conn_record_;
+        if (OB_LIKELY(ObConnectionDiagnosisTrace::is_enable_diagnosis_log(get_global_proxy_config().connection_diagnosis_option))) {
+          conn_record.cur_server_sess_id_ = server_sessid_;
+          conn_record.cur_server_sess_dst_addr_ = server_ip_;
+          if (server_vc_ != NULL) {
+            net::ops_ip_copy(conn_record.cur_server_sess_src_addr_, server_vc_->get_local_addr());
+          }
+        }
+      }
+      if (this == client_session_->get_lii_server_session()) {
+        client_session_->set_lii_server_session(NULL);
+      }
+      if (this == client_session_->get_last_server_session()) {
+        client_session_->set_last_server_session(NULL);
+      }
+      if (this == client_session_->get_second_last_server_session()) {
+        client_session_->set_second_last_server_session(NULL);
+      }
+      if (server_ip_ == client_session_->get_trans_coordinator_ss_addr()) {
+        client_session_->get_trans_coordinator_ss_addr().reset();
+      }
+      if (need_print) {
+        PROXY_SS_LOG(INFO, "server session is closing", K_(ss_id), K_(server_sessid), K_(server_ip),
+            "cs_id", client_session_->get_cs_id(),
+            "proxy_sessid", client_session_->get_proxy_sessid());
+      }
+    }
+
+    if (NULL != server_vc_) {
+      server_vc_->do_io_close(alerrno);
+      server_vc_ = NULL;
+    }
+
+    is_io_closed_ = true;
+  }
 }
 
 void ObMysqlServerSession::reenable(ObVIO *vio)
@@ -214,66 +249,37 @@ void ObMysqlServerSession::reenable(ObVIO *vio)
   server_vc_->reenable(vio);
 }
 
-int ObMysqlServerSession::release()
+bool ObMysqlServerSession::can_use_connection_pool()
 {
-  int ret = OB_SUCCESS;
-  PROXY_SS_LOG(DEBUG, "Releasing server session", K(server_trans_stat_));
-  // Set our state to KA for stat issues
-  state_ = MSS_KA_SHARED;
-  if (is_pool_session_) {
-    if (OB_NOT_NULL(client_session_)
-        && !client_session_->get_session_info().is_sharding_user()
-        && get_global_proxy_config().enable_no_sharding_skip_real_conn) {
-      // for v1 user save password for check
-      const ObString& password = client_session_->get_session_info().get_login_req().get_hsr_result().response_.get_auth_response();
-      if (OB_ISNULL(schema_key_.shard_conn_)) {
-        PROXY_SS_LOG(WDIAG, "shard_conn_ is null, unexpected", K(schema_key_));
-      } else if (schema_key_.shard_conn_->password_.empty()) {
-        PROXY_SS_LOG(DEBUG, "save password", K(password.hash()));
-        schema_key_.shard_conn_->password_.set_value(password);
-      } else if (schema_key_.shard_conn_->password_.config_string_.compare(password) != 0) {
-        PROXY_SS_LOG(DEBUG, "has password but not equal, update now",
-                     K(schema_key_.shard_conn_->password_.config_string_.hash()), K(password.hash()));
-        schema_key_.shard_conn_->password_.set_value(password);
-      }
-    }
-    if (OB_FAIL(get_global_session_manager().release_session(*this))) {
-      PROXY_SS_LOG(WDIAG, "fail to release server session to global, it will be closed", K(ret));
-      do_io_close();
-    }
-  } else  {
-    // if hava shard_connector, should push into new session pool, even if is not shardingUser
-    ObShardConnector *shard_conn = session_info_.get_shard_connector();
-    if (OB_NOT_NULL(shard_conn)) {
-      PROXY_SS_LOG(DEBUG, "release server session for this shard_connector", "shard_name", shard_conn->shard_name_.config_string_);
-      if (OB_FAIL(client_session_->get_session_manager_new().release_session(
-                  shard_conn->shard_name_.config_string_, *this))) {
-        PROXY_SS_LOG(WDIAG, "fail to release server session to new session manager, it will be closed", K(ret));
-      }
-    } else {
-      if (OB_FAIL(client_session_->get_session_manager().release_session(*this))) {
-        PROXY_SS_LOG(WDIAG, "fail to release server session, it will be closed", K(ret));
-      }
-    }
-
-    if (OB_FAIL(ret)) {
-      do_io_close();
-    }
-  }
-  return ret;
+  return is_change_user_reset_session_supported()
+         && !session_info_.is_binlog_session()
+         && !session_info_.is_lock_session()
+         && !session_info_.is_trans_coordinator_session()
+         && server_vc_ != NULL
+         && !static_cast<ObUnixNetVConnection*>(server_vc_)->using_ssl();
 }
+
 
 const char *ObMysqlServerSession::get_state_str() const
 {
   const char *ret = "MSS_INVALID";
-  static const char *state[MSS_MAX] = {"MSS_INIT",
-    "MSS_ACTIVE",
-    "MSS_KA_CLIENT_SLAVE",
-    "MSS_KA_SHARED"};
-  if (OB_LIKELY(state_ < MSS_MAX)) {
+  static const char *state[STATE_MAX] = {
+    "INIT",
+    "KEEP_ALIVE_ACTIVE",
+    "KEEP_ALIVE_CLIENT_SLAVE",
+    "KEEP_ALIVE_LOCAL_SHARED",
+    "KEEP_ALIVE_GLOBAL_SHARED",
+    "KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET",
+    "KEEP_ALIVE_GLOBAL_SHARED_IN_RESET"};
+  if (OB_LIKELY(state_ < STATE_MAX)) {
     ret = state[state_];
   }
   return ret;
+}
+
+void ObMysqlServerSession::set_authentication(const ObString &scramble)
+{
+  MEMCPY(server_scramble_buf_, scramble.ptr(), obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE);
 }
 
 DEF_TO_STRING(ObMysqlServerSession)
@@ -283,6 +289,7 @@ DEF_TO_STRING(ObMysqlServerSession)
   J_KV(K_(ss_id),
        K_(server_sessid),
        K_(server_ip),
+       K_(local_ip),
        K_(is_inited),
        K_(magic),
        K_(state),
@@ -293,6 +300,82 @@ DEF_TO_STRING(ObMysqlServerSession)
        K_(session_info));
   J_OBJ_END();
   return pos;
+}
+
+bool ObServerSessionMatchRules::is_matched(const ObMysqlServerSession *session) const
+{
+  const static uint64_t ob20_caps = OB_CAP_OB_PROTOCOL_V2
+                                    | OB_CAP_PROXY_NEW_EXTRA_INFO
+                                    | OB_CAP_PROXY_REROUTE
+                                    | OB_CAP_PROXY_SESSION_SYNC
+                                    | OB_CAP_PROXY_SESSION_VAR_SYNC
+                                    | OB_CAP_FEEDBACK_PROXY;
+  const static uint64_t full_link_trace_cap = OB_CAP_PROXY_FULL_LINK_TRACING | OB_CAP_PROXY_FULL_LINK_TRACING_EXT;
+  bool match = true;
+  uint64_t server_caps = session->get_session_info().get_server_ob_capability();
+  ObMySQLCapabilityFlags server_mysql_caps = session->get_session_info().get_compatible_capability_flags();
+  if (OB_UNLIKELY(session->state_ != KEEP_ALIVE_GLOBAL_SHARED && session->state_ != KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET)) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "session state dismatched", K(session->state_));
+  } else if (OB_UNLIKELY(!OB_CAP_CHECK_ENABLE_CAPS(OB_CAP_CHANGE_USER_CONN_ATTRS, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "server not support com_change_user reset connection attributes", K(server_caps));
+  } else if (OB_UNLIKELY(enable_oceanbase_20_protocol_ && !OB_CAP_CHECK_ENABLE_CAPS(ob20_caps, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "oceanbase 2.0 protocol caps mismatched", K(ob20_caps), K(server_caps));
+  } else if (OB_UNLIKELY(!enable_oceanbase_20_protocol_ && !OB_CAP_CHECK_DISABLE_CAPS(ob20_caps, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "disable oceanbase 2.0 protocol caps mismatched", K(ob20_caps), K(server_caps));
+  } else if (OB_UNLIKELY(enable_compressed_mysql_protocol_ && !OB_CAP_CHECK_ENABLE_CAPS(OB_CAP_CHECKSUM, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "compressed mysql protocol caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(!enable_compressed_mysql_protocol_ && !OB_CAP_CHECK_DISABLE_CAPS(OB_CAP_CHECKSUM, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "disable compressed mysql protocol caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(enable_oceanbase_20_compress_ && !OB_CAP_CHECK_ENABLE_CAPS(OB_CAP_OB_PROTOCOL_V2_COMPRESS, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "oceanbase 2.0 compress caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(!enable_oceanbase_20_compress_ && !OB_CAP_CHECK_DISABLE_CAPS(OB_CAP_OB_PROTOCOL_V2_COMPRESS, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "disable oceanbase 2.0 compress caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(enable_full_link_trace_ && !OB_CAP_CHECK_ENABLE_CAPS(full_link_trace_cap, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "full link trace caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(!enable_full_link_trace_ && !OB_CAP_CHECK_DISABLE_CAPS(full_link_trace_cap, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "disable full link trace caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(enable_client_session_id_v2_ && !OB_CAP_CHECK_ENABLE_CAPS(OB_CAP_ENABLE_CLIENT_SESSION_ID_V2, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "client session id v2 caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(!enable_client_session_id_v2_ && !OB_CAP_CHECK_DISABLE_CAPS(OB_CAP_ENABLE_CLIENT_SESSION_ID_V2, server_caps))) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "disable client session id v2 caps mismatched", K(server_caps));
+  } else if (OB_UNLIKELY(client_mysql_cap_.cap_flags_.OB_CLIENT_DEPRECATE_EOF != server_mysql_caps.cap_flags_.OB_CLIENT_DEPRECATE_EOF)) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "mysql cap OB_CLIENT_DEPRECATE_EOF mismatched", K(client_mysql_cap_.cap_flags_.OB_CLIENT_DEPRECATE_EOF));
+  } else if (OB_UNLIKELY(client_mysql_cap_.cap_flags_.OB_CLIENT_MULTI_RESULTS !=  server_mysql_caps.cap_flags_.OB_CLIENT_MULTI_RESULTS)) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "mysql cap OB_CLIENT_MULTI_RESULTS mismatched", K(client_mysql_cap_.cap_flags_.OB_CLIENT_MULTI_RESULTS));
+  } else if (OB_UNLIKELY(client_mysql_cap_.cap_flags_.OB_CLIENT_MULTI_STATEMENTS !=  server_mysql_caps.cap_flags_.OB_CLIENT_MULTI_STATEMENTS)) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "mysql cap OB_CLIENT_MULTI_STATEMENTS mismatched", K(client_mysql_cap_.cap_flags_.OB_CLIENT_MULTI_STATEMENTS));
+  } else if (OB_UNLIKELY(client_mysql_cap_.cap_flags_.OB_CLIENT_SESSION_TRACK && !server_mysql_caps.cap_flags_.OB_CLIENT_SESSION_TRACK)) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "mysql cap OB_CLIENT_SESSION_TRACK mismatched", K(client_mysql_cap_.cap_flags_.OB_CLIENT_SESSION_TRACK));
+  } else if (OB_UNLIKELY(proxy_id_ != session->get_proxy_id())) {
+    match = false;
+    PROXY_SS_LOG(DEBUG, "proxy id dismatched", "curr_proxy_id", proxy_id_, "server_proxy_id", session->get_proxy_id());
+  } else {}
+
+  if (OB_LIKELY(match)) {
+    SESSION_POOL_LOG(DEBUG, "session hit by rules", K(server_caps), K(ob20_caps), K(full_link_trace_cap),
+                     K(client_mysql_cap_.capability_), K(server_mysql_caps.capability_), K(*this));
+  } else {
+    SESSION_POOL_LOG(DEBUG, "session hit miss by rules", K(server_caps), K(ob20_caps), K(full_link_trace_cap),
+                     K(client_mysql_cap_.capability_), K(server_mysql_caps.capability_), K(*this));
+  }
+
+  return match;
 }
 
 ObServerAddrLookupHandler::ObServerAddrLookupHandler(ObProxyMutex &m,
@@ -648,7 +731,7 @@ int ObServerAddrLookupHandler::lookup_server_addr(const ObMysqlClientSession &cs
   }
 
   if (has_privilege) {
-    ObMysqlServerSession *ss = cs.get_cur_server_session();
+    const ObMysqlServerSession *ss = cs.get_cur_server_session();
     if (NULL != ss && NULL != ss->get_client_session()
         && cs.get_cs_id() == ss->get_client_session()->get_cs_id()) {
       query_info.server_addr_.assign(cs.get_cur_server_session()->get_netvc()->get_remote_addr());

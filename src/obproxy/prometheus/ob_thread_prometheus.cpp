@@ -91,6 +91,7 @@ void SQLMonitorInfo::set_key(const MonitorInfoKey& key)
   monitor_info_key_.cluster_name_ = cluster_name_str_;
   monitor_info_key_.tenant_name_ = tenant_name_str_;
   monitor_info_key_.database_name_ = database_name_str_;
+  monitor_info_key_.rpc_entity_type_ = key.rpc_entity_type_;
 }
 
 int ObSQLMonitorInfoCont::init(int64_t report_interval_us, ObEThread *thread, ObThreadPrometheus *thread_prometheus)
@@ -159,6 +160,7 @@ int ObSQLMonitorInfoCont::main_handler(int event, void *data)
     ObProxyBasicStmtType stmt_type = info.key().stmt_type_;
     proxy::ObRouteInfoType route_type = info.key().route_type_;
     proxy::ObRoutePolicyEnum route_policy = info.key().route_policy_;
+    obkv::ObTableEntityType table_type = info.key().rpc_entity_type_;
     bool is_slow_query = info.key().is_slow_query();
     bool is_error_resp = info.key().is_error_resp();
     bool is_partition_hit = info.key().is_partition_hit();
@@ -208,16 +210,16 @@ int ObSQLMonitorInfoCont::main_handler(int event, void *data)
     } else if (OBPROXY_RPC_REQUEST == info.key().request_type_) {
       obrpc::ObRpcPacketCode rpc_pkt_code = info.key().rpc_pkt_code_;
       RPC_PROMETHEUS_STAT("", "", cluster_name, tenant_name, "", rpc_pkt_code,
-                          PROMETHEUS_REQUEST_COUNT, false, false, is_shard, info.request_count_);
+                          PROMETHEUS_REQUEST_COUNT, is_slow_query, is_error_resp, is_shard, table_type, info.request_count_);
 
       RPC_PROMETHEUS_STAT("", "", cluster_name, tenant_name, "", rpc_pkt_code,
-                          PROMETHEUS_REQUEST_TOTAL_TIME, request_total_time);
+                          PROMETHEUS_REQUEST_TOTAL_TIME, is_slow_query, is_error_resp, is_shard, table_type, request_total_time);
 
       RPC_PROMETHEUS_STAT("", "", cluster_name, tenant_name, "", rpc_pkt_code,
-                          PROMETHEUS_SERVER_PROCESS_REQUEST_TIME, server_process_request_time);
+                          PROMETHEUS_SERVER_PROCESS_REQUEST_TIME, is_slow_query, is_error_resp, is_shard, table_type, server_process_request_time);
 
       RPC_PROMETHEUS_STAT("", "", cluster_name, tenant_name, "", rpc_pkt_code,
-                          PROMETHEUS_PREPARE_SEND_REQUEST_TIME, prepare_send_request_to_server_time);
+                          PROMETHEUS_PREPARE_SEND_REQUEST_TIME, is_slow_query, is_error_resp, is_shard, table_type, prepare_send_request_to_server_time);
 
       NET_PROMETHEUS_STAT("", "", cluster_name, tenant_name, database_name,
                           PROMETHEUS_RPC_REQUEST_BYTE, true, true, info.client_request_bytes_);
@@ -330,6 +332,9 @@ int ObThreadPrometheus::set_sql_monitor_info(SQLMonitorInfo::MonitorInfoKey& tmp
     info_item->server_request_bytes_ += server_request_bytes;
     info_item->server_response_bytes_ += server_response_bytes;
     info_item->client_response_bytes_ += client_response_bytes;
+  } else if (OB_NOT_NULL(info_item)) {
+    op_free(info_item);
+    info_item = NULL;
   }
 
   return ret;

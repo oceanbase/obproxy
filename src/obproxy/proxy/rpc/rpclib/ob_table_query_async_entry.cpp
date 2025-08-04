@@ -72,6 +72,35 @@ int ObTableQueryAsyncEntry::get_current_tablet_id(int64_t &tablet_id) const
   return ret;
 }
 
+const char *ObTableQueryAsyncEntry::get_query_async_state(const ObTableQueryAsyncEntryState state)
+{
+  const char *name = NULL;
+  switch (state) {
+    case BORN:
+      name = "BORN";
+      break;
+    case AVAIL:
+      name = "AVAIL";
+      break;
+    case BUILDING:
+      name = "BUILDING";
+      break;
+    case DIRTY:
+      name = "DIRTY";
+      break;
+    case UPDATING:
+      name = "UPDATING";
+      break;
+    case DELETED:
+      name = "DELETED";
+      break;
+    default :
+      name = "UNKNOWN";
+      break;
+  }
+  return name;
+}
+
 }
 }
 }

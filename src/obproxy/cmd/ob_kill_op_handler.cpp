@@ -105,10 +105,10 @@ int ObKillOpHandler::get_server_session(const ObMysqlClientSession &cs,
     const ObMysqlServerSession *&server_session)
 {
   int ret = OB_SUCCESS;
-  if (NULL != cs.get_server_session()
-      && OB_LIKELY(NULL != cs.get_server_session()->get_client_session())
-      && OB_LIKELY(cs.get_server_session()->ss_id_ == ss_id_)) {
-    server_session = cs.get_server_session();
+  if (NULL != cs.get_last_server_session()
+      && OB_LIKELY(NULL != cs.get_last_server_session()->get_client_session())
+      && OB_LIKELY(cs.get_last_server_session()->ss_id_ == ss_id_)) {
+    server_session = cs.get_last_server_session();
   } else if (NULL != cs.get_cur_server_session()
       && OB_LIKELY(NULL != cs.get_cur_server_session()->get_client_session())
       && OB_LIKELY(cs.get_cur_server_session()->ss_id_ == ss_id_)) {

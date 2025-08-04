@@ -289,8 +289,8 @@ const char *ObTableEntryCont::get_state_name(const ObTableEntryLookupState state
     case LOOKUP_BINLOG_HOSTNAME_STATE:
       name = "LOOKUP_BINLOG_HOSTNAME_STATE";
       break;
-    case LOOKUP_RETRY_STATE:
-      name = "LOOKUP_RETRY_STATE";
+    case LOOKUP_BINLOG_RETRY_STATE:
+      name = "LOOKUP_BINLOG_RETRY_STATE";
       break;
     default:
       name = "Unknown State";
@@ -340,16 +340,17 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
         } else if (OB_FAIL(handle_lookup_remote())) {
           LOG_WDIAG("fail to handle lookup remote done", K(ret));
         }
+        if (OB_UNLIKELY(LOOKUP_BINLOG_RETRY_STATE == state_)) {
+          if (OB_FAIL(do_lookup_binlog_entry_remote(true))) {
+            LOG_WDIAG("fail to do lookup binlog service entry", K(ret));
+          }
+        }
+        // 对resp_event，需要确保handle_lookup_remote_done是最后一步，保证资源能正常回收
         // if failed, treat as lookup done and  will inform out
         if (LOOKUP_DONE_STATE == state_ || OB_FAIL(ret)) {
           ret = OB_SUCCESS;
           if (OB_FAIL(handle_lookup_remote_done())) {
             LOG_EDIAG("fail to handle lookup remote done", K(ret));
-          }
-        }
-        if (OB_UNLIKELY(LOOKUP_RETRY_STATE == state_)) {
-          if (OB_FAIL(do_lookup_binlog_entry_remote(true))) {
-            LOG_WDIAG("fail to do lookup binlog service entry", K(ret));
           }
         }
         break;
@@ -380,7 +381,6 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
         LOG_DEBUG("get hostname refresh complete event", K(event), "state", get_state_name(state_), K(async_task_ret));
         if (LOOKUP_BINLOG_HOSTNAME_STATE != state_) {
           ret = OB_ERR_UNEXPECTED;
-          terminate_ = true;
           LOG_WDIAG("unexpected state", K(event), K_(state), K(ret));
         } else {
           if (OB_FAIL(async_task_ret)) {
@@ -389,6 +389,12 @@ inline int ObTableEntryCont::main_handler(int event, void *data)
           }
           if (OB_FAIL(do_lookup_binlog_entry_remote(need_use_next_hostname_ip, refresh_succ))) {
             LOG_WDIAG("fail to do lookup binlog service entry", K(ret));
+          }
+        }
+        if (OB_FAIL(ret)) {
+          if (notify_caller()) {
+            // impossible
+            LOG_WDIAG("fail to notify caller", K(ret));
           }
         }
         break;
@@ -480,7 +486,7 @@ inline int ObTableEntryCont::set_next_state()
       break;
     case LOOKUP_BINLOG_ENTRY_STATE:
       if (OB_ISNULL(newest_table_entry_)) {
-        next_state = LOOKUP_RETRY_STATE;
+        next_state = LOOKUP_BINLOG_RETRY_STATE;
       } else {
         next_state = LOOKUP_DONE_STATE;
       }
@@ -624,7 +630,7 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
     is_need_retry_ = false;
     if (cur_build_count_ < obproxy::obutils::get_global_proxy_config().table_entry_retry_build_limit) {
       state_ = LOOKUP_TABLE_ENTRY_RETRY_STATE;
-      LOG_INFO("failed to get atomic table entry, need retry", K(cur_build_count_), KPC(newest_table_entry_));
+      LOG_INFO("failed to get atomic table entry, need retry", K(cur_build_count_), K(newest_table_entry_));
       cur_build_count_ ++;
       if (OB_LIKELY(NULL != newest_table_entry_)) {
         is_reused_ = true;
@@ -636,7 +642,7 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
       }
     } else {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("failed to get atomic table entry and reach retry limit", K(cur_build_count_), KPC(newest_table_entry_));
+      LOG_WDIAG("failed to get atomic table entry and reach retry limit", K(cur_build_count_), K(newest_table_entry_));
     }
   } else if (is_need_reroute_) {
     is_need_reroute_ = false;
@@ -670,7 +676,7 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
   if (OB_SUCCESS == tmp_ret &&
       OB_SUCCESS == error_code && 
       (ObTableEntryLookupState::LOOKUP_DONE_STATE == state_
-       || ObTableEntryLookupState::LOOKUP_RETRY_STATE == state_)) {
+       || ObTableEntryLookupState::LOOKUP_BINLOG_RETRY_STATE == state_)) {
     if (!table_param_.name_.is_all_dummy_table()) {
       ROUTE_DIAGNOSIS(table_param_.route_diagnosis_,
                       FETCH_TABLE_RELATED_DATA,
@@ -840,7 +846,7 @@ inline int ObTableEntryCont::handle_lookup_remote()
       break;
 
     case LOOKUP_DONE_STATE:
-    case LOOKUP_RETRY_STATE:
+    case LOOKUP_BINLOG_RETRY_STATE:
       // do nothing here
       break;
 
@@ -860,7 +866,7 @@ inline int ObTableEntryCont::handle_lookup_remote()
   }
 
   if (LOOKUP_DONE_STATE == state_
-      || LOOKUP_RETRY_STATE == state_) {
+      || LOOKUP_BINLOG_RETRY_STATE == state_) {
     if (OB_ISNULL(newest_table_entry_)) {
       PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE_FAIL);
       ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, false, false);
@@ -949,6 +955,7 @@ inline int ObTableEntryCont::handle_lookup_remote_for_update()
 {
   int ret = OB_SUCCESS;
   bool is_add_succ = false;
+  LOG_DEBUG("handle lookup remote for update", KPC(newest_table_entry_), KPC(table_entry_));
   if (OB_FAIL(add_to_global_cache(is_add_succ))) {
     LOG_WDIAG("fail to add to global cache", K(ret));
     ret = OB_SUCCESS; // ignore ret;
@@ -1245,7 +1252,7 @@ int ObTableEntryCont::do_lookup_binlog_entry_remote(bool need_use_next_hostname_
     }
   } while (OB_EAGAIN == ret);
 
-
+  // 失败后，统一会调用notify_caller()设置terminate_，通过kill_this回收资源
   if (OB_UNLIKELY(OB_NEED_WAIT == ret)) {
     // nothing wait callback
     ret = OB_SUCCESS;
@@ -1257,10 +1264,6 @@ int ObTableEntryCont::do_lookup_binlog_entry_remote(bool need_use_next_hostname_
     request_param_.set_target_addr(addr);
     if (OB_FAIL(mysql_proxy->async_read(this, request_param_, pending_action_))) {
       LOG_WDIAG("fail to async read", K_(binlog_sql), K(addr), K(ret));
-    }
-    if (OB_FAIL(ret) && NULL != mysql_client_) {
-      mysql_client_->kill_this();
-      mysql_client_ = NULL;
     }
   }
 

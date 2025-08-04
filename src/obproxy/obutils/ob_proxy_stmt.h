@@ -128,7 +128,7 @@ public:
   ObProxyDMLStmt(common::ObIAllocator& allocator);
   virtual ~ObProxyDMLStmt();
   int init();
-  virtual int handle_parse_result(const ParseResult &parse_result);
+  virtual int handle_parse_result(const ParseResult &parse_result) override;
   int handle_all_table_node(ParseNode* node);
   void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   void set_field_results(SqlFieldResult* real_field_results_ptr) { field_results_ = real_field_results_ptr; }
@@ -275,7 +275,7 @@ class ObProxySelectStmt : public ObProxyDMLStmt
 public:
   ObProxySelectStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
   virtual ~ObProxySelectStmt() {}
-  virtual int handle_parse_result(const ParseResult &parse_result);
+  virtual int handle_parse_result(const ParseResult &parse_result) override;
 };
 
 class ObProxyInsertStmt : public ObProxyDMLStmt
@@ -283,7 +283,7 @@ class ObProxyInsertStmt : public ObProxyDMLStmt
 public:
   ObProxyInsertStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator), row_count_(0) {}
   ~ObProxyInsertStmt() {}
-  int handle_parse_result(const ParseResult &parse_result);
+  int handle_parse_result(const ParseResult &parse_result) override;
   int to_sql_string(common::ObSqlString& sql_string)
   {
     UNUSED(sql_string);
@@ -307,7 +307,7 @@ class ObProxyDeleteStmt : public ObProxyDMLStmt
 public:
   ObProxyDeleteStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
   ~ObProxyDeleteStmt() {}
-  int handle_parse_result(const ParseResult &parse_result);
+  int handle_parse_result(const ParseResult &parse_result) override;
   int to_sql_string(common::ObSqlString& sql_string)
   {
     UNUSED(sql_string);
@@ -325,7 +325,7 @@ class ObProxyUpdateStmt : public ObProxyDMLStmt
 public:
   ObProxyUpdateStmt(common::ObIAllocator& allocator) : ObProxyDMLStmt(allocator) {}
   ~ObProxyUpdateStmt() {}
-  int handle_parse_result(const ParseResult &parse_result);
+  int handle_parse_result(const ParseResult &parse_result) override;
   int to_sql_string(common::ObSqlString& sql_string)
   {
     UNUSED(sql_string);

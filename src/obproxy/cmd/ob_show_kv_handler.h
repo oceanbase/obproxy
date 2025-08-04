@@ -22,31 +22,33 @@ namespace obproxy
 namespace proxy
 {
 
+#define OB_PROXY_MAX_RPC_REQ_TYPE_LENGTH 32
+
 class ObShowKvHandler : public ObInternalCmdHandler
 {
 public:
-  ObShowKvHandler(ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info)
-      : oceanbase::obproxy::ObInternalCmdHandler(cont, buf, info), sub_type_(info.get_sub_cmd_type()),
-        start_worker_thread_id_(-1), start_async_thread_id_(-1), cur_async_thread_id_(-1), is_worker_thread_finished_(false),
-        is_async_thread_finished_(false)
-  {
-    SET_HANDLER(&ObShowKvHandler::handle_kv_thread_cmd);
-  }
+  ObShowKvHandler(ObContinuation *cont, event::ObMIOBuffer *buf, const ObInternalCmdInfo &info);
   virtual ~ObShowKvHandler() {}
 
   int handle_kv_thread_cmd(int event, void *data);
-  int dump_kv_thread_cmd_header();
+  int handle_kv_requeststat_cmd(int event, void *data);
+  int dump_header();
 
-  int show_kv_thread_list(int event, void *data);
-  int show_kv_thread_in_thread(event::ObEThread &thread);
+  int dump_kv_thread_item(int event, void *data);
+  int dump_kv_thread_one_thread(event::ObEThread &thread);
+  int dump_kv_requeststat_item(int event, void *data);
+  int dump_kv_requeststat_one_thread(event::ObEThread &thread);
+  int get_rpc_req_type(int64_t &type);
 
 private:
   const ObProxyBasicStmtSubType sub_type_;
+  int64_t ob_rpc_req_type_;
   int64_t start_worker_thread_id_;
   int64_t start_async_thread_id_;
   int64_t cur_async_thread_id_;
   bool is_worker_thread_finished_;
   bool is_async_thread_finished_;
+  char rpc_req_type_str_[OB_PROXY_MAX_RPC_REQ_TYPE_LENGTH + 1];
 
   DISALLOW_COPY_AND_ASSIGN(ObShowKvHandler);
 };

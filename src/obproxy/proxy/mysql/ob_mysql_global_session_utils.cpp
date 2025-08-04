@@ -41,8 +41,12 @@ DEF_TO_STRING(ObProxySchemaKey)
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K_(logic_tenant_name), K_(logic_database_name),
-       K_(dbkey), K_(connector_type), KPC(shard_conn_), K_(last_access_time), K_(init));
+  if (connector_type_ == TYPE_CONNECTOR_MAX) {
+    J_KV(K_(dbkey), K_(last_access_time), K_(init));
+  } else {
+    J_KV(K_(logic_tenant_name), K_(logic_database_name),
+         K_(dbkey), K_(connector_type), KPC(shard_conn_), K_(last_access_time), K_(init));
+  }
   J_OBJ_END();
   return pos;
 }
@@ -362,10 +366,10 @@ int64_t ObMysqlSessionUtils::get_session_idle_timeout_ms(const ObProxySchemaKey&
       shard_prop->dec_ref();
       shard_prop = NULL;
     } else {
-      idle_timeout = HRTIME_USECONDS(get_global_proxy_config().session_pool_default_idle_timeout);
+      idle_timeout = HRTIME_USECONDS(get_global_proxy_config().session_pool_idle_timeout);
     }
   } else {
-    idle_timeout = HRTIME_USECONDS(get_global_proxy_config().session_pool_default_idle_timeout);
+    idle_timeout = HRTIME_USECONDS(get_global_proxy_config().session_pool_idle_timeout);
   }
   return idle_timeout;
 }
@@ -440,6 +444,25 @@ int ObMysqlSessionUtils::format_full_username(ObProxySchemaKey& schema_key, char
            cluster_name.length(), cluster_name.ptr());
   return ret;
 }
+
+// init key for session connection pool
+int ObMysqlSessionUtils::init_schema_key_value(ObProxySchemaKey& schema_key,
+    const common::ObString& tenant_name,
+    const common::ObString& cluster_name)
+{
+  int ret = OB_SUCCESS;
+  char key_buf[1024];
+  snprintf(key_buf, 1024, "%.*s:%.*s",
+           cluster_name.length(), cluster_name.ptr(),
+           tenant_name.length(), tenant_name.ptr());
+  ObString key = ObString::make_string(key_buf);
+  schema_key.reset();
+  schema_key.dbkey_.set_value(key);
+  schema_key.init_ = true;
+
+  return ret;
+}
+
 int ObMysqlSessionUtils::init_schema_key_value(ObProxySchemaKey& schema_key,
     const common::ObString& user_name,
     const common::ObString& tenant_name,
@@ -510,39 +533,26 @@ int ObMysqlSessionUtils::init_schema_key_with_client_session(ObProxySchemaKey& s
     ObMysqlClientSession* client_session)
 {
   int ret = OB_SUCCESS;
-  // proxy session pool
-  if (client_session->schema_key_.init_ && client_session->is_proxy_mysql_client()
-      && client_session->is_session_pool_client()) {
-    schema_key = client_session->schema_key_;
-    LOG_DEBUG("init with client_session schema_key:", K(client_session->schema_key_));
-    return ret;
-  }
   ObClientSessionInfo& session_info = client_session->get_session_info();
-  ObString logic_tenant_name;
-  ObString logic_database_name;
-  client_session->get_session_info().get_logic_database_name(logic_database_name);
-  client_session->get_session_info().get_logic_tenant_name(logic_tenant_name);
-  if (logic_tenant_name.empty()) {
-    logic_tenant_name = ObString::make_string(DEFAULT_LOGIC_TENANT_NAME);
-  }
-  bool is_sharding_user = client_session->get_session_info().is_sharding_user();
-  if (is_sharding_user) {
+  if (client_session->is_enable_session_conn_pool()) {
+    ObString& tenant_name = session_info.get_login_req().get_hsr_result().tenant_name_;
+    ObString& cluster_name = session_info.get_login_req().get_hsr_result().cluster_name_;
+    ret = init_schema_key_value(schema_key, tenant_name, cluster_name);
+    LOG_DEBUG("init client session dbkey", K(schema_key));
+  } else if (client_session->is_enable_sharding_conn_pool()) {
+    ObString logic_tenant_name;
+    ObString logic_database_name;
+    client_session->get_session_info().get_logic_database_name(logic_database_name);
+    client_session->get_session_info().get_logic_tenant_name(logic_tenant_name);
+    if (logic_tenant_name.empty()) {
+      logic_tenant_name = ObString::make_string(DEFAULT_LOGIC_TENANT_NAME);
+    }
     dbconfig::ObShardConnector * shard_conn = session_info.get_shard_connector(); 
     if (OB_FAIL(init_schema_key_value(schema_key, logic_tenant_name, logic_database_name, shard_conn))) {
       LOG_WDIAG("init_schema_key_value failed", K(ret));
     }
-  } else {
-    ObString& user_name = session_info.get_login_req().get_hsr_result().user_name_;
-    ObString& tenant_name = session_info.get_login_req().get_hsr_result().tenant_name_;
-    ObString& cluster_name = session_info.get_login_req().get_hsr_result().cluster_name_;
-    ObString database_name = session_info.get_database_name();
-    if (database_name.empty()) {
-      database_name = client_session->get_session_info().get_login_req().get_hsr_result().response_.get_database();
-    }
-    LOG_DEBUG("init_schema_key_with_client_session", K(user_name), K(tenant_name),
-            K(cluster_name), K(database_name), K(logic_tenant_name), K(client_session));
-    ret = init_schema_key_value(schema_key, user_name, tenant_name, cluster_name, database_name, logic_tenant_name);
   }
+
   return ret;
 }
 

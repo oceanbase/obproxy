@@ -962,7 +962,8 @@ int ObProxyTableProcessor::check_reload_config(const int64_t new_config_version)
   return ret;
 }
 
-int ObProxyTableProcessor::update_vip_tenant_cache()
+int ObProxyTableProcessor::update_vip_tenant_cache(const int64_t old_version,
+                                                   const int64_t new_version)
 {
   int ret = OB_SUCCESS;
   const int64_t now = ObTimeUtility::current_time();
@@ -972,7 +973,7 @@ int ObProxyTableProcessor::update_vip_tenant_cache()
   } else {
     ObVipTenantCache::VTHashMap &cache_map_tmp = vt_processor_.get_cache_map_tmp();
     ObVipTenantCache::clear_cache_map(cache_map_tmp);
-    if (OB_FAIL(ObProxyTableProcessorUtils::get_vip_tenant_info(*mysql_proxy_, cache_map_tmp))) {
+    if (OB_FAIL(ObProxyTableProcessorUtils::get_vip_tenant_info(*mysql_proxy_, cache_map_tmp, old_version, new_version))) {
       LOG_WDIAG("fail to get vip tenant info", K(ret));
     } else if (OB_FAIL(vt_processor_.update_cache_map())) {
       LOG_WDIAG("fail to update cache map", K(ret));
@@ -993,15 +994,16 @@ int ObProxyTableProcessor::check_update_vip_tenant_cache(const int64_t new_vt_ca
   int ret = OB_SUCCESS;
   const bool need_convert_vip_to_tname = config_manager_.get_proxy_config().need_convert_vip_to_tname;
   const int64_t local_vt_cache_version = config_manager_.get_proxy_config().local_vip_tenant_version;
+  LOG_DEBUG("start check update_vip", K(new_vt_cache_version), K(local_vt_cache_version));
   if (OB_UNLIKELY(!is_inited_)) {
     ret = OB_NOT_INIT;
     LOG_WDIAG("it is not inited", K_(is_inited), K(ret));
-  } else if ((!need_convert_vip_to_tname || new_vt_cache_version <= local_vt_cache_version)
-             && !get_global_proxy_config().enable_qa_mode) {
+  } else if (!need_convert_vip_to_tname || new_vt_cache_version <= local_vt_cache_version) {
     LOG_DEBUG("there is no need to update vip tenant cache", K(need_convert_vip_to_tname),
               K(new_vt_cache_version), K(local_vt_cache_version));
-  } else if (OB_FAIL(update_vip_tenant_cache())) {
-    LOG_WDIAG("fail to update vip tenant cache", K(ret));
+  } else if (OB_FAIL(update_vip_tenant_cache(local_vt_cache_version, new_vt_cache_version))) {
+    LOG_WDIAG("fail to update vip tenant cache",
+              K(local_vt_cache_version), K(new_vt_cache_version), K(ret));
   } else {
     config_manager_.get_proxy_config().local_vip_tenant_version = new_vt_cache_version;
     LOG_INFO("succ to update vip tenant cache", K(new_vt_cache_version), K(local_vt_cache_version));

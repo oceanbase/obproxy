@@ -132,7 +132,8 @@ public:
     DEAD_CONGESTED,
     ALIVE_CONGESTED,
     DETECT_CONGESTED,
-    INTERNAL_ERROR
+    INTERNAL_ERROR,
+    RESET_SESSION_ERROR,
   };
 
 enum ObServerRespErrorType
@@ -164,6 +165,8 @@ enum ObServerRespErrorType
     SYNC_PREPARE_COMMON_ERROR,
     // sync text ps prepare
     SYNC_TEXT_PS_PREPARE_COMMON_ERROR,
+    // reset server session
+    REQUEST_RESET_SESSION_STATUS_ERROR,
     // packet checksum error
     ORA_FATAL_ERROR,
     // request related
@@ -314,7 +317,7 @@ enum ObServerRespErrorType
     SERVER_SEND_LOGIN,
     SERVER_SEND_INIT_SQL,
     SERVER_SEND_SAVED_LOGIN,
-    SERVER_SEND_SAVED_AUTH_SWITCH_RESP,
+    //SERVER_SEND_SAVED_AUTH_SWITCH_RESP,
     SERVER_SEND_ALL_SESSION_VARS,
     SERVER_SEND_USE_DATABASE,
     SERVER_SEND_SESSION_VARS,
@@ -324,7 +327,9 @@ enum ObServerRespErrorType
     SERVER_SEND_REQUEST,
     SERVER_SEND_PREPARE,
     SERVER_SEND_SSL_REQUEST,
-    SERVER_SEND_TEXT_PS_PREPARE
+    SERVER_SEND_TEXT_PS_PREPARE,
+    SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN, // conn pool, use com_change_user to replace first login
+    SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN, // conn pool, use com_change user to replace saved login
   };
 
   struct ObCurrentInfo
@@ -385,7 +390,7 @@ enum ObServerRespErrorType
     bool need_update_entry() const { return route_.need_update_entry(); }
     bool need_update_entry_by_partition_hit();
     bool is_partition_table() const { return route_.is_partition_table(); }
-    bool is_all_iterate_once() const { return route_.is_all_iterate_once(); }
+    bool is_all_iterate_once(bool is_need_check_leader_item) const { return route_.is_all_iterate_once(is_need_check_leader_item); }
     void reset_cursor() { route_.reset_cursor(); }
     bool is_leader_existent() const { return route_.is_leader_existent(); }
     bool is_leader_server() const { return route_.is_leader_server(); }
@@ -591,7 +596,7 @@ enum ObServerRespErrorType
                         const int64_t global_version = 0);
     static int concate_service_name(const ObString& service_name,
                                     ObConfigVariableString &ret_service_name);
-    static bool get_service_name_str(const ObString& cluster_name,
+    static int get_service_name_str(const ObString& cluster_name,
                                      const ObString &tenant_name,
                                      ObConfigVariableString &service_name);
 
@@ -735,6 +740,7 @@ enum ObServerRespErrorType
       route_policy_ = ObRoutePolicyEnum::MAX_ROUTE_POLICY_COUNT;
       ObRequestPhase prev_phase = request_phase_;
       if (is_handshake_req_phase()) {
+        // 转发客户端 handshake response
         if (obmysql::OB_MYSQL_COM_LOGIN == trans_info_.sql_cmd_) {
           if (trans_info_.resp_result_.is_auth_switch_req()) {
             // handshake response transferred and auth switch request received
@@ -743,9 +749,18 @@ enum ObServerRespErrorType
             // handshake response transferred and ok resp received
             set_common_req_phase();
           }
-        } else {
-          // wait for transferring handshake response
-        }
+        // 收到客户端 handshake response, 但是由于使用了会话连接池, 使用 COM_CHANGE_USER 重置会话
+        } else if (obmysql::OB_MYSQL_COM_CHANGE_USER == trans_info_.sql_cmd_) {
+          if (trans_info_.resp_result_.is_auth_switch_req()) {
+            if (current_.send_action_ == ObMysqlTransact::SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN) {
+              set_login_auth_switch_resp_phase();
+            } else {
+            }
+          } else {
+            set_common_req_phase();
+          }
+        // 客户端新建 TCP 连接, 不做任何处理等待客户端发送 handshake response
+        } else {}
       } else if (trans_info_.resp_result_.is_local_infile_0xfb_resp()) {
         set_file_content_req_phase();
       } else if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_CHANGE_USER
@@ -850,7 +865,11 @@ enum ObServerRespErrorType
     inline void set_login_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
     inline const bool is_change_user_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
     inline void set_change_user_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
-    inline const bool is_auth_switch_resp_phase() const { return is_change_user_auth_switch_resp_phase() || is_login_auth_switch_resp_phase(); }
+    inline const bool is_reset_session_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP; }
+    inline void set_reset_session_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP; }
+    inline const bool is_auth_switch_resp_phase() const { return is_change_user_auth_switch_resp_phase()
+                                                                 || is_login_auth_switch_resp_phase()
+                                                                 || is_reset_session_auth_switch_resp_phase(); }
     inline const bool is_common_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND; }
     inline void set_common_req_phase() { request_phase_ = REQ_PHASE_COMMAND; }
     inline const bool is_send_long_data_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND_SEND_LONG_DATA; }
@@ -969,16 +988,15 @@ enum ObServerRespErrorType
     DISALLOW_COPY_AND_ASSIGN(ObTransState);
   }; // End of State struct.
 
-  static int return_last_bound_server_session(ObMysqlClientSession *client_session);
+  static int return_second_last_server_session(ObMysqlClientSession *client_session);
   static void modify_request(ObTransState &s);
   static bool is_sequence_request(ObTransState &s);
-  static void handle_mysql_request(ObTransState &s);
   static int set_server_ip_by_shard_conn(ObTransState &s, dbconfig::ObShardConnector* shard_conn);
   static void handle_oceanbase_request(ObTransState &s);
   static void handle_ps_close_reset(ObTransState &s);
   static void handle_send_ps_close_reset_server(ObTransState &s,
                                                 const bool using_service_name,
-                                                const bool is_need_send_to_bound_ss,
+                                                const bool is_need_send_to_last_ss,
                                                 net::ObIpEndpoint &addr,
                                                 ObIArray<ObConfigVariableString> &tenant_name_array,
                                                 ObIArray<ObConfigVariableString> &cluster_name_array,
@@ -1008,7 +1026,7 @@ enum ObServerRespErrorType
   static void lookup_skip_open_server(ObTransState &s);
 
   static bool need_disable_merge_status_check(ObTransState &s);
-  static void acquire_cached_server_session(ObTransState &s);
+  static void get_cached_server_addr(ObTransState &s);
 
   static void handle_error_jump(ObTransState &s);
   static void handle_internal_request(ObTransState &s);
@@ -1043,8 +1061,6 @@ enum ObServerRespErrorType
   static int handle_rewrite_request(ObTransState &s);
   static void handle_oceanbase_server_resp_error(ObTransState &s, obmysql::ObMySQLCmd request_cmd, obmysql::ObMySQLCmd current_cmd);
   static void handle_server_resp_error(ObTransState &s);
-
-  static bool is_dbmesh_pool_user(ObTransState &s);
   static bool is_internal_request(ObTransState &s);
   static bool is_binlog_request(const ObTransState &s);
   static bool is_single_shard_db_table(ObTransState &s);
@@ -1061,6 +1077,7 @@ enum ObServerRespErrorType
   static bool need_server_session_lookup(ObTransState &s);
   static int64_t get_max_connect_attempts_from_replica(const int64_t replica_size);
   static int64_t get_max_connect_attempts(ObTransState &s);
+  static bool can_use_session_from_pool(ObTransState &s);
 
   static int build_table_entry_request_packet(ObTransState &s, event::ObIOBufferReader *&reader);
   static void handle_resultset_resp(ObTransState &s, bool &is_user_request);
@@ -1103,9 +1120,11 @@ enum ObServerRespErrorType
   static void handle_xa_start_sync_succ(ObTransState &s);
   static int do_handle_prepare_execute_xa_succ(event::ObIOBufferReader &buf_reader);
   static void handle_text_ps_prepare_succ(ObTransState &s);
+  static void handle_reset_session_succ(ObTransState &s);
   static int handle_text_ps_drop_succ(ObTransState &s, bool &is_user_request);
    static void handle_send_init_sql_succ(ObTransState &s);
   static int handle_change_user_request_succ(ObTransState &s);
+  static int handle_auth_switch_resp_succ(ObTransState &s);
   static int handle_reset_connection_request_succ(ObTransState &s);
   static int clear_session_related_source(ObTransState &s);
   static int handle_ps_reset_succ(ObTransState &s, bool &is_user_request);
@@ -1228,6 +1247,8 @@ inline bool ObMysqlTransact::is_in_auth_process(ObTransState &s)
   // 3. send login
   return (SERVER_SEND_SAVED_LOGIN == s.current_.send_action_
           || SERVER_SEND_HANDSHAKE == s.current_.send_action_
+          || SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN == s.current_.send_action_
+          || SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN == s.current_.send_action_
           || SERVER_SEND_LOGIN == s.current_.send_action_);
 }
 

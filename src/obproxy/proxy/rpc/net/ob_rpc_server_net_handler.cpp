@@ -18,6 +18,8 @@
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "omt/ob_conn_table_processor.h"
 #include "stat/ob_rpc_stats.h"
+#include "prometheus/ob_prometheus_info.h"
+#include "prometheus/ob_rpc_prometheus.h"
 #include "iocore/eventsystem/ob_kv_task.h"
 
 using namespace oceanbase::common;
@@ -176,7 +178,7 @@ int ObRpcServerNetHandler::new_connection(net::ObNetVConnection &new_vc)
     RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, 1); // Update the true global stat
     RPC_INCREMENT_DYN_STAT(TOTAL_SERVER_CONNECTIONS); //TODO need check not have RPC_DECREMENT_DYN_STAT for TOTAL_SERVER_CONNECTIONS
     //TODO need add it later after assign cluster and tenant info for server_net_entry
-    //RPC_SESSION_PROMETHEUS_STAT(, PROMETHEUS_CURRENT_SESSION, false, 1);
+    RPC_NET_SESSION_PROMETHEUS_STAT(server_ip_, PROMETHEUS_CURRENT_SESSION, false, 1);
 
     if (OB_UNLIKELY(NULL != read_buffer_)) {
       free_miobuffer(read_buffer_);
@@ -357,6 +359,7 @@ void ObRpcServerNetHandler::do_io_close(const int alerrno)
   state_ = OB_RPC_SERVER_ENTRY_DESTROY;
 
   RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
+  RPC_NET_SESSION_PROMETHEUS_STAT(server_ip_, PROMETHEUS_CURRENT_SESSION, false, -1);
   //   RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
   destroy();
 }
@@ -364,15 +367,16 @@ void ObRpcServerNetHandler::do_io_close(const int alerrno)
 int ObRpcServerNetHandler::handle_other_event(int event, void *data)
 {
   UNUSED(data);
-  switch (event) {
-    case CLIENT_SESSION_ERASE_FROM_MAP_EVENT: {
-      do_io_close();
-      break;
-    }
-    default:
-      PROXY_SS_LOG(WDIAG, "unknown event", K(event), K_(ss_id), K_(server_ip), K_(local_ip));
-      break;
-  }
+  UNUSED(event);
+  // switch (event) {
+  //   case CLIENT_SESSION_ERASE_FROM_MAP_EVENT: {
+  //     do_io_close();
+  //     break;
+  //   }
+  //   default:
+  //     PROXY_SS_LOG(WDIAG, "unknown event", K(event), K_(ss_id), K_(server_ip), K_(local_ip));
+  //     break;
+  // }
 
   return VC_EVENT_NONE;
 }
@@ -607,14 +611,22 @@ int ObRpcServerNetHandler::setup_server_request_send()
           PROXY_SS_LOG(WDIAG, "fail to pop need send request", K_(ss_id), K_(server_ip), K_(local_ip), K(ret));
         } else if (OB_UNLIKELY(OB_ISNULL(request))) { //request has cancled() or invalid, not send again
           //invalid request, not need send it next
-          PROXY_SS_LOG(INFO, "request which send server is invalid ", K_(ss_id), K_(server_ip), K_(local_ip), K(request),
-                       "rpc_trace_id", request->get_trace_id());
-        } else if (request->canceled()) {
+          PROXY_SS_LOG(INFO, "request which send server is invalid ", K_(ss_id), K_(server_ip), K_(local_ip));
+        } else if (request->canceled() && request->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
           PROXY_SS_LOG(INFO, "request which send server is canced", K_(ss_id), K_(server_ip), K_(local_ip), K(request),
           "rpc_trace_id", request->get_trace_id());
           ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
           request->cleanup(cleanup_params);
+        } else if (request->canceled() && request->magic_ == RPC_REQ_SM_MAGIC_DEAD) {
+          PROXY_SS_LOG(INFO, "request has been canceled and destroyed", K_(ss_id), K_(server_ip), K_(local_ip));
+        } else if (request->get_sm_state() <= ObRpcReq::RpcReqSmState::RPC_REQ_SM_ADDR_SEARCH && request->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
+          PROXY_SS_LOG(WDIAG, "setup sever send request, but request state is not ready", K_(ss_id), K_(server_ip), K_(local_ip), K(request), "rpc_trace_id", request->get_trace_id());
+          ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+          request->cleanup(cleanup_params);
         } else {
+          if (OB_ISNULL(request->get_snet_sm())) {
+            request->snet_sm_ = this;
+          }
           const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
           if (!request->is_use_request_inner_buf()) {
             buf = request->get_request_buf();
@@ -639,7 +651,7 @@ int ObRpcServerNetHandler::setup_server_request_send()
 
             obkv_info.server_info_.set_addr(rpc_net_vc_->get_remote_addr());
             obkv_info.server_info_.set_obproxy_addr(rpc_net_vc_->get_local_addr());
-            if (send_timeout > request->get_rpc_request()->get_packet_meta().rpc_header_.timeout_ 
+            if (OB_NOT_NULL(request->get_rpc_request()) && send_timeout > request->get_rpc_request()->get_packet_meta().rpc_header_.timeout_
                   && request->get_rpc_request()->get_packet_meta().rpc_header_.timeout_ > 0) {
               //update min send_timeout value
               send_timeout = request->get_rpc_request()->get_packet_meta().rpc_header_.timeout_;
@@ -672,6 +684,8 @@ int ObRpcServerNetHandler::setup_server_request_send()
       
       // push need send requests back to waiting list 
       if (OB_FAIL(ret) && !need_send_req_list_.empty()) {
+        int tmp_ret = ret;
+        ret = OB_SUCCESS;
         PROXY_SS_LOG(WDIAG, "need send request list is not empty", K_(ss_id), K_(server_ip), K_(local_ip), K_(need_send_req_list), K(ret));
         while (OB_SUCC(ret) && !need_send_req_list_.empty()) {
           ObRpcReq *need_send_req = NULL;
@@ -684,6 +698,7 @@ int ObRpcServerNetHandler::setup_server_request_send()
                          K(ret), "rpc_trace_id", need_send_req->get_trace_id());
           }
         }
+        ret = tmp_ret;
       }
       if (OB_SUCC(ret)) {
         MUTEX_TRY_LOCK(lock, rpc_net_vc_->mutex_, create_thread_);
@@ -1043,11 +1058,13 @@ int ObRpcServerNetHandler::state_server_response_read(int event, void *data)
               PROXY_SS_LOG(WDIAG, "rpc_req is NULL", K_(ss_id), K_(server_ip), K_(local_ip), K(ret), KPC(rpc_req));
             } else {
               const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
-              if (rpc_req->canceled()) {
+              if (rpc_req->canceled() && rpc_req->magic_ == RPC_REQ_MAGIC_ALIVE) {
                 PROXY_SS_LOG(INFO, "client request has been canceled", K_(ss_id), K_(server_ip), K_(local_ip), K(this), "rpc_req", *rpc_req,
                             K(request_id), K(rpc_trace_id));
                 ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
                 rpc_req->cleanup(cleanup_params);
+              } else if (rpc_req->canceled()) {
+                PROXY_SS_LOG(INFO, "client request has been canceled and destroyed", K_(ss_id), K_(server_ip), K_(local_ip), K(this));
               } else {
                 if (OB_NOT_NULL(request_sm = reinterpret_cast<ObRpcRequestSM *>(rpc_req->sm_))
                     && rpc_req->get_origin_channel_id() == request_sm->get_rpc_req_origin_channel_id()) {
@@ -1171,8 +1188,11 @@ int ObRpcServerNetHandler::state_server_request_send(int event, void *data)
             PROXY_SS_LOG(DEBUG, "ObRpcServerNetHandler::state_server_request_send request is NULL",
                          K_(ss_id), K_(server_ip), K_(local_ip), K(event), K(data), K(ret));
           } else {
-            const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();            
-            if (OB_UNLIKELY(request->canceled())) {
+            const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
+            if (OB_UNLIKELY(request->magic_ == RPC_REQ_SM_MAGIC_DEAD)) {
+              PROXY_SS_LOG(INFO, "ObRpcServerNetHandler::state_server_request_send request has been cleaned",
+                           K_(ss_id), K_(server_ip), K_(local_ip), K(event), K(data), K(rpc_trace_id));
+            } else if (OB_UNLIKELY(request->canceled())) {
               PROXY_SS_LOG(INFO, "ObRpcServerNetHandler::state_server_request_send request has canceled",
                            K_(ss_id), K_(server_ip), K_(local_ip), K(event), K(data), K(rpc_trace_id));
               ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
@@ -1397,24 +1417,6 @@ int ObRpcServerNetHandler::handle_request_rewrite_channel_id(ObRpcReq *request)
   return ret;
 }
 
-int ObRpcServerNetHandler::handle_response_recover_channel_id(ObRpcReq *request, uint32_t origin_id)
-{
-  int ret = OB_SUCCESS;
-  int64_t pos = ObRpcEzHeader::RPC_PKT_CHANNEL_ID_POS;
-  //ASSERT request not NULL 
-
-  //response not use inner_req_buf any more
-  if (OB_FAIL(common::serialization::encode_i32(request->get_request_buf(), request->get_request_buf_len(),
-                                                  pos, origin_id))) {
-    PROXY_SS_LOG(WDIAG, "ObRpcServerNetHandler handle ", K_(ss_id), K_(server_ip), K_(local_ip),
-                 "rpc_trace_id", request->get_trace_id());
-  } else {
-    request->set_origin_channel_id(origin_id);
-  }
-
-  return ret;
-}
-
 const char *ObRpcServerNetHandler::get_read_state_str() const
 {
   const char *states[MCS_MAX + 1] = {"MCS_INIT",
@@ -1458,28 +1460,28 @@ int64_t ObRpcServerNetHandler::to_string(char *buf, const int64_t buf_len) const
 inline bool ObRpcServerNetHandler::need_close() const
 {
   bool bret = false;
-  const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-  if (OB_UNLIKELY(info.graceful_exit_start_time_ > 0)
-      && OB_LIKELY(!info.need_conn_accept_)
-      && info.active_client_vc_count_ > 0
-      && OB_LIKELY(info.graceful_exit_end_time_ > info.graceful_exit_start_time_)) {
-    int64_t current_active_count = 0;
-    NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, current_active_count);
-    const ObHRTime remain_time = info.graceful_exit_end_time_ - get_hrtime();
-    const ObHRTime total_time = info.graceful_exit_end_time_ - info.graceful_exit_start_time_;
-    //use CEIL way
-    const int64_t need_active_count = 
-      static_cast<int64_t>((remain_time * info.active_client_vc_count_ + total_time - 1) / total_time);
-    if (remain_time < 0) {
-      bret = true;
-      PROXY_SS_LOG(INFO, "client need force close", K_(ss_id), K_(server_ip), K_(local_ip), K(current_active_count),
-                   "remain_time(ms)", hrtime_to_msec(remain_time));
-    } else if (current_active_count > need_active_count) {
-      bret = true;
-      PROXY_SS_LOG(INFO, "client need orderly close", K_(ss_id), K_(server_ip), K_(local_ip), K(current_active_count),
-                   K(need_active_count), "remain_time(ms)", hrtime_to_msec(remain_time));
-    } else {/*do nothing*/}
-  }
+  // const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
+  // if (OB_UNLIKELY(info.graceful_exit_start_time_ > 0)
+  //     && OB_LIKELY(!info.need_conn_accept_)
+  //     && info.active_client_vc_count_ > 0
+  //     && OB_LIKELY(info.graceful_exit_end_time_ > info.graceful_exit_start_time_)) {
+  //   int64_t current_active_count = 0;
+  //   NET_READ_GLOBAL_DYN_SUM(NET_GLOBAL_CLIENT_CONNECTIONS_CURRENTLY_OPEN, current_active_count);
+  //   const ObHRTime remain_time = info.graceful_exit_end_time_ - get_hrtime();
+  //   const ObHRTime total_time = info.graceful_exit_end_time_ - info.graceful_exit_start_time_;
+  //   //use CEIL way
+  //   const int64_t need_active_count =
+  //     static_cast<int64_t>((remain_time * info.active_client_vc_count_ + total_time - 1) / total_time);
+  //   if (remain_time < 0) {
+  //     bret = true;
+  //     PROXY_SS_LOG(INFO, "client need force close", K_(ss_id), K_(server_ip), K_(local_ip), K(current_active_count),
+  //                  "remain_time(ms)", hrtime_to_msec(remain_time));
+  //   } else if (current_active_count > need_active_count) {
+  //     bret = true;
+  //     PROXY_SS_LOG(INFO, "client need orderly close", K_(ss_id), K_(server_ip), K_(local_ip), K(current_active_count),
+  //                  K(need_active_count), "remain_time(ms)", hrtime_to_msec(remain_time));
+  //   } else {/*do nothing*/}
+  // }
   return bret;
 }
 
@@ -1739,6 +1741,43 @@ void ObRpcServerNetHandler::clean_all_timeout_request()
   }
 }
 
+int ObRpcServerNetHandler::cleanup_request_in_server_handing(ObRpcReq *request)
+{
+  int ret = OB_SUCCESS;
+  //TODO check this_ethead == execute_thread
+  if (OB_NOT_NULL(request) && request->get_snet_sm() == this) {
+    uint32_t channel_id = request->get_obkv_info().server_request_id_;
+    ObRpcReq *cache_request = NULL;
+    const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
+    if (OB_FAIL(cid_to_req_map_.erase_refactored(channel_id, &cache_request))) {
+      if (OB_HASH_NOT_EXIST == ret) {
+        PROXY_SS_LOG(DEBUG, "client request has been delete maybe timeout", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(request),
+                    K(ret), K(channel_id), K(cid_to_req_map_.size()), K(rpc_trace_id));
+        ret = OB_SUCCESS;
+        RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      } else {
+        PROXY_SS_LOG(WDIAG, "fail to call erase_refactored", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret), K(channel_id),
+                    K(cid_to_req_map_.size()), K(rpc_trace_id));
+      }
+    } else if (request != cache_request) {
+      const ObRpcReqTraceId &rpc_trace_id2 = cache_request->get_trace_id();
+      ret = OB_ERR_UNEXPECTED;
+      request->snet_sm_ = NULL;
+      cache_request->snet_sm_ = NULL;
+      RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      RPC_REQ_SNET_ENTER_STATE(cache_request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      PROXY_SS_LOG(EDIAG, "invalid request to cleanup in server net", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret),
+                  K(request), K(cache_request), K(rpc_trace_id), K(rpc_trace_id2));
+    } else {
+      request->snet_sm_ = NULL;
+      RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      PROXY_SS_LOG(DEBUG, "rpc request to cleanup in server net", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret),
+                   K(request), K(rpc_trace_id));
+    }
+  }
+  return ret;
+}
+
 int ObRpcServerNetTableEntry::schedule_period_task()
 {
   int ret = OB_SUCCESS;
@@ -1748,7 +1787,10 @@ int ObRpcServerNetTableEntry::schedule_period_task()
     ret = OB_ERR_UNEXPECTED;
     PROXY_LOG(WDIAG, "period_task_action must be NULL here", K(this), K_(server_ip),
               K_(period_task_action), K(ret));
-  } else if (OB_ISNULL(create_thread_) || create_thread_ != this_ethread()) {
+  } else if (OB_ISNULL(create_thread_)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WDIAG, "ObRpcServerNetTableEntry::schedule_period_task create_thread is NULL", K(this), K_(server_ip), K(ret));
+  } else if (create_thread_ != this_ethread()) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_LOG(WDIAG, "ObRpcServerNetTableEntry::schedule_period_task get wrong thread", K(this),
               K_(server_ip), KP_(create_thread), KP(this_ethread()));
@@ -1809,10 +1851,13 @@ int ObRpcServerNetTableEntry::schedule_pend_request_task()
   if (OB_UNLIKELY(NULL != pend_request_action_)) {
     PROXY_LOG(DEBUG, "pend_request_action NULL here, for has other request to handle", K(this), K_(server_ip),
               K_(pend_request_action), K(ret));
-  } else if (OB_ISNULL(create_thread_) || create_thread_ != this_ethread()) {
+  } else if (OB_ISNULL(create_thread_)) {
     ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WDIAG, "ObRpcServerNetTableEntry::schedule_period_task get wrong thread", K(this),
-              K_(server_ip), KP_(create_thread), KP(this_ethread()));
+    PROXY_LOG(WDIAG, "ObRpcServerNetTableEntry::schedule_pend_request_task create_thread is NULL", K(this), K_(server_ip), K(ret));
+  } else if (create_thread_ != this_ethread()) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_LOG(WDIAG, "ObRpcServerNetTableEntry::schedule_pend_request_task get wrong thread", K(this),
+              K_(server_ip), KP(create_thread_), KP(this_ethread()));
   } else if (OB_ISNULL(pend_request_action_ =
              self_ethread().schedule_in(this, task_time, RPC_SERVER_NET_TABLE_ENTRY_RETRY_PENDING_REREQUST))) {
     ret = OB_ERR_UNEXPECTED;
@@ -1876,7 +1921,7 @@ int ObRpcServerNetTableEntry::handle_pend_request_task()
 
   force_retry_waiting_link(true);
 
-  do_entry_close();
+  clean_all_server_entry();
   return ret;
 }
 
@@ -1962,6 +2007,9 @@ int ObRpcServerNetTableEntry::add_req_to_waiting_link(ObRpcReq *rpc_req)
   if (OB_ISNULL(rpc_req)) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_SS_LOG(WDIAG, "rpc_req is NULL to add waiting list", K(this), K_(server_ip), K(ret));
+  } else if (rpc_req->get_sm_state() <= ObRpcReq::RpcReqSmState::RPC_REQ_SM_ADDR_SEARCH || rpc_req->magic_ == RPC_REQ_SM_MAGIC_DEAD) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_SS_LOG(WDIAG, "rpc_req is not ready to add waiting list", K(this), K_(server_ip), K(ret), K(rpc_req), "rpc_trace_id", rpc_req->get_trace_id());
   } else if (OB_FAIL(waiting_req_list_.push_back(rpc_req))) {
     PROXY_SS_LOG(WDIAG, "fail to enqueue request to waiting list", K(this), K_(server_ip), K(ret),
                  KP(rpc_req));
@@ -2087,66 +2135,67 @@ int ObRpcServerNetTableEntry::remove_server_entry(ObRpcServerNetHandler *entry)
 int ObRpcServerNetTableEntry::handle_rpc_request(ObRpcReq &request)
 {
   int ret = OB_SUCCESS;
-  ObRpcReq *req = &request;
-  const ObRpcReqTraceId &rpc_trace_id = request.get_trace_id();
-  renew_last_access_time();
-  if (OB_UNLIKELY(request.canceled())) {
-    PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntry::handle_rpc_request get a canceled request", K(this),
-                 K_(server_ip), K(request), K(rpc_trace_id));
-    request.server_net_cancel_request();
-    ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-    request.cleanup(cleanup_params);
-  } else {
-    PROXY_SS_LOG(DEBUG, "handle the new rpc request in server table entry", K(this), K_(server_ip), K(request),
-                 "addr", request.get_server_addr().addr_, K(rpc_trace_id));
-    ObRpcServerNetHandler *server_net_handler = NULL;
-    // TODO: 实时生效，缩放
-    max_server_entry_count_ = get_global_proxy_config().rpc_max_server_table_entry_num;
+  UNUSED(request);
+  // ObRpcReq *req = &request;
+  // const ObRpcReqTraceId &rpc_trace_id = request.get_trace_id();
+  // renew_last_access_time();
+  // if (OB_UNLIKELY(request.canceled())) {
+  //   PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntry::handle_rpc_request get a canceled request", K(this),
+  //                K_(server_ip), K(request), K(rpc_trace_id));
+  //   request.server_net_cancel_request();
+  //   ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+  //   request.cleanup(cleanup_params);
+  // } else {
+  //   PROXY_SS_LOG(DEBUG, "handle the new rpc request in server table entry", K(this), K_(server_ip), K(request),
+  //                "addr", request.get_server_addr().addr_, K(rpc_trace_id));
+  //   ObRpcServerNetHandler *server_net_handler = NULL;
+  //   // TODO: 实时生效，缩放
+  //   max_server_entry_count_ = get_global_proxy_config().rpc_max_server_table_entry_num;
 
-    if (OB_ISNULL(server_net_handler = pop_free_server_entry())) {
-      PROXY_SS_LOG(DEBUG, "no free server net handler to get", K(this), K_(server_ip), K(request),
-                   K_(cur_server_entry_count), K_(max_server_entry_count), K(rpc_trace_id));
-      if (OB_FAIL(add_req_to_waiting_link(&request))) {
-        PROXY_SS_LOG(WDIAG, "server request push it to the waiting list failed", K(this), K_(server_ip),
-                    K(request), K(rpc_trace_id));
-      } else if (cur_server_entry_count_ < max_server_entry_count_) {
-        if (OB_FAIL(connect_to_observer())) { //add one server entry to this
-          PROXY_SS_LOG(WDIAG, "failed to  call connect_to_observer", K(this), K_(server_ip), K(request),
-                       K(ret), K(rpc_trace_id));
-        }
-      } else {
-        //TODO need calc pending request, and init time
-        PROXY_SS_LOG(DEBUG, "server is busy handing the request, and need to wait",
-            K(this), K_(server_ip), K(request), K_(cur_server_entry_count), K_(max_server_entry_count),
-            "waiting_count", waiting_req_list_.size(), K(rpc_trace_id));
-      }
-    } else if (OB_FAIL(server_net_handler->need_send_req_list_.push_back(&request))) { //put it to waiting list
-      PROXY_SS_LOG(WDIAG, "fail to push back requset", K(this), K_(server_ip), K(request),
-                   K(ret), K(rpc_trace_id));
-    } else {
-      RPC_REQ_SNET_ENTER_STATE(req, ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_LOOKUP_DONE);
-      server_net_handler->handle_event(RPC_SERVER_NET_REQUEST_SEND);
-    }
+  //   if (OB_ISNULL(server_net_handler = pop_free_server_entry())) {
+  //     PROXY_SS_LOG(DEBUG, "no free server net handler to get", K(this), K_(server_ip), K(request),
+  //                  K_(cur_server_entry_count), K_(max_server_entry_count), K(rpc_trace_id));
+  //     if (OB_FAIL(add_req_to_waiting_link(&request))) {
+  //       PROXY_SS_LOG(WDIAG, "server request push it to the waiting list failed", K(this), K_(server_ip),
+  //                   K(request), K(rpc_trace_id));
+  //     } else if (cur_server_entry_count_ < max_server_entry_count_) {
+  //       if (OB_FAIL(connect_to_observer())) { //add one server entry to this
+  //         PROXY_SS_LOG(WDIAG, "failed to  call connect_to_observer", K(this), K_(server_ip), K(request),
+  //                      K(ret), K(rpc_trace_id));
+  //       }
+  //     } else {
+  //       //TODO need calc pending request, and init time
+  //       PROXY_SS_LOG(DEBUG, "server is busy handing the request, and need to wait",
+  //           K(this), K_(server_ip), K(request), K_(cur_server_entry_count), K_(max_server_entry_count),
+  //           "waiting_count", waiting_req_list_.size(), K(rpc_trace_id));
+  //     }
+  //   } else if (OB_FAIL(server_net_handler->need_send_req_list_.push_back(&request))) { //put it to waiting list
+  //     PROXY_SS_LOG(WDIAG, "fail to push back requset", K(this), K_(server_ip), K(request),
+  //                  K(ret), K(rpc_trace_id));
+  //   } else {
+  //     RPC_REQ_SNET_ENTER_STATE(req, ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_LOOKUP_DONE);
+  //     server_net_handler->handle_event(RPC_SERVER_NET_REQUEST_SEND);
+  //   }
 
-    if (OB_FAIL(ret)) {
-      // clean waiting link
-      PROXY_SS_LOG(WDIAG, "error in ObRpcServerNetTableEntry::handle_rpc_request, clean waiting link",
-                   K(this), K_(server_ip), K(request), K(ret), K(rpc_trace_id));
-      if (ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_WARTING == request.get_snet_state()) {
-        int tmp_ret = ret;
-        ObRpcReq *tmp_req = NULL;
-        if (OB_FAIL(pop_back_req_from_waiting_link(tmp_req))) {
-          PROXY_SS_LOG(WDIAG, "fail to pop req from waiting link", K(this), K_(server_ip), K(tmp_req),
-                       K(ret), K(rpc_trace_id));
-        } else if (tmp_req != req) {
-          ret = OB_ERR_UNEXPECTED;
-          PROXY_SS_LOG(WDIAG, "req is not equal to tmp_req", K(this), K_(server_ip), K(tmp_req), K(req),
-                       K(ret), K(rpc_trace_id));
-        }
-        ret = tmp_ret;
-      }
-    }
-  }
+  //   if (OB_FAIL(ret)) {
+  //     // clean waiting link
+  //     PROXY_SS_LOG(WDIAG, "error in ObRpcServerNetTableEntry::handle_rpc_request, clean waiting link",
+  //                  K(this), K_(server_ip), K(request), K(ret), K(rpc_trace_id));
+  //     if (ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_WARTING == request.get_snet_state()) {
+  //       int tmp_ret = ret;
+  //       ObRpcReq *tmp_req = NULL;
+  //       if (OB_FAIL(pop_back_req_from_waiting_link(tmp_req))) {
+  //         PROXY_SS_LOG(WDIAG, "fail to pop req from waiting link", K(this), K_(server_ip), K(tmp_req),
+  //                      K(ret), K(rpc_trace_id));
+  //       } else if (tmp_req != req) {
+  //         ret = OB_ERR_UNEXPECTED;
+  //         PROXY_SS_LOG(WDIAG, "req is not equal to tmp_req", K(this), K_(server_ip), K(tmp_req), K(req),
+  //                      K(ret), K(rpc_trace_id));
+  //       }
+  //       ret = tmp_ret;
+  //     }
+  //   }
+  // }
   return ret;
 }
 
@@ -2162,6 +2211,7 @@ int ObRpcServerNetTableEntry::handle_send_request() /* need to reschedule rpc_re
     ObRpcServerNetHandler *server_net_handler = NULL;
     // max_server_entry_count_ = 1; //default value
     max_server_entry_count_ = get_global_proxy_config().rpc_max_server_table_entry_num;
+    server_connect_begin_us_ = ObRpcRequestSM::static_get_based_hrtime();
 
     if (OB_ISNULL(server_net_handler = pop_free_server_entry())) {
       PROXY_SS_LOG(DEBUG, "no free server net handler to get", K(this), K_(server_ip), K_(cur_server_entry_count),
@@ -2220,7 +2270,7 @@ void ObRpcServerNetTableEntry::force_retry_waiting_link(bool server_failed)
   while (OB_SUCC(ret) && !waiting_req_list_.empty()) {
     if (OB_LIKELY(OB_SUCC(waiting_req_list_.pop_front(request)) && OB_NOT_NULL(request))) {
       const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
-      const ObRpcOBKVInfo &obkv_info = request->get_obkv_info();
+      // const ObRpcOBKVInfo &obkv_info = request->get_obkv_info();
       request->set_server_failed(server_failed);
       int64_t current_time = ObRpcRequestSM::static_get_based_hrtime();
       int64_t pending_time = current_time - request->server_timestamp_.server_begin_;
@@ -2228,12 +2278,15 @@ void ObRpcServerNetTableEntry::force_retry_waiting_link(bool server_failed)
       PROXY_SS_LOG(WDIAG, "cur request has pending in server entry to timeout",
         K_(server_ip), "pending_time_us", common::hrtime_to_usec(pending_time), KPC(request));
 
-      if ((request->canceled() || !obkv_info.is_rpc_req_can_retry())) {
+      // request has not send to server, need retry when not canceled(needn't check obkv_info.is_rpc_req_can_retry())
+      if (request->canceled() && request->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
         request->server_net_cancel_request();
         PROXY_SS_LOG(INFO, "request can not retry, cleanup directly", K(request), K(rpc_trace_id));
         ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
         request->cleanup(cleanup_params);
 
+      } else if (request->canceled()) {
+        PROXY_SS_LOG(INFO, "request has been canceled and destroyed", K_(server_ip), K_(local_ip), K(this));
       } else {
         RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_INIT); //clean state for server net
         if (OB_ISNULL(request_sm = request->get_request_sm())) {
@@ -2255,6 +2308,27 @@ void ObRpcServerNetTableEntry::do_entry_close()
 {
   int ret = OB_SUCCESS;
   PROXY_SS_LOG(INFO, "server table entry handle do_entry_close", K(this), K_(server_ip), K(*this));
+
+  clean_all_server_entry();
+
+  if (OB_SUCC(ret)) {
+    PROXY_SS_LOG(INFO, "try to clean all waiting req", K(this), K_(server_ip), K_(waiting_req_list));
+    if (OB_FAIL(clean_all_pending_request())) {
+      PROXY_SS_LOG(WDIAG, "fail to clean up all waiting request", K(this), K_(server_ip), K(ret));
+    } else if (OB_FAIL(cancel_period_task())) {
+      PROXY_SS_LOG(WDIAG, "fail to cancel period task", K(this), K_(server_ip), K(ret));
+    } else if (OB_FAIL(cancel_send_request_action())) {
+      PROXY_SS_LOG(WDIAG, "fail to cancel pending action", K(this), K_(server_ip), K(ret));
+    } else if (OB_FAIL(cancel_pend_request_task())) {
+      PROXY_SS_LOG(WDIAG, "fail to cancel pending action", K(this), K_(server_ip), K(ret));
+    }
+  }
+  destroy();
+}
+
+void ObRpcServerNetTableEntry::clean_all_server_entry()
+{
+  PROXY_SS_LOG(INFO, "now clean all server entry", K(this), K_(server_ip), K(*this));
   ObRpcServerNetHandler *server_net_handler = NULL;
 
   while (!all_server_list_.empty()) {
@@ -2271,20 +2345,6 @@ void ObRpcServerNetTableEntry::do_entry_close()
     PROXY_SS_LOG(WDIAG, "cur server net handler count is not zero, it should not happen", K(this),
                  K_(server_ip), K(cur_server_entry_count_));
   }
-
-  if (OB_SUCC(ret)) {
-    PROXY_SS_LOG(INFO, "try to clean all waiting req", K(this), K_(server_ip), K_(waiting_req_list));
-    if (OB_FAIL(clean_all_pending_request())) {
-      PROXY_SS_LOG(WDIAG, "fail to clean up all waiting request", K(this), K_(server_ip), K(ret));
-    } else if (OB_FAIL(cancel_period_task())) {
-      PROXY_SS_LOG(WDIAG, "fail to cancel period task", K(this), K_(server_ip), K(ret));
-    } else if (OB_FAIL(cancel_send_request_action())) {
-      PROXY_SS_LOG(WDIAG, "fail to cancel pending action", K(this), K_(server_ip), K(ret));
-    } else if (OB_FAIL(cancel_pend_request_task())) {
-      PROXY_SS_LOG(WDIAG, "fail to cancel pending action", K(this), K_(server_ip), K(ret));
-    }
-  }
-  destroy();
 }
 
 int64_t ObRpcServerNetTableEntry::to_string(char *buf, const int64_t buf_len) const
@@ -2381,7 +2441,7 @@ int ObRpcServerNetTableEntry::clean_all_pending_request()
     ObRpcReqList::iterator end = waiting_req_list_.end();
     for (; iter != end; iter ++) {    
       rpc_req = *iter;
-      if (OB_NOT_NULL(rpc_req)) {
+      if (OB_NOT_NULL(rpc_req) && rpc_req->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
         PROXY_SS_LOG(INFO, "server net table entry to clean pending request", K(this), K_(server_ip),
                      "rpc_trace_id", rpc_req->get_trace_id());
         // rpc_req->server_net_cancel_request();  // server net done
@@ -2553,75 +2613,76 @@ int ObRpcServerNetTableEntryPool::event_handler(int event, void *data)
 int ObRpcServerNetTableEntryPool::handle_rpc_request(ObRpcReq &request)
 {
   int ret = OB_SUCCESS;
-  ObRpcReq *req = &request;
-  const ObRpcReqTraceId &rpc_trace_id = request.get_trace_id();
-  PROXY_SS_LOG(DEBUG, "handle the new rpc request", K(this),  "thread", this_ethread(),
-               K(request), K(rpc_trace_id));
-  if (OB_LIKELY(request.canceled())) {
-    PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntryPool::handle_rpc_request get a canceled request",
-                 K(this), K(request), K(rpc_trace_id));
-    request.server_net_cancel_request();
-    ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-    request.cleanup(cleanup_params);
-  } else {
-    ObRpcServerNetTableEntry *server_table_entry = NULL;
-    ObRpcServerNetHandleHashKey key;
-    ObIpEndpoint server_ip;
-    ops_ip_copy(server_ip, request.get_server_addr().addr_);
-    key.server_ip_ = &server_ip;
-    ObString &name = request.get_full_username();
-    key.auth_user_ = &name;
+  UNUSED(request);
+  // ObRpcReq *req = &request;
+  // const ObRpcReqTraceId &rpc_trace_id = request.get_trace_id();
+  // PROXY_SS_LOG(DEBUG, "handle the new rpc request", K(this),  "thread", this_ethread(),
+  //              K(request), K(rpc_trace_id));
+  // if (OB_LIKELY(request.canceled())) {
+  //   PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntryPool::handle_rpc_request get a canceled request",
+  //                K(this), K(request), K(rpc_trace_id));
+  //   request.server_net_cancel_request();
+  //   ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+  //   request.cleanup(cleanup_params);
+  // } else {
+  //   ObRpcServerNetTableEntry *server_table_entry = NULL;
+  //   ObRpcServerNetHandleHashKey key;
+  //   ObIpEndpoint server_ip;
+  //   ops_ip_copy(server_ip, request.get_server_addr().addr_);
+  //   key.server_ip_ = &server_ip;
+  //   ObString &name = request.get_full_username();
+  //   key.auth_user_ = &name;
 
-    if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
-      request.server_timestamp_.server_begin_ = ObRpcRequestSM::static_get_based_hrtime();
-    }
+  //   if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+  //     request.server_timestamp_.server_begin_ = ObRpcRequestSM::static_get_based_hrtime();
+  //   }
 
-    RPC_REQ_SNET_ENTER_STATE(req, ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_LOOKUP);
-    if (OB_ISNULL(server_table_entry = acquire_server_table_entry(key))) {
-      PROXY_SS_LOG(DEBUG, "new server table entry need to init", K(this), K(request), K(key),
-                   "thread", this_ethread(), K(rpc_trace_id));
-      // TODO: 考虑释放
-      server_table_entry = op_reclaim_alloc(ObRpcServerNetTableEntry);
-      if (OB_ISNULL(server_table_entry)) {
-        ret = OB_ALLOCATE_MEMORY_FAILED;
-        PROXY_SS_LOG(EDIAG, "failed to allocate memory for ObRpcServerNetTableEntry", K(this),
-                     "thread", this_ethread(), K(ret), K(rpc_trace_id));
-      } else if (FALSE_IT(server_table_entry->server_ip_.assign(request.get_server_addr().addr_.sa_))) {
-        // not here
-      } else if (put_server_table_entry(server_table_entry, key)) {
-        PROXY_SS_LOG(WDIAG, "fail to call put_server_table_entry", K(this), "thread", this_ethread(),
-                     K(ret), K(key), KP(server_table_entry), K(rpc_trace_id));
-      } else {
-        // success
-      }
-    }
+  //   RPC_REQ_SNET_ENTER_STATE(req, ObRpcReq::ServerNetState::RPC_REQ_SERVER_ENTRY_LOOKUP);
+  //   if (OB_ISNULL(server_table_entry = acquire_server_table_entry(key))) {
+  //     PROXY_SS_LOG(DEBUG, "new server table entry need to init", K(this), K(request), K(key),
+  //                  "thread", this_ethread(), K(rpc_trace_id));
+  //     // TODO: 考虑释放
+  //     server_table_entry = op_reclaim_alloc(ObRpcServerNetTableEntry);
+  //     if (OB_ISNULL(server_table_entry)) {
+  //       ret = OB_ALLOCATE_MEMORY_FAILED;
+  //       PROXY_SS_LOG(EDIAG, "failed to allocate memory for ObRpcServerNetTableEntry", K(this),
+  //                    "thread", this_ethread(), K(ret), K(rpc_trace_id));
+  //     } else if (FALSE_IT(server_table_entry->server_ip_.assign(request.get_server_addr().addr_.sa_))) {
+  //       // not here
+  //     } else if (put_server_table_entry(server_table_entry, key)) {
+  //       PROXY_SS_LOG(WDIAG, "fail to call put_server_table_entry", K(this), "thread", this_ethread(),
+  //                    K(ret), K(key), KP(server_table_entry), K(rpc_trace_id));
+  //     } else {
+  //       // success
+  //     }
+  //   }
 
-    if (OB_SUCC(ret)) {
-      if (OB_ISNULL(server_table_entry)) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_SS_LOG(WDIAG, "server table entry got is NULL", K(this), "thread", this_ethread(),
-                     K(request), K(rpc_trace_id));
-      } else {
-        PROXY_SS_LOG(DEBUG, "get a server table entry to handle request", K(this), "thread", this_ethread(),
-                     K(request), K(server_table_entry), "thread", this_ethread(),
-                     "addr", request.get_server_addr().addr_, K(rpc_trace_id));
-        if (OB_FAIL(server_table_entry->handle_rpc_request(request))) {
-          PROXY_SS_LOG(WDIAG, "server table entry handle rpc request failed", K(this),
-                       "thread", this_ethread(), K(request), K(rpc_trace_id));
-        }
-      }
-    }
-  }
+  //   if (OB_SUCC(ret)) {
+  //     if (OB_ISNULL(server_table_entry)) {
+  //       ret = OB_ERR_UNEXPECTED;
+  //       PROXY_SS_LOG(WDIAG, "server table entry got is NULL", K(this), "thread", this_ethread(),
+  //                    K(request), K(rpc_trace_id));
+  //     } else {
+  //       PROXY_SS_LOG(DEBUG, "get a server table entry to handle request", K(this), "thread", this_ethread(),
+  //                    K(request), K(server_table_entry), "thread", this_ethread(),
+  //                    "addr", request.get_server_addr().addr_, K(rpc_trace_id));
+  //       if (OB_FAIL(server_table_entry->handle_rpc_request(request))) {
+  //         PROXY_SS_LOG(WDIAG, "server table entry handle rpc request failed", K(this),
+  //                      "thread", this_ethread(), K(request), K(rpc_trace_id));
+  //       }
+  //     }
+  //   }
+  // }
 
-  if (OB_FAIL(ret)) {
-    // TODO: add return error to client
-    PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntryPool::handle_rpc_request get error request",
-                 K(this), K(request), K(rpc_trace_id));
-    // request.server_net_cancel_request();
-    // ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-    // request.cleanup(cleanup_params);
-    request.server_handle_request_failed();
-  }
+  // if (OB_FAIL(ret)) {
+  //   // TODO: add return error to client
+  //   PROXY_SS_LOG(INFO, "ObRpcServerNetTableEntryPool::handle_rpc_request get error request",
+  //                K(this), K(request), K(rpc_trace_id));
+  //   // request.server_net_cancel_request();
+  //   // ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+  //   // request.cleanup(cleanup_params);
+  //   request.server_handle_request_failed();
+  // }
 
   return ret;
 }

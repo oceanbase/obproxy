@@ -282,7 +282,6 @@ int ObConfigProcessor::execute(ObString &sql,
   if (need_change_sync_file) {
     get_global_proxy_config_table_processor().set_need_sync_to_file(true);
   }
-
   return ret;
 }
 
@@ -399,7 +398,9 @@ int ObConfigProcessor::parse_and_resolve_config(ParseResult& parse_result, const
         } else if (delete_stmt->has_unsupport_expr_type()
                    || delete_stmt->has_unsupport_expr_type_for_config()) {
           ret = OB_NOT_SUPPORTED;
-          LOG_WDIAG("insert stmt has unsupport expr type", K(ret));
+          LOG_WDIAG("delete stmt has unsupport expr type",
+          "has_unsupport_expr_type", delete_stmt->has_unsupport_expr_type(),
+          "has_unsupport_expr_type_for_config", delete_stmt->has_unsupport_expr_type_for_config(), K(ret));
         }
         stmt = delete_stmt;
         break;
@@ -502,6 +503,7 @@ int ObConfigProcessor::execute_and_commit_config(const ObString &sql, const ObCo
     LOG_WDIAG("sqlite3 exec commit or rollback failed", K(sqlite_err_code), K(proxy_config_db_), K(sql), "err_msg", err_msg);
     sqlite3_free(err_msg);
   }
+
   return ret;
 }
 
@@ -829,6 +831,34 @@ int ObConfigProcessor::get_proxy_config_int_item(const ObVipAddr &addr, const Ob
 
   return ret;
 }
+
+int ObConfigProcessor::delete_config_for_not_eq_version(const int64_t version)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(version <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid version to delete", K(version), K(ret));
+  } else {
+    // sqlite中info默认值是NULL，!=判断不会删除NULL值，所以无需再加特判
+    const char sql[] = "delete from proxy_config where info != '{\"version\": \"%ld\"}';";
+    char sql_buf[OB_SHORT_SQL_LENGTH] {};
+    int len = snprintf(sql_buf, sizeof(sql_buf), sql, version);
+    if (OB_UNLIKELY(0 >= len || len >= OB_SHORT_SQL_LENGTH)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to build sql buf", K(len), K(ret));
+    } else {
+      ObString sql_string(len, sql_buf);
+      if (OB_FAIL(execute(sql_string, OBPROXY_T_DELETE, NULL))) {
+        LOG_WDIAG("fail to execute delete_sql",
+                  K(sql_string), K(version), K(ret));
+      } else {
+        LOG_DEBUG("succ to exectute delete_sql", K(version), K(sql_string));
+      }
+    }
+  }
+  return ret;
+}
+
 
 int ObConfigProcessor::close_sqlite3()
 {

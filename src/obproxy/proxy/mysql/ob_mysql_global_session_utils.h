@@ -317,6 +317,10 @@ public:
                                    const common::ObString& logic_tenant_name);
 
   static int init_schema_key_value(ObProxySchemaKey& schema_key,
+                                   const common::ObString& tenant_name,
+                                   const common::ObString& cluster_name);
+
+  static int init_schema_key_value(ObProxySchemaKey& schema_key,
                                    const common::ObString& logic_tenant_name,
                                    const common::ObString& logic_database_name,
                                    dbconfig::ObShardConnector* shard_conn);

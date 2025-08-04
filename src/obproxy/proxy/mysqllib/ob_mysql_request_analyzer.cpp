@@ -139,15 +139,16 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
 
     status = result.status_;
     if (ANALYZE_DONE == status) {
-      LOG_DEBUG("mysql request packet is received complete", "is_handshake_req_phase", ctx.is_handshake_req_phase(),
+      LOG_DEBUG("mysql request packet is received complete",
+              "req_phase", ctx.request_phase_,
               "analyze status", ObProxyParserUtils::get_analyze_status_name(status),
               K(result.meta_), "packet cmd type",
               ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
     } else {
-      LOG_DEBUG("mysql request packet has not yet been received complete", "is_handshake_req_phase", ctx.is_handshake_req_phase(),
+      LOG_DEBUG("mysql request packet has not yet been received complete",
+                "req_phase", get_request_phase_string(ctx.request_phase_),
                 "analyze status", ObProxyParserUtils::get_analyze_status_name(status), K(avail_bytes),
-                K(result.meta_), "packet cmd type",
-                ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
+                K(result.meta_), "packet cmd type", ObProxyParserUtils::get_sql_cmd_name(result.meta_.cmd_));
     }
 
     if (OB_SUCC(ret) && (ANALYZE_DONE == status || ANALYZE_CONT == status)) {
@@ -662,9 +663,10 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
             }
             LOG_DEBUG("use_lower_case_name is ", K(use_lower_case_name), K(sql));
 
-            if (OB_FAIL(sql_parser.parse_sql(sql, ctx.parse_mode_, sql_parse_result,
+            if (OB_FAIL(sql_parser.parse_multi_stmt_sql(sql, ctx.parse_mode_, sql_parse_result,
                                              use_lower_case_name,
                                              ctx.connection_collation_,
+                                             client_request,
                                              ctx.drop_origin_db_table_name_,
                                              client_request.is_sharding_user()))) {
               LOG_WDIAG("fail to parse sql", K(sql), K(ret));
@@ -712,7 +714,7 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
     case OB_MYSQL_COM_RESET_CONNECTION:
     case OB_MYSQL_COM_INIT_DB: {
       if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
-        LOG_WDIAG("fail to add com request", K(ret));
+        LOG_WDIAG("fail to add com request", K(ret), K(ctx.reader_->read_avail()), K(ctx.request_buffer_length_));
       }
       break;
     }

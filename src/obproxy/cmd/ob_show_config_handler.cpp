@@ -75,6 +75,7 @@ enum
   OB_PC_NAME,
   OB_PC_VALUE,
   OB_PC_CONFIG_LEVEL,
+  OB_PC_VERSION,
   OB_PC_MAX_COLUMN_ID,
 };
 
@@ -104,6 +105,7 @@ const ObProxyColumnSchema ALL_CONFIG_COLUMN_ARAAY[OB_PC_MAX_COLUMN_ID] = {
     ObProxyColumnSchema::make_schema(OB_PC_NAME,          "name",           OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_PC_VALUE,         "value",          OB_MYSQL_TYPE_VARCHAR),
     ObProxyColumnSchema::make_schema(OB_PC_CONFIG_LEVEL,  "config_level",   OB_MYSQL_TYPE_VARCHAR),
+    ObProxyColumnSchema::make_schema(OB_PC_VERSION,       "version",        OB_MYSQL_TYPE_VARCHAR),
 };
 
 ObShowConfigHandler::ObShowConfigHandler(ObContinuation *cont, ObMIOBuffer *buf, const ObInternalCmdInfo &info)
@@ -546,6 +548,7 @@ int ObShowConfigHandler::dump_all_config_item(const omt::ObProxyConfigItem &item
   cells[OB_PC_NAME].set_varchar(item.config_item_.name());
   cells[OB_PC_VALUE].set_varchar(item.config_item_.str());
   cells[OB_PC_CONFIG_LEVEL].set_varchar(item.config_level_.ptr());
+  cells[OB_PC_VERSION].set_int(item.version_);
   row.cells_ = cells;
   row.count_ = OB_PC_MAX_COLUMN_ID;
   if (OB_FAIL(encode_row_packet(row))) {

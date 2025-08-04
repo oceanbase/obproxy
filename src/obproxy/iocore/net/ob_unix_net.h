@@ -48,6 +48,11 @@ extern ObHRTime last_transient_accept_error;
 class ObNetHandler;
 typedef int (ObNetHandler::*NetContHandler)(int event, void *data);
 
+// Set up a thread to receive events from the ObNetProcessor
+// This function should be called for all threads created to
+// accept such events by the ObEventProcesor.
+extern int initialize_thread_for_net(event::ObEThread *thread, NetContHandler handler_func = NULL);
+
 #define TRANSIENT_ACCEPT_ERROR_MESSAGE_EVERY      HRTIME_HOURS(24)
 #define NET_RETRY_DELAY                           HRTIME_MSECONDS(1)
 #define NET_PERIOD                               -HRTIME_MSECONDS(1)
@@ -109,7 +114,7 @@ public:
   virtual ~ObNetHandler() {}
 
   int start_net_event(int event, event::ObEvent *data);
-
+  int start_session_pool_event(int event, event::ObEvent *data);
 private:
   int main_net_event(int event, event::ObEvent *data);
   void process_enabled_list();

@@ -134,7 +134,7 @@ public:
   bool is_remote_readonly() const;
   bool is_no_route_info_found() const { return (NULL == table_entry_) || (table_entry_->is_partition_table() && NULL == part_entry_); }
   bool is_empty_entry_allowed() const { return NULL != table_entry_ && table_entry_->is_empty_entry_allowed(); }
-  bool is_all_iterate_once() const { return leader_item_.is_used_ && ldc_route_.is_reach_end(); }
+  bool is_all_iterate_once(bool is_need_check_leader_item = true) const { return (leader_item_.is_used_ || !is_need_check_leader_item) && ldc_route_.is_reach_end(); }
   void reset_cursor() { leader_item_.is_used_ = false; ldc_route_.reset_cursor(); }
   bool is_leader_existent() const { return (NULL != get_leader_replica()); }
   bool is_server_from_rslist() const;

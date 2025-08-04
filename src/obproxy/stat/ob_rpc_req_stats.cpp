@@ -32,6 +32,8 @@ namespace proxy
 
 ObRecRawStatBlock *rpc_req_rsb = NULL;
 
+thread_local int64_t ObRpcReqThreadStat::ObRpcReqStat[OB_MAX_TABLE_API_TYPE + 1][OB_RPC_REQ_MAX_STATE + 1] = {{0}};
+
 int init_rpc_req_stats()
 {
   int ret = OB_SUCCESS;
@@ -69,12 +71,15 @@ void ObRpcReqThreadQpsStat::update_async_thread_iso_range()
   async_thread_num = common::min(work_thread_num, async_thread_num);
   int64_t thread_range = 0;
   double rate = 0.0;
-  if (single_rpc_req_qps <= 0) {
-    thread_range = async_thread_num;
+  if (single_rpc_req_qps <= 0 || rpc_sub_req_weight == 0) {
+    // work thread is in low pressure, no need to adjust async thread isolation range
+    thread_range = 0;
+  } else if (rpc_sub_req_weight == 100) {
+    thread_range = async_thread_num > 0 ? async_thread_num : 0;
   } else if (async_thread_num > 0) {
     thread_range = 1;
     if (async_thread_num > 1) {
-      rate = (((double)shard_rpc_req_qps * 2 * (double)rpc_sub_req_weight) / ((double)single_rpc_req_qps * 10));
+      rate = (((double)shard_rpc_req_qps * 2 * (double)rpc_sub_req_weight * async_thread_num) / ((double)single_rpc_req_qps * 10 * work_thread_num));
       thread_range += rate * (async_thread_num - 1);
       thread_range = (thread_range > async_thread_num) ? async_thread_num : thread_range;
     }
@@ -102,10 +107,8 @@ void ObRpcReqThreadQpsStat::inc_rpc_req_stat(bool is_shard)
 {
   if (is_shard) {
     get_current_shard_rpc_req()++;
-    RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
   } else {
     get_current_single_rpc_req()++;
-    RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SINGLE_RPC_REQ);
   }
 
   ObRpcReqThreadQpsStat::update_last_sec_rpc_req_stat();
@@ -113,10 +116,27 @@ void ObRpcReqThreadQpsStat::inc_rpc_req_stat(bool is_shard)
 
 void ObRpcReqThreadQpsStat::dec_rpc_req_stat(bool is_shard)
 {
-  if (is_shard) {
-    RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SINGLE_RPC_REQ);
-  } else {
-    RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
+  UNUSED(is_shard);
+  // if (is_shard) {
+  //   RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SINGLE_RPC_REQ);
+  // } else {
+  //   RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
+  // }
+}
+
+void ObRpcReqThreadStat::update_rpc_req_state(ObRpcReqType type, ObRpcReqState cur_state, ObRpcReqState pre_state)
+{
+  if (cur_state != ObRpcReqState::OB_RPC_REQ_IN_ANALYZE_REQUEST) {
+    ObRpcReqStat[type][pre_state] --;
+    if (OB_LIKELY(type != ObRpcReqType::OB_MAX_TABLE_API_TYPE)) {
+      ObRpcReqStat[ObRpcReqType::OB_MAX_TABLE_API_TYPE][pre_state]--;
+    }
+  }
+  if (cur_state < ObRpcReqState::OB_RPC_REQ_MAX_STATE) {
+    ObRpcReqStat[type][cur_state] ++;
+    if (OB_LIKELY(type != ObRpcReqType::OB_MAX_TABLE_API_TYPE)) {
+      ObRpcReqStat[ObRpcReqType::OB_MAX_TABLE_API_TYPE][cur_state]++;
+    }
   }
 }
 

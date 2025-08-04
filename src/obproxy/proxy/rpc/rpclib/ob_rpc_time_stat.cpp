@@ -45,6 +45,7 @@ int64_t ObRpcReqCmdTimeStat::to_string(char *buf, const int64_t buf_len) const
 
   TO_STRING_TIME_US(build_server_request_time_);
   TO_STRING_TIME_US(server_init_time_);
+  TO_STRING_TIME_US(server_open_time_);
   TO_STRING_TIME_US(prepare_send_request_to_server_time_);
   TO_STRING_TIME_US(server_request_write_time_);
   TO_STRING_TIME_US(server_process_request_time_);

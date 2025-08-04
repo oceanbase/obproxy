@@ -160,6 +160,10 @@ public:
     CapabilitiesFlagUpper capability_flag_;
     uint16_t capability_;
   };
+  const static char *AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD; // Secure Password Authentication
+  const static char *AUTH_PLUGIN_MYSQL_OLD_PASSWORD;    // Old Password Authentication
+  const static char *AUTH_PLUGIN_MYSQL_CLEAR_PASSWORD;  // Clear Text Authentication
+  const static char *AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT; // Windows Native Authentication
 private:
   const char *get_handshake_inner_pulgin_name(const common::ObString outer_string) const;
 
@@ -167,10 +171,6 @@ private:
   DISALLOW_COPY_AND_ASSIGN(OMPKHandshake);
   static const char *SERVER_VERSION_STR;
 
-  const static char *AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD; // Secure Password Authentication
-  const static char *AUTH_PLUGIN_MYSQL_OLD_PASSWORD;    // Old Password Authentication
-  const static char *AUTH_PLUGIN_MYSQL_CLEAR_PASSWORD;  // Clear Text Authentication
-  const static char *AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT; // Windows Native Authentication
 
   //const static uint8_t DEFAULT_AUTH_PLUGIN_DATA_LEN = 8 + 13; // SCRAMBLE_SIZE + AUTH_SALT_SIZE 
 

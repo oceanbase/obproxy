@@ -107,9 +107,6 @@ int ObProxyRpcReqLSOp::handle_response_result(void *data, bool &is_final, proxy:
         ret = common::OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("not enougth alloc memory", K_(rpc_trace_id));
       } else {
-        // init rpc response 
-        rpc_response->get_ls_result().set_all_properties_names(request->get_operation().get_all_properties_names());
-        rpc_response->get_ls_result().set_all_rowkey_names(request->get_operation().get_all_rowkey_names());
 
         // handle error resp
         if (error_resp_count_ > 0) {
@@ -143,10 +140,26 @@ int ObProxyRpcReqLSOp::handle_response_result(void *data, bool &is_final, proxy:
         LOG_DEBUG("ls operation get result", "ls_result", rpc_response->get_ls_result(), K_(rpc_trace_id));
         // need to update sum of the length in meta
         if (OB_ISNULL(last_response)) {
+          // init rpc response
+          rpc_response->get_ls_result().set_all_properties_names(request->get_operation().get_all_properties_names());
+          rpc_response->get_ls_result().set_all_rowkey_names(request->get_operation().get_all_rowkey_names());
+
           /* just used rpc_request meta info when meet error */
           rpc_response->set_packet_meta(rpc_req->get_rpc_request()->get_packet_meta());
           rpc_response->get_packet_meta().rpc_header_.flags_ |= ObRpcPacketHeader::RESP_FLAG;
         } else {
+          // init rpc response
+          if (error_resp_count_ == 0) {
+            //by response
+            obkv::ObRpcTableLSOperationResponse *ls_response = dynamic_cast<obkv::ObRpcTableLSOperationResponse *>(last_response);
+            rpc_response->get_ls_result().set_all_properties_names(ls_response->get_ls_result().get_properties_names());
+            rpc_response->get_ls_result().set_all_rowkey_names(ls_response->get_ls_result().get_rowkey_names());
+          } else {
+            // by request
+            rpc_response->get_ls_result().set_all_properties_names(request->get_operation().get_all_properties_names());
+            rpc_response->get_ls_result().set_all_rowkey_names(request->get_operation().get_all_rowkey_names());
+          }
+
           rpc_response->set_packet_meta(last_response->get_packet_meta());
         }
 

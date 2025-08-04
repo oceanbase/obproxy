@@ -57,10 +57,11 @@ struct ObRpcServerMilestones
     MEMSET(this, 0, sizeof(ObRpcServerMilestones));
   }
 
-  TO_STRING_KV(K_(server_begin), K_(server_write_begin), K_(server_write_end), K_(server_read_begin), K_(server_read_end));
+  TO_STRING_KV(K_(server_begin), K_(server_write_begin), K_(server_connect_begin), K_(server_write_end), K_(server_read_begin), K_(server_read_end));
 
   // server entry time
   ObHRTime server_begin_;
+  ObHRTime server_connect_begin_;
 
   // server
   ObHRTime server_write_begin_;
@@ -175,6 +176,7 @@ struct ObRpcReqCmdTimeStat
 
   ObHRTime build_server_request_time_;
   ObHRTime server_init_time_;
+  ObHRTime server_open_time_;
   ObHRTime prepare_send_request_to_server_time_;
   ObHRTime server_request_write_time_;
 

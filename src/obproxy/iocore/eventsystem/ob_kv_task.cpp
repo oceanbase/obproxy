@@ -15,7 +15,7 @@
 #include "iocore/eventsystem/ob_kv_task.h"
 #include "iocore/eventsystem/ob_event_system.h"
 #include "proxy/mysql/ob_mysql_proxy_server_main.h"
-#include "iocore/net/ob_unix_net_processor.h"
+#include "iocore/net/ob_unix_net.h"
 
 using namespace oceanbase::common;
 

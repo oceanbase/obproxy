@@ -284,6 +284,7 @@ class ObRpcOBKVInfo
   static const int SCHEMA_LENGTH = 100;
 public:
   enum OBKVInfoFlags {
+    META_FLAG                    = 35,
     NON_PARTITION_TABLE_FLAG     = 34,
     HBASE_FLAG                   = 33,
     EMPTY_QUERY_RESULT_FLAG      = 32,
@@ -317,13 +318,13 @@ public:
 public:
   ObRpcOBKVInfo() :request_id_(0), server_request_id_(0), is_first_direct_load_request_(false), is_inner_request_(false),
                    is_internal_rpc_request_(false), is_internal_rpc_request_has_done_(false), is_rpc_request_with_partition_id_(false),
-                   is_table_group_request_(false), is_server_support_distributed_execute_(false), is_single_partition_table_(false),
+                   is_table_group_request_(false), is_server_support_distributed_execute_(false), is_single_partition_table_(false), is_shard_request_retry_(false),
                    cluster_name_(), tenant_name_(), user_name_(), table_name_(), database_name_(), full_username_(), tablegroup_new_table_name_(),
                    cluster_id_(0), tenant_id_(0), table_id_(0), partition_id_(common::OB_INVALID_INDEX), ls_id_(common::ObLSID::INVALID_LS_ID), client_info_(),
                    server_info_(), route_policy_(1), cs_read_consistency_(0), is_proxy_route_policy_set_(false),
                    is_read_consistency_set_(false), proxy_route_policy_(MAX_PROXY_ROUTE_POLICY), pcode_(obrpc::OB_INVALID_RPC_CODE),
                    flags_(0), rpc_origin_error_code_(0), rpc_request_retry_last_begin_(0), rpc_request_retry_times_(0),
-                   rpc_request_reroute_moved_times_(0), query_async_entry_(NULL), rpc_ctx_(NULL), data_table_id_(OB_INVALID_ID),
+                   rpc_request_reroute_moved_times_(0), rpc_request_route_calc_retry_times_(0), query_async_entry_(NULL), rpc_ctx_(NULL), data_table_id_(OB_INVALID_ID),
                    index_name_(), index_entry_(NULL), index_table_name_(), need_add_index_entry_into_cache_(false), tablegroup_entry_(NULL),
                    tablet_ls_entry_(NULL), dummy_ldc_(), dummy_entry_(NULL),
                    is_set_rpc_trace_id_(false), rpc_trace_id_(), credential_(), inner_req_retries_(0), is_rpc_req_stat_recorded_(false),
@@ -392,6 +393,7 @@ public:
   void set_direct_load_req(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::DIRECT_LOAD_FLAG), flag);}
   void set_empty_query_result(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::EMPTY_QUERY_RESULT_FLAG), flag);}
   void set_non_partition_table(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::NON_PARTITION_TABLE_FLAG), flag);}
+  void set_meta(const bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::META_FLAG), flag);}
 
   /* flag for response */
   void set_resp(bool flag) { set_flag(static_cast<int>(OBKVInfoFlags::RESP_FLAG), flag); }
@@ -409,6 +411,7 @@ public:
 
   /* flag for request */
   bool is_auth() const { return get_flag(static_cast<int>(OBKVInfoFlags::AUTH_FLAG)); }
+  bool is_meta() const { return get_flag(static_cast<int>(OBKVInfoFlags::META_FLAG)); }
   bool is_definitely_single() const { return get_flag(static_cast<int>(OBKVInfoFlags::SINGLE_FLAG)); }
   bool is_batch() const { return get_flag(static_cast<int>(OBKVInfoFlags::BATCH_FALG)); }
   bool is_shard() const { return get_flag(static_cast<int>(OBKVInfoFlags::SHARD_FLAG)); }
@@ -454,6 +457,7 @@ public:
             || get_error_code() == OB_TABLET_NOT_EXIST
             || get_error_code() == OB_LS_NOT_EXIST
             || get_error_code() == OB_PARTITION_NOT_EXIST
+            || get_error_code() == OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST
             ;
 }
 
@@ -511,6 +515,7 @@ public:
   bool is_table_group_request_;         //only used for hbase column family group
   bool is_server_support_distributed_execute_;
   bool is_single_partition_table_;
+  bool is_shard_request_retry_;         //only used for shard request retry
 
   common::ObString cluster_name_;
   common::ObString tenant_name_;
@@ -545,6 +550,7 @@ public:
   int64_t rpc_request_retry_last_begin_;
   int64_t rpc_request_retry_times_;
   int64_t rpc_request_reroute_moved_times_;
+  int64_t rpc_request_route_calc_retry_times_;
 
   ObTableQueryAsyncEntry *query_async_entry_;
   ObRpcReqCtx *rpc_ctx_;
@@ -836,6 +842,8 @@ public:
   void client_net_cancel_request();
   void cancel_request();
   void inc_req_buf_repeat_times() { req_buf_repeat_times_++; }
+  //to cleanup the request while server is handing but not return response, directly
+  void clean_server_handing_for_request();
 
   void set_cont_index(int64_t cont_index) { cont_index_ = cont_index; }
   void set_cluster_version(int64_t cluster_version) { cluster_version_ = cluster_version; }

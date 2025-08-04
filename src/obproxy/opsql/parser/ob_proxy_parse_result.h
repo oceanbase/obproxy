@@ -52,7 +52,7 @@ typedef enum ObProxyBasicStmtType
   OBPROXY_T_ICMD_SHOW_TRACE,
   OBPROXY_T_ICMD_SHOW_INFO,
   OBPROXY_T_ICMD_SHOW_PS,
-  OBPROXY_T_ICMD_SHOW_KV,
+  OBPROXY_T_ICMD_SHOW_RPC,
   OBPROXY_T_ICMD_ALTER_CONFIG,
   OBPROXY_T_ICMD_ALTER_RESOURCE,
   OBPROXY_T_ICMD_KILL_SESSION,
@@ -152,6 +152,7 @@ typedef enum ObProxyBasicStmtType
   OBRPC_OBKV_TABLE_API_DIRECT_LOAD,   //4387
   OBRPC_OBKV_TABLE_API_MOVE,          //4388
   OBRPC_OBKV_TABLE_API_LS_EXECUTE,    //4389
+  OBRPC_OBKV_TABLE_API_META_INFO_EXECUTE, //4392
 
   OBPROXY_T_MAX
 } ObProxyBasicStmtType;
@@ -159,6 +160,9 @@ typedef enum ObProxyBasicStmtType
 typedef enum ObProxyBasicStmtSubType
 {
   OBPROXY_T_SUB_INVALID = 0,
+
+  // sm
+  OBPROXY_T_SUB_PROXYSM_RPC,
 
   //net
   OBPROXY_T_SUB_NET_THREAD,
@@ -196,8 +200,9 @@ typedef enum ObProxyBasicStmtSubType
   //trace
   OBPROXY_T_SUB_TRACE_LIMIT,
 
-  // kv
+  // rpc
   OBPROXY_T_SUB_KV_THREAD,
+  OBPROXY_T_SUB_KV_REQUESTSTAT,
 
   //sqlaudit
   OBPROXY_T_SUB_SQLAUDIT_AUDIT_ID,
@@ -224,6 +229,10 @@ typedef enum ObProxyBasicStmtSubType
   OBPROXY_T_SUB_ROUTE_PARTITION,
   OBPROXY_T_SUB_ROUTE_ROUTINE,
   OBPROXY_T_SUB_ROUTE_GLOBALINDEX,
+  OBPROXY_T_SUB_ROUTE_TABLEGROUP,
+  OBPROXY_T_SUB_ROUTE_QUERYASYNC,
+  OBPROXY_T_SUB_ROUTE_TABLETLS,
+  OBPROXY_T_SUB_ROUTE_RPCCTX,
 
   //show
   OBPROXY_T_SUB_SHOW_DATABASES,
@@ -264,7 +273,6 @@ typedef enum ObProxyErrorStmtType
 typedef enum ObProxyParseMode
 {
   NORMAL_PARSE_MODE = 0,
-  IN_TRANS_PARSE_MODE,
 } ObProxyParseMode;
 
 //read consistency, we only support weak and strong now

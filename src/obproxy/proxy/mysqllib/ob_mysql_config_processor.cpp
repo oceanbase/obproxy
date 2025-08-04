@@ -71,6 +71,7 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     rpc_listen_port_(0),
     stack_size_(0),
     work_thread_num_(0),
+    session_pool_thread_num_(0),
     task_thread_num_(0),
     block_thread_num_(0),
     grpc_thread_num_(0),
@@ -176,6 +177,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(rpc_listen_port);
   CONFIG_ITEM_ASSIGN(stack_size);
   CONFIG_ITEM_ASSIGN(work_thread_num);
+  CONFIG_ITEM_ASSIGN(session_pool_thread_num);
   CONFIG_ITEM_ASSIGN(task_thread_num);
   CONFIG_ITEM_ASSIGN(block_thread_num);
   CONFIG_ITEM_ASSIGN(grpc_thread_num);
@@ -329,6 +331,7 @@ DEF_TO_STRING(ObMysqlConfigParams)
   J_COMMA();
   J_KV(K_(short_async_task_timeout), K_(short_async_task_timeout), K_(min_congested_connect_timeout),
        K_(tenant_location_valid_time), K_(local_bound_ip), K_(listen_port), K_(rpc_listen_port), K_(stack_size), K_(work_thread_num),
+       K_(session_pool_thread_num),
        K_(task_thread_num), K_(block_thread_num), K_(grpc_thread_num), K_(shard_scan_thread_num), K_(automatic_match_work_thread),
        K_(enable_congestion), K_(enable_bad_route_reject), K_(test_server_addr),
        K_(sqlaudit_mem_limited), K_(client_max_connections),

@@ -577,7 +577,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
         if (part_info.has_first_part()) {
           ObRowkey &start_eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].start_key_;
           ObRowkey &end_eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].end_key_;
-          const common::ObIArray<common::ObString> &part_columns = part_info.get_part_columns();
+          const common::ObIArray<common::ObString> &part_columns = part_info.get_first_part_columns();
           ObSEArray<int64_t, 1> rowkey_index;
           ObSEArray<int64_t, 1> part_info_index;
 

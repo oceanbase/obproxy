@@ -27,6 +27,7 @@
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx.h"
 #include "proxy/rpc/rpclib/ob_tablet_ls_entry.h"
 #include "proxy/rpc/ob_rpc_request_sm.h"
+#include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "obkv/table/ob_table_rpc_request.h"
 #include "obkv/table/ob_table_rpc_response.h"
 #include "stat/ob_rpc_req_stats.h"
@@ -237,6 +238,7 @@ int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpc
     } else {
       // success
       PROXY_LOG(DEBUG, "succ to init sub rpc req", "sub_rpc_req", *this);
+      RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
     }
   }
 
@@ -301,6 +303,9 @@ void ObRpcReq::destroy()
     }
     if (obkv_info_.is_rpc_req_stat_recorded_) {
       ObRpcReqThreadQpsStat::dec_rpc_req_stat(obkv_info_.is_shard());
+    }
+    if (obkv_info_.is_inner_request_) {
+      RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
     }
     RPC_REQ_DECREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_RPC_REQ);
 
@@ -463,11 +468,15 @@ void ObRpcReq::server_handle_request_failed()
 
   ObRpcRequestSM *request_sm = reinterpret_cast<ObRpcRequestSM *>(sm_);
 
-  if (canceled() || OB_ISNULL(request_sm)) {
-    //server cancel request
-    server_net_cancel_request();
-    ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-    cleanup(cleanup_params);
+  if (OB_LIKELY(RPC_REQ_MAGIC_ALIVE != magic_)) {
+    LOG_WDIAG("ObRpcReq::server_handle_request_failed but magic is error, maybe rpc req has been destroyed", K(magic_), K(this));
+  } else if ((canceled() || OB_ISNULL(request_sm))) {
+    if (magic_ == RPC_REQ_MAGIC_ALIVE) {
+      //server cancel request
+      server_net_cancel_request();
+      ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      cleanup(cleanup_params);
+    }
   } else {
     // return error to client / OB_ERR_KV_ODP_SERVER_NET_ERROR (-10654)
     request_sm->cancel_timeout_action();
@@ -584,6 +593,10 @@ int ObRpcReq::alloc_rpc_request()
         rpc_request_ = new (buf) ObRpcTableLSOperationRequest;
         break;
       }
+      case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+        rpc_request_ = new (buf) ObRpcTableMetaRequest;
+        obkv_info_.set_meta(true);
+        break;
       default:
         rpc_request_ = NULL;
         LOG_WDIAG("invalid rpc pcode", "pcode", obkv_info_.pcode_, K(ret), K(rpc_trace_id));
@@ -715,6 +728,29 @@ void ObRpcReq::inner_request_cleanup()
   if (OB_NOT_NULL(obkv_info.index_entry_)) {
     obkv_info.index_entry_->dec_ref();
     obkv_info.index_entry_ = NULL;
+  }
+}
+
+void ObRpcReq::clean_server_handing_for_request()
+{
+  int ret = OB_SUCCESS;
+  ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
+  ObRpcServerNetHandler *snet = NULL;
+  // only cleanup the request which has in server handing stage
+  if (OB_ISNULL(snet = get_snet_sm())) {
+    PROXY_LOG(WDIAG, "invalid to execute clean_server_handing_for_request, NULL snet sm",
+              "snet_sm", get_snet_sm(), K(rpc_trace_id));
+  } else if (get_snet_state() != RPC_REQ_SERVER_REQUST_SENDED) {
+    //skip to schedule cleanup directly
+    PROXY_LOG(DEBUG, "couldn't to execute clean_server_handing_for_request",
+              "snet_sm", get_snet_sm(), "snet_state", get_snet_state(),
+              K(rpc_trace_id));
+  } else if (OB_FAIL(snet->cleanup_request_in_server_handing(this))) {
+    PROXY_LOG(WDIAG, "failed to execute cleanup_request_in_server_handing", K(ret), K(snet),
+              K(rpc_trace_id));
+    //do nothing
+  } else {
+    PROXY_LOG(DEBUG,"succ to execute clean_server_handing_for_request", K(rpc_trace_id));
   }
 }
 

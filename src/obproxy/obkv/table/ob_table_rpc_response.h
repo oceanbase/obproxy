@@ -282,11 +282,30 @@ public:
   TO_STRING_KV(K_(route_res));
 
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
-  virtual int64_t get_encode_size() const;
+  virtual int64_t get_encode_size() const override;
   virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
 
 private:
   ObObkvRouteResult route_res_;
+};
+
+class ObRpcTableMetaResponse : public ObRpcResponse
+{
+public:
+  ObRpcTableMetaResponse() : meta_res_() {}
+  ~ObRpcTableMetaResponse() {}
+
+  const ObTableMetaResponse &get_meta_result() const {return meta_res_;}
+  ObTableMetaResponse &get_meta_result() {return meta_res_;}
+
+  TO_STRING_KV(K_(meta_res));
+
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const override;
+  virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
+
+private:
+  ObTableMetaResponse meta_res_;
 };
 
 

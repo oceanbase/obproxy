@@ -407,6 +407,7 @@ public:
   net::ObNetHandler *net_handler_;
   net::ObNetPoll *net_poll_;
   net::ObInactivityCop *inactivity_cop_;
+  ObContinuation *reset_conn_task_;
   proxy::ObMysqlClientSessionMap *cs_map_;
   proxy::ObRpcClientNetHandlerMap *rpc_net_cs_map_;
   proxy::ObRpcServerNetTableEntryPool *rpc_net_ss_map_;

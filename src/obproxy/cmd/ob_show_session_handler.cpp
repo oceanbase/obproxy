@@ -540,7 +540,7 @@ int ObShowSessionHandler::dump_cs_attribute(const ObMysqlClientSession &cs)
     const ObMysqlServerSession *svr_session = NULL;
     ObServerSessionType ss_type = OB_SST_INVAILED;
     //dump last used server session
-    if (NULL != (svr_session = cs.get_server_session())) {
+    if (NULL != (svr_session = cs.get_last_server_session())) {
       if (!lii_ss_found && lii_ss_id == svr_session->ss_id_) {
         lii_ss_found = true;
         ss_type = OB_SST_LAST_USED_AND_LII;
@@ -710,7 +710,7 @@ int ObShowSessionHandler::dump_cs_attribute_ss(const ObMysqlServerSession &svr_s
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("db_name_version", session_info.get_db_name_version(), info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
-      } else if (OB_FAIL(dump_cs_attribute_item("is_checksum_supported", static_cast<int64_t>(session_info.is_checksum_supported()), info))) {
+      } else if (OB_FAIL(dump_cs_attribute_item("is_compressed_mysql_supported", static_cast<int64_t>(session_info.is_compressed_mysql_supported()), info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));
       } else if (OB_FAIL(dump_cs_attribute_item("is_safe_read_weak_supported", static_cast<int64_t>(session_info.is_safe_read_weak_supported()), info))) {
         WDIAG_ICMD("fail to dump attribute item", K(info), K(ret));

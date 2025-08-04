@@ -67,12 +67,14 @@ void ObConnTableProcessor::destroy()
 }
 
 bool ObConnTableProcessor::check_and_inc_conn(
-    ObString& cluster_name, ObString& tenant_name, ObString& ip_name)
+    ObString& cluster_name, ObString& tenant_name, ObString& ip_name,
+    int64_t& cur_used_connections, int64_t& max_connections)
 {
   int ret = OB_SUCCESS;
   bool throttle = false;
   ObVipTenantConn* vt_conn = NULL;
-  int64_t cur_used_connections = 0;
+  cur_used_connections = 0;
+  max_connections = 0;
 
   if (OB_FAIL(inc_conn(cluster_name, tenant_name, ip_name, cur_used_connections))) {
     throttle = true;
@@ -89,12 +91,14 @@ bool ObConnTableProcessor::check_and_inc_conn(
         // 其他错误，拒绝接入
         dec_conn(cluster_name, tenant_name, ip_name);
         throttle = true;
+        LOG_WDIAG("fail to get_vt_conn_object", K(ret));
       }
     } else {
-      if (cur_used_connections <= vt_conn->max_connections_) {
+      max_connections = vt_conn->max_connections_;
+      if (cur_used_connections <= max_connections) {
         LOG_DEBUG("vip tenant connect info", K(cur_used_connections), KPC(vt_conn));
       } else {
-        LOG_WDIAG("used connections reach throttle", K(cur_used_connections), K(vt_conn->max_connections_), KPC(vt_conn));
+        LOG_WDIAG("used connections reach throttle", K(cur_used_connections), K(max_connections), KPC(vt_conn));
         dec_conn(cluster_name, tenant_name, ip_name);
         throttle = true;
       }

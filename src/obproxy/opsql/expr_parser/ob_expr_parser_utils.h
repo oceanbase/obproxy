@@ -57,7 +57,9 @@ void print_token_node(char *buf, const int64_t buf_len, int64_t &pos, const int6
         break;
 
       case TOKEN_COLUMN:
-        VBUF_PRINTF(" value:%.*s,\n", node->column_name_.str_len_, node->column_name_.str_);
+        VBUF_PRINTF(" table name:%.*s,", node->table_name_.str_len_, node->table_name_.str_);
+        VBUF_PRINTF(" column name:%.*s,", node->column_name_.str_len_, node->column_name_.str_);
+        VBUF_PRINTF(" part idx:%ld\n", node->part_key_idx_);
         break;
 
       case TOKEN_PLACE_HOLDER:
@@ -101,10 +103,11 @@ void print_relation(char *buf, const int64_t buf_len, int64_t &pos, const int64_
   VBUF_PRINTF("{\n");
   if (NULL != relation) {
     print_indent(buf, buf_len, pos, level + 1);
-    VBUF_PRINTF("level:%s\n", get_obproxy_part_key_level(relation->level_));
+    VBUF_PRINTF("type:%s\n", get_obproxy_function_type(relation->type_));
 
     print_indent(buf, buf_len, pos, level + 1);
-    VBUF_PRINTF("type:%s\n", get_obproxy_function_type(relation->type_));
+    VBUF_PRINTF("left_value:\n");
+    print_token_list(buf, buf_len, pos, level + 1, relation->left_value_);
 
     print_indent(buf, buf_len, pos, level + 1);
     VBUF_PRINTF("right_value:\n");
@@ -123,10 +126,17 @@ public:
   {
     int64_t pos = 0;
     J_OBJ_START();
-    VBUF_PRINTF("has_rowid_: %d\n", result_.has_rowid_);
-    for (int64_t i = 0; i < result_.relation_info_.relation_num_; ++i) {
-      print_relation(buf, buf_len, pos, 0, result_.relation_info_.relations_[i]);
+    VBUF_PRINTF("has_rowid_: %d,\n", result_.has_rowid_);
+
+    J_COMMA();
+    VBUF_PRINTF("\nall relation info:");
+    J_OBJ_START();
+    VBUF_PRINTF("\nrelation num:%ld", result_.all_relation_info_.relation_num_);
+    for (int64_t i = 0; i < result_.all_relation_info_.relation_num_; ++i) {
+      print_relation(buf, buf_len, pos, 0, result_.all_relation_info_.relations_[i]);
     }
+    J_OBJ_END();
+
     J_OBJ_END();
     return pos;
   }

@@ -21,11 +21,49 @@
 #include "lib/utility/ob_macro_utils.h"
 #include "lib/oblog/ob_log.h"
 #include "utils/ob_proxy_lib.h"
+#include "common/ob_common_utility.h"
 
 namespace oceanbase
 {
 namespace common
 {
+int light_backtrace(void **buffer, int size)
+{
+  int64_t rbp = 0;
+#if defined(__x86_64__)
+  asm("mov %%rbp, %0" : "=r"(rbp));
+#elif defined(__aarch64__)
+  asm("mov %0, x29" : "=r"(rbp));
+#endif
+  return light_backtrace(buffer, size, rbp);
+}
+
+int light_backtrace(void **buffer, int size, int64_t rbp)
+{
+  int rv = 0;
+  if (rv < size) {
+    int (*fp)(void**, int, int64_t) = light_backtrace;
+    buffer[rv++] = (void*)fp;
+  }
+  void *stack_addr = nullptr;
+  size_t stack_size = 0;
+  if (OB_LIKELY(OB_SUCCESS == get_stackattr(stack_addr, stack_size))) {
+#define addr_in_stack(addr) (addr >= (int64_t)stack_addr && addr < (int64_t)stack_addr + stack_size)
+    while (rbp != 0 && rv < size) {
+      if (!addr_in_stack(*(int64_t*)rbp) &&
+          !FALSE_IT(rbp += 16) &&
+          !addr_in_stack(*(int64_t*)rbp)) {
+        break;
+      } else {
+        int64_t return_addr = rbp + 8;
+        buffer[rv++] = (void*)*(int64_t*)return_addr;
+        rbp = *(int64_t*)rbp;
+      }
+    }
+  }
+  return rv;
+}
+
 int ob_backtrace(void **buffer, int size)
 {
   int rv = 0;

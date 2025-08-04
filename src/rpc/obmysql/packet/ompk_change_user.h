@@ -90,10 +90,23 @@ public:
   {
     return connect_attrs_;
   }
+
+  inline common::ObIArray<ObStringKV>& get_connect_attrs()
+  {
+    return connect_attrs_;
+  }
+
+  inline const common::ObString get_database()
+  {
+    return database_;
+  }
+  int add_connect_attr(const ObStringKV &string_kv);
   inline void set_capability_flag(const ObMySQLCapabilityFlags mysql_cap)
   {
     mysql_cap_ = mysql_cap;
   }
+
+  const uint16_t get_character_set() const { return character_set_; }
   virtual int64_t get_serialize_size() const;
   void reset_connect_attr() { connect_attrs_.reset(); }
 

@@ -144,7 +144,7 @@ struct TestFuncParam
     period_count_ = TEST_DEFAULT_PERIOD_COUNT;
     atimeout_ = 0;
     at_delta_ = HRTIME_SECONDS(2);
-    event_type_ = ET_CALL;
+    event_type_ = ET_NET;
     callback_event_ = EVENT_NONE;
     cookie_ = NULL;
     fast_signal_ = false;

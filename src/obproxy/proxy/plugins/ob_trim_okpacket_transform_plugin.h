@@ -165,7 +165,7 @@ public:
     ObMysqlClientSession *client_session = sm_->get_client_session();
     ObMysqlServerSession *server_session = sm_->get_server_session();
     if (NULL == server_session) {
-      server_session = client_session->get_server_session();
+      server_session = client_session->get_last_server_session();
     }
 
     if (NULL != client_session) {

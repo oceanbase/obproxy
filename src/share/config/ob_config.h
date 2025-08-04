@@ -257,7 +257,10 @@ public:
   bool set_value(const common::ObString &string);
   bool set_value(const char *str);
   bool set_name(const char *name);
+  bool set_name(const common::ObString &name);
   void reset();
+  ObString get_value() const { return value_str_; };
+  ObString get_name() const { return name_str_; };
   virtual const char *str() const { return value_str_.ptr(); }
   virtual const char *name() const { return name_str_.ptr(); }
 

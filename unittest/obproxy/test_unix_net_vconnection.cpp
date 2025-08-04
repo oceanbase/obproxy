@@ -809,12 +809,14 @@ struct TestProcessorAccept : public event::ObContinuation
   {
     UNUSED(event);
     UNUSED(data);
+    int ret = OB_SUCCESS;
+    event::ObAction* action = NULL;
     INFO_NET("TEST", "TestProcessorAccept : handle_start_accept");
     if (NULL == (session_accept_ = new(std::nothrow) TestSessionAccept(mutex_, param_))) {
       ERROR_NET("failed to allocate memory for TestSessionAccept");
     } else {
-      accept_action_ = static_cast<ObNetAcceptAction *>(g_net_processor.accept(
-          *session_accept_, options_));
+      ret = g_net_processor.accept(*session_accept_, action, options_);
+      accept_action_ = static_cast<ObNetAcceptAction*>(action);;
       started_ = true;
     }
     return EVENT_CONT;

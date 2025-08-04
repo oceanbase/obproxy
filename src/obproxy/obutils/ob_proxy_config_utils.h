@@ -32,6 +32,7 @@ namespace obutils
 {
 static const char *const CFG_DUMP_NAME = "./obproxy_config.bin";
 static const char *const CFG_DUMP_YAML_NAME = "./obproxy_config.yaml";
+static const char *const CFG_DUMP_SOFTWARE_PACKAGE = "./software_package";
 static const char *const CFG_SERVER_INFO_DUMP_NAME = "./obproxy_config_server_info.json";
 static const char *const CFG_SERVER_SHARD_INFO_DUMP_NAME = "./obproxy_shard_config_server_info.json";
 static const char *const CFG_RSLIST_INFO_DUMP_NAME = "./obproxy_rslist_info.json";

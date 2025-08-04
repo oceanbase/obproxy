@@ -82,6 +82,7 @@ public:
   // ObString get_database_name() const { return ObString(MAX_DATABASE_COMMENT_LENGTH, schema_name_buf_); }
   ObString get_database_name() const { return ObString(strlen(schema_name_buf_), schema_name_buf_); }
   ObString get_rpc_password_str() const { return rpc_password_str_; }
+  ObString get_full_username() const { return full_name_; }
 
   int  get_analyze_name_buf(char *&buf_start, int64_t len);
   void assign_user_name(char *buf, int64_t length) { user_name_.assign_ptr(buf, length); }
@@ -131,7 +132,7 @@ public:
   bool is_initing() const { return (RC_INITING == rc_state_); }
   bool is_deleting() const { return (RC_DELETING == rc_state_); }
 
-  bool is_expired(const int64_t expired_time_ns) const { return last_access_time_ns_ > 0 && event::get_hrtime() - last_access_time_ns_ > expired_time_ns; }
+  bool is_expired(const int64_t expired_time_ns) const { return last_access_time_ns_ > 0 && expired_time_ns > 0 && event::get_hrtime() - last_access_time_ns_ > expired_time_ns; }
   void renew_last_access_time() { last_access_time_ns_ = event::get_hrtime(); }
 
   TO_STRING_KV(KP(this),

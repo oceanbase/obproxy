@@ -924,8 +924,9 @@ int ObProxyTraceUtils::build_sync_sess_info(common::ObIArray<ObObJKV> &extra_inf
               type_record |= 1 << sess_info_type;
           }
           LOG_DEBUG("send session info to server", K(client_version), K(server_version), K(sess_info_type));
-          info_value.append(field.get_sess_info_value());
+          ret = info_value.append(field.get_sess_info_value());
         }
+        LOG_DEBUG("[SESSION_INFO_SYNC] build session info to request", K(client_version), K(server_version), K(sess_info_type));
       }
       if (is_sess_exist) {
         sm->trans_state_.trace_log_.log_it("[send_sess]", "type", type_record);

@@ -333,6 +333,18 @@ bool ObVariableLenConfigItem::set_value(const char* str)
   return bret;
 }
 
+bool ObVariableLenConfigItem::set_name(const common::ObString &name)
+{
+  bool bret = true;
+  if (name.empty()) {
+    name_str_.reset();
+  } else {
+    int64_t len = std::min<int64_t>(OB_MAX_CONFIG_VALUE_LEN, static_cast<int64_t>(name.length()));
+    bret = set_variable(name_str_, name.ptr(), len);
+  }
+  return bret;
+}
+
 bool ObVariableLenConfigItem::set_name(const char* name)
 {
   bool bret = true;

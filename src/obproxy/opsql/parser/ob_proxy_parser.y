@@ -13,9 +13,6 @@
 
 #define HANDLE_ACCEPT_FINISH() \
 do {\
-  if (result->stmt_count_ > 1) {\
-    result->stmt_type_ = OBPROXY_T_MULTI_STMT;\
-  }\
   if (NULL != result->end_pos_) {\
   } else if (NULL != result->table_info_.table_name_.str_ && result->table_info_.table_name_.str_len_ > 0) {\
     if (NULL != result->part_name_.str_ && result->part_name_.str_len_ > 0) {\
@@ -285,7 +282,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
  /* reserved keyword */
 %token SELECT DELETE INSERT UPDATE REPLACE MERGE SHOW SET CALL CREATE DROP ALTER TRUNCATE RENAME TABLE UNIQUE
 %token GRANT REVOKE ANALYZE PURGE COMMENT
-%token FROM DUAL JOIN
+%token FROM DUAL JOIN INNER CROSS FULL LEFT RIGHT OUTER
 %token PREPARE EXECUTE USING DEALLOCATE
 %token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN LOAD_DATA_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY PLACE_HOLDER
 %token END_P ERROR
@@ -313,12 +310,12 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> SHOW_PROXYNET THREAD CONNECTION LIMIT OFFSET
 %token<str> SHOW_PROCESSLIST SHOW_PROXYSESSION SHOW_GLOBALSESSION ATTRIBUTE VARIABLES ALL STAT READ_STALE
 %token<str> SHOW_PROXYCONFIG DIFF USER LIKE
-%token<str> SHOW_PROXYSM
-%token<str> SHOW_PROXYKV
+%token<str> SHOW_PROXYSM RPC
+%token<str> SHOW_PROXYRPC REQUESTSTAT
 %token<str> SHOW_PROXYCLUSTER
 %token<str> SHOW_PROXYRESOURCE
 %token<str> SHOW_PROXYCONGESTION
-%token<str> SHOW_PROXYROUTE PARTITION ROUTINE SUBPARTITION
+%token<str> SHOW_PROXYROUTE PARTITION ROUTINE SUBPARTITION TABLETLS QUERYASYNC RPCCTX
 %token<str> SHOW_PROXYVIP
 %token<str> SHOW_PROXYMEMORY OBJPOOL
 %token<str> SHOW_SQLAUDIT
@@ -832,7 +829,11 @@ comment_expr: COMMENT_BEGIN comment_list COMMENT_END {}
 comment_list: /* empty */ {}
             | comment_list comment
 
+/* yyerrok: immediately recovery error status from to normal */
+/* yyclearin: skip current token for error recovery */
 comment: var_name
+         | END_P { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
+         | error { yyerrok; yyclearin; }
 
 dbp_comment_list: dbp_comment ',' dbp_comment_list
                 | dbp_comment
@@ -955,6 +956,8 @@ hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
     | var_name '(' hint_val_list ')'
     | var_name
     | INT_NUM
+    | END_P { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
+    | error { yyerrok; yyclearin; }
 
 opt_read_consistency: /* empty */ {}
                     | WEAK { SET_READ_CONSISTENCY(OBPROXY_READ_CONSISTENCY_WEAK); }
@@ -1000,7 +1003,7 @@ icmd_stmt: show_proxynet
          | show_proxystat
          | show_proxytrace
          | show_proxyinfo
-         | show_proxykv
+         | show_proxyrpc
          | show_proxyps
          | alter_proxyconfig
          | alter_proxyresource
@@ -1056,10 +1059,12 @@ opt_large_like:
  /*empty*/              {}
 | LIKE NAME_OB          { result->cmd_info_.string_[1] = $2;}
 
- /*show proxykv grammer*/
- show_proxykv: SHOW_PROXYKV opt_show_kv
- opt_show_kv:
-  THREAD { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_KV_THREAD); }
+ /*show proxyrpc grammer*/
+ show_proxyrpc: SHOW_PROXYRPC opt_show_rpc
+ opt_show_rpc:
+  THREAD                       { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_KV_THREAD); }
+| REQUESTSTAT                  { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_KV_REQUESTSTAT); }
+| REQUESTSTAT NAME_OB          { SET_ICMD_SUB_AND_ONE_STRING(OBPROXY_T_SUB_KV_REQUESTSTAT, $2); }
 
  /*show proxynet grammer*/
 show_proxynet: SHOW_PROXYNET opt_show_net
@@ -1106,6 +1111,8 @@ opt_show_session:
 show_proxysm:
   SHOW_PROXYSM               {}
 | SHOW_PROXYSM INT_NUM       { SET_ICMD_ONE_ID($2); }
+| SHOW_PROXYSM RPC           { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_PROXYSM_RPC); }
+| SHOW_PROXYSM RPC INT_NUM   { SET_ICMD_SUB_AND_ONE_ID(OBPROXY_T_SUB_PROXYSM_RPC, $3); }
 
  /*show proxycluster grammer*/
 show_proxycluster:
@@ -1130,7 +1137,12 @@ show_proxyroute:
   SHOW_PROXYROUTE opt_large_like  {}
 | SHOW_PROXYROUTE ROUTINE   opt_large_like  { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_ROUTINE); }
 | SHOW_PROXYROUTE PARTITION                 { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_PARTITION); }
-| SHOW_PROXYROUTE GLOBALINDEX                     { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_GLOBALINDEX); }
+| SHOW_PROXYROUTE GLOBALINDEX               { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_GLOBALINDEX); }
+| SHOW_PROXYROUTE TABLEGROUP                { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_TABLEGROUP); }
+| SHOW_PROXYROUTE QUERYASYNC                 { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_QUERYASYNC); }
+| SHOW_PROXYROUTE TABLETLS                   { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_TABLETLS); }
+| SHOW_PROXYROUTE TABLETLS INT_NUM           { SET_ICMD_SUB_AND_ONE_ID(OBPROXY_T_SUB_ROUTE_TABLETLS, $3); }
+| SHOW_PROXYROUTE RPCCTX                     { SET_ICMD_SUB_TYPE(OBPROXY_T_SUB_ROUTE_RPCCTX); }
 
  /*show proxyvip grammer*/
 show_proxyvip:
@@ -1303,34 +1315,45 @@ table_factor: var_name  {
                                                   result->table_info_.table_name_ = $3;
                                                 }
 
-join_expr: JOIN var_name { result->table_info_.join_table_name_ = $2; }
-         | JOIN var_name '.' var_name
+join_expr: join_type var_name { result->table_info_.join_table_name_ = $2; }
+         | join_type var_name '.' var_name
          {
             result->table_info_.join_database_name_ = $2;
             result->table_info_.join_table_name_ = $4;
           }
-         | JOIN var_name var_name
+         | join_type var_name var_name
          {
             result->table_info_.join_table_name_ = $2;
             result->table_info_.join_table_alias_name_ = $3;
          }
-         | JOIN var_name AS var_name
+         | join_type var_name AS var_name
          {
             result->table_info_.join_table_name_ = $2;
             result->table_info_.join_table_alias_name_ = $4;
          }
-         | JOIN var_name '.' var_name var_name
+         | join_type var_name '.' var_name var_name
          {
             result->table_info_.join_database_name_ = $2;
             result->table_info_.join_table_name_ = $4;
             result->table_info_.join_table_alias_name_ = $5;
          }
-         | JOIN var_name '.' var_name AS var_name
+         | join_type var_name '.' var_name AS var_name
          {
             result->table_info_.join_database_name_ = $2;
             result->table_info_.join_table_name_ = $4;
             result->table_info_.join_table_alias_name_ = $6;
          }
+
+join_type: ','
+         | JOIN
+         | INNER JOIN
+         | CROSS JOIN
+         | FULL opt_outer JOIN
+         | LEFT opt_outer JOIN
+         | RIGHT opt_outer JOIN
+
+opt_outer: OUTER
+         | /* EMPTY */
 
 non_reserved_keyword: START
                     | XA

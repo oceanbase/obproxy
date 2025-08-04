@@ -2439,9 +2439,6 @@ do { \
   ObProxyParseResult *p = obproxyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     p->has_ignored_word_ = true;\
-    if (IN_TRANS_PARSE_MODE == p->parse_mode_) {\
-      return ERROR;\
-    }\
   }\
 } while (0);
 
@@ -2451,9 +2448,6 @@ do { \
   if (OB_NOTNULL(p)) {\
     p->has_ignored_word_ = true;\
     p->is_dual_request_ = true; \
-    if (IN_TRANS_PARSE_MODE == p->parse_mode_) {\
-      return ERROR;\
-    }\
   }\
 } while (0);
 

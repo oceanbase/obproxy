@@ -150,7 +150,7 @@ public:
   int handle_server_entry_setup_error(int event, void *data);
 
   int handle_request_rewrite_channel_id(ObRpcReq *request);
-  int handle_response_recover_channel_id(ObRpcReq *request, uint32_t origin_id);
+  int cleanup_request_in_server_handing(ObRpcReq *request);
 
   int schedule_period_task();
   int handle_period_task();
@@ -254,7 +254,7 @@ public:
                                waiting_req_list_(), create_thread_(NULL), cur_server_entry_count_(0), max_server_entry_count_(0),
                                access_times_(0), last_access_timestamp_(0), connnectiong_server_entry_count_(0),
                                server_connect_error_conut_(0), last_build_connect_timestamp_(0),
-                               last_connect_failed_timestamp_(0), last_connect_success_timestamp_(0),
+                               last_connect_failed_timestamp_(0), last_connect_success_timestamp_(0), server_connect_begin_us_(0),
                                send_request_action_(NULL), period_task_action_(NULL), pend_request_action_(NULL)
   {
     SET_HANDLER(&ObRpcServerNetTableEntry::main_handler);
@@ -275,6 +275,7 @@ public:
   int add_connect_server_entry(ObRpcServerNetHandler *entry);
   int remove_server_entry(ObRpcServerNetHandler *entry);
   void do_entry_close();
+  void clean_all_server_entry();
   int handle_rpc_request(ObRpcReq &request);
   int handle_send_request();
   // int retry_all_pending_request();
@@ -371,6 +372,7 @@ public:
   int64_t last_build_connect_timestamp_;
   int64_t last_connect_failed_timestamp_;
   int64_t last_connect_success_timestamp_;
+  int64_t server_connect_begin_us_;
   // event::ObAction *timeout_action_;
   event::ObAction *send_request_action_;
   event::ObAction *period_task_action_;

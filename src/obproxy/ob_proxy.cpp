@@ -224,6 +224,9 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init resource pool", K(ret));
     } else if (OB_FAIL(g_stat_processor.init(meta_client_proxy_))) {
       LOG_EDIAG("fail to init stat processor", K(ret));
+    } else if (OB_FAIL(ObProxyMain::get_instance()->init_crash_error_signal())) {
+      // init_crash_error_signal must afer init_config()
+      LOG_EDIAG("fail to init crash error signal", K(ret));
     }
 
     if (OB_SUCC(ret)) {
@@ -391,8 +394,11 @@ int ObProxy::start(ObAppVersionInfo &app_info)
       // when start in server service mode and need_convert_vip_to_tname,
       // we should update vip tenant cache at start time
       if (config_->need_convert_vip_to_tname && !config_->is_client_service_mode()) {
-        if (OB_SUCCESS != proxy_table_processor_.update_vip_tenant_cache()) {
-          LOG_WDIAG("fail to update vip tenant cache");
+        const int64_t new_version = 1;
+        const int64_t old_version = 0;
+        int tmp_ret = OB_SUCCESS;
+        if (OB_SUCCESS != (tmp_ret = proxy_table_processor_.update_vip_tenant_cache(old_version, new_version))) {
+          LOG_WDIAG("fail to update vip tenant cache", K(tmp_ret));
         }
       }
     }
@@ -455,8 +461,8 @@ int ObProxy::start(ObAppVersionInfo &app_info)
     } else if (config_->enable_sharding
                && OB_FAIL(get_global_db_config_processor().start())) {
       LOG_WDIAG("fail to start sharding", K(ret));
-    } else if (OB_FAIL(config_->is_pool_mode && get_global_session_pool_processor().start_session_pool_task())) {
-      LOG_WDIAG("fail to start_session_pool_task", K(ret));
+    } else if (OB_FAIL(get_global_session_pool_processor().start_pool_stat_dump_task())) {
+      LOG_WDIAG("fail to start_pool_stat_dump_task", K(ret));
     } else if (OB_FAIL(get_global_read_stale_processor().start_read_stale_feedback_clean_task())) {
       LOG_WDIAG("fail to start_read_stale_feedback_clean_task", K(ret));
     } else if (OB_FAIL(ObMysqlProxyServerMain::start_mysql_proxy_acceptor())) {
@@ -994,11 +1000,13 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
       ObIndexCache &index_cache = get_global_index_cache();
       ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
       ObTabletLsCache &tablet_ls_cache = get_global_tablet_ls_cache();
+      ObTableQueryAsyncCache &query_async_cache = get_global_table_query_async_cache();
       table_cache.set_cache_expire_time(relative_expire_time_ms);
       part_cache.set_cache_expire_time(relative_expire_time_ms);
       index_cache.set_cache_expire_time(relative_expire_time_ms);
       tablegroup_cache.set_cache_expire_time(relative_expire_time_ms);
       tablet_ls_cache.set_cache_expire_time(relative_expire_time_ms);
+      query_async_cache.set_cache_expire_time(relative_expire_time_ms);
       sql_table_cache.set_cache_expire_time(relative_sql_table_expire_time_ms);
       LOG_INFO("current table cache and part cache will exipre", K(relative_expire_time_ms), K(relative_sql_table_expire_time_ms),
                "table entry expire_time_us", table_cache.get_cache_expire_time_us(),
@@ -1006,6 +1014,7 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
                "index entry expire_time_us", index_cache.get_cache_expire_time_us(),
                "tablegroup entry expire_time_us", tablegroup_cache.get_cache_expire_time_us(),
                "tablet ls entry expire_time_us", tablet_ls_cache.get_cache_expire_time_us(),
+               "query async entry expire_time_us", query_async_cache.get_cache_expire_time_us(),
                "sql table entry expire time us", sql_table_cache.get_cache_expire_time_us());
       config.partition_location_expire_relative_time = 0;
       config.sql_table_cache_expire_relative_time = 0;

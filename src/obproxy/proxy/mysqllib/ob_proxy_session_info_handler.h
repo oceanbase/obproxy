@@ -16,6 +16,7 @@
 #include "utils/ob_proxy_lib.h"
 #include "proxy/mysqllib/ob_2_0_protocol_struct.h"
 #include "lib/oblog/ob_simple_trace.h"
+#include "proxy/mysqllib/ob_session_field_mgr.h"
 
 namespace oceanbase
 {
@@ -46,24 +47,6 @@ class ObRespAnalyzeResult;
 class ObMysqlAuthRequest;
 struct ObHandshakeResponseParam;
 enum ObClientSessionIDVersion : uint32_t;
-
-// this is the enum of the vars we care about in save changed session info
-enum ObProxySysVarType
-{
-  OBPROXY_VAR_GLOBAL_VARIABLES_VERSION = 0,
-  OBPROXY_VAR_USER_PRIVILEGE,
-  OBPROXY_VAR_SET_TRX_EXECUTED,
-  OBPROXY_VAR_PARTITION_HIT,
-  OBPROXY_VAR_LAST_INSERT_ID,
-  OBPROXY_VAR_CAPABILITY_FLAG,
-  OBPROXY_VAR_SAFE_READ_SNAPSHOT,
-  OBPROXY_VAR_ROUTE_POLICY_FLAG,
-  OBPROXY_VAR_ENABLE_TRANSMISSION_CHECKSUM_FLAG,
-  OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG,
-  OBPROXY_VAR_READ_CONSISTENCY_FLAG,
-  OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG,
-  OBPROXY_VAR_OTHERS
-};
 
 enum ObWeakReadHitReplica {
   ALL_FOLLOWER_REPLICA = 0,  // hit a all follower replica, won't return _ob_proxy_weakread_feedback

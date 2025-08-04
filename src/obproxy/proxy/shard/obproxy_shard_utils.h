@@ -201,7 +201,7 @@ private:
                                    bool& is_scan_all);
   static int check_logic_database(ObMysqlTransact::ObTransState &trans_state,
                                   ObMysqlClientSession &client_session, const ObString &db_name);
-  static void replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
+  static int replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
                                    bool &hava_quoto, bool is_single_shard_db_table,
                                    bool is_database);
   static int rewrite_shard_request_db(const char *sql_ptr,  int64_t database_pos,

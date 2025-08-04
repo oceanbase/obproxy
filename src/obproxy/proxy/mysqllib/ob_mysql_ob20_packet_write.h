@@ -34,7 +34,7 @@ public:
 
   // write request packet to mio buffer
   static int write_raw_packet(event::ObMIOBuffer &mio_buf, const common::ObString &packet_str,
-                             Ob20HeaderParam &ob20_head_param);
+                             Ob20HeaderParam &ob20_head_param, const ObIArray<ObObJKV> *extra_info = NULL);
   static int write_request_packet(event::ObMIOBuffer &mio_buf, const obmysql::ObMySQLCmd cmd,
                                   const common::ObString &sql_str,
                                   Ob20HeaderParam &ob20_head_param,

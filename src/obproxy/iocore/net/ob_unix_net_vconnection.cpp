@@ -35,6 +35,7 @@
 #include "iocore/net/ob_vtoa_user.h"
 #include "iocore/net/ob_ssl_processor.h"
 #include "obutils/ob_proxy_config.h"
+#include "iocore/eventsystem/ob_session_pool_event_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -1423,6 +1424,92 @@ inline void ObUnixNetVConnection::free()
   }
 
   op_reclaim_free(this);
+}
+
+int ObUnixNetVConnection::migrate_from_session_pool_thread()
+{
+  int ret = OB_SUCCESS;
+  ObEThread *this_thread = this_ethread();
+  if (!thread_->is_event_thread_type(ET_SESS_POOL)) {
+    ret = OB_ERR_UNEXPECTED;
+    SESSION_POOL_LOG(EDIAG, "server vc should be with ET_SESS_POOL thread", K(ret), "vc", this, K_(thread));
+  } else if (this_thread == nh_->mutex_->thread_holding_) {
+    ret = OB_ERR_UNEXPECTED;
+    SESSION_POOL_LOG(EDIAG, "server vc should be hold by ET_SESS_POOL thread but hold by ET_NET", K(ret),
+                            "vc", this, K(this_thread));
+  } else {
+    {
+      MUTEX_LOCK(lock, nh_->mutex_, this_thread);
+      if (OB_FAIL(ep_->stop())) {
+        SESSION_POOL_LOG(EDIAG, "fail to stop vc epoll on ET_SESS_POOL", K(ret),
+                                "vc", this, "net_handler", nh_, "ET_SESS_POOL", thread_);
+      } else {
+        nh_->open_list_.remove(this);
+        nh_->cop_list_.remove(this);
+        nh_->keep_alive_list_.remove(this);
+        nh_->read_enable_list_.remove(this);
+        nh_->read_ready_list_.remove(this);
+        nh_->write_ready_list_.remove(this);
+        nh_->write_enable_list_.remove(this);
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      ObEThread *ss_pool_thread = thread_;
+      nh_ = &(this_thread->get_net_handler());
+      nh_->open_list_.enqueue(this);
+      thread_ = this_thread;
+      if (OB_FAIL(ep_->start(this_thread->get_net_poll().get_poll_descriptor(), *this, EVENTIO_READ | EVENTIO_WRITE))) {
+        SESSION_POOL_LOG(EDIAG, "fail to start vc epoll on ET_NET", K(ret),
+                                "vc", this, "net_handler", nh_, "ET_NET", thread_);
+      } else {
+        SESSION_POOL_LOG(TRACE, "succ to migrate vc epoll from ET_SESS_POOL to ET_NET",
+                                "vc", this, "ET_SESS_POOL", ss_pool_thread, "ET_NET", this_thread);
+      }
+    }
+  }
+  return ret;
+}
+
+int ObUnixNetVConnection::migrate_to_session_pool_thread()
+{
+  int ret = OB_SUCCESS;
+  ObEThread *this_ethread = &self_ethread();
+  if (this_ethread != nh_->mutex_->thread_holding_) {
+    ret = OB_ERR_UNEXPECTED;
+    SESSION_POOL_LOG(EDIAG, "ethread dismatch, this_ethread not hold the vc->nh_->mutex_", "vc", this,
+                            K(this_ethread), K(nh_->mutex_->thread_holding_));
+  } else {
+    if (OB_FAIL(ep_->stop())) {
+      SESSION_POOL_LOG(EDIAG, "fail to stop vc epoll on ET_NET", K(ret),
+                              "vc", this, "net_handler", nh_, "ET_NET", thread_);
+    } else {
+      nh_->open_list_.remove(this);
+      nh_->cop_list_.remove(this);
+      nh_->keep_alive_list_.remove(this);
+      nh_->read_enable_list_.remove(this);
+      nh_->read_ready_list_.remove(this);
+      nh_->write_ready_list_.remove(this);
+      nh_->write_enable_list_.remove(this);
+    }
+
+    ObEThread *et_session_pool = g_event_processor.assign_thread(ET_SESS_POOL);
+    {
+      MUTEX_LOCK(lock, et_session_pool->net_handler_->mutex_, this_ethread);
+      nh_ = &(et_session_pool->get_net_handler());
+      nh_->open_list_.enqueue(this);
+      thread_ = et_session_pool;
+      if (OB_FAIL(ep_->start(et_session_pool->get_net_poll().get_poll_descriptor(), *this, EVENTIO_READ | EVENTIO_WRITE))) {
+        SESSION_POOL_LOG(EDIAG, "fail to start vc epoll on ET_SESS_POOL", K(ret),
+                                "vc", this, "net_handler", nh_, "ET_SESS_POOL", thread_);
+      } else {
+        SESSION_POOL_LOG(WDIAG, "succ to migrate vc from ET_NET to ET_SESS_POOL",
+                                "vc", this, "ET_NET", this_ethread, "ET_SESS_POOL", et_session_pool);
+      }
+    }
+  }
+
+  return ret;
 }
 
 int ObUnixNetVConnection::accept_event(int event, ObEvent *e)

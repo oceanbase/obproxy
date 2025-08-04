@@ -42,7 +42,6 @@ class ObTableQuery;
 namespace opsql
 {
 class ObExprResolverResult;
-struct ObExprResolverContext;
 }
 namespace obutils
 {
@@ -75,7 +74,9 @@ public:
   int calc_part_id_by_random_choose_from_exist(ObProxyPartInfo &part_info,
                                                int64_t &first_part_id,
                                                int64_t &sub_part_id,
-                                               int64_t &phy_part_id);                          
+                                               int64_t &phy_part_id,
+                                               int64_t &first_part_index,
+                                               int64_t &sub_part_index);
 
   int calculate_partition_id_for_rpc(common::ObArenaAllocator &allocator,
                                      ObRpcReq &ob_rpc_req,
@@ -88,7 +89,6 @@ private:
   // do parse -> do resolve -> do partition id calc
   int do_expr_parse(const common::ObString &req_sql,
                     const obutils::ObSqlParseResult &parse_result,
-                    ObProxyPartInfo &part_info,
                     common::ObIAllocator &allocator,
                     ObExprParseResult &expr_result,
                     common::ObCollationType connection_collation);
@@ -102,15 +102,16 @@ private:
                       opsql::ObExprResolverResult &resolve_result,
                       const obutils::ObSqlParseResult &sql_parse_result,
                       int64_t &partition_id);
-  int do_partition_id_calc(opsql::ObExprResolverResult &resolve_result,
+  int do_partition_id_calc(opsql::ObExprResolverV2 &expr_resolver,
                            ObClientSessionInfo &client_info,
-                           ObServerRoute &route,
                            ObProxyPartInfo &part_info,
                            const obutils::ObSqlParseResult &parse_result,
                            common::ObIAllocator &allocator,
+                           int64_t &first_part_id,
+                           int64_t &sub_part_id,
                            int64_t &partition_id,
-                           int64_t &part_idx,
-                           int64_t &sub_part_idx);
+                           int64_t &first_part_index,
+                           int64_t &sub_part_index);
 
   int calculate_partition_id_for_obkv(common::ObArenaAllocator &allocator,
                                       ObRpcReq &client_request,
@@ -122,36 +123,47 @@ private:
                                        ObProxyPartInfo &part_info,
                                        int64_t &partition_id);
 
-  int calc_part_id_with_hint_route_info(common::ObArenaAllocator &allocator,
-                                          const obutils::ObSqlParseResult &parse_result,
-                                          ObClientSessionInfo &client_info,
-                                          ObServerRoute &route,
-                                          ObProxyPartInfo &part_info,
-                                          int64_t &part_id,
-                                          int64_t &part_idx,
-                                          int64_t &sub_part_idx);
-  int do_resolve_with_part_key(const obutils::ObSqlParseResult &parse_result,
-                               common::ObIAllocator &allocator,
-                               opsql::ObExprResolverResult &resolve_result,
-                               ObProxyPartInfo &part_info);
-  int calc_partition_id_using_rowid(opsql::ObExprResolverContext &ctx,
-                                    opsql::ObExprResolverResult &resolve_result,
-                                    common::ObIAllocator &allocator,
-                                    int64_t &partition_id);
-  int calc_partition_id_with_rowid(ObProxyRelationExpr *relation,
-                                   opsql::ObExprResolverContext &ctx,
-                                   common::ObIAllocator &allocator,
-                                   opsql::ObExprResolverResult &resolve_result,
-                                   int64_t &partition_id);
-  int calc_partition_id_with_rowid_str(const char *str,
-                                       const int64_t str_len,
-                                       common::ObIAllocator &allocator,
-                                       opsql::ObExprResolverResult &resolve_result,
-                                       ObProxyPartInfo &part_info,
-                                       int64_t &partition_id,
-                                       int32_t &state,
-                                       int16_t &version);
+  int handle_hint_route_info(const obutils::ObSqlParseResult& parse_result,
+                             const ObProxyPartKeyInfo& part_info,
+                             ObIArray<ObObj>& equal_obj_arr);
   int do_expr_parse_diagnosis(ObExprParseResult &expr_result);
+
+  struct PartitionColumn{
+    inline bool operator==(const PartitionColumn& other) const {
+      return (column_name_ == other.column_name_)
+             && (table_name_ == other.table_name_);
+    }
+
+    inline bool operator!=(const PartitionColumn& other) const {
+      return !(*this == other);
+    }
+
+    void assgin(const ObProxyTokenNode& column_node) {
+      const ObProxyParseString& parse_table_name = column_node.table_name_;
+      const ObProxyParseString& parse_column_name_ = column_node.column_name_;
+      table_name_.assign_ptr(parse_table_name.str_, parse_table_name.str_len_);
+      column_name_.assign_ptr(parse_column_name_.str_, parse_column_name_.str_len_);
+    }
+
+    inline uint64_t hash(uint64_t seed = 0) const
+    {
+      seed = table_name_.hash(seed);
+      seed = column_name_.hash(seed);
+      return seed;
+    }
+
+    int to_string(char *buf, const int64_t buf_len) const {
+      int64_t pos = 0;
+      J_OBJ_START();
+      J_KV(K_(table_name), K_(column_name));
+      J_OBJ_END();
+      return pos;
+    }
+
+    ObString table_name_;
+    ObString column_name_;
+  };
+
   ObRouteDiagnosis *route_diagnosis_;
 };
 

@@ -113,6 +113,8 @@ lib/container/ob_array_helper.h\
 lib/container/ob_array_serialization.h\
 lib/container/ob_array_iterator.h\
 lib/coro/co_var.h\
+lib/data_structure/ob_adaptive_map.h\
+lib/data_structure/ob_union_find_set.h\
 lib/file/file_directory_utils.cpp\
 lib/file/ob_file.h\
 lib/file/ob_file.cpp\
@@ -348,6 +350,10 @@ lib/encode/ob_base64_encode.h\
 lib/encode/ob_base64_encode.cpp\
 lib/rowid/ob_urowid.h\
 lib/rowid/ob_urowid.cpp\
+lib/signal/ob_libunwind.h\
+lib/signal/ob_libunwind.c\
+lib/signal/ob_signal_utils.cpp\
+lib/signal/ob_signal_utils.h\
 lib/wide_integer/ob_wide_integer_cmp_funcs.cpp\
 lib/wide_integer/ob_wide_integer_cmp_funcs.h\
 lib/wide_integer/ob_wide_integer_str_funcs.cpp\

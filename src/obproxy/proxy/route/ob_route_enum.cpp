@@ -65,6 +65,10 @@ const char *get_route_info_type_name(const ObRouteInfoType type)
       name = "USE_LAST_SESSION";
       break;
 
+    case ObRouteInfoType::USE_LAST_INSERT_ID_SESSION:
+      name = "USE_LAST_INSERT_ID_SESSION";
+      break;
+
     case ObRouteInfoType::USE_LOCK_SESSION:
       name = "USE_LOCK_SESSION";
       break;
@@ -91,6 +95,10 @@ const char *get_route_info_type_name(const ObRouteInfoType type)
 
     case ObRouteInfoType::USE_ROUTE_POLICY:
       name = "USE_ROUTE_POLICY";
+      break;
+
+    case ObRouteInfoType::USE_BINLOG_SERVICE_LOOKUP:
+      name = "USE_BINLOG_SERVICE_LOOKUP";
       break;
 
     default:

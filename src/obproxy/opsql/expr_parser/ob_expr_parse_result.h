@@ -23,7 +23,7 @@
 
 #define OBPROXY_MAX_NAME_LENGTH 128
 #define OBPROXY_MAX_PART_LEVEL 16
-#define OBPROXY_MAX_RELATION_NUM 64
+#define OBPROXY_MAX_RELATION_NUM 1024
 #define OBPROXY_MAX_PART_KEY_NUM 16
 
 #define NO_BOUND_FLAG 0
@@ -112,7 +112,7 @@ typedef struct _ObProxyTokenNode
     ObProxyParseString  str_value_;
     ObProxyOperatorType operator_;
   };
-
+  ObProxyParseString  table_name_;
   ObProxyParseString  column_name_;
   struct _ObProxyTokenList *child_;
   struct _ObProxyTokenNode *next_;
@@ -126,21 +126,14 @@ typedef struct _ObProxyTokenList
 } ObProxyTokenList;
 
 /**
- * @brief If level_ == PART_KEY_LEVEL_ONE, first_part_column_idx_ will be set.
- *        If level_ == PART_KEY_LEVEL_TWO, second_part_column_idx_ will be set.
- *        If level_ == PART_KEY_LEVEL_BOTH, both of them will be set.
- *        first_part_column_idx_: the column's idx in partition expression
- *        second_part_column_idx_: the column's idx in subpartition expression
+ * @brief part_key_idx_: the column's idx in partition expression
  */
 typedef struct _ObProxyRelationExpr
 {
-  int64_t column_idx_;
-  int64_t first_part_column_idx_;
-  int64_t second_part_column_idx_;
+  int64_t part_key_idx_; // record part idx for insert stmt without column node
   ObProxyTokenList *left_value_;
   ObProxyTokenList *right_value_;
   ObProxyFunctionType type_;
-  ObProxyPartKeyLevel level_;
 } ObProxyRelationExpr;
 
 /*
@@ -171,7 +164,6 @@ typedef struct _ObProxyPartKey
   int64_t idx_; // pos in schema columns
   int64_t obj_type_; // ObObjType
   int64_t cs_type_; // ObCollationType
-  bool is_exist_in_sql_;  // is part key exist in sql
 
   // obkv get partition
   ObProxyParseString part_key_extra_;
@@ -180,6 +172,7 @@ typedef struct _ObProxyPartKey
   ObProxyPartKeyFunc part_key_func_info_; // store func info when parse part_key is a func
 
   // releated generated func
+  // is_generated_ = true， means has a extra part key record origin column info
   bool is_generated_;                     // used for is generated col
   int64_t generated_col_idx_;             // used for generated func index of column
   int64_t param_num_;                     // used for generated func param numbers
@@ -210,6 +203,10 @@ typedef struct _ObExprParseResult
   // input argument
   void *malloc_pool_; // ObIAllocator
   bool is_oracle_mode_;
+
+  // hash rowid or not
+  bool has_rowid_;
+  bool is_empty_column_insert_stmt_;
   ObExprParseMode parse_mode_;
   ObProxyTableInfo table_info_;
   ObProxyPartKeyInfo part_key_info_;
@@ -226,14 +223,10 @@ typedef struct _ObExprParseResult
   int64_t values_list_idx_;
   int64_t multi_param_values_;
   int64_t placeholder_list_idx_;
-  bool need_parse_token_list_;
+
 
   // result argument
-  ObProxyRelationInfo relation_info_;
   ObProxyRelationInfo all_relation_info_;
-
-  // hash rowid or not
-  bool has_rowid_;
 } ObExprParseResult;
 
 static const char *g_ROWID = "ROWID";
@@ -251,12 +244,14 @@ static inline bool is_equal_to_rowid(ObProxyParseString *str)
 #ifdef __cplusplus
 extern "C" const char* get_expr_parse_mode(const ObExprParseMode mode);
 extern "C" const char* get_obproxy_function_type(const ObProxyFunctionType type);
+extern "C" const char* get_obproxy_function_string(const ObProxyFunctionType type);
 extern "C" const char* get_obproxy_operator_type(const ObProxyOperatorType type);
 extern "C" const char* get_obproxy_token_type(const ObProxyTokenType type);
 extern "C" const char* get_obproxy_part_key_level(const ObProxyPartKeyLevel level);
 #else
 const char* get_expr_parse_mode(const ObExprParseMode mode);
 const char* get_obproxy_function_type(const ObProxyFunctionType type);
+const char* get_obproxy_function_string(const ObProxyFunctionType type);
 const char* get_obproxy_operator_type(const ObProxyOperatorType type);
 const char* get_obproxy_token_type(const ObProxyTokenType type);
 const char* get_obproxy_part_key_level(const ObProxyPartKeyLevel level);

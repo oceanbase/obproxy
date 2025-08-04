@@ -97,6 +97,8 @@ public:
   int64_t get_scan_lease_timeout() const { return scan_lease_timeout_; }
   common::ObIArray<int64_t> &get_tablet_ids() { return tablet_ids_; }
   const ObConnectionAttributes &get_server_info() const { return server_info_; }
+  static const char *get_query_async_state(const ObTableQueryAsyncEntryState state);
+  const char* get_query_async_state() const { return get_query_async_state(state_); }
 
   void set_server_info(const net::ObIpEndpoint &addr, const net::ObIpEndpoint &sql_addr) {
     server_info_.addr_ = addr;

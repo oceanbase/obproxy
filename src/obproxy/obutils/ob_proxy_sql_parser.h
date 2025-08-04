@@ -300,22 +300,28 @@ struct SqlField {
 };
 
 struct SqlFieldResult {
-  SqlFieldResult() : field_num_(0), fields_() {}
+  SqlFieldResult() : field_num_(0), fields_(), not_eq_field_num_(0), not_eq_fields_() {}
   ~SqlFieldResult() { reset(); }
-
-  void reset()
+  void reset_filed(ObIArray<SqlField*> &fileds, int &num)
   {
-    for (int64_t i = 0; i < field_num_; i++) {
-      SqlField* field = fields_.at(i);
+    for (int64_t i = 0; i < num; i++) {
+      SqlField* field = fileds.at(i);
       field->reset();
     }
-    field_num_ = 0;
-    fields_.reset();
+    num = 0;
+    fileds.reset();
+  }
+  void reset()
+  {
+    reset_filed(fields_, field_num_);
+    reset_filed(not_eq_fields_, not_eq_field_num_);
   }
   DECLARE_TO_STRING;
-
+  // 目前fileds_存储等值关系，not_eq_field_存储不等关系
   int field_num_;
   common::ObSEArray<SqlField*, 5> fields_;
+  int not_eq_field_num_;
+  common::ObSEArray<SqlField*, 5> not_eq_fields_;
 };
 
 struct DbMeshRouteInfo {
@@ -531,8 +537,10 @@ struct ObSqlParseResult
       col_name_quote_(OBPROXY_QUOTE_T_INVALID),
       text_ps_inner_stmt_type_(OBPROXY_T_INVALID),
       hint_consistency_level_(common::INVALID_CONSISTENCY),
+      has_dbmesh_hint_(false),
+      use_dbp_hint_(false),
       use_column_value_from_hint_(false),
-      is_multi_semicolon_in_stmt_(false),
+      is_multi_stmt_(false),
       has_connection_id_(false),
       has_sys_context_(false),
       has_last_insert_id_(false),
@@ -550,7 +558,9 @@ struct ObSqlParseResult
       has_trace_log_hint_(false),
       xa_stmt_{},
       is_binlog_related_(false),
-      is_sharding_req_(false) {}
+      is_dblink_name_(false),
+      is_sharding_req_(false),
+      is_table_lock_related_(false) {}
   ~ObSqlParseResult() { reset(); }
   void release();
   void clear_proxy_stmt();
@@ -575,7 +585,7 @@ struct ObSqlParseResult
   bool is_use_db_stmt() const { return OBPROXY_T_USE_DB == stmt_type_; }
   bool is_call_stmt() const { return OBPROXY_T_CALL == stmt_type_; }
   bool is_help_stmt() const { return OBPROXY_T_HELP == stmt_type_; }
-  bool is_multi_stmt() const { return OBPROXY_T_MULTI_STMT == stmt_type_; }
+  bool is_multi_stmt() const { return is_multi_stmt_; }
   bool is_show_warnings_stmt() const { return OBPROXY_T_SHOW_WARNINGS == stmt_type_; }
   bool is_show_errors_stmt() const { return OBPROXY_T_SHOW_ERRORS == stmt_type_; }
   bool is_show_trace_stmt() const { return OBPROXY_T_SHOW_TRACE == stmt_type_; }
@@ -706,7 +716,6 @@ struct ObSqlParseResult
 
   bool is_shard_special_cmd() const;
 
-  bool is_multi_semicolon_in_stmt() const { return is_multi_semicolon_in_stmt_; }
   bool has_last_insert_id() const { return has_last_insert_id_; }
   bool has_found_rows() const { return has_found_rows_; }
   bool has_row_count() const { return has_row_count_; }
@@ -732,8 +741,8 @@ struct ObSqlParseResult
   bool has_show_errors() const { return is_show_errors_stmt(); }
   bool has_show_warnings() const { return is_show_warnings_stmt(); }
 
-  bool need_hold_start_trans() const { return is_start_trans_stmt(); }
-  bool need_hold_xa_start() const { return xa_stmt_.is_xa_start_; }
+  bool need_hold_start_trans() const { return is_start_trans_stmt() && !is_multi_stmt(); }
+  bool need_hold_xa_start() const { return xa_stmt_.is_xa_start_ && !is_multi_stmt(); }
   // has a function depend on the sql last executed, such as found_rows , row_count, etc.
   bool has_dependent_func() const;
   // whether a sql is not supported by PROXY (BUT it is supported by observer)
@@ -811,7 +820,7 @@ struct ObSqlParseResult
   int set_dbmesh_route_info(const ObProxyParseResult &obproxy_parse_result);
   int set_var_info(const ObProxyParseResult &parse_result);
   int set_text_ps_info(ObProxyTextPsInfo& text_ps_info, const ObProxyTextPsParseInfo &execute_parse_info);
-  void set_multi_semicolon_in_stmt(bool is_multi_semicolon_in_stmt) {is_multi_semicolon_in_stmt_ = is_multi_semicolon_in_stmt;}
+  void set_multi_stmt(const bool val) { is_multi_stmt_ = val;}
   int load_result(const ObProxyParseResult &obproxy_parse_result,
                   const bool use_lower_case_name = false,
                   const bool save_origin_db_table_name = false,
@@ -882,7 +891,7 @@ struct ObSqlParseResult
       join_alias_name_quote_ = other.join_alias_name_quote_;
       col_name_quote_ = other.col_name_quote_;
       text_ps_inner_stmt_type_ = other.text_ps_inner_stmt_type_;
-      is_multi_semicolon_in_stmt_ = other.is_multi_semicolon_in_stmt_;
+      is_multi_stmt_ = other.is_multi_stmt_;
       is_binlog_related_ = other.is_binlog_related_;
       is_dblink_name_ = other.is_dblink_name_;
       is_sharding_req_ = other.is_sharding_req_;
@@ -968,7 +977,7 @@ struct ObSqlParseResult
     alias_name_quote_ = other.alias_name_quote_;
     join_alias_name_quote_ = other.join_alias_name_quote_;
     col_name_quote_ = other.col_name_quote_;
-    is_multi_semicolon_in_stmt_ = other.is_multi_semicolon_in_stmt_;
+    is_multi_stmt_ = other.is_multi_stmt_;
     table_name_.assign_ptr(dml_buf_.table_name_buf_, other.table_name_.length());
     package_name_.assign_ptr(dml_buf_.package_name_buf_, other.package_name_.length());
     database_name_.assign_ptr(dml_buf_.database_name_buf_, other.database_name_.length());
@@ -1062,7 +1071,7 @@ private:
   bool has_dbmesh_hint_;
   bool use_dbp_hint_;
   bool use_column_value_from_hint_;
-  bool is_multi_semicolon_in_stmt_;
+  bool is_multi_stmt_;
   bool has_connection_id_;
   bool has_sys_context_;
   bool has_last_insert_id_;
@@ -1109,7 +1118,14 @@ public:
                 common::ObCollationType connection_collation,
                 const bool drop_origin_db_table_name = false,
                 const bool is_sharding_request = false);
-
+  int parse_multi_stmt_sql(const common::ObString &sql,
+                           const ObProxyParseMode parse_mode,
+                           ObSqlParseResult &sql_parse_result,
+                           const bool use_lower_case_name,
+                           common::ObCollationType connection_collation,
+                           proxy::ObProxyMysqlRequest &client_request,
+                           const bool drop_origin_db_table_name = false,
+                           const bool is_sharding_request = false);
   int parse_sql_by_obparser(const common::ObString &sql,
                             const ObProxyParseMode parse_mode,
                             ObSqlParseResult &sql_parse_result,
@@ -1124,8 +1140,10 @@ public:
                               oceanbase::common::ObArenaAllocator &allocator);
   static int init_ob_parser_node(oceanbase::common::ObArenaAllocator &allocator, ObParseNode *&ob_node);
   static int get_parse_allocator(common::ObArenaAllocator *&allocator);
+  // split_multi传入的sql，预期末尾没有两个'\0'
   static int split_multiple_stmt(const common::ObString &stmt,
-                          common::ObIArray<common::ObString> &queries);
+                                 common::ObIArray<common::ObString> &queries,
+                                 const int limit_array_count = -1);
   static void get_single_sql(const common::ObString &stmt, int64_t offset, int64_t remain, int64_t &str_len);
   static int preprocess_multi_stmt(common::ObArenaAllocator &allocator,
                                    char* &multi_sql_buf,
@@ -1256,7 +1274,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   cmd_err_type_ = OBPROXY_T_ERR_INVALID;
   hint_consistency_level_ = common::INVALID_CONSISTENCY;
   use_column_value_from_hint_ = false;
-  is_multi_semicolon_in_stmt_ = false;
+  is_multi_stmt_ = false;
   has_last_insert_id_ = false;
   has_found_rows_ = false;
   has_row_count_ = false;

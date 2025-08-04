@@ -41,6 +41,9 @@ class ObCongestionEntry;
 }
 namespace proxy
 {
+
+static const int64_t RPCREQUEST_SM_LIST_BUCKETS = 64;
+
 class ObTableEntry;
 class ObRpcClientNetHandler;
 struct ObProxyRpcReqAnalyzeCtx;
@@ -146,6 +149,7 @@ struct ObRpcReqRetryStat
   int64_t request_retry_times_;
   int64_t request_move_reroute_times_;
   int64_t request_retry_consume_time_us_;
+  int64_t request_route_calc_fail_retry_times_;
 };
 
 struct ObPartitionLookupInfo
@@ -335,8 +339,10 @@ public:
   static ObHRTime static_get_based_hrtime();
   int init_rpc_analyze_ctx(ObProxyRpcReqAnalyzeCtx &ctx);
 
+  uint32_t get_sm_id() const { return sm_id_; }
+  uint32_t get_history_pos() const { return history_pos_; }
   void set_rpc_req(ObRpcReq *req) { rpc_req_ = req;}
-  ObRpcReq *get_rpc_req() { return rpc_req_; }
+  ObRpcReq *get_rpc_req() const { return rpc_req_; }
 
   void set_rpc_timeout_us(int64_t timeout) { timeout_us_ = timeout;}
   int64_t get_rpc_timeout_us() { return timeout_us_; }
@@ -411,6 +417,8 @@ public:
   int state_rpc_req_done();
   int state_rpc_req_cleanup();
   int state_rpc_req_inner_request_cleanup();
+  int state_add_to_list(int event, void *data);
+  int state_remove_from_list(int event, void *data);
 
   int inner_request_callback(int event);
 
@@ -465,6 +473,7 @@ public:
   void retry_reset();
 
   int dirty_rpc_route_result(ObMysqlRouteResult *result);
+  int handle_partition_calc_failed(ObMysqlRouteResult *result, bool &is_partition_calc_fail_need_retry);
 
   int calc_rpc_timeout_us();
   int schedule_timeout_action();
@@ -496,6 +505,7 @@ public:
   void update_cmd_stats();
   void update_redis_stats();
   void update_monitor_log();
+  void update_rpc_req_state();
   void get_monitor_error_info(int32_t &error_code, ObString &error_msg, bool &is_error_resp);
   void update_monitor_stats(const ObString &logic_tenant_name,
                             const ObString &logic_database_name,
@@ -526,6 +536,7 @@ public:
                         const obutils::ObVipAddr &addr,
                         ObRpcRequestConfigInfo &req_config_info,
                         const int64_t global_version = 0);
+  int handle_shard_rpc_request();
 
   void init_rpc_trace_id();
   static ObProxyBasicStmtType get_rpc_basic_stmt_type(const obrpc::ObRpcPacketCode pcode);
@@ -537,12 +548,17 @@ public:
   }
 public:
   static const int64_t MAX_SCATTER_LEN;
-private:
+public:
   static const int64_t HISTORY_SIZE = 32;
+  LINK(ObRpcRequestSM, stat_link_);
+  bool is_in_list_;
+private:
 
   uint32_t sm_id_;
   ObRpcRequestSMMagic magic_;
   enum ObRpcRequestSMActionType next_action_;
+  // only to record rpc req state
+  enum ObRpcReqState pre_rpc_req_state_;
 
   struct ObHistory
   {
@@ -609,6 +625,7 @@ public:
   obutils::ObConnectionDiagnosisTrace *connection_diagnosis_trace_;
 
   friend class ObRpcReq;
+  friend class ObShowSMHandler;
 };
 
 inline ObRpcRequestSM *ObRpcRequestSM::allocate()
@@ -671,12 +688,101 @@ inline ObProxyBasicStmtType ObRpcRequestSM::get_rpc_basic_stmt_type(const obrpc:
   case obrpc::OB_TABLE_API_LS_EXECUTE:
     stmt_type = OBRPC_OBKV_TABLE_API_LS_EXECUTE;
     break;
+  case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+    stmt_type = OBRPC_OBKV_TABLE_API_META_INFO_EXECUTE;
+    break;
   default:
     //OBRPC_INVALID
     break;
   }
   return stmt_type;
 }
+
+/* just used in show proxyrpc request for rpc request */
+inline ObRpcReqType get_rpc_type_by_pcode(obrpc::ObRpcPacketCode pcode)
+{
+  ObRpcReqType type = ObRpcReqType::OB_MAX_TABLE_API_TYPE;
+  switch(pcode)
+  {
+  case obrpc::OB_TABLE_API_LOGIN:
+    type = ObRpcReqType::OB_RPC_LOGIN;
+    break;
+  case obrpc::OB_TABLE_API_EXECUTE:
+    type = ObRpcReqType::OB_RPC_EXECUTE;
+    break;
+  case obrpc::OB_TABLE_API_BATCH_EXECUTE:
+    type = ObRpcReqType::OB_RPC_BATCH_EXECUTE;
+    break;
+  case obrpc::OB_TABLE_API_EXECUTE_QUERY:
+    type = ObRpcReqType::OB_RPC_EXECUTE_QUERY;
+    break;
+  case obrpc::OB_TABLE_API_QUERY_AND_MUTATE:
+    type = ObRpcReqType::OB_RPC_QUERY_AND_MUTATE;
+    break;
+  case obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC:
+    type = ObRpcReqType::OB_RPC_EXECUTE_QUERY_SYNC;
+    break;
+  case obrpc::OB_TABLE_API_DIRECT_LOAD:
+    type = ObRpcReqType::OB_RPC_DIRECT_LOAD;
+    break;
+  case obrpc::OB_TABLE_API_LS_EXECUTE:
+    type = ObRpcReqType::OB_RPC_LS_EXECUTE;
+    break;
+  default:
+    type = ObRpcReqType::OB_MAX_TABLE_API_TYPE;
+    break;
+  }
+  return type;
+}
+
+inline ObRpcReqState get_rpc_req_state_by_sm_action(const ObRpcRequestSMActionType action)
+{
+  ObRpcReqState state = ObRpcReqState::OB_RPC_REQ_MAX_STATE;
+  switch(action) {
+  case ObRpcRequestSMActionType::RPC_REQ_NEW_REQUEST:
+  case ObRpcRequestSMActionType::RPC_REQ_CTX_LOOKUP:
+    state = ObRpcReqState::OB_RPC_REQ_IN_ANALYZE_REQUEST;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_IN_CLUSTER_BUILD:
+    state = ObRpcReqState::OB_RPC_REQ_IN_BUILDING_CLUSTER;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_IN_INDEX_LOOKUP:
+    state = ObRpcReqState::OB_RPC_REQ_GET_GLOBAL_INDEX;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_IN_PARTITION_LOOKUP:
+    state = ObRpcReqState::OB_RPC_REQ_GET_PARTITION_ID;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_IN_TABLET_LS_LOOKUP:
+    state = ObRpcReqState::OB_RPC_REQ_GET_LS_ID;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_HANDLE_SHARD_REQUEST:
+    state = ObRpcReqState::OB_RPC_REQ_IN_SHARDING;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_REQUEST_SERVER_SENDING:
+    state = ObRpcReqState::OB_RPC_REQ_IN_SENDING_TO_SERVER;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_PROCESS_RESPONSE:
+    state = ObRpcReqState::OB_RPC_REQ_IN_ANALYZE_RESPONSE;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_RESPONSE_CLIENT_SENDING:
+    state = ObRpcReqState::OB_RPC_REQ_IN_SENDING_TO_CLINET;
+    break;
+  case ObRpcRequestSMActionType::RPC_REQ_REQUEST_DONE:
+    state = ObRpcReqState::OB_RPC_REQ_MAX_STATE;
+  default:
+    state = ObRpcReqState::OB_RPC_REQ_MAX_STATE;
+    break;
+  }
+  return state;
+}
+
+struct ObRpcRequestSMListBucket
+{
+  common::ObPtr<event::ObProxyMutex> mutex_;
+  ObDLList(ObRpcRequestSM, stat_link_) sm_list_;
+};
+
+extern ObRpcRequestSMListBucket g_rpcrequestsm_list[];
 
 }
 }

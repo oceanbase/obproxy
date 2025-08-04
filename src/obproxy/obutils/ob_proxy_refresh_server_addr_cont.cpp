@@ -27,7 +27,6 @@
 #include "obutils/ob_proxy_create_server_conn_cont.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
-#include "obutils/ob_proxy_conn_num_check_cont.h"
 #include "obutils/ob_session_pool_processor.h"
 
 

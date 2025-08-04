@@ -452,6 +452,8 @@ int ObRpcOBKVClientNetHandler::state_client_request_read(int event, void *data)
               PROXY_CS_LOG(WDIAG, "failed to init rpc_req", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
             } else if (OB_FAIL(request_sm->init(rpc_req, mutex_))) {
               PROXY_CS_LOG(WDIAG, "failed to init request_sm", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
+            } else if (OB_FAIL(request_sm->state_add_to_list(EVENT_NONE, NULL))) {
+              PROXY_CS_LOG(WDIAG, "failed to add request_sm to list", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
             } else if (OB_FAIL(cid_to_req_map_.set_refactored(client_channel_id, rpc_req))) {
               PROXY_CS_LOG(WDIAG, "failed to set_refactored", K_(cs_id), K(rpc_trace_id), K(ret), K(this));
             } else {
@@ -787,6 +789,8 @@ int ObRpcOBKVClientNetHandler::schedule_send_response_action()
     PROXY_LOG(DEBUG, "pending send_response_action, do nothing", K_(cs_id), K_(pending_action), K(ret));
   } else if (OB_UNLIKELY(create_thread_ != NULL && this_ethread() != create_thread_)) {
     //need to check it
+    // there are many sub module in rpc process, but notify caller is not check if the sub module is in the same thread
+    // for example, the table entry cont, so here need to check and adjust log level to WDIAG
     PROXY_CS_LOG(EDIAG, "fail to schedule_send_response_action for client, need scheduled by created_ethread",
                 K_(cs_id), K_(create_thread), "current_thread", self_ethread());
     if (OB_ISNULL(pending_action_ = create_thread_->schedule_imm(this, RPC_CLIENT_NET_SEND_RESPONSE))) {

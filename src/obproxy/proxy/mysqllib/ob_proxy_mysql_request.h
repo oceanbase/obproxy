@@ -134,6 +134,9 @@ public:
 
   void set_enable_server_kill_connection(const bool enable_server_kill_connection) { enable_server_kill_connection_ = enable_server_kill_connection; }
   bool is_enable_server_kill_connection() const { return enable_server_kill_connection_; }
+  common::ObString get_expr_parse_second_sql() { return expr_parse_second_sql_; }
+  void set_expr_parse_second_sql(common::ObString &sql) { expr_parse_second_sql_ = sql; }
+  int preprocess_multi_sql(ObIArray<common::ObString> &sql_array);
 
   ObInternalCmdInfo *cmd_info_;
   ObProxyKillQueryInfo *query_info_;
@@ -167,6 +170,7 @@ private:
 
   common::ObArenaAllocator allocator_;
   char sql_id_buf_[common::OB_MAX_SQL_ID_LENGTH + 1];
+  common::ObString expr_parse_second_sql_;  // 对multi-stmt: 使用第二条sql路由，需要存储second sql，给expr_parse使用
 };
 
 bool ObProxyMysqlRequest::is_real_dml_sql() const

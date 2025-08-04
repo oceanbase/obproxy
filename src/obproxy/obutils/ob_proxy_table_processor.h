@@ -216,7 +216,8 @@ public:
   int register_proxy(const RegisterType type);
   int update_local_config(int64_t new_config_version);
   int load_remote_config();
-  int update_vip_tenant_cache();
+  int update_vip_tenant_cache(const int64_t old_version, const int64_t new_version);
+  int check_update_vip_tenant_cache(const int64_t new_vt_cache_version);
   bool is_scheduled() const { return NULL != table_check_cont_; }
 
   static int do_repeat_task();
@@ -232,7 +233,6 @@ private:
   int check_proxy_kv_info(ObProxyKVTableInfo &kv_info);
   int check_proxy_info(const ObProxyKVTableInfo &kv_info);
   int check_reload_config(const int64_t new_config_version);
-  int check_update_vip_tenant_cache(const int64_t new_vt_cache_version);
   int check_do_batch_upgrade(const ObProxyKVTableInfo &kv_info, ObProxyServerInfo &proxy_info);
   int check_upgrade_state(const ObProxyServerInfo &proxy_info);
   int check_update_proxy_table(const ObProxyServerInfo &proxy_info);

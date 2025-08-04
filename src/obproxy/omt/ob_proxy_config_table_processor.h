@@ -81,7 +81,7 @@ struct SSLAttributes
 class ObProxyConfigItem
 {
 public:
-  ObProxyConfigItem() : vip_info_(), config_level_(), config_item_() {}
+  ObProxyConfigItem() : vip_info_(), config_level_(), config_item_(), version_(0) {}
   ~ObProxyConfigItem() {}
   ObProxyConfigItem(const ObProxyConfigItem &item);
   ObProxyConfigItem& operator =(const ObProxyConfigItem &item);
@@ -91,14 +91,50 @@ public:
   }
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
+  int parse_json_info(ObString &info, bool &is_exist_version);
 
   ObProxyConfigItem* clone();
   uint64_t get_hash() const;
   ObVipInfo vip_info_;
   ObConfigVariableString config_level_;
   ObVariableLenConfigItem config_item_;
+  int64_t version_;
 
   LINK(ObProxyConfigItem, proxy_config_item_link_);
+};
+
+// 此类用于delete配置时，存储SqlFiled的数据，然后和每一个配置做比较，好处是：
+//  1. 引入bool成员变量，可以在O(1)的时间判断是否要删除的配置，无需每次都比较配置的字符串
+//  2. 父类仅设置删除的值，但是没法判断这个值是否需要删除（如删除的值恰好是默认值）
+class ObProxyDeleteConfigItem: public ObProxyConfigItem
+{
+public:
+  ObProxyDeleteConfigItem(): has_vip_addr_(0), has_vid_(0), has_vport_(0),
+        has_config_level_(0), has_valule_(0), has_version_(0),
+        has_tenant_name_(0), has_cluster_name_(0), has_name_(0)  {}
+  ~ObProxyDeleteConfigItem() {}
+  bool compare_config(const ObProxyConfigItem& item) const;
+  int set_for_sql_field(const obutils::SqlFieldResult &fields);
+public:
+  static const int64_t NEED_DELETE_BITS_SHIFT = 0;
+  static const int64_t IS_NOT_EQUAL_BITS_SHIFT = 1;
+  static const int64_t WITH_NEED_DELETE = 1LL << NEED_DELETE_BITS_SHIFT;
+  static const int64_t WITH_IS_NOT_EQUAL = 1LL << IS_NOT_EQUAL_BITS_SHIFT;
+
+  bool is_not_equal(const uint16_t val) const { return val & WITH_IS_NOT_EQUAL; }
+  bool is_need_delete(const uint16_t val) const { return val & WITH_NEED_DELETE; }
+
+public:
+  uint16_t has_vip_addr_:           2;
+  uint16_t has_vid_:                2;
+  uint16_t has_vport_:              2;
+  uint16_t has_config_level_:       2;
+  uint16_t has_valule_:             2;
+  uint16_t has_version_:            2;
+  uint16_t has_tenant_name_:        2;
+  uint16_t has_cluster_name_:       2;
+  uint16_t has_name_:               2;
+  uint16_t:                         0;
 };
 
 class ObZoneWeakReadWeight
@@ -134,9 +170,9 @@ public:
   static const int64_t FULL_BITS_SHIFT = 0;
   static const int64_t READONLY_BITS_SHIFT = 1;
   static const int64_t COLUMN_STORE_BITS_SHIFT = 2;
-  static const int64_t WITH_FULL = 1ll << FULL_BITS_SHIFT;
-  static const int64_t WITH_READONLY = 1ll << READONLY_BITS_SHIFT;
-  static const int64_t WITH_COLUMN_STORE = 1ll << COLUMN_STORE_BITS_SHIFT;
+  static const int64_t WITH_FULL = 1LL << FULL_BITS_SHIFT;
+  static const int64_t WITH_READONLY = 1LL << READONLY_BITS_SHIFT;
+  static const int64_t WITH_COLUMN_STORE = 1LL << COLUMN_STORE_BITS_SHIFT;
 
   bool is_exist_full_replica() const { return replica_type_ & WITH_FULL; };
   bool is_exist_readonly_replica() const { return replica_type_ & WITH_READONLY; };
@@ -293,6 +329,14 @@ public:
   static int is_replica_type_config_valid(const ObProxyConfigItem &item);
   static int is_weigth_zone_config_valid(const ObProxyConfigItem &item);
   bool can_write_to_sqlite(const bool is_backup);
+  int parse_item_for_sql_fileds(const obutils::SqlFieldResult &sql_fields,
+                                const int64_t row_index, ObString &vip,
+                                int64_t &vport, int64_t &vid,
+                                ObProxyConfigItem &item);
+  // 多级别配置校验统一放到下面这个函数
+  int check_multi_level_config_valid(ObProxyConfigItem &item, const ObString &vip,
+                                     const int64_t vport, const int64_t vid,
+                                     const bool is_backup);
   int rewrite_service_name_config(const bool is_backup,
                                            ObProxyConfigItem &item,
                                            const ObString &vip,

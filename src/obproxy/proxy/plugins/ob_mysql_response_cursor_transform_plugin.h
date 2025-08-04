@@ -57,12 +57,13 @@ public:
 
 private:
   void reset();
-
+  void free_local_buffer();
   int handle_resultset_header(event::ObIOBufferReader *reader);
   int handle_resultset_field(event::ObIOBufferReader *reader);
 
 private:
-  event::ObIOBufferReader *local_reader_;
+  event::ObIOBufferReader *local_produce_reader_;   // consume() 中向下游写入数据时使用
+  event::ObIOBufferReader *local_analyze_reader_;   // consume() 中解析报文使用
   event::ObMIOBuffer *local_buffer_;
   packet::ObMysqlPacketReader pkt_reader_;
   RESULTSET_STATE resultset_state_;
@@ -114,10 +115,13 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
+    const ObSqlParseResult &parse_result = sm->trans_state_.trans_info_.client_request_.get_parse_result();
+    // cursor called by stored programs
+    const bool is_not_cursor_stmt = parse_result.is_select_stmt() || parse_result.is_write_stmt();
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
             && obmysql::OB_MYSQL_COM_STMT_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
-            && !sm->trans_state_.trans_info_.client_request_.get_parse_result().is_dml_stmt()
+            && !is_not_cursor_stmt
             && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
   }
 

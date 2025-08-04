@@ -5,6 +5,7 @@
 #ifndef OBPROXY_RPC_PROMETHEUS_H
 #define OBPROXY_RPC_PROMETHEUS_H
 
+#include "obkv/table/ob_table.h"
 #include "proxy/rpc/net/ob_proxy_rpc_session_info.h"
 #include "rpc/obrpc/ob_rpc_packet.h"
 #include "prometheus/ob_prometheus_processor.h"
@@ -28,8 +29,11 @@ public:
                                const obrpc::ObRpcPacketCode pcode,
                                const ObPrometheusMetrics metric, ...);
 
+  static int handle_net_prometheus(const net::ObIpEndpoint &ip,
+                                   const ObPrometheusMetrics metric, ...);
+
   static int handle_net_prometheus(const proxy::ObRpcClientNetSessionInfo &cs_info,
-                               const ObPrometheusMetrics metric, ...);
+                                   const ObPrometheusMetrics metric, ...);
 private:
   static int handle_prometheus(const common::ObString &logic_tenant_name,
                                const common::ObString &logic_database_name,
@@ -42,6 +46,7 @@ private:
                                va_list args);
 };
 
+const char *get_table_type_name(const obkv::ObTableEntityType type);
 #define RPC_PROMETHEUS_STAT(logic_tenant_name, logic_database_name, cluster_name, \
                             tenant_name, database_name, pcode, metric, ...) \
   if (obutils::get_global_proxy_config().enable_prometheus && g_ob_prometheus_processor.is_inited()) { \

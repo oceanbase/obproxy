@@ -34,8 +34,11 @@ ObTransformationPlugin::ObTransformationPlugin(
       output_buffer_reader_(NULL), bytes_written_(0), transform_bytes_(-1),
       input_complete_dispatched_(false)
 {
-  output_buffer_ = new_empty_miobuffer();
-  output_buffer_reader_ = output_buffer_->alloc_reader();
+  if (OB_ISNULL(output_buffer_ = new_empty_miobuffer())) {
+    WARN_API("fail to alloc memory for output_buffer_");
+  } else if (OB_ISNULL(output_buffer_reader_ = output_buffer_->alloc_reader())) {
+    WARN_API("fail to alloc memory for output_buffer_reader_");
+  }
 
   ObProxyMutex *mutex = sm_->mutex_;
   if (NULL == mutex) {

@@ -526,6 +526,34 @@ private:
   ObObkvGetRouteRequest get_route_request_;
 };
 
+class ObRpcTableMetaRequest : public ObRpcRequest
+{
+public:
+  ObRpcTableMetaRequest(): meta_request_() {}
+  virtual ~ObRpcTableMetaRequest() {}
+
+  virtual ObString get_credential() const { return meta_request_.credential_; }
+  ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_DYNAMIC;}
+  ObTableMetaRequest &get_meta_request() { return meta_request_; }
+
+  void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
+
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const override;
+  virtual int analyze_request(const char *buf, const int64_t buf_len, int64_t &pos) override;
+
+  virtual bool is_read_weak() const { return true; }
+  virtual int calc_partition_id(common::ObArenaAllocator &allocator,
+                                proxy::ObRpcReq &ob_rpc_req,
+                                proxy::ObProxyPartInfo &part_info,
+                                int64_t &partition_id) override;
+
+  TO_STRING_KV(K_(rpc_packet_meta), K_(meta_request));
+
+private:
+  ObTableMetaRequest meta_request_;
+};
+
 } // end namespace obkv
 } // end namespace obproxy
 } // end namespace oceanbase

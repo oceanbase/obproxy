@@ -35,6 +35,7 @@ namespace proxy
 #define TABLET_LS_ENTRY_FAIL_SCHEDULE_LOOKUP_REMOTE_EVENT     (TABLET_LS_ENTRY_EVENT_EVENTS_START + 5)
 
 #define OB_TABLET_TO_LS_MAP_BUCKET_SIZE 16
+#define MAX_TABLET_TO_LS_LENGTH 32
 typedef common::hash::ObHashMap<int64_t, int64_t> OB_TABLET_TO_LS_MAP;
 
 struct ObTabletLsEntryKey

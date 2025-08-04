@@ -48,11 +48,12 @@ typedef common::ObString ObRequestBuffer;
 enum ObRequestPhase
 {
   REQ_PHASE_HANDSHAKE = 0,
-  REQ_PHASE_LOGIN_AUTH_SWITCH_RESP,
-  REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP,
-  REQ_PHASE_FILE_CONTENT,
+  REQ_PHASE_LOGIN_AUTH_SWITCH_RESP,         // 由 client 发送 handshake response 请求触发的 auth switch
+  REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP,   // 由 client 发送 com_change_user 请求触发的 auth switch
+  REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP, // 由 SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN (com_change_user) 触发的 auth switch
+  REQ_PHASE_FILE_CONTENT,                   // 由 load data local infile 触发的文件内容传输命令
   REQ_PHASE_COMMAND,
-  REQ_PHASE_COMMAND_SEND_LONG_DATA,
+  REQ_PHASE_COMMAND_SEND_LONG_DATA,         // 标记 client 正在发送 com_send_long_data 请求, 该请求无 Response
 };
 inline common::ObString get_request_phase_string(const ObRequestPhase phase)
 {
@@ -66,6 +67,9 @@ inline common::ObString get_request_phase_string(const ObRequestPhase phase)
       break;
     case REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP:
       str = "REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP";
+      break;
+    case REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP:
+      str = "REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP";
       break;
     case REQ_PHASE_FILE_CONTENT:
       str = "REQ_PHASE_FILE_CONTENT";
@@ -90,6 +94,7 @@ struct ObRequestAnalyzeCtx
 
   inline const bool is_handshake_req_phase() const { return request_phase_ == REQ_PHASE_HANDSHAKE; }
   inline const bool is_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP
+                                                               || request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP
                                                                || request_phase_ == REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
   inline const bool is_file_content_req_phase() const {  return request_phase_ == REQ_PHASE_FILE_CONTENT; }
   static int init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,

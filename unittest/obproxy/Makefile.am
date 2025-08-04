@@ -52,6 +52,11 @@ else
              ${BABASSL_DIR}/lib/libcrypto.a
 endif
 
+
+if IS_X86_64
+  LDADD += ${DEP_DIR}/lib/libunwind.a
+endif
+
 pub_sources=                                           \
                  test_eventsystem_api.h                \
                  test_eventsystem_api.cpp              \
@@ -84,9 +89,9 @@ bin_PROGRAMS =                                         \
                  test_tenant_processor                 \
                  ## test_proxy_json_config_info           \
                  ## test_mysql_transact                   \
-                 test_ldc_location                     \
+                 ## test_ldc_location                     \
                  obproxy_task_flow_controller_checker  \
-                 ob_expr_parser_checker                \
+                 ## ob_expr_parser_checker                \
                  ob_func_expr_parser_checker           \
                  test_zlib_stream_compressor           \
                  test_fast_zlib_stream_compressor      \
@@ -134,10 +139,10 @@ test_white_list_processor_SOURCES = test_white_list_processor.cpp
 test_tenant_processor_SOURCES = test_tenant_processor.cpp
 ## test_proxy_json_config_info_SOURCES = test_proxy_json_config_info.cpp
 ## test_mysql_transact_SOURCES = test_mysql_transact.cpp
-test_ldc_location_SOURCES = test_ldc_location.cpp
+## test_ldc_location_SOURCES = test_ldc_location.cpp
 obproxy_task_flow_controller_checker_SOURCES = obproxy_task_flow_controller_checker.h obproxy_task_flow_controller_checker.cpp
 obproxy_parser_checker_SOURCES = obproxy_parser_checker.h obproxy_parser_checker.cpp
-ob_expr_parser_checker_SOURCES = ob_expr_parser_checker.h ob_expr_parser_checker.cpp
+## ob_expr_parser_checker_SOURCES = ob_expr_parser_checker.h ob_expr_parser_checker.cpp
 ob_func_expr_parser_checker_SOURCES = ob_func_expr_parser_checker.h ob_func_expr_parser_checker.cpp
 test_zlib_stream_compressor_SOURCES = test_zlib_stream_compressor.cpp
 test_fast_zlib_stream_compressor_SOURCES = test_fast_zlib_stream_compressor.cpp

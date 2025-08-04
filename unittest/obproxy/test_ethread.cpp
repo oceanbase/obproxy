@@ -35,11 +35,11 @@ using namespace event;
   param->started_ = true;                                                               \
   param->last_time_ = get_hrtime_internal();                                      \
   if (param->common_ethread_) {                                                         \
-    int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_CALL];\
-    param->ethread_ = g_event_processor.event_thread_[ET_CALL][cur_thread];              \
+    int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_NET];\
+    param->ethread_ = g_event_processor.event_thread_[ET_NET][cur_thread];              \
   } else {                                                                              \
-    test_last_thread = g_event_processor.next_thread_for_type_[ET_CALL];                \
-    param->ethread_ = g_event_processor.assign_thread(ET_CALL);                         \
+    test_last_thread = g_event_processor.next_thread_for_type_[ET_NET];                \
+    param->ethread_ = g_event_processor.assign_thread(ET_NET);                         \
   }                                                                                     \
   ASSERT_TRUE(NULL != param->ethread_);                                                 \
   param->callback_event_ = callback_event;                                              \
@@ -234,7 +234,7 @@ void TestEThread::check_obethread_dedicated(TestFuncParam *param)
       ASSERT_TRUE(ObEThread::NO_ETHREAD_ID ==  ethread->id_);
       ASSERT_TRUE(param->event_ ==  ethread->pending_event_);
 
-      ethread->set_event_thread_type((ObEventThreadType)ET_CALL);
+      ethread->set_event_thread_type((ObEventThreadType)ET_NET);
       param->callback_event_ = EVENT_IMMEDIATE;
       param->cookie_ = param;
       param->event_->callback_event_ = EVENT_IMMEDIATE;
@@ -548,14 +548,14 @@ void TestEThread::check_schedule_local(TestFuncParam *param)
     if (REGULAR == param->ethread_->tt_) {
       check_schedule_result(param, check_schedule_imm_local, check_schedule_at_local,
           check_schedule_in_local, check_schedule_every_local);
-      ASSERT_EQ(test_last_thread + 1, g_event_processor.next_thread_for_type_[ET_CALL]);
+      ASSERT_EQ(test_last_thread + 1, g_event_processor.next_thread_for_type_[ET_NET]);
     } else if (DEDICATED == param->ethread_->tt_) {
-      ASSERT_EQ(test_last_thread + 2, g_event_processor.next_thread_for_type_[ET_CALL]);
-      int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_CALL];
-      ASSERT_TRUE(param->ethread_ !=  g_event_processor.event_thread_[ET_CALL][cur_thread]);
+      ASSERT_EQ(test_last_thread + 2, g_event_processor.next_thread_for_type_[ET_NET]);
+      int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_NET];
+      ASSERT_TRUE(param->ethread_ !=  g_event_processor.event_thread_[ET_NET][cur_thread]);
       //just for reusing check_schedule_result and passing test below,
       //in fact, param->ethread_ != param->event_->ethread_
-      param->ethread_ = g_event_processor.event_thread_[ET_CALL][cur_thread];
+      param->ethread_ = g_event_processor.event_thread_[ET_NET][cur_thread];
       check_schedule_result(param, check_schedule_imm, check_schedule_at,
           check_schedule_in, check_schedule_every);
       param->ethread_ = g_event_processor.all_dedicate_threads_[0];//reset
@@ -569,9 +569,9 @@ void start_obethred_common(ObEThread *ethread, int64_t event_thread_count, TestF
   char thr_name[MAX_THREAD_NAME_LENGTH];
 
   g_event_processor.all_event_threads_[event_thread_count] = ethread;
-  ethread->set_event_thread_type((ObEventThreadType)ET_CALL);
-  g_event_processor.event_thread_[ET_CALL][event_thread_count] = ethread;
-  g_event_processor.thread_count_for_type_[ET_CALL]++;
+  ethread->set_event_thread_type((ObEventThreadType)ET_NET);
+  g_event_processor.event_thread_[ET_NET][event_thread_count] = ethread;
+  g_event_processor.thread_count_for_type_[ET_NET]++;
 
   if (OB_SUCCESS != (ret = ethread->init())) {
     LOG_ERROR("failed to init event thread", K(event_thread_count), K(ret));
@@ -875,11 +875,11 @@ TEST_F(TestEThread, is_or_set_event_thread_type)
   LOG_DEBUG("is_or_set event_thread_type");
 
   ObEThread *ethread = g_event_processor.all_event_threads_[0];
-  ASSERT_TRUE(ethread->is_event_thread_type((ObEventThreadType)ET_CALL));
+  ASSERT_TRUE(ethread->is_event_thread_type((ObEventThreadType)ET_NET));
   ASSERT_FALSE(ethread->is_event_thread_type((ObEventThreadType)1));
   ethread->set_event_thread_type((ObEventThreadType)1);
   ASSERT_TRUE(ethread->is_event_thread_type((ObEventThreadType)1));
-  ethread->set_event_thread_type((ObEventThreadType)ET_CALL);
+  ethread->set_event_thread_type((ObEventThreadType)ET_NET);
 }
 
 TEST_F(TestEThread, schedule_imm)
@@ -1148,8 +1148,8 @@ TEST_F(TestEThread, schedule_local1_imm)
     test_param[0]->callback_event_ = EVENT_IMMEDIATE;
     test_param[0]->event_->callback_event_ = EVENT_IMMEDIATE;
     ASSERT_EQ(common::OB_SUCCESS, test_param[0]->event_->init(*test_param[0]->cont_, 0, 0));
-    test_last_thread = g_event_processor.next_thread_for_type_[ET_CALL];
-    test_param[0]->ethread_ = g_event_processor.assign_thread(ET_CALL);
+    test_last_thread = g_event_processor.next_thread_for_type_[ET_NET];
+    test_param[0]->ethread_ = g_event_processor.assign_thread(ET_NET);
     ((ObContInternal *)test_param[0]->cont_)->event_count_++;
 
     TestEThread::check_schedule_local(test_param[0]);
@@ -1172,8 +1172,8 @@ TEST_F(TestEThread, schedule_local2_every)
     test_param[0]->aperiod_ = TEST_TIME_SECOND_EVERY;
     ASSERT_EQ(common::OB_SUCCESS, test_param[0]->event_->init(*test_param[0]->cont_,
         get_hrtime_internal() + test_param[0]->aperiod_, test_param[0]->aperiod_));
-    test_last_thread = g_event_processor.next_thread_for_type_[ET_CALL];
-    test_param[0]->ethread_ = g_event_processor.assign_thread(ET_CALL);
+    test_last_thread = g_event_processor.next_thread_for_type_[ET_NET];
+    test_param[0]->ethread_ = g_event_processor.assign_thread(ET_NET);
     ((ObContInternal *)test_param[0]->cont_)->event_count_ += TEST_DEFAULT_PERIOD_COUNT;
 
     TestEThread::check_schedule_local(test_param[0]);

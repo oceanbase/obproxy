@@ -1126,11 +1126,15 @@ int64_t SqlFieldResult::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(K(fields_.count()));
+  J_KV(K(fields_.count()), K(not_eq_fields_.count()));
   J_ARRAY_START();
   for (int i = 0; i < fields_.count();i++) {
     J_COMMA();
     J_KV("i", i,  "filed", fields_.at(i));
+  }
+  for (int i = 0; i < not_eq_fields_.count();i++) {
+    J_COMMA();
+    J_KV("i", i,  "not_eq_filed", not_eq_fields_.at(i));
   }
   J_ARRAY_END();
   J_OBJ_END();
@@ -1202,6 +1206,65 @@ int ObProxySqlParser::get_parse_allocator(ObArenaAllocator *&allocator)
   return ret;
 }
 
+int ObProxySqlParser::parse_multi_stmt_sql(const ObString &sql,
+                                           const ObProxyParseMode parse_mode,
+                                           ObSqlParseResult &sql_parse_result,
+                                           const bool use_lower_case_name,
+                                           ObCollationType connection_collation,
+                                           proxy::ObProxyMysqlRequest &client_request,
+                                           const bool drop_origin_db_table_name /*false*/,
+                                           const bool is_sharding_request /*false*/)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(sql.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid empty sql", K(sql), K(sql.length()), K(ret));
+  } else {
+    ObSEArray<ObString, 4> sql_array;
+    const int limit_array_count = 2;
+    // 这里需要裁减末尾的'\0': 输入的sql末尾一定带2个'\0'
+    // 但split_multiple_stmt不能两个'\0'，否则对"sql_1;\0"会误认为是两条sql
+    ObString split_sql = sql;
+    if (OB_LIKELY(sql.length() >= 2 && '\0' == sql[sql.length() - 1]
+        && '\0' == sql[sql.length() - 2])) {
+      split_sql.assign_ptr(sql.ptr(), sql.length() - 2);
+    }
+    if (OB_FAIL(ObProxySqlParser::split_multiple_stmt(split_sql, sql_array, limit_array_count))) {
+      LOG_WDIAG("fail to split_multiple_stmt sql", K(ret));
+    } else if (OB_UNLIKELY(sql_array.count() <= 0 || sql_array.count() > limit_array_count)) {
+      ret = OB_ERR_PARSER_SYNTAX;
+      LOG_WDIAG("unexpected sql num is wrong", K(sql_array.count()), K(ret));
+    } else if (OB_UNLIKELY(sql_array.count() > 1) && OB_FAIL(client_request.preprocess_multi_sql(sql_array))) {
+      LOG_WDIAG("fail to preprocess multi stmt", K(ret));
+    } else {
+      const bool is_multi_stmt = sql_array.count() > 1;
+      const ObString first_sql = is_multi_stmt ? proxy::ObProxyMysqlRequest::get_parse_sql(sql_array.at(0)) : sql;
+      if (OB_FAIL(parse_sql(first_sql, parse_mode, sql_parse_result, use_lower_case_name,
+                          connection_collation, drop_origin_db_table_name, is_sharding_request))) {
+        LOG_WDIAG("fail to parse first sql");
+      } else if (is_multi_stmt && !is_sharding_request) {
+        if (sql_parse_result.is_start_trans_stmt()) {
+          // 对multi-stmt语句，如果第一条语句是开启事务，则使用第二条语句作为后续路由计算信息
+          // multi-stmt，不能hold住，因为sql本身可能有语法错误
+          ObString second_sql = proxy::ObProxyMysqlRequest::get_parse_sql(sql_array.at(1));
+          LOG_DEBUG("first sql is start transation, will use second", K(second_sql));
+          // 需要存储second sql，后面expr parse会用
+          client_request.set_expr_parse_second_sql(sql_array.at(1));
+          if (OB_FAIL(parse_sql(second_sql, parse_mode, sql_parse_result, use_lower_case_name,
+                      connection_collation, drop_origin_db_table_name, is_sharding_request))) {
+            LOG_WDIAG("fail to parse second sql", K(ret));
+          }
+        }
+      }
+
+      sql_parse_result.set_multi_stmt(is_multi_stmt);
+      LOG_DEBUG("end of parse multi-stmt", K(sql_array.count()), K(sql.length()), K(ret));
+    }// end multi-stmt parse
+
+  }
+  return ret;
+}
+
 int ObProxySqlParser::parse_sql(const ObString &sql,
                                 const ObProxyParseMode parse_mode,
                                 ObSqlParseResult &sql_parse_result,
@@ -1239,11 +1302,6 @@ int ObProxySqlParser::parse_sql(const ObString &sql,
         LOG_INFO("fail to load result, will go on anyway", K(sql), K(use_lower_case_name), K(tmp_ret));
       }
     } else {
-      sql_parse_result.set_multi_semicolon_in_stmt(ObProxySqlParser::is_multi_semicolon_in_stmt(sql));
-      // if a start trans sql contains multi semicolon, do not hold it to avoid wrong sql syntax
-      if (sql_parse_result.is_start_trans_stmt() && sql_parse_result.is_multi_semicolon_in_stmt()) {
-        sql_parse_result.set_stmt_type(OBPROXY_T_INVALID);
-      }
       LOG_DEBUG("success to do proxy parse", K(sql_parse_result));
     }
 
@@ -1676,7 +1734,8 @@ int ObProxySqlParser::parse_sql_by_obparser(const ObString &sql,
 
 // A simplified version from observer
 int ObProxySqlParser::split_multiple_stmt(const ObString &stmt,
-                                  ObIArray<ObString> &queries)
+                                          ObIArray<ObString> &queries,
+                                          const int limit_array_count/*-1*/)
 {
   int ret = OB_SUCCESS;
 
@@ -1707,6 +1766,9 @@ int ObProxySqlParser::split_multiple_stmt(const ObString &stmt,
                 K(remain), K(offset), K(stmt.length()), K(ret));
     } else if(OB_FAIL(queries.push_back(query))){
       LOG_WDIAG("fail to push back part of multi stmt", K(stmt), K(ret));
+    } else if (-1 != limit_array_count && queries.count() >= limit_array_count) {
+      LOG_DEBUG("reached limit count, will not push back array", K(limit_array_count));
+      break;
     }
   }
 
@@ -1799,12 +1861,12 @@ int ObProxySqlParser::preprocess_multi_stmt(ObArenaAllocator &allocator,
     ret = OB_REACH_MEMORY_LIMIT;
     LOG_WDIAG("fail to alloc memory for multi_sql_buf", K(ret), K(total_sql_length));
   } else {
-    MEMSET(multi_sql_buf, '\0', total_sql_length);
     int64_t pos = 0;
     for (int64_t i = 0; i < sql_array.count(); ++i) {
       ObString& sql = sql_array.at(i);
       MEMCPY(multi_sql_buf + pos ,sql.ptr(), sql.length());
       sql.assign_ptr(multi_sql_buf + pos, sql.length());
+      MEMSET(multi_sql_buf + pos + sql.length(), '\0', PARSE_EXTRA_CHAR_NUM);
       pos += sql.length() + PARSE_EXTRA_CHAR_NUM;
     }
   }

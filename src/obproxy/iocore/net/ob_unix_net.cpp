@@ -35,6 +35,7 @@
 #include "iocore/net/ob_event_io.h"
 #include "iocore/net/ob_timerfd_manager.h"
 #include "obutils/ob_resource_pool_processor.h"
+#include "iocore/eventsystem/ob_session_pool_event_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -152,7 +153,7 @@ int update_cop_config(const int64_t default_inactivity_timeout, const int64_t ma
 }
 
 // can only initialize a thread spawned in g_event_processor
-int initialize_thread_for_net(ObEThread *thread)
+int initialize_thread_for_net(ObEThread *thread, NetContHandler handler_func)
 {
   int ret = OB_SUCCESS;
 
@@ -162,6 +163,8 @@ int initialize_thread_for_net(ObEThread *thread)
   } else if (OB_ISNULL(thread->net_handler_ = new (std::nothrow) ObNetHandler())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObNetHandler", K(thread), K(ret));
+  } else if (handler_func != NULL
+             && OB_FALSE_IT(thread->net_handler_->handler_ = reinterpret_cast<ContinuationHandler>(handler_func))) {
   } else if (OB_ISNULL(thread->net_poll_ = new (std::nothrow) ObNetPoll(thread->get_net_handler()))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_NET_LOG(WDIAG, "fail to new ObNetPoll", K(thread), K(ret));
@@ -535,6 +538,23 @@ int ObNetHandler::start_net_event(int event, ObEvent *e)
   return (OB_SUCCESS == ret) ? EVENT_CONT : EVENT_ERROR;
 }
 
+int ObNetHandler::start_session_pool_event(int event, ObEvent *e)
+{
+  UNUSED(event);
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(e)) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_NET_LOG(WDIAG, "ObEvent is NULL", K(e), K(ret));
+  } else {
+    SET_HANDLER(reinterpret_cast<NetContHandler>(&ObNetHandler::main_net_event));
+    int64_t interval_us = HRTIME_USECONDS(get_global_proxy_config().session_pool_thread_schedule_interval);
+    e->schedule_every(interval_us);
+    trigger_event_ = e;
+    SESSION_POOL_LOG(INFO, "start_session_pool_event", K(this_ethread()), "interval_us", interval_us);
+  }
+  return (OB_SUCCESS == ret) ? EVENT_CONT : EVENT_ERROR;
+}
+
 // Move VC's enabled on a different thread to the ready list
 inline void ObNetHandler::process_enabled_list()
 {
@@ -588,6 +608,8 @@ int ObNetHandler::main_net_event(int event, ObEvent *e)
       if (OB_LIKELY(!read_ready_list_.empty() || !write_ready_list_.empty()
             || !read_enable_list_.empty() || !write_enable_list_.empty())) {
         poll_timeout = 0; // poll immediately returns -- we have triggered stuff to process right now
+      } else if (ethread->is_event_thread_type(ET_SESS_POOL)) {
+        poll_timeout = 0;
       } else {
         poll_timeout = (int32_t)(hrtime_to_msec(ethread->sleep_time_));
       }

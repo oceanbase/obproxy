@@ -635,7 +635,7 @@ int ObMysqlRoute::state_table_entry_lookup(int event, void *data)
     if (NULL != table_entry_ && (table_entry_->is_avail_state())) {
       LOG_DEBUG("ObMysqlRoute get table entry succ", K(param_.name_),
           KPC_(table_entry), K_(is_table_entry_from_remote));
-    } else {
+    } else if (NULL != table_entry_) {
       LOG_INFO("ObMysqlRoute get table entry succ", K(param_.name_),
           KPC_(table_entry), K_(is_table_entry_from_remote));
     }
@@ -772,7 +772,9 @@ inline void ObMysqlRoute::setup_partition_id_calc()
       }
     } else {
       result = &param_.client_request_->get_parse_result();
-      if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == param_.client_request_->get_packet_meta().cmd_
+      if (OB_UNLIKELY(!param_.client_request_->get_expr_parse_second_sql().empty())) {
+        user_sql = param_.client_request_->get_expr_parse_second_sql();
+      } else if (obmysql::OB_MYSQL_COM_STMT_EXECUTE == param_.client_request_->get_packet_meta().cmd_
           || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == param_.client_request_->get_packet_meta().cmd_) {
         if (OB_FAIL(param_.client_info_->get_ps_sql(user_sql))) {
           LOG_WDIAG("fail to get ps sql", K(ret));

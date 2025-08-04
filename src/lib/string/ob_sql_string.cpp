@@ -255,7 +255,7 @@ int ObSqlString::extend(const int64_t size)
     LOG_WDIAG("invalid argument", K(ret), K(size));
   } else if (NULL == (new_data = (static_cast<char *>(allocator_.alloc(size))))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WDIAG("allocate memory failed", K(ret), K(size));
+    LOG_EDIAG("allocate memory failed", K(ret), K(size));
   } else {
     if (NULL != data_) {
       MEMCPY(new_data, data_, len_ + 1);

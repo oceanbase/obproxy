@@ -26,6 +26,7 @@
 #include "omt/ob_conn_table_processor.h"
 #include "omt/ob_white_list_table_processor.h"
 #include "obutils/ob_connection_diagnosis_trace.h"
+#include "omt/ob_ssl_config_table_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -95,18 +96,16 @@ ObMysqlClientSession::ObMysqlClientSession()
       conn_decrease_(false), conn_prometheus_decrease_(false), vip_connection_decrease_(false),
       magic_(MYSQL_CS_MAGIC_DEAD), create_thread_(NULL), is_local_connection_(false),
       client_vc_(NULL), in_list_stat_(LIST_INIT), current_tid_(-1),
-      cs_id_(0), proxy_sessid_(0), bound_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), last_bound_ss_(NULL),
+      cs_id_(0), proxy_sessid_(0), last_ss_(NULL), cur_ss_(NULL), lii_ss_(NULL), second_last_ss_(NULL),
       lock_ss_(NULL), closed_key_ss_(NULL), sharding_txn_ss_addr_(), trans_coordinator_ss_addr_(), read_buffer_(NULL),
       buffer_reader_(NULL), mysql_sm_(NULL), read_state_(MCS_INIT), ka_vio_(NULL),
-      server_ka_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
+      last_ss_keep_alive_vio_(NULL), trace_stats_(NULL), select_plan_(NULL),
       ps_id_(0), cursor_id_(CURSOR_ID_START),
       cs_id_version_(CLIENT_SESSION_ID_V1), connected_time_(0)
 {
   SET_HANDLER(&ObMysqlClientSession::main_handler);
-  bool enable_session_pool = get_global_proxy_config().is_pool_mode
-                             && get_global_proxy_config().enable_session_pool_for_no_sharding;
-  set_session_pool_client(enable_session_pool);
-  set_can_server_session_release(true);
+  memset(&session_states_, 0, sizeof(session_states_));
+  connection_pool_mode_ = ObConnectionPoolMode::NONE;
   set_need_send_trace_info(true);
   set_first_handle_ps_close_reset_request(true);
   set_first_send_ps_close_reset_request(true);
@@ -117,9 +116,9 @@ void ObMysqlClientSession::destroy()
   PROXY_CS_LOG(INFO, "client session destroy", K_(cs_id), K_(proxy_sessid), KP_(client_vc));
 
   if (OB_UNLIKELY(NULL != client_vc_)
-      || OB_UNLIKELY(NULL != bound_ss_)
+      || OB_UNLIKELY(NULL != last_ss_)
       || OB_ISNULL(read_buffer_)) {
-    PROXY_CS_LOG(WDIAG, "invalid client session", K(client_vc_), K(bound_ss_), K(read_buffer_));
+    PROXY_CS_LOG(WDIAG, "invalid client session", K(client_vc_), K(last_ss_), K(read_buffer_));
   }
   is_local_connection_ = false;
 
@@ -184,7 +183,7 @@ void ObMysqlClientSession::destroy()
   set_in_trans_for_close_request(false);
   set_last_request_in_trans(false);
   set_trans_internal_routing(false);
-  set_need_return_last_bound_ss(false);
+  set_need_return_second_last_server_session(false);
   set_first_dml_sql_got(false);
   set_proxy_enable_trans_internal_routing(false);
   compressed_seq_ = 0;
@@ -198,6 +197,7 @@ void ObMysqlClientSession::destroy()
   set_using_ldg(false);
   set_using_service_name(false);
   set_standby_read_write_split(false);
+  session_states_.is_in_trans_internal_routing_ = false;
   cs_id_version_ = CLIENT_SESSION_ID_V1;
   op_reclaim_free(this);
 }
@@ -323,7 +323,7 @@ int ObMysqlClientSession::new_connection(
     magic_ = MYSQL_CS_MAGIC_ALIVE;
     mutex_ = new_vc->mutex_;
     session_manager_.set_mutex(mutex_);
-    session_manager_new_.set_mutex(mutex_);
+    session_manager_sharding_.set_mutex(mutex_);
     set_cs_id_version(static_cast<ObClientSessionIDVersion>(get_global_proxy_config().client_session_id_version.get_value()));
     set_connected_time(ObTimeUtility::current_time());
     MUTEX_TRY_LOCK(lock, mutex_, this_ethread());
@@ -416,6 +416,13 @@ int ObMysqlClientSession::new_connection(
                 ret = OB_ERR_CAN_NOT_PASS_WHITELIST;
                 PROXY_CS_LOG(DEBUG, "can not pass white_list", K(ct_info_.vip_tenant_.cluster_name_),
                              K(ct_info_.vip_tenant_.tenant_name_), K(client_addr), K(ret));
+                OBPROXY_ERROR_LOG(ERROR, "can not pass white_list of obproxy", "cluster_name",
+                                  ct_info_.vip_tenant_.cluster_name_, "tenant_name", ct_info_.vip_tenant_.tenant_name_,
+                                  K(user_name), K(client_addr), K_(cs_id), K(ret));
+                OBPROXY_DIAGNOSIS_LOG(WDIAG, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
+                                      "error_msg", "obproxy disconnect because can not pass white list",
+                                      "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
+                                      ct_info_.vip_tenant_.tenant_name_, K(client_addr), K_(cs_id));
               }
             }
           }
@@ -795,8 +802,12 @@ int ObMysqlClientSession::add_to_list()
       if (LIST_ADDED != in_list_stat_) {
         ret = OB_SESSION_ENTRY_EXIST;
         PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
-        OBPROXY_DIAGNOSIS_LOG(WDIAG, "[CONNECTION]", "trace_type", "PROXY_INTERNAL_TRACE",
+        OBPROXY_ERROR_LOG(ERROR, "there is no enough cs id, close this connect", "cluster_name", ct_info_.vip_tenant_.cluster_name_,
+                          "tenant_name", ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(), K_(cs_id), K(ret));
+        OBPROXY_DIAGNOSIS_LOG(WDIAG, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
                               "error_msg", "obproxy disconnect because the cs_id has been used up", K_(cs_id),
+                              "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
+                              ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(),
                               "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES));
         cs_id_ = 0;
       } else {
@@ -871,9 +882,38 @@ void ObMysqlClientSession::do_io_shutdown(const ShutdownHowToType howto)
   client_vc_->do_io_shutdown(howto);
 }
 
+int ObMysqlClientSession::setup_reset_conn_buffer(ObMysqlSM *sm)
+{
+  int ret = OB_SUCCESS;
+  if (sm != NULL) {
+    if (OB_FAIL(session_manager_.setup_reset_conn_buffer(sm))) {
+      PROXY_SS_LOG(WDIAG, "fail to setup_reset_conn_buffer", K(ret));
+    }
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_SS_LOG(WDIAG, "unexpected null sm", K(ret));
+  }
+
+  return ret;
+}
+
 void ObMysqlClientSession::do_io_close(const int alerrno)
 {
-  PROXY_SS_LOG(INFO, "client session do_io_close", K(*this), KP(client_vc_), KP(this));
+  if (IS_DEBUG_ENABLED()) {
+    PROXY_SS_LOG(DEBUG, "client session do_io_close", K(*this), KP(client_vc_), KP(this));
+  } else {
+    PROXY_SS_LOG(INFO, "client session do_io_close", KP(client_vc_), KP(this),
+    "is_proxy_client", session_states_.is_proxy_mysql_client_,
+    "cs_id", cs_id_,
+    "proxy_sessid", proxy_sessid_,
+    "cluster", session_info_.get_priv_info().cluster_name_,
+    "tenant", session_info_.get_priv_info().tenant_name_,
+    "user", session_info_.get_priv_info().user_name_,
+    "mysql_capability", session_info_.get_login_req().get_hsr_result().response_.get_capability_flags().capability_,
+    "last_server_sessid", session_info_.get_last_server_sess_id(),
+    "last_server_addr", session_info_.get_last_server_addr(),
+    "dummy_ldc", dummy_ldc_);
+  }
   int ret = OB_SUCCESS;
   // Prevent double closing
   if (MCS_CLOSED != read_state_) {
@@ -897,20 +937,17 @@ void ObMysqlClientSession::do_io_close(const int alerrno)
 
     // If we have an attached server session, release
     // it back to our shared pool
-    if (NULL != bound_ss_) {
-      bound_ss_->do_io_close();
-      bound_ss_ = NULL;
-      server_ka_vio_ = NULL;
+    if (OB_FAIL(release_last_server_session())) {
+      PROXY_CS_LOG(WDIAG, "fail to release last server session", K(ret));
+    } else if (OB_FAIL(release_second_last_server_session())) {
+      PROXY_CS_LOG(WDIAG, "fail to release before last server session", K(ret));
     }
 
-    if (NULL != last_bound_ss_) {
-      last_bound_ss_->do_io_close();
-      last_bound_ss_ = NULL;
-    }
-
-    // close all server sessions in server session manager
+    // if pool session then release all session to global session pool
+    // else close all session
     session_manager_.purge_keepalives();
-    session_manager_new_.purge_keepalives();
+    // close all server sessions in server session manager
+    session_manager_sharding_.purge_keepalives();
 
     if (half_close_ && NULL != mysql_sm_) {
       read_state_ = MCS_HALF_CLOSED;
@@ -1048,7 +1085,7 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
 
   int64_t ret = OB_SUCCESS;
   int64_t async_disconnect_code = OB_SUCCESS;
-  if (OB_LIKELY(data == server_ka_vio_) && OB_LIKELY(NULL != bound_ss_)) {
+  if (OB_LIKELY(data == last_ss_keep_alive_vio_) && OB_LIKELY(NULL != last_ss_)) {
     switch (event) {
         // fallthrough
       case VC_EVENT_ERROR:
@@ -1061,8 +1098,8 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
       case VC_EVENT_ACTIVE_TIMEOUT:
       case VC_EVENT_INACTIVITY_TIMEOUT:
         // Timeout - close it
-        if (bound_ss_->get_session_info().is_key_session()) {
-          async_disconnect_code = bound_ss_->get_session_info().get_key_session_code();
+        if (last_ss_->get_session_info().is_key_session()) {
+          async_disconnect_code = last_ss_->get_session_info().get_key_session_code();
           PROXY_CS_LOG(WDIAG, "client session closed because of the bound key server session close");
         } else if (OB_MYSQL_COM_STMT_SEND_LONG_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_
                    || OB_MYSQL_COM_STMT_SEND_PIECE_DATA == mysql_sm_->trans_state_.trans_info_.sql_cmd_) {
@@ -1070,14 +1107,12 @@ int ObMysqlClientSession::state_server_keep_alive(int event, void *data)
           PROXY_CS_LOG(WDIAG, "client session closed because of send long data/pieces server session close");
         }
         if (OB_UNLIKELY(OB_SUCCESS != async_disconnect_code)) {
-          set_closed_key_server_session(bound_ss_);
+          set_closed_key_server_session(last_ss_);
           if (OB_FAIL(async_disconnect_by_internal_reason(async_disconnect_code))) {
-            PROXY_CS_LOG(WDIAG, "fail to close client session", "client session", this, KPC(bound_ss_), K(ret));
+            PROXY_CS_LOG(WDIAG, "fail to close client session", "client session", this, KPC(last_ss_), K(ret));
           }
         } else {
-          bound_ss_->do_io_close();
-          bound_ss_ = NULL;
-          server_ka_vio_ = NULL;
+          close_last_server_session();
         }
         break;
 
@@ -1169,21 +1204,12 @@ int ObMysqlClientSession::state_keep_alive(int event, void *data)
   }
   return VC_EVENT_NONE;
 }
-
-void ObMysqlClientSession::close_last_used_ss()
+void ObMysqlClientSession::close_last_server_session()
 {
-   PROXY_CS_LOG(INFO, "close last server session", K(is_session_pool_client()),
-                K(is_can_server_session_release()), KPC(bound_ss_));
-  if (NULL != bound_ss_) {
-    if (is_session_pool_client() && is_can_server_session_release()) {
-      PROXY_CS_LOG(DEBUG, "is_session_pool_client will release");
-      bound_ss_->release();
-    } else {
-      bound_ss_->do_io_close();
-    }
-    bound_ss_ = NULL;
-    server_ka_vio_ = NULL;
-  }
+  PROXY_CS_LOG(INFO, "close last server session", KPC(last_ss_));
+  ObMysqlServerSession *to_be_close = last_ss_;
+  close_and_destroy_session(to_be_close);
+  set_last_ss_keep_alive_vio(NULL);
 }
 
 int ObMysqlClientSession::swap_mutex(void *data)
@@ -1198,9 +1224,9 @@ int ObMysqlClientSession::swap_mutex(void *data)
     mutex_ = mutex;
 
     //swap server session mutex
-    if (NULL != bound_ss_) {
-      bound_ss_->do_io_read(this, INT64_MAX, bound_ss_->read_buffer_);
-      bound_ss_->do_io_write(this, 0, NULL);
+    if (NULL != last_ss_) {
+      last_ss_->do_io_read(this, INT64_MAX, last_ss_->read_buffer_);
+      last_ss_->do_io_write(this, 0, NULL);
     }
 
     if (NULL != mysql_sm_ && OB_FAIL(mysql_sm_->swap_mutex(mutex))) {
@@ -1208,15 +1234,10 @@ int ObMysqlClientSession::swap_mutex(void *data)
     }
 
     if (OB_SUCC(ret)) {
-      //swap session manager mutex
-      // only in async client vc, we can swap mutex, in such situation,
-      // server_session_pool must be empty
-      if (is_session_pool_client()) {
-        PROXY_CS_LOG(DEBUG, "is_session_pool_client, do nothing");
-      } else if (OB_LIKELY(0 == session_manager_.get_svr_session_count()
-                    && 0 == session_manager_new_.get_svr_session_count())) {
+      if (OB_LIKELY(0 == session_manager_.get_svr_session_count()
+                    && 0 == session_manager_sharding_.get_svr_session_count())) {
         session_manager_.set_mutex(mutex);
-        session_manager_new_.set_mutex(mutex);
+        session_manager_sharding_.set_mutex(mutex);
       } else {
         ret = OB_ERR_UNEXPECTED;
         PROXY_CS_LOG(WDIAG, "server session pool is not empty", K(ret));
@@ -1231,24 +1252,103 @@ void ObMysqlClientSession::reenable(ObVIO *vio)
   client_vc_->reenable(vio);
 }
 
-int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
+int ObMysqlClientSession::attach_last_to_second_last_session()
+{
+  int ret = OB_SUCCESS;
+  if (last_ss_ != NULL && second_last_ss_ == NULL) {
+    last_ss_->do_io_read(this, 0, NULL);
+    set_second_last_server_session(last_ss_);
+    set_last_server_session(NULL);
+    set_last_ss_keep_alive_vio(NULL);
+    set_need_return_second_last_server_session(true);
+  } else if (second_last_ss_ != NULL) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(EDIAG, "must release last bound ss before call this");
+  }
+
+  return ret;
+}
+
+int ObMysqlClientSession::attach_second_last_to_last_session()
+{
+  int ret = OB_SUCCESS;
+  if (second_last_ss_ != NULL && last_ss_ == NULL) {
+    second_last_ss_->state_ = KEEP_ALIVE_CLIENT_SLAVE;
+    set_last_server_session(second_last_ss_);
+    set_last_ss_keep_alive_vio(NULL);
+    set_second_last_server_session(NULL);
+    set_need_return_second_last_server_session(false);
+    PROXY_CS_LOG(DEBUG, "attaching last bound as bound", K_(cs_id), "ss_id", last_ss_->ss_id_);
+    last_ss_->get_reader()->mbuf_->water_mark_ = MYSQL_NET_META_LENGTH;
+    if (active_) {
+      active_ = false;
+      MYSQL_DECREMENT_DYN_STAT(CURRENT_ACTIVE_CLIENT_CONNECTIONS);
+    }
+    // Since this our slave, issue an IO to detect a close and
+    // have it call the client session back.  This IO also prevent
+    // the server net connection from calling back a dead sm
+    if (OB_LIKELY(ka_vio_ != (last_ss_keep_alive_vio_ = last_ss_->do_io_read(this, INT64_MAX, last_ss_->read_buffer_)))) {
+      // Transfer control of the write side as well
+      last_ss_->do_io_write(this, 0, NULL);
+      last_ss_->set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_SERVER_WAIT_TIMEOUT);
+      #ifdef ERRSIM
+      int tmp_ret = OB_SUCCESS;
+      if ((tmp_ret = OB_E(EventTable::EN_SERVER_TRX_TIMEOUT) OB_SUCCESS) != OB_SUCCESS) {
+        set_inactivity_timeout(1, obutils::OB_SERVER_TRX_TIMEOUT);
+      }
+      #endif
+    }
+  } else if (last_ss_ != NULL) {
+    ret = OB_ERR_UNEXPECTED;
+    PROXY_CS_LOG(EDIAG, "must release last_ss_ before call this", KP(last_ss_), K(*last_ss_));
+  }
+
+  return ret;
+}
+
+int ObMysqlClientSession::release_second_last_server_session()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(release_server_session(second_last_ss_))) {
+    PROXY_CS_LOG(WDIAG, "fail to release last bound ss", KP(second_last_ss_));
+  } else {
+    second_last_ss_= NULL;
+  }
+
+  return ret;
+}
+
+int ObMysqlClientSession::release_last_server_session()
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(release_server_session(last_ss_))) {
+    PROXY_CS_LOG(WDIAG, "fail to release bound ss", KP(last_ss_));
+  } else {
+    set_last_server_session(NULL);
+    set_last_ss_keep_alive_vio(NULL);
+  }
+
+  return ret;
+}
+
+int ObMysqlClientSession::attach_last_server_session(ObMysqlServerSession *session)
 {
   int ret = OB_SUCCESS;
   if (NULL != session) {
-    if (OB_UNLIKELY(NULL != bound_ss_) || OB_UNLIKELY(session != cur_ss_)
+    if (OB_UNLIKELY(NULL != last_ss_) || OB_UNLIKELY(session != cur_ss_)
         || OB_UNLIKELY(0 != session->get_reader()->read_avail())
         || OB_UNLIKELY(session->get_netvc() == client_vc_)) {
       ret = OB_INVALID_ARGUMENT;
-      PROXY_CS_LOG(WDIAG, "invalid server session", K(bound_ss_), K(session), K(cur_ss_),
+      PROXY_CS_LOG(WDIAG, "invalid server session", K(last_ss_), K(session), K(cur_ss_),
                    K(session->get_reader()->read_avail()), K(session->get_netvc()), K(client_vc_));
     } else {
-      session->state_ = MSS_KA_CLIENT_SLAVE;
-      bound_ss_ = session;
+      session->state_ = KEEP_ALIVE_CLIENT_SLAVE;
+      last_ss_ = session;
       //reset cur_session_
       cur_ss_ = NULL;
-      PROXY_CS_LOG(DEBUG, "attaching server session as slave", K_(cs_id), "ss_id", session->ss_id_);
+      PROXY_CS_LOG(DEBUG, "attaching server last_ss_ as slave", K_(cs_id), "ss_id", last_ss_->ss_id_);
       // reset server read buffer water mark
-      session->get_reader()->mbuf_->water_mark_ = MYSQL_NET_META_LENGTH;
+      last_ss_->get_reader()->mbuf_->water_mark_ = MYSQL_NET_META_LENGTH;
       // handling potential keep-alive here
       if (active_) {
         active_ = false;
@@ -1257,10 +1357,10 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
       // Since this our slave, issue an IO to detect a close and
       // have it call the client session back.  This IO also prevent
       // the server net connection from calling back a dead sm
-      if (OB_LIKELY(ka_vio_ != (server_ka_vio_ = session->do_io_read(this, INT64_MAX, session->read_buffer_)))) {
+      if (OB_LIKELY(ka_vio_ != (last_ss_keep_alive_vio_ = last_ss_->do_io_read(this, INT64_MAX, last_ss_->read_buffer_)))) {
         // Transfer control of the write side as well
-        session->do_io_write(this, 0, NULL);
-        session->set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_SERVER_WAIT_TIMEOUT);
+        last_ss_->do_io_write(this, 0, NULL);
+        last_ss_->set_inactivity_timeout(session_info_.get_wait_timeout(), obutils::OB_SERVER_WAIT_TIMEOUT);
         #ifdef ERRSIM
         int tmp_ret = OB_SUCCESS;
         if ((tmp_ret = OB_E(EventTable::EN_SERVER_TRX_TIMEOUT) OB_SUCCESS) != OB_SUCCESS) {
@@ -1270,12 +1370,33 @@ int ObMysqlClientSession::attach_server_session(ObMysqlServerSession *session)
       }
     }
   } else {
-    bound_ss_ = NULL;
-    server_ka_vio_ = NULL;
+    last_ss_ = NULL;
+    last_ss_keep_alive_vio_ = NULL;
   }
   return ret;
 }
 
+int ObMysqlClientSession::release_server_session(ObMysqlServerSession *session) {
+  int ret = OB_SUCCESS;
+  if (OB_NOT_NULL(session)) {
+    dbconfig::ObShardConnector *shard_conn = session->get_session_info().get_shard_connector();
+    // for sql
+    if (NULL == shard_conn) {
+      if (OB_FAIL(session_manager_.release_server_session(session))) {
+        PROXY_CS_LOG(WDIAG, "fail to release server session to session manager", K(ret), K(*session));
+      }
+    // for sharding
+    } else {
+      if (OB_FAIL(session_manager_sharding_.release_session(shard_conn->shard_name_.config_string_, *session))) {
+        PROXY_CS_LOG(WDIAG, "fail to release server session to session manager",
+                            K(ret), K(*session), K(shard_conn->shard_name_.config_string_));
+      }
+    }
+    session = NULL;
+  }
+
+  return ret;
+}
 
 int ObMysqlClientSession::main_handler(int event, void *data)
 {
@@ -1287,7 +1408,7 @@ int ObMysqlClientSession::main_handler(int event, void *data)
   if (OB_LIKELY(MYSQL_CS_MAGIC_ALIVE == magic_)) {
     if (NULL != data && data == ka_vio_) { // from client vc
       event_ret = state_keep_alive(event, data);
-    } else if (NULL != data && data == server_ka_vio_) { // from server vc
+    } else if (NULL != data && data == last_ss_keep_alive_vio_) { // from server vc
       event_ret = state_server_keep_alive(event, data);
     } else if (CLIENT_VC_SWAP_MUTEX_EVENT == event) { // from proxy client vc
       int ret = OB_SUCCESS;
@@ -1295,7 +1416,7 @@ int ObMysqlClientSession::main_handler(int event, void *data)
         PROXY_CS_LOG(WDIAG, "fail to swap mutex", KP(data), K(ret));
       }
     } else if (is_proxy_mysql_client() && CLIENT_VC_DISCONNECT_LAST_USED_SS_EVENT == event) {
-      close_last_used_ss();
+      close_last_server_session();
     } else {
       event_ret = (this->*cs_default_handler_)(event, data); // others
     }
@@ -1393,7 +1514,7 @@ int ObMysqlClientSession::release(ObIOBufferReader *r)
       } else {
         read_state_ = MCS_KEEP_ALIVE;
         ka_vio_ = do_io_read(this, INT64_MAX, read_buffer_);
-        if (OB_LIKELY(server_ka_vio_ != ka_vio_)) {
+        if (OB_LIKELY(last_ss_keep_alive_vio_ != ka_vio_)) {
           client_vc_->add_to_keep_alive_lru();
           set_wait_timeout();
         }
@@ -1409,9 +1530,22 @@ int ObMysqlClientSession::release(ObIOBufferReader *r)
 int ObMysqlClientSession::init_session_pool_info()
 {
   int ret = OB_SUCCESS;
-  if (is_proxy_mysql_client()) {
-    //pool_client schema_key will set in client_vc
-  } else if (!session_info_.is_sharding_user() && schema_key_.init_) {
+  if (!schema_key_.init_ && mysql_sm_ != NULL) {
+    ObServerSessionMatchRules rules;
+    rules.enable_oceanbase_20_protocol_ = mysql_sm_->get_server_protocol() == ObProxyProtocol::PROTOCOL_OCEANBASE_20;
+    rules.enable_oceanbase_20_compress_ = (mysql_sm_->compression_algorithm_.level_ != 0 && rules.enable_oceanbase_20_protocol_);
+    rules.enable_compressed_mysql_protocol_ = mysql_sm_->get_server_protocol() == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL;
+    rules.enable_full_link_trace_ = get_global_proxy_config().enable_full_link_trace;
+    rules.enable_client_session_id_v2_ = is_cs_id_v2();
+    rules.client_mysql_cap_ = get_session_info().get_orig_capability_flags();
+    if (rules.enable_client_session_id_v2_) {
+      extract_proxy_id_v2(cs_id_, rules.proxy_id_);
+    }
+    // for first login do not match auth plugin method because auth switch may happen
+    session_manager_.set_session_matched_rules(rules);
+    PROXY_CS_LOG(DEBUG, "init session matched rules", K(rules));
+  }
+  if (!session_info_.is_sharding_user() && schema_key_.init_) {
     PROXY_CS_LOG(DEBUG, "no sharding already init", K(schema_key_));
   } else if (OB_FAIL(ObMysqlSessionUtils::init_schema_key_with_client_session(schema_key_, this))) {
     PROXY_CS_LOG(WDIAG, "init_schema_key_with_client_session failed", K(ret));
@@ -1419,70 +1553,13 @@ int ObMysqlClientSession::init_session_pool_info()
   return ret;
 }
 
-int ObMysqlClientSession::acquire_svr_session_in_session_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session)
-{
-  int ret = OB_SUCCESS;
-  PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id), K_(schema_key));
-  ObShardConnector *shard_conn = session_info_.get_shard_connector();
-  ObCommonAddr common_addr;
-  //mysql 有域名模式，使用地址信息来获取
-  if (shard_conn != NULL && common::DB_MYSQL == shard_conn->server_type_ && !shard_conn->is_physic_ip_) {
-    if (OB_FAIL(common_addr.assign(shard_conn->physic_addr_.config_string_,
-      shard_conn->physic_port_.config_string_, shard_conn->is_physic_ip_))) {
-      PROXY_CS_LOG(WDIAG,"assign addr faield", K(shard_conn->physic_addr_.config_string_),
-        K(shard_conn->physic_port_.config_string_), K(ret));
-    }
-  } else if (OB_FAIL(common_addr.assign(addr))) {
-    PROXY_CS_LOG(WDIAG, "assign addr failed", K(ret));
-  }
-  if (OB_SUCC(ret) && OB_SUCC(get_global_session_manager().acquire_server_session(
-    schema_key_,
-    common_addr,
-    session_info_.get_full_username(),
-    svr_session))) {
-    PROXY_CS_LOG(DEBUG, "[acquire server session] succ to acquire session in global session pool", K_(cs_id),
-      K(session_info_.get_login_req().get_hsr_result().full_name_),
-      K(schema_key_),
-      K(common_addr));
-  } else {
-    PROXY_CS_LOG(DEBUG, "[acquire server session] fail to acquire session in global session pool", K_(cs_id),
-      K(session_info_.get_login_req().get_hsr_result().full_name_),
-      K(schema_key_), K(common_addr));
-  }
-  return ret;
-}
-
-int ObMysqlClientSession::acquire_svr_session_no_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session)
-{
-  int ret = OB_SUCCESS;
-  PROXY_CS_LOG(DEBUG, "[acquire server session] try to acquire session in session pool", K_(cs_id));
-  ObShardConnector *shard_conn = session_info_.get_shard_connector();
-  // 只要 shard_conn 不为空, 就需要用 shard_conn 来获取。而不能仅仅通过 shardingUser 来判断
-  if (OB_UNLIKELY(NULL != shard_conn)) {
-    if (OB_FAIL(session_manager_new_.acquire_server_session(shard_conn->shard_name_.config_string_,
-                                                            addr, session_info_.get_full_username(), svr_session))) {
-      PROXY_CS_LOG(DEBUG, "[acquire server session] fail to acquire server session from "
-                          "new server session pool", K_(cs_id), KPC(svr_session), K(ret));
-      PROXY_CS_LOG(WARN ,"fail to get shard server session for this shard", "shard name", shard_conn->shard_name_.config_string_,
-               "full use name", session_info_.get_full_username());
-
-    }
-  } else {
-    if (OB_FAIL(session_manager_.acquire_server_session(addr, session_info_.get_full_username(), svr_session))) {
-      PROXY_CS_LOG(DEBUG, "[acquire server session] fail to acquire server session from "
-                          "server session pool", K_(cs_id), KPC(svr_session), K(ret));
-    }
-  }
-  return ret;
-}
-
-int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool need_close_last_ss, ObMysqlServerSession *&svr_session)
+int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, ObMysqlServerSession *&svr_session,
+                                              const bool close_last_ss, const bool can_use_session_from_pool)
 {
   int ret = OB_SUCCESS;
   svr_session = NULL;
-  PROXY_CS_LOG(DEBUG, "[acquire server session]", K_(cs_id));
 
-  if (is_session_pool_client()) {
+  if (is_enable_session_conn_pool()) {
     if (OB_FAIL(init_session_pool_info())) {
       PROXY_CS_LOG(WDIAG, "init_session_pool_info failed", K(ret));
     }
@@ -1490,43 +1567,58 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
 
   if (OB_SUCC(ret)) {
     // 1. try last_session
-    if (NULL != bound_ss_) {
+    if (NULL != last_ss_) {
       bool same_dbkey = true;
-      if (is_session_pool_client() &&
-        (schema_key_.dbkey_.config_string_.compare(bound_ss_->schema_key_.dbkey_.config_string_) != 0)) {
+      // database may be changed so compare the dbkey
+      if (is_enable_session_conn_pool()
+          && schema_key_.dbkey_.config_string_ != last_ss_->schema_key_.dbkey_.config_string_) {
         same_dbkey = false;
       }
 
-      if (same_dbkey && ops_ip_addr_port_eq(bound_ss_->server_ip_, addr)
-          && bound_ss_->auth_user_ == session_info_.get_full_username()) {
-        svr_session = bound_ss_;
-        PROXY_CS_LOG(DEBUG, "[acquire server session] use last server session", K_(cs_id), "server_ip", bound_ss_->server_ip_);
+      if (same_dbkey
+          && ops_ip_addr_port_eq(last_ss_->server_ip_, addr)
+          && last_ss_->auth_user_ == session_info_.get_full_username()) { // com_change_user may be executed
+        svr_session = last_ss_;
+        set_last_server_session(NULL);
+        PROXY_CS_LOG(DEBUG, "[acquire server session] use last server session", K_(cs_id), "server_ip", svr_session->server_ip_);
       } else {
-        // Release this session back to the main session pool and
-        // then continue looking for one from the shared pool
-        // if is mysql client, close last session
-        if (is_proxy_mysql_client() && !is_session_pool_client()) {
-          bound_ss_->do_io_close();
-          bound_ss_ = NULL;
+        PROXY_CS_LOG(DEBUG, "[acquire server session] last server session dismatched", K(same_dbkey),
+                            "client_session dbkey", schema_key_.dbkey_.config_string_,
+                            "last_ss dbkey", last_ss_->schema_key_.dbkey_.config_string_,
+                            "last ss auth_user", last_ss_->auth_user_,
+                            "client_session full_username", session_info_.get_full_username(),
+                            K(last_ss_->server_ip_), K(ops_ip_addr_port_eq(last_ss_->server_ip_, addr)));
+        // last_ss 不能用,考虑将 last_ss 归还给 session_manager_
+        bool is_non_pooled_mysql = is_proxy_mysql_client() && !is_enable_session_conn_pool();
+        if (OB_FAIL(session_manager_.release_server_session(last_ss_, is_non_pooled_mysql || close_last_ss))) {
+          PROXY_CS_LOG(WDIAG, "fail to reclaim server session", K(ret), KP(last_ss_));
+        } else if (OB_FALSE_IT(last_ss_ = NULL)) { // 会话归还给了 session manager 后需要设置为 NULL
+        } else if (is_non_pooled_mysql) {
           ret = OB_SESSION_NOT_FOUND;
-        } else if (need_close_last_ss) {
-          bound_ss_->do_io_close();
-          bound_ss_ = NULL;
-        } else {
-          bound_ss_->release();
-          bound_ss_ = NULL;
-          PROXY_CS_LOG(DEBUG, "[acquire server session] last server session not match,"
-                       "returning to shared pool", K_(cs_id));
         }
       }
     }
 
-    // 2. try other session in common pool
-    if (!is_proxy_mysql_client() && NULL == svr_session) {
-      if (OB_UNLIKELY(is_session_pool_client())) {
-        ret = acquire_svr_session_in_session_pool(addr, svr_session);
+    if (OB_ISNULL(svr_session) && !is_proxy_mysql_client()) {
+      // for sql
+      if (OB_ISNULL(session_info_.get_shard_connector())) {
+        if (OB_FAIL(session_manager_.acquire_server_session_local(addr, session_info_.get_full_username(), svr_session))) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire local server session", K(ret), "addr", ObIpEndpoint(addr), KP(svr_session));
+        }
+
+        bool acquire_session_pool = OB_ISNULL(svr_session) && can_use_session_from_pool && is_enable_session_conn_pool();
+        if (acquire_session_pool
+            && OB_FAIL(session_manager_.acquire_server_session_global(addr, session_info_.get_full_username(),
+                                                                      schema_key_, svr_session))) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire global server session", K(ret), "addr", ObIpEndpoint(addr), KP(svr_session));
+        }
+      // for sharding
       } else {
-        ret = acquire_svr_session_no_pool(addr, svr_session);
+        if (OB_FAIL(session_manager_sharding_.acquire_server_session(session_info_.get_shard_connector(), addr,
+                                                                     session_info_.get_full_username(), schema_key_,
+                                                                     svr_session))) {
+          PROXY_CS_LOG(WDIAG, "fail to acquire server session for sharding", K(ret), "addr", ObIpEndpoint(addr), KP(last_ss_), KP(svr_session));
+        }
       }
     }
   }
@@ -1543,11 +1635,11 @@ int ObMysqlClientSession::acquire_svr_session(const sockaddr &addr, const bool n
 int64_t ObMysqlClientSession::get_svr_session_count() const
 {
   if (session_info_.is_sharding_user()) {
-    return (const_cast<ObMysqlSessionManagerNew &>(session_manager_new_).get_svr_session_count() + (NULL == bound_ss_ ? 0 : 1)
-            + (NULL == cur_ss_ ? 0 : 1) + (NULL == last_bound_ss_ ? 0 : 1));
+    return (const_cast<ObMysqlSessionManagerSharding &>(session_manager_sharding_).get_svr_session_count() + (NULL == last_ss_ ? 0 : 1)
+            + (NULL == cur_ss_ ? 0 : 1) + (NULL == second_last_ss_ ? 0 : 1));
   } else {
-    return (session_manager_.get_svr_session_count() + (NULL == bound_ss_ ? 0 : 1)
-            + (NULL == cur_ss_ ? 0 : 1) + (NULL == last_bound_ss_ ? 0 : 1));
+    return (session_manager_.get_svr_session_count() + (NULL == last_ss_ ? 0 : 1)
+            + (NULL == cur_ss_ ? 0 : 1) + (NULL == second_last_ss_ ? 0 : 1));
   }
 }
 
@@ -1665,7 +1757,7 @@ int64_t ObMysqlClientSession::to_string(char *buf, const int64_t buf_len) const
        KP_(dummy_entry),
        K_(server_state_version),
        KP_(cur_ss),
-       KP_(bound_ss),
+       KP_(last_ss),
        KP_(lii_ss),
        KP_(lock_ss),
        KP_(closed_key_ss),
@@ -1791,9 +1883,9 @@ bool ObMysqlClientSession::is_hold_conn_id(const uint32_t conn_id)
   bool bret = false;
   if (NULL != cur_ss_ && conn_id == cur_ss_->get_server_sessid()) {
     bret = true;
-  } else if (NULL != bound_ss_ && conn_id == bound_ss_->get_server_sessid()) {
+  } else if (NULL != last_ss_ && conn_id == last_ss_->get_server_sessid()) {
     bret = true;
-  } else if (NULL != last_bound_ss_ && conn_id == last_bound_ss_->get_server_sessid()) {
+  } else if (NULL != second_last_ss_ && conn_id == second_last_ss_->get_server_sessid()) {
     bret = true;
   } else {
     ObServerSessionPool::IPHashTable &ip_pool = session_manager_.get_session_pool().ip_pool_;
@@ -1925,9 +2017,13 @@ int ObMysqlClientSession::check_update_ldc()
         }
       }
       if (OB_SUCC(ret) && !need_ignore) {
+        // ObLDCLocation::assign中会判断dummy_entry是否在集群的ss_info中，
+        // 当定时任务刷新server_status/zone_status发生变化，且dummy_entry不在ss_info中时，
+        // found_servers_added被置为true
+        bool found_servers_changed = false;
         if (OB_FAIL(dummy_ldc_.assign(dummy_entry_->get_tenant_servers(), simple_servers_info,
             new_idc_name, is_base_servers_added, cluster_resource->get_cluster_name(),
-            cluster_resource->get_cluster_id()))) {
+            cluster_resource->get_cluster_id(), found_servers_changed))) {
           if (OB_EMPTY_RESULT == ret) {
             if (dummy_entry_->is_entry_from_rslist()) {
               set_need_delete_cluster();
@@ -1941,6 +2037,11 @@ int ObMysqlClientSession::check_update_ldc()
             }
           } else {
             PROXY_CS_LOG(WDIAG, "fail to assign dummy_ldc", K(ret));
+          }
+        }
+        if (OB_SUCC(ret) && OB_UNLIKELY(found_servers_changed)) {
+          if (!dummy_entry_->is_sys_dummy_entry() && dummy_entry_->cas_set_dirty_state()) {
+            PROXY_CS_LOG(WDIAG, "dummy_entry isn't AVAIL state, can't set it dirty", KPC_(dummy_entry), K(ret));
           }
         }
       }
@@ -2292,7 +2393,7 @@ int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id)
   return ret;
 }
 
-void extract_proxy_id_v2(const uint32_t cs_id, int64_t &proxy_id)
+void extract_proxy_id_v2(const uint32_t cs_id, uint32_t &proxy_id)
 {
   const uint32_t proxy_flag_bits = 1;
   const uint32_t proxy_id_bits = 13;

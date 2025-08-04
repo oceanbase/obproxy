@@ -180,7 +180,8 @@ int64_t ObLDCLocation::get_first_item_index(const ObLDCLocation &dummy_ldc, cons
 int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerStateSimpleInfo> &ss_info,
     const ObString &idc_name, const bool is_base_servers_added,
     const ObString &cluster_name,
-    const int64_t cluster_id)
+    const int64_t cluster_id,
+    bool &found_servers_changed)
 {
   int ret = OB_SUCCESS;
   common::ModulePageAllocator *allocator = NULL;
@@ -262,7 +263,12 @@ int ObLDCLocation::assign(const ObTenantServer *ts, const ObIArray<ObServerState
           }//end of found server
         }//end of for ss_info
         if (OB_SUCC(ret) && !found) {
+          // 走到这里，有两种可能：
+          // 1.租户的dummy entry是正确，说明sys dummy是旧的（等20s后会刷新），所以此机器要push到dummy ldc中
+          // 2.租户的dummy entry已经过期，而sys dummy已更新（is_base_servers_added=true），此时旧机器不应该push到dummy ldc
+          // 2.1 调用方感知这种情况，并对非sys租户设置为dirty
           if (is_base_servers_added && !replica.server_.is_ip_loopback()) {
+            found_servers_changed = true;
             LOG_WDIAG("fail to find tenant server from server list, maybe has not updated, don not use it", K(replica));
           } else {
             // LDC 情况下, 如果 OBServer 机器没有 IDC 信息, 降低优先级.
@@ -372,7 +378,9 @@ bool ObLDCLocation::is_in_proxy_primary_zone(const ObProxyReplicaLocation &repli
 {
   bool need_use_it = false;
   priority = 0;
-  /* 只有设置了 proxy primary zone 信息, 并且获取到了 zone state 信息后, 才根据 zone 路由 */
+  /* proxy_primary_zone满足下面的条件，才能生效
+     1. 设置了 proxy primary zone 信息
+     2. 并且获取到了 zone state 信息后, 才根据 zone 路由 */
   if (!proxy_primary_zone_name.empty() && ss_info.count() > 0) {
     bool found = false;
     need_use_it = false;

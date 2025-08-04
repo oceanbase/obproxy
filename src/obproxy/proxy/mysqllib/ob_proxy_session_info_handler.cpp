@@ -444,6 +444,7 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
   return ret;
 }
 
+// 客户端发送 COM_CHANGE_USER 切换用户成功后,要修改 handshake resp 的内容
 int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo &client_info,
   const ObString& username,
   const ObString& auth_response)
@@ -687,40 +688,7 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
 inline ObProxySysVarType ObProxySessionInfoHandler::get_sys_var_type(
     const ObString &var_name)
 {
-  // TODO:
-  // this function simple and inefficient,
-  // use trie tree or some other data structure to improve performace later
-  ObProxySysVarType type_ret = OBPROXY_VAR_OTHERS;
-
-  if (ObSessionFieldMgr::is_global_version_variable(var_name)) {
-    type_ret = OBPROXY_VAR_GLOBAL_VARIABLES_VERSION;
-  } else if (ObSessionFieldMgr::is_user_privilege_variable(var_name)) {
-    type_ret = OBPROXY_VAR_USER_PRIVILEGE;
-  } else if (ObSessionFieldMgr::is_set_trx_executed_variable(var_name)) {
-    type_ret = OBPROXY_VAR_SET_TRX_EXECUTED;
-  } else if (ObSessionFieldMgr::is_partition_hit_variable(var_name)) {
-    type_ret = OBPROXY_VAR_PARTITION_HIT;
-  } else if (ObSessionFieldMgr::is_last_insert_id_variable(var_name)) {
-    type_ret = OBPROXY_VAR_LAST_INSERT_ID;
-  } else if (ObSessionFieldMgr::is_capability_flag_variable(var_name)) {
-    type_ret = OBPROXY_VAR_CAPABILITY_FLAG;
-  } else if (ObSessionFieldMgr::is_safe_read_snapshot_variable(var_name)) {
-    type_ret = OBPROXY_VAR_SAFE_READ_SNAPSHOT;
-  } else if (ObSessionFieldMgr::is_route_policy_variable(var_name)) {
-    type_ret = OBPROXY_VAR_ROUTE_POLICY_FLAG;
-  } else if (ObSessionFieldMgr::is_enable_transmission_checksum_variable(var_name)) {
-    type_ret = OBPROXY_VAR_ENABLE_TRANSMISSION_CHECKSUM_FLAG;
-  } else if (ObSessionFieldMgr::is_statement_trace_id_variable(var_name)) {
-    type_ret = OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG;
-  } else if (ObSessionFieldMgr::is_read_consistency_variable(var_name)) {
-    type_ret = OBPROXY_VAR_READ_CONSISTENCY_FLAG;
-  } else if (ObSessionFieldMgr::is_weak_read_replica_hit_variable(var_name)) {
-    type_ret = OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG;
-  } else {
-    // do noting
-  }
-
-  return type_ret;
+  return ObSessionFieldMgr::sys_var_trie_.find(var_name);
 }
 
 inline int ObProxySessionInfoHandler::handle_global_variables_version_var(
@@ -777,7 +745,7 @@ int ObProxySessionInfoHandler::handle_capability_flag_var(ObClientSessionInfo &c
     LOG_INFO("succ to set ob_capability_flag in negotiation",
              K(client_cap), K(server_cap), K(orig_client_cap), K(orig_server_cap),
              "client_support_ob_v2", client_info.is_client_support_ob20_protocol(),
-             "server_support_checksum", server_info.is_checksum_supported(),
+             "server_support_compressed_mysql", server_info.is_compressed_mysql_supported(),
              "server_support_ob_v2", server_info.is_ob_protocol_v2_supported(),
              "server_support_ob_v2_compress", server_info.is_server_ob20_compress_supported(),
              K(is_auth_request));
@@ -1212,42 +1180,47 @@ int ObProxySessionInfoHandler::save_changed_session_info(ObClientSessionInfo &cl
 
   // 3. save db name
   // sys var 'lower_case_table_names' may changed
-  if (ok_pkt.is_schema_changed()) {
-    const ObString &db_name = ok_pkt.get_changed_schema();
-    if (!db_name.empty()) {
-      bool is_string_to_lower_case = client_info.is_oracle_mode() ? false : client_info.need_use_lower_case_names();
-      if (OB_FAIL(client_info.set_database_name(db_name))) {
-        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
-      } else if (OB_FAIL(server_info.set_database_name(db_name, is_string_to_lower_case))) {
-        LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
+  if (OB_SUCC(ret)) {
+    if (ok_pkt.is_schema_changed()) {
+      const ObString &db_name = ok_pkt.get_changed_schema();
+      if (!db_name.empty()) {
+        bool is_string_to_lower_case = client_info.is_oracle_mode() ? false : client_info.need_use_lower_case_names();
+        if (OB_FAIL(client_info.set_database_name(db_name))) {
+          LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
+        } else if (OB_FAIL(server_info.set_database_name(db_name, is_string_to_lower_case))) {
+          LOG_WDIAG("fail to set changed database name", K(db_name), K(ret));
+        }
+      } else {
+        resp_result.set_is_server_db_reset(true);
+        LOG_DEBUG("db has been reset");
       }
-    } else {
-      resp_result.set_is_server_db_reset(true);
-      LOG_DEBUG("db has been reset");
     }
   }
 
   // 4. save user var
-  const ObIArray<ObStringKV> &user_var = ok_pkt.get_user_vars();
-  if (!user_var.empty()) {
-    for (int64_t i = 0; i < user_var.count() && OB_SUCC(ret); ++i) {
-      const ObStringKV &str_kv = user_var.at(i);
-      LOG_DEBUG("user variable will be updated", K(str_kv));
-      if (OB_FAIL(client_info.replace_user_variable(str_kv.key_, str_kv.value_))) {
-        LOG_WDIAG("fail to replace user variable", K(str_kv), K(ret));
-      } else {
-        if (PROXY_IDC_NAME_USER_SESSION_VAR == str_kv.key_) {
-          const ObString value = trim_quote(str_kv.value_);
-          resp_result.set_has_proxy_idc_name_user_var(true);
-          client_info.set_idc_name(value);
-          LOG_INFO("succ to update user session variable proxy_idc_name",
-                   "idc_name", client_info.get_idc_name());
-        } else if (PROXY_ROUTE_POLICY_USER_SESSION_VAR == str_kv.key_) {
-          const ObString value = trim_quote(str_kv.value_);
-          ObProxyRoutePolicyEnum policy = get_proxy_route_policy(value);
-          client_info.set_proxy_route_policy(policy);
-          LOG_INFO("succ to update user session variable proxy_route_policy",
-                   "policy", get_proxy_route_policy_enum_string(policy));
+  if (OB_SUCC(ret)) {
+    const ObIArray<ObStringKV> &user_var = ok_pkt.get_user_vars();
+
+    if (!user_var.empty()) {
+      for (int64_t i = 0; i < user_var.count() && OB_SUCC(ret); ++i) {
+        const ObStringKV &str_kv = user_var.at(i);
+        LOG_DEBUG("user variable will be updated", K(str_kv));
+        if (OB_FAIL(client_info.replace_user_variable(str_kv.key_, str_kv.value_))) {
+          LOG_WDIAG("fail to replace user variable", K(str_kv), K(ret));
+        } else {
+          if (PROXY_IDC_NAME_USER_SESSION_VAR == str_kv.key_) {
+            const ObString value = trim_quote(str_kv.value_);
+            resp_result.set_has_proxy_idc_name_user_var(true);
+            client_info.set_idc_name(value);
+            LOG_INFO("succ to update user session variable proxy_idc_name",
+                     "idc_name", client_info.get_idc_name());
+          } else if (PROXY_ROUTE_POLICY_USER_SESSION_VAR == str_kv.key_) {
+            const ObString value = trim_quote(str_kv.value_);
+            ObProxyRoutePolicyEnum policy = get_proxy_route_policy(value);
+            client_info.set_proxy_route_policy(policy);
+            LOG_INFO("succ to update user session variable proxy_route_policy",
+                     "policy", get_proxy_route_policy_enum_string(policy));
+          }
         }
       }
     }
@@ -1304,10 +1277,10 @@ void ObProxySessionInfoHandler::assign_last_insert_id_version(
 {
   int64_t c_lii_version = client_info.get_last_insert_id_version();
   server_info.set_last_insert_id_version(c_lii_version);
-  if (client_info.is_session_pool_client_) {
-    server_info.field_mgr_.replace_last_insert_id_var(client_info.field_mgr_,
-    server_info.is_oceanbase_server());
-  }
+  // [TODP] 保留连接池未开启的逻辑
+  // if (client_info.is_session_pool_client_) {
+  //   server_info.field_mgr_.replace_last_insert_id_var(client_info.field_mgr_, server_info.is_oceanbase_server());
+  // }
 }
 
 int ObProxySessionInfoHandler::assign_session_vars_version(
@@ -1338,121 +1311,122 @@ int ObProxySessionInfoHandler::assign_session_vars_version(
 
   client_info.reset_sync_conf_sys_var();
 
+  // [TODO] 仅保留连接池未开启的逻辑
   //如果clientInfo的版本和clientInfo的hash_version 不一致，则clientInfo的内容变化，需要重新计算hash然后更新version
   //否则认为一致，不需要更新hash值，但是需要更新对应server的hash值
-  bool is_changed = false;
-  if (client_info.is_session_pool_client_) {
-    ObSessionVarValHash& client_val_hash = client_info.val_hash_;
-    ObSessionVarValHash& server_val_hash = server_info.val_hash_;
+  // bool is_changed = false;
+  //if (client_info.is_session_pool_client_) {
+  //  ObSessionVarValHash& client_val_hash = client_info.val_hash_;
+  //  ObSessionVarValHash& server_val_hash = server_info.val_hash_;
 
-    if (server_info.is_oceanbase_server()) {
-      is_changed = client_info.is_sys_hot_version_changed();
-      if (OB_FAIL(server_info.field_mgr_.replace_all_hot_sys_vars(client_info.field_mgr_))) {
-        LOG_WDIAG("fail to replace_all_hot_sys_vars", K(ret));
-      } else if (is_changed) {
-        if (OB_FAIL(client_info.field_mgr_.calc_hot_sys_var_hash(client_val_hash.hot_sys_var_hash_))) {
-          LOG_WDIAG("fail to calc_hot_sys_var_hash for client", K(ret));
-        } else {
-          client_info.hash_version_.hot_sys_var_version_ = c_hot_version;
-        }
-      }
-      if (OB_SUCC(ret)) {
-        server_val_hash.hot_sys_var_hash_ = client_val_hash.hot_sys_var_hash_;
-        LOG_DEBUG("handle sys_hot_version", K(c_hot_version), K(is_changed), K(ret));
-      }
-      if (OB_SUCC(ret)) {
-        is_changed = client_info.is_sys_cold_version_changed();
-        if (is_changed) {
-          if (OB_FAIL(client_info.field_mgr_.calc_cold_sys_var_hash(client_val_hash.cold_sys_var_hash_))) {
-            LOG_WDIAG("fail to calc_cold_sys_var_hash", K(ret));
-          } else {
-            client_info.hash_version_.sys_var_version_ = c_sys_version;
-          }
-        }
-        if (OB_SUCC(ret)) {
-          server_val_hash.cold_sys_var_hash_ = client_val_hash.cold_sys_var_hash_;
-          LOG_DEBUG("handle sys_cold",  K(c_sys_version), K(is_changed), K(ret));
-        }
-      }
-    } else {
-      is_changed = client_info.is_mysql_hot_sys_version_changed();
-      if (OB_FAIL(server_info.field_mgr_.replace_all_mysql_hot_sys_vars(client_info.field_mgr_))) {
-        LOG_WDIAG("fail to replace_all_mysql_hot_sys_vars", K(ret));
-      } else if (is_changed) {
-        if (OB_FAIL(client_info.field_mgr_.calc_mysql_hot_sys_var_hash(client_val_hash.mysql_hot_sys_var_hash_))) {
-          LOG_WDIAG("fail to calc_mysql_hot_sys_var_hash for client", K(ret));
-        } else {
-          client_info.hash_version_.mysql_hot_sys_var_version_  = c_mysql_hot_sys_version;
-        }
-      }
-      if (OB_SUCC(ret)) {
-        server_val_hash.mysql_hot_sys_var_hash_  = client_val_hash.mysql_hot_sys_var_hash_;
-        LOG_DEBUG("handle mysql_hot_sys",  K(c_mysql_hot_sys_version), K(is_changed), K(ret));
-      }
-      if (OB_SUCC(ret)) {
-        is_changed = client_info.is_mysql_cold_sys_version_changed();
-        if (is_changed) {
-          if (OB_FAIL(client_info.field_mgr_.calc_mysql_cold_sys_var_hash(client_val_hash.mysql_cold_sys_var_hash_))) {
-            LOG_WDIAG("fail to calc_mysql_cold_sys_var_hash", K(ret));
-          } else {
-            client_info.hash_version_.mysql_sys_var_version_ = c_mysql_sys_version;
-          }
-        }
-        if (OB_SUCC(ret)) {
-          server_val_hash.mysql_cold_sys_var_hash_ = client_val_hash.mysql_cold_sys_var_hash_;
-          LOG_DEBUG("handle mysql_cold_sys",  K(c_mysql_sys_version), K(is_changed), K(ret));
-        }
-      }
-    }
-    if (OB_SUCC(ret)) {
-      is_changed = client_info.is_common_hot_sys_version_changed();
-      if (OB_FAIL(server_info.field_mgr_.replace_all_common_hot_sys_vars(client_info.field_mgr_,
-        server_info.is_oceanbase_server()))) {
-        LOG_WDIAG("fail to replace_all_common_hot_sys_vars", K(ret));
-      } else if (is_changed){
-        if (OB_FAIL(client_info.field_mgr_.calc_common_hot_sys_var_hash(
-          client_val_hash.common_hot_sys_var_hash_))) {
-          LOG_WDIAG("fail to calc_common_hot_sys_var_hash for client", K(ret));
-        } else {
-          client_info.hash_version_.common_hot_sys_var_version_ = c_common_hot_sys_version;
-        }
-      }
-      if (OB_SUCC(ret)) {
-        server_val_hash.common_hot_sys_var_hash_ = client_val_hash.common_hot_sys_var_hash_;
-        LOG_DEBUG("handle common_hot_sys",  K(c_common_hot_sys_version), K(is_changed), K(ret));
-      }
-    }
-    if (OB_SUCC(ret)) {
-      is_changed = client_info.is_common_cold_sys_version_changed();
-      if (is_changed) {
-        if (OB_FAIL(client_info.field_mgr_.calc_common_cold_sys_var_hash(
-          client_val_hash.common_cold_sys_var_hash_))) {
-          LOG_WDIAG("fail to calc_common_cold_sys_var_hash", K(ret));
-        } else {
-          client_info.hash_version_.common_sys_var_version_ = c_common_sys_version;
-        }
-      }
-      if (OB_SUCC(ret)) {
-        server_val_hash.common_cold_sys_var_hash_ = client_val_hash.common_cold_sys_var_hash_;
-        LOG_DEBUG("handle common_cold_sys",  K(c_common_sys_version), K(is_changed), K(ret));
-      }
-    }
-    if (OB_SUCC(ret)) {
-      is_changed = client_info.is_user_var_version_changed();
-      if (is_changed) {
-        if (OB_FAIL(client_info.field_mgr_.calc_user_var_hash(client_val_hash.user_var_hash_))) {
-          LOG_WDIAG("fail to replace_all_user_vars", K(ret));
-        } else {
-          client_info.hash_version_.user_var_version_ = c_user_version;
-        }
-      }
-      if (OB_SUCC(ret)) {
-        server_val_hash.user_var_hash_ = client_val_hash.user_var_hash_;
-        LOG_DEBUG("handle user_var",  K(c_user_version), K(is_changed), K(ret));
-      }
-    }
-    LOG_DEBUG("assign_session_vars_version", K(client_val_hash), K(server_val_hash));
-  }
+  //  if (server_info.is_oceanbase_server()) {
+  //    is_changed = client_info.is_sys_hot_version_changed();
+  //    if (OB_FAIL(server_info.field_mgr_.replace_all_hot_sys_vars(client_info.field_mgr_))) {
+  //      LOG_WDIAG("fail to replace_all_hot_sys_vars", K(ret));
+  //    } else if (is_changed) {
+  //      if (OB_FAIL(client_info.field_mgr_.calc_hot_sys_var_hash(client_val_hash.hot_sys_var_hash_))) {
+  //        LOG_WDIAG("fail to calc_hot_sys_var_hash for client", K(ret));
+  //      } else {
+  //        client_info.hash_version_.hot_sys_var_version_ = c_hot_version;
+  //      }
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      server_val_hash.hot_sys_var_hash_ = client_val_hash.hot_sys_var_hash_;
+  //      LOG_DEBUG("handle sys_hot_version", K(c_hot_version), K(is_changed), K(ret));
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      is_changed = client_info.is_sys_cold_version_changed();
+  //      if (is_changed) {
+  //        if (OB_FAIL(client_info.field_mgr_.calc_cold_sys_var_hash(client_val_hash.cold_sys_var_hash_))) {
+  //          LOG_WDIAG("fail to calc_cold_sys_var_hash", K(ret));
+  //        } else {
+  //          client_info.hash_version_.sys_var_version_ = c_sys_version;
+  //        }
+  //      }
+  //      if (OB_SUCC(ret)) {
+  //        server_val_hash.cold_sys_var_hash_ = client_val_hash.cold_sys_var_hash_;
+  //        LOG_DEBUG("handle sys_cold",  K(c_sys_version), K(is_changed), K(ret));
+  //      }
+  //    }
+  //  } else {
+  //    is_changed = client_info.is_mysql_hot_sys_version_changed();
+  //    if (OB_FAIL(server_info.field_mgr_.replace_all_mysql_hot_sys_vars(client_info.field_mgr_))) {
+  //      LOG_WDIAG("fail to replace_all_mysql_hot_sys_vars", K(ret));
+  //    } else if (is_changed) {
+  //      if (OB_FAIL(client_info.field_mgr_.calc_mysql_hot_sys_var_hash(client_val_hash.mysql_hot_sys_var_hash_))) {
+  //        LOG_WDIAG("fail to calc_mysql_hot_sys_var_hash for client", K(ret));
+  //      } else {
+  //        client_info.hash_version_.mysql_hot_sys_var_version_  = c_mysql_hot_sys_version;
+  //      }
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      server_val_hash.mysql_hot_sys_var_hash_  = client_val_hash.mysql_hot_sys_var_hash_;
+  //      LOG_DEBUG("handle mysql_hot_sys",  K(c_mysql_hot_sys_version), K(is_changed), K(ret));
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      is_changed = client_info.is_mysql_cold_sys_version_changed();
+  //      if (is_changed) {
+  //        if (OB_FAIL(client_info.field_mgr_.calc_mysql_cold_sys_var_hash(client_val_hash.mysql_cold_sys_var_hash_))) {
+  //          LOG_WDIAG("fail to calc_mysql_cold_sys_var_hash", K(ret));
+  //        } else {
+  //          client_info.hash_version_.mysql_sys_var_version_ = c_mysql_sys_version;
+  //        }
+  //      }
+  //      if (OB_SUCC(ret)) {
+  //        server_val_hash.mysql_cold_sys_var_hash_ = client_val_hash.mysql_cold_sys_var_hash_;
+  //        LOG_DEBUG("handle mysql_cold_sys",  K(c_mysql_sys_version), K(is_changed), K(ret));
+  //      }
+  //    }
+  //  }
+  //  if (OB_SUCC(ret)) {
+  //    is_changed = client_info.is_common_hot_sys_version_changed();
+  //    if (OB_FAIL(server_info.field_mgr_.replace_all_common_hot_sys_vars(client_info.field_mgr_,
+  //      server_info.is_oceanbase_server()))) {
+  //      LOG_WDIAG("fail to replace_all_common_hot_sys_vars", K(ret));
+  //    } else if (is_changed){
+  //      if (OB_FAIL(client_info.field_mgr_.calc_common_hot_sys_var_hash(
+  //        client_val_hash.common_hot_sys_var_hash_))) {
+  //        LOG_WDIAG("fail to calc_common_hot_sys_var_hash for client", K(ret));
+  //      } else {
+  //        client_info.hash_version_.common_hot_sys_var_version_ = c_common_hot_sys_version;
+  //      }
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      server_val_hash.common_hot_sys_var_hash_ = client_val_hash.common_hot_sys_var_hash_;
+  //      LOG_DEBUG("handle common_hot_sys",  K(c_common_hot_sys_version), K(is_changed), K(ret));
+  //    }
+  //  }
+  //  if (OB_SUCC(ret)) {
+  //    is_changed = client_info.is_common_cold_sys_version_changed();
+  //    if (is_changed) {
+  //      if (OB_FAIL(client_info.field_mgr_.calc_common_cold_sys_var_hash(
+  //        client_val_hash.common_cold_sys_var_hash_))) {
+  //        LOG_WDIAG("fail to calc_common_cold_sys_var_hash", K(ret));
+  //      } else {
+  //        client_info.hash_version_.common_sys_var_version_ = c_common_sys_version;
+  //      }
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      server_val_hash.common_cold_sys_var_hash_ = client_val_hash.common_cold_sys_var_hash_;
+  //      LOG_DEBUG("handle common_cold_sys",  K(c_common_sys_version), K(is_changed), K(ret));
+  //    }
+  //  }
+  //  if (OB_SUCC(ret)) {
+  //    is_changed = client_info.is_user_var_version_changed();
+  //    if (is_changed) {
+  //      if (OB_FAIL(client_info.field_mgr_.calc_user_var_hash(client_val_hash.user_var_hash_))) {
+  //        LOG_WDIAG("fail to replace_all_user_vars", K(ret));
+  //      } else {
+  //        client_info.hash_version_.user_var_version_ = c_user_version;
+  //      }
+  //    }
+  //    if (OB_SUCC(ret)) {
+  //      server_val_hash.user_var_hash_ = client_val_hash.user_var_hash_;
+  //      LOG_DEBUG("handle user_var",  K(c_user_version), K(is_changed), K(ret));
+  //    }
+  //  }
+  //  LOG_DEBUG("assign_session_vars_version", K(client_val_hash), K(server_val_hash));
+  //}
   return ret;
 }
 

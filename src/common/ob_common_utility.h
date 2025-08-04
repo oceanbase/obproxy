@@ -27,6 +27,7 @@ extern int64_t get_reserved_stack_size();
 extern void set_reserved_stack_size(int64_t reserved_size);
 extern int check_stack_overflow(
     bool &is_overflow, int64_t reserved_stack_size = get_reserved_stack_size());
+extern int get_stackattr(void *&stackaddr, size_t &stacksize);
 
 } // end of namespace common
 } // end of namespace oceanbase

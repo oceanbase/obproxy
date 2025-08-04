@@ -97,17 +97,14 @@ void ObProxyPartMgr::destroy()
   }
 }
 int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
-                                            int64_t &part_id,
-                                            ObProxyPartInfo &part_info,
-                                            ObServerRoute &route,
-                                            ObProxyExprCalculator &expr_calculator)
+                                            int64_t &first_part_id,
+                                            int64_t &partition_id)
 {
   int ret = OB_SUCCESS;
   if ( part_name.length() <= 0 || part_name.length() > MAX_PART_NAME_LENGTH) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("error part name", K(part_name));
   } else {
-    ObPartitionLevel part_level = part_info.get_part_level();
     ObString store_part_name;
     int64_t * part_id_ptr = NULL;
     PART_NAME_BUF tmp_buf;//64 byte stack buf
@@ -115,33 +112,13 @@ int ObProxyPartMgr::get_part_with_part_name(const ObString &part_name,
     MEMCPY(store_part_name.ptr(), part_name.ptr(), store_part_name.length());
     string_to_upper_case(store_part_name.ptr(), store_part_name.length());
     if ((sub_part_name_id_map_.created()) && OB_NOT_NULL(part_id_ptr = (int64_t *)sub_part_name_id_map_.get(store_part_name))) {
-    //find sub part name, get ptr->(physical part id)
-      part_id = *part_id_ptr;
-      LOG_DEBUG("succ to get part id by sub part name", K(part_id), K(part_name));
+      //find sub part name, get ptr->(physical part id)
+      partition_id = *part_id_ptr;
+      LOG_DEBUG("succ to get part id by sub part name", K(partition_id), K(part_name));
     } else if ((first_part_name_id_map_.created()) && OB_NOT_NULL(part_id_ptr = (int64_t *)first_part_name_id_map_.get(store_part_name))) {
-    //find first part name, get ptr->(first part id)
-      LOG_DEBUG("succ to get part id by first part name", K(*part_id_ptr), K(part_name));
-      if (OB_LIKELY(PARTITION_LEVEL_ONE == part_level)) {
-        part_id = *part_id_ptr;
-      } else if (PARTITION_LEVEL_TWO == part_level) {
-        route.is_partition_calc_fail_ = true;
-        if (!obutils::get_global_proxy_config().enable_primary_zone
-            && !obutils::get_global_proxy_config().enable_cached_server) {
-          int64_t first_part_id = *part_id_ptr;
-          int64_t sub_part_id = OB_INVALID_INDEX;
-          if(OB_FAIL(expr_calculator.calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id, part_id))) {
-            LOG_DEBUG("fail to get random part id by first part name", K(first_part_id), K(part_id), K(part_name));
-          } else {
-            // get part id by random, no need update pl
-            route.no_need_pl_update_ = true;
-            LOG_DEBUG("succ to get random part id by first part name", K(first_part_id), K(sub_part_id), K(part_id));
-          }
-        } else {
-          // nothing, will use primary zone or cached server
-        }
-      } else {
-        // impossible
-      }
+      //find first part name, get ptr->(first part id)
+      first_part_id = *part_id_ptr;
+      LOG_DEBUG("succ to get part id by first part name", K(first_part_id), K(part_name));
     }
   }
   return ret;
@@ -485,16 +462,16 @@ int ObProxyPartMgr::build_hash_part(const bool is_oracle_mode,
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_hash;
       if (OB_FAIL(init_first_part_map())) {
-        LOG_DEBUG("fail to create first part name id map", K(ret));
+        LOG_WDIAG("fail to create first part name id map", K(ret));
       } else if (OB_FAIL(build_part_name_id_map(name_buf, name_len_buf, part_id_buf, all_first_part_name_buf_, all_first_part_name_length_, part_num, first_part_name_id_map_))) {
-        LOG_DEBUG("fail to build first part name id map", K(ret));
+        LOG_WDIAG("fail to build first part name id map", K(ret));
       }
     } else if (PARTITION_LEVEL_TWO == part_level) {
       sub_part_desc_ = desc_hash;
       if (OB_FAIL(init_sub_part_map())) {
-        LOG_DEBUG("fail to create temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to create temp sub part name id map", K(ret));
       } else if (OB_FAIL(build_temp_sub_part_name_id_map(name_buf, name_len_buf, part_id_buf, part_num))) {
-        LOG_DEBUG("fail to build temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to build temp sub part name id map", K(ret));
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
@@ -769,16 +746,16 @@ int ObProxyPartMgr::build_key_part(const ObPartitionLevel part_level,
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_key;
       if (OB_FAIL(init_first_part_map())) {
-        LOG_DEBUG("fail to create first part name id map", K(ret));
+        LOG_WDIAG("fail to create first part name id map", K(ret));
       } else if (OB_FAIL(build_part_name_id_map(name_buf, name_len_buf, part_id_buf, all_first_part_name_buf_, all_first_part_name_length_, part_num, first_part_name_id_map_))) {
-        LOG_DEBUG("fail to build first part name id map", K(ret));
+        LOG_WDIAG("fail to build first part name id map", K(ret));
       }
     } else if (PARTITION_LEVEL_TWO == part_level) {
       sub_part_desc_ = desc_key;
       if (OB_FAIL(init_sub_part_map())) {
-        LOG_DEBUG("fail to create temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to create temp sub part name id map", K(ret));
       } else if (OB_FAIL(build_temp_sub_part_name_id_map(name_buf, name_len_buf, part_id_buf, part_num))) {
-        LOG_DEBUG("fail to build temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to build temp sub part name id map", K(ret));
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
@@ -1070,16 +1047,16 @@ int ObProxyPartMgr::build_range_part(const ObPartitionLevel part_level,
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_range;
       if (OB_FAIL(init_first_part_map())) {
-        LOG_DEBUG("fail to create first part name id map", K(ret));
+        LOG_WDIAG("fail to create first part name id map", K(ret));
       } else if (OB_FAIL(build_part_name_id_map(name_buf, name_len_buf, part_id_buf, all_first_part_name_buf_, all_first_part_name_length_, part_num, first_part_name_id_map_))) {
-        LOG_DEBUG("fail to build first part name id map", K(ret));
+        LOG_WDIAG("fail to build first part name id map", K(ret));
       }
     } else if (PARTITION_LEVEL_TWO == part_level) {
       sub_part_desc_ = desc_range;
       if (OB_FAIL(init_sub_part_map())) {
-        LOG_DEBUG("fail to create temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to create temp sub part name id map", K(ret));
       } else if (OB_FAIL(build_temp_sub_part_name_id_map(name_buf, name_len_buf, part_id_buf, part_num))) {
-        LOG_DEBUG("fail to build temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to build temp sub part name id map", K(ret));
       }
     } else {
       ret = OB_INVALID_ARGUMENT;
@@ -1398,16 +1375,16 @@ int ObProxyPartMgr::build_list_part(const ObPartitionLevel part_level,
     if (PARTITION_LEVEL_ONE == part_level) {
       first_part_desc_ = desc_list;
       if (OB_FAIL(init_first_part_map())) {
-        LOG_DEBUG("fail to create first part name id map", K(ret));
+        LOG_WDIAG("fail to create first part name id map", K(ret));
       } else if (OB_FAIL(build_part_name_id_map(name_buf, name_len_buf, part_id_buf, all_first_part_name_buf_, all_first_part_name_length_, part_num, first_part_name_id_map_))) {
-        LOG_DEBUG("fail to build first part name id map", K(ret));
+        LOG_WDIAG("fail to build first part name id map", K(ret));
       }
     } else if (PARTITION_LEVEL_TWO == part_level) {
       sub_part_desc_ = desc_list;
       if (OB_FAIL(init_sub_part_map())) {
-        LOG_DEBUG("fail to create temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to create temp sub part name id map", K(ret));
       } else if (OB_FAIL(build_temp_sub_part_name_id_map(name_buf, name_len_buf, part_id_buf, part_num))) {
-        LOG_DEBUG("fail to build temp sub part name id map", K(ret));
+        LOG_WDIAG("fail to build temp sub part name id map", K(ret));
       }
     } else {
       ret = OB_INVALID_ARGUMENT;

@@ -240,7 +240,8 @@ public:
              const common::ObString &idc_name,
              const bool is_base_servers_added,
              const common::ObString &cluster_name,
-             const int64_t cluster_id);
+             const int64_t cluster_id,
+             bool &found_servers_changed);
 
   static int shuffle_dummy_ldc(ObLDCLocation &dummy_ldc, const int64_t replica_count,
                                const bool is_weak_read);

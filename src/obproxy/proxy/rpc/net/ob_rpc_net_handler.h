@@ -39,11 +39,11 @@ class ObRpcReq;
 
 enum ObRpcNetMSSState
 {
-  RPC_NET_MSS_INIT = 0,
-  RPC_NET_MSS_ACTIVE,
-  RPC_NET_MSS_KA_CLIENT_SLAVE,
-  RPC_NET_MSS_KA_SHARED,
-  RPC_NET_MSS_MAX
+  RPC_NET_INIT = 0,
+  RPC_NET_KEEP_ALIVE_ACTIVE,
+  RPC_NET_KEEP_ALIVE_CLIENT_SLAVE,
+  RPC_NET_SERVER_SESSION_KEEP_ALIVE_SHARED,
+  RPC_NET_STATE_MAX
 };
 
 enum ObRpcNetHandlerMagic
@@ -65,7 +65,7 @@ class ObRpcNetHandler : public event::ObVConnection
 public:
   ObRpcNetHandler()
       : event::ObVConnection(NULL), server_sessid_(0), ss_id_(0),
-        state_(RPC_NET_MSS_INIT), server_trans_stat_(0),
+        state_(RPC_NET_INIT), server_trans_stat_(0),
         read_buffer_(NULL),
         eos_(false), create_time_(0), last_active_time_(0), read_begin_(0), write_begin_(0),
         net_entry_(), is_inited_(false), magic_(RPC_NET_SS_MAGIC_ALIVE), rpc_net_vc_(NULL),

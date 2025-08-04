@@ -40,6 +40,7 @@
 #include "proxy/rpc/rpclib/ob_tablegroup_cache.h"
 #include "proxy/rpc/rpclib/ob_rpc_req_ctx_cache.h"
 #include "proxy/rpc/rpclib/ob_tablet_ls_cache.h"
+#include "iocore/eventsystem/ob_session_pool_event_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::event;
@@ -228,6 +229,7 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
   int ret = OB_SUCCESS;
   int64_t stack_size = config_params.stack_size_;
   int64_t event_threads = config_params.work_thread_num_;
+  int64_t session_pool_threads = config_params.session_pool_thread_num_;
   int64_t shard_scan_threads = config_params.shard_scan_thread_num_;
   int64_t obkv_task_threads = config_params.rpc_async_task_thread_num_;
   int64_t task_threads = config_params.task_thread_num_;
@@ -267,6 +269,8 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
                                                        : g_event_processor.thread_count_for_type_[ET_NET] / 2,
                                                        stack_size))) {
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
+  } else if (OB_FAIL(g_session_pool_event_processor.start(session_pool_threads, stack_size))) {
+    LOG_EDIAG("fail to start session pool processor", K(stack_size), K(ret));
   } else if (OB_FAIL(init_cs_map_for_thread())) {
     LOG_EDIAG("fail to init cs_map for thread", K(ret));
   } else if (OB_FAIL(init_rpc_net_cs_map_for_thread())) {
@@ -418,11 +422,11 @@ int ObMysqlProxyServerMain::init_rpc_proxy_port(const ObMysqlConfigParams &confi
   ObMysqlProxyPort &rpc_proxy_ipv4_port = get_global_rpc_proxy_ipv4_port();
   ObMysqlProxyPort &rpc_proxy_ipv6_port = get_global_rpc_proxy_ipv6_port();
   const ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
-  bool rpc_is_inherited_ = (info.is_inherited_
+  bool rpc_is_inherited = (info.is_inherited_
     && (OB_INVALID_INDEX != info.rpc_ipv4_fd_ || OB_INVALID_INDEX != info.rpc_ipv6_fd_));
 
   // init from inherited fd
-  if (rpc_is_inherited_) {
+  if (rpc_is_inherited) {
     if ((OB_INVALID_INDEX != info.rpc_ipv4_fd_)
         && OB_FAIL(init_inherited_info(rpc_proxy_ipv4_port, info.rpc_ipv4_fd_))) {
       LOG_WDIAG("fail to init inherited info for rpc proxy ipv4 port", K(ret));
@@ -463,8 +467,13 @@ int ObMysqlProxyServerMain::start_rpc_proxy_acceptor()
   // and spew them here though.
   ObHotUpgraderInfo &info = get_global_hot_upgrade_info();
   info.port_state_ = OB_PROXY_PORT_RPC_SERVICE;
+  // 热升级时，低版本可能没有相关的端口监听功能，等效于直接启动（与init_rpc_proxy_port逻辑一致）
+  bool rpc_is_inherited = (info.is_inherited_
+        && (NO_FD != get_global_rpc_proxy_ipv4_port().fd_
+            || NO_FD != get_global_rpc_proxy_ipv6_port().fd_));
+
   if (get_global_proxy_config().enable_obproxy_rpc_service) {
-      if (info.is_inherited_ && (NO_FD == get_global_rpc_proxy_ipv4_port().fd_)) {
+      if (rpc_is_inherited && (NO_FD == get_global_rpc_proxy_ipv4_port().fd_)) {
         // nothing
       } else if(OB_FAIL(g_net_processor.main_accept(*(g_rpc_proxy_ipv4_acceptor.accept_),
                                                             get_global_rpc_proxy_ipv4_port().fd_, action,
@@ -479,7 +488,7 @@ int ObMysqlProxyServerMain::start_rpc_proxy_acceptor()
 
     if (OB_FAIL(ret)) {
       // nothing
-    } else if (info.is_inherited_ && (NO_FD == get_global_rpc_proxy_ipv6_port().fd_)) {
+    } else if (rpc_is_inherited && (NO_FD == get_global_rpc_proxy_ipv6_port().fd_)) {
         // nothing
     } else if(OB_FAIL(g_net_processor.main_accept(*(g_rpc_proxy_ipv6_acceptor.accept_),
                                                   get_global_rpc_proxy_ipv6_port().fd_, action,
@@ -585,6 +594,8 @@ int init_cache_map_for_one_thread(event::ObEThread *thread)
     LOG_EDIAG("fail to init table query async map for one thread", K(ret));
   } else if (OB_FAIL(proxy::init_rpc_req_ctx_map_for_one_thread(thread))) {
     LOG_EDIAG("fail to init rpc req ctx map for one thread", K(ret));
+  } else if (OB_FAIL(proxy::init_tablet_ls_map_for_one_thread(thread))) {
+    LOG_EDIAG("fail to init tablet ls map for one thread", K(ret));
   } else if (OB_FAIL(proxy::init_routine_map_for_one_thread(thread))) {
     LOG_EDIAG("fail to init routine map for one thread", K(ret));
   } else if (OB_FAIL(proxy::init_sql_table_map_for_one_thread(thread))) {

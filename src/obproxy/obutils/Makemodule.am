@@ -26,8 +26,6 @@ obproxy/obutils/ob_proxy_refresh_server_addr_cont.h \
 obproxy/obutils/ob_proxy_refresh_server_addr_cont.cpp \
 obproxy/obutils/ob_proxy_create_server_conn_cont.h \
 obproxy/obutils/ob_proxy_create_server_conn_cont.cpp \
-obproxy/obutils/ob_proxy_conn_num_check_cont.h \
-obproxy/obutils/ob_proxy_conn_num_check_cont.cpp \
 obproxy/obutils/ob_proxy_json_config_info.h\
 obproxy/obutils/ob_proxy_json_config_info.cpp\
 obproxy/obutils/ob_proxy_string_utils.h\

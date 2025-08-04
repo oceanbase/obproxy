@@ -166,13 +166,13 @@ int ObProxyRpcReqParallelCont::handle_parallel_task(ObIArray<ObProxyRpcParallelP
       int64_t sub_req_iso_mode = get_global_proxy_config().rpc_sub_request_isolation_mode;
       int64_t async_thread_count = g_event_processor.thread_count_for_type_[ET_OBKV];
       int64_t async_thread_iso_range = ObRpcReqThreadQpsStat::get_sub_req_async_thread_iso_range();
-      if (sub_req_iso_mode == NOT_ISOLAEION || async_thread_count == 0) {
+      if (sub_req_iso_mode == NOT_ISOLAEION || async_thread_count == 0 || async_thread_iso_range == 0) {
         LOG_DEBUG("obkv event processor handle sub request");
         if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_NET))) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("fail to schedule parallel execute cont", K(ret));
         }
-      } else if (sub_req_iso_mode == ISOLATE_TO_ALL_ASYNC_THREAD || async_thread_iso_range <= 0) {
+      } else if (sub_req_iso_mode == ISOLATE_TO_ALL_ASYNC_THREAD || async_thread_iso_range < 0) {
         LOG_DEBUG("obkv task processor handle sub request");
         if (OB_ISNULL(g_event_processor.schedule_imm(execute_cont, ET_OBKV))) {
           ret = OB_ERR_UNEXPECTED;

@@ -71,6 +71,49 @@ const char* get_obproxy_function_type(const ObProxyFunctionType type)
   return str_ret;
 }
 
+const char* get_obproxy_function_string(const ObProxyFunctionType type)
+{
+  const char *str_ret = "invalid function type";
+  switch (type) {
+    case F_NONE:
+      str_ret = "none";
+      break;
+    case F_OP_AND:
+      str_ret = "and";
+      break;
+    case F_OP_OR:
+      str_ret = "or";
+      break;
+    case F_COMP_START:
+      str_ret = "start";
+      break;
+    case F_COMP_EQ:
+      str_ret = "=";
+      break;
+    case F_COMP_NSEQ:
+      str_ret = "<=>";
+      break;
+    case F_COMP_GE:
+      str_ret = ">=";
+      break;
+    case F_COMP_GT:
+      str_ret = ">";
+      break;
+    case F_COMP_LE:
+      str_ret = "<=";
+      break;
+    case F_COMP_LT:
+      str_ret = "<";
+      break;
+    case F_COMP_NE:
+      str_ret = "!=";
+      break;
+    default:
+      break;
+  }
+  return str_ret;
+}
+
 const char* get_obproxy_operator_type(const ObProxyOperatorType type)
 {
   const char *str_ret = "invalid operator type";

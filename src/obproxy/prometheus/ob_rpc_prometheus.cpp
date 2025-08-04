@@ -20,6 +20,7 @@
 using namespace oceanbase::obproxy::proxy;
 using namespace oceanbase::obproxy::obutils;
 using namespace oceanbase::obrpc;
+using namespace oceanbase::obproxy::obkv;
 
 namespace oceanbase
 {
@@ -27,6 +28,26 @@ namespace obproxy
 {
 namespace prometheus
 {
+
+const char *get_table_type_name(const obkv::ObTableEntityType type)
+{
+  const char *name = NULL;
+  switch(type) {
+    case ObTableEntityType::ET_DYNAMIC:
+      name = "DYNAMIC";
+      break;
+    case ObTableEntityType::ET_KV:
+      name = "TABLE";
+      break;
+    case ObTableEntityType::ET_HKV:
+      name = "HBASE";
+      break;
+    default:
+      name = "DYNAMIC";
+      break;
+  }
+  return name;
+}
 
 int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
                                        const ObString &logic_database_name,
@@ -48,6 +69,34 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
              K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
   }
 
+  va_end(args);
+
+  return ret;
+}
+
+int ObRPCPrometheus::handle_net_prometheus(const net::ObIpEndpoint &ip,
+                                           const ObPrometheusMetrics metric, ...)
+{
+  int ret = OB_SUCCESS;
+
+  ObString logic_tenant_name;
+  ObString logic_database_name;
+  ObString cluster_name;
+  ObString tenant_name;
+  ObString database_name;
+  ObString vip_addr_name;
+
+  char svr_buf[1 << 7] { 0 };
+  ip.to_plain_string(svr_buf, 1 << 7);
+  vip_addr_name.assign(svr_buf, 1 << 7);
+
+  va_list args;
+  va_start(args, metric);
+  if (OB_FAIL(handle_prometheus(logic_tenant_name, logic_database_name, cluster_name,
+                                tenant_name, vip_addr_name, database_name, OB_PACKET_NUM, metric, args))) {
+    LOG_WDIAG("fail to handle_prometheus with ObClientSessionInfo", K(logic_tenant_name), K(logic_database_name),
+             K(cluster_name), K(tenant_name), K(vip_addr_name), K(database_name), K(metric), K(ret));
+  }
   va_end(args);
 
   return ret;
@@ -130,12 +179,14 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
     bool is_slow = (bool)va_arg(args, int);
     bool is_error = (bool)va_arg(args, int);
     bool is_shard = (bool)va_arg(args, int);
+    obkv::ObTableEntityType table_type = (obkv::ObTableEntityType)va_arg(args, int);
     int64_t value = va_arg(args, int64_t);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_TYPE, ObRpcPacketSet::name_of_pcode(pcode), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_SHARD, is_shard ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_TABLE_TYPE, get_table_type_name(table_type), false);
 
     if (OB_FAIL(g_ob_prometheus_processor.accumulate_counter(REQUEST_RPC_TOTAL, REQUEST_RPC_TOTAL_HELP, label_vector, value))) {
       LOG_WDIAG("fail to accumulate counter with REQUEST_RPC_TOTAL", K(ret));
@@ -146,10 +197,18 @@ int ObRPCPrometheus::handle_prometheus(const ObString &logic_tenant_name,
   case PROMETHEUS_SERVER_PROCESS_REQUEST_TIME:
   case PROMETHEUS_REQUEST_TOTAL_TIME:
   {
+    bool is_slow = (bool)va_arg(args, int);
+    bool is_error = (bool)va_arg(args, int);
+    bool is_shard = (bool)va_arg(args, int);
+    obkv::ObTableEntityType table_type = (obkv::ObTableEntityType)va_arg(args, int);
     int64_t value = va_arg(args, int64_t);
 
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_SCHEMA, database_name);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_TYPE, ObRpcPacketSet::name_of_pcode(pcode), false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_SLOW, is_slow ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_RESULT, is_error ? LABEL_FAIL : LABEL_SUCC, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_SHARD, is_shard ? LABEL_TRUE : LABEL_FALSE, false);
+    ObProxyPrometheusUtils::build_label(label_vector, LABEL_RPC_TABLE_TYPE, get_table_type_name(table_type), false);
     ObProxyPrometheusUtils::build_label(label_vector, LABEL_TIME_TYPE, ObProxyPrometheusUtils::get_metric_lable(metric), false);
 
     if (OB_FAIL(g_ob_prometheus_processor.accumulate_gauge(COST_RPC_TOTAL, COST_RPC_TOTAL_HELP, label_vector, value))) {

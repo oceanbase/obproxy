@@ -33,6 +33,7 @@
 #include "lib/hash/ob_hashset.h"
 #include "lib/list/ob_list.h"
 #include "obproxy/proxy/mysql/ob_mysql_sm_time_stat.h"
+#include "obutils/ob_proxy_config.h"
 
 namespace oceanbase
 {
@@ -50,6 +51,46 @@ namespace proxy
 {
 #define CLIENT_SESSION_ERASE_FROM_MAP_EVENT (CLIENT_SESSION_EVENT_EVENTS_START + 1)
 #define CLIENT_SESSION_ACQUIRE_SERVER_SESSION_EVENT (CLIENT_SESSION_EVENT_EVENTS_START + 2)
+
+enum ObConnectionPoolMode
+{
+  NONE,
+  SESSION,
+};
+
+static const common::ObString CONNECTION_POOL_MODE_SESSION = common::ObString::make_string("SESSION");
+
+ObConnectionPoolMode get_config_connection_pool_mode()
+{
+  ObConnectionPoolMode ret = ObConnectionPoolMode::NONE;
+  common::ObString config_mode(obutils::get_global_proxy_config().connection_pool_mode);
+  config_mode.trim();
+  if (CONNECTION_POOL_MODE_SESSION.case_compare(config_mode) == 0)  {
+    ret = ObConnectionPoolMode::SESSION;
+  } else { /* do nothing */ }
+
+  return ret;
+}
+
+int init_cs_map_for_thread();
+int init_cs_map_for_one_thread(int64_t index);
+int init_cs_map_for_one_thread(event::ObEThread *thread);
+
+int init_cs_id_list_for_thread();
+int init_cs_id_list_for_one_thread(int64_t index);
+int init_cs_id_list_for_one_thread(event::ObEThread *thread);
+
+int init_random_seed_for_thread();
+int init_random_seed_for_one_thread(int64_t index);
+int init_random_seed_for_one_thread(event::ObEThread *thread);
+
+bool is_proxy_conn_id_avail(const uint64_t conn_id);
+bool is_server_conn_id_avail(const uint64_t conn_id);
+bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_generated);
+int extract_thread_id(const uint32_t cs_id, int64_t &thread_id);
+int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id);
+int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id);
+void extract_proxy_id_v2(const uint32_t cs_id, uint32_t &proxy_id);
 
 extern ObMutex g_debug_cs_list_mutex;
 
@@ -122,25 +163,35 @@ public:
   bool is_local_connection() const { return is_local_connection_; }
   void set_local_connection();
   common::ObAddr get_real_client_addr(net::ObNetVConnection *server_vc = NULL);
-
-  virtual int attach_server_session(ObMysqlServerSession *ssession);
-  int acquire_svr_session(const sockaddr &addr, const bool need_close_last_ss, ObMysqlServerSession *&svr_session);
+  int attach_second_last_to_last_session();
+  int attach_last_to_second_last_session();
+  int attach_last_server_session(ObMysqlServerSession *ssession);
+  int acquire_svr_session(const sockaddr &addr, ObMysqlServerSession *&svr_session,
+                          const bool need_close_last_server_session, const bool can_use_session_from_pool);
   int init_session_pool_info();
-  int acquire_svr_session_in_session_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session);
-  int acquire_svr_session_no_pool(const sockaddr &addr, ObMysqlServerSession *&svr_session);
   int64_t get_svr_session_count() const;
 
-  inline ObMysqlServerSession *get_server_session() const { return bound_ss_; }
-  inline ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
-  inline ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
-  inline ObMysqlServerSession *get_last_bound_server_session() const { return last_bound_ss_; }
-  inline ObMysqlServerSession *get_lock_server_session() const { return lock_ss_; }
-  inline ObMysqlServerSession *get_closed_key_server_session() const { return closed_key_ss_; }
+  int release_second_last_server_session();
+  int release_last_server_session();
+  inline ObMysqlServerSession *get_last_server_session() const { return last_ss_; }
+  inline ObMysqlServerSession *acquire_last_server_session()
+  {
+    ObMysqlServerSession *ret = last_ss_;
+    last_ss_ = NULL;
+    last_ss_keep_alive_vio_ = NULL;
+    return ret;
+  }
+  inline const ObMysqlServerSession *get_cur_server_session() const { return cur_ss_; }
+  inline const ObMysqlServerSession *get_lii_server_session() const { return lii_ss_; }
+  inline ObMysqlServerSession *get_second_last_server_session() const { return second_last_ss_; }
+  inline const ObMysqlServerSession *get_lock_server_session() const { return lock_ss_; }
+  inline const ObMysqlServerSession *get_closed_key_server_session() const { return closed_key_ss_; }
   inline net::ObIpEndpoint &get_trans_coordinator_ss_addr() { return trans_coordinator_ss_addr_; }
-  inline void set_server_session(ObMysqlServerSession *ssession) { bound_ss_ = ssession; }
+  inline void set_last_server_session(ObMysqlServerSession *ssession) { last_ss_ = ssession; }
+  inline void set_last_ss_keep_alive_vio(event::ObVIO *vio) { last_ss_keep_alive_vio_ = vio; };
   inline void set_cur_server_session(ObMysqlServerSession *ssession) { cur_ss_ = ssession; }
   inline void set_lii_server_session(ObMysqlServerSession *ssession) { lii_ss_ = ssession; }
-  inline void set_last_bound_server_session(ObMysqlServerSession *ssession) { last_bound_ss_ = ssession; }
+  inline void set_second_last_server_session(ObMysqlServerSession *ssession) { second_last_ss_ = ssession; }
   inline void set_lock_server_session(ObMysqlServerSession *ssession) { lock_ss_ = ssession; }
   inline void set_closed_key_server_session(ObMysqlServerSession *ssession) { closed_key_ss_ = ssession; }
   inline net::ObIpEndpoint &get_sharding_txn_ss_addr() { return sharding_txn_ss_addr_; }
@@ -155,10 +206,11 @@ public:
   int64_t get_transact_count() const { return session_stats_.stats_[TOTAL_TRANSACTION_COUNT]; }
   ObClientSessionInfo &get_session_info() { return session_info_; }
   const ObClientSessionInfo &get_session_info() const { return session_info_; }
-  ObMysqlSessionManagerNew &get_session_manager_new() { return session_manager_new_; }
-  const ObMysqlSessionManagerNew &get_session_manager_new() const { return session_manager_new_; }
+  ObMysqlSessionManagerSharding &get_session_manager_sharding() { return session_manager_sharding_; }
+  const ObMysqlSessionManagerSharding &get_session_manager_sharding() const { return session_manager_sharding_; }
   ObMysqlSessionManager &get_session_manager() { return session_manager_; }
   const ObMysqlSessionManager &get_session_manager() const { return session_manager_; }
+  int release_server_session(ObMysqlServerSession *session);
   const char *get_read_state_str() const;
   const common::ObString &get_vip_tenant_name() { return ct_info_.vip_tenant_.tenant_name_; }
   const common::ObString &get_vip_cluster_name() { return ct_info_.vip_tenant_.cluster_name_; }
@@ -311,7 +363,7 @@ public:
   }
 
   int swap_mutex(void *data);
-  void close_last_used_ss();
+  void close_last_server_session();
 
   void set_need_delete_cluster(bool val = true) { session_states_.need_delete_cluster_ = val; }
   bool is_need_delete_cluster() const { return session_states_.need_delete_cluster_; }
@@ -319,17 +371,29 @@ public:
   bool is_proxy_mysql_client() const { return session_states_.is_proxy_mysql_client_; }
   void set_can_send_request() { session_states_.can_direct_send_request_ = true; }
   bool is_can_send_request() const { return session_states_.can_direct_send_request_; }
-  void set_can_server_session_release(bool val) { session_states_.can_server_session_release_ = val; }
-  bool is_can_server_session_release() const { return session_states_.can_server_session_release_; }
+  void set_can_use_connection_pool(bool val) { session_manager_.set_can_use_connection_pool(val); }
+  bool can_use_connection_pool() const { return session_manager_.can_use_connection_pool(); }
+  void set_reset_session_status_failed(bool val) { session_states_.reset_session_status_failed_= val; }
+  bool is_reset_session_status_failed() const { return session_states_.reset_session_status_failed_; }
   void set_vc_ready_killed(bool val) { session_states_.vc_ready_killed_ = val; }
   bool is_vc_ready_killed() const { return session_states_.vc_ready_killed_; }
   void set_is_waiting_trans_first_request(bool val) { session_states_.is_waiting_trans_first_request_ = val; }
   bool is_waiting_trans_first_request() const { return session_states_.is_waiting_trans_first_request_; }
-
-  void set_session_pool_client(bool is_session_pool_client) {
-    session_info_.is_session_pool_client_ = is_session_pool_client;
+  void set_connection_pool_mode(ObConnectionPoolMode m) {
+    connection_pool_mode_ = m;
+    if (ObConnectionPoolMode::SESSION == m) {
+      session_manager_.set_enable_global_session_pool(true);
+    } else {}
   }
-  inline bool is_session_pool_client() { return session_info_.is_session_pool_client_; }
+
+  int setup_reset_conn_buffer(ObMysqlSM *sm);
+  inline bool is_enable_sharding_conn_pool() {
+    return false;
+  }
+  inline bool is_enable_session_conn_pool() {
+    return ObConnectionPoolMode::SESSION == connection_pool_mode_;
+  }
+
   void set_server_addr(proxy::ObCommonAddr addr) {common_addr_ = addr;}
   void set_first_dml_sql_got(bool val = true) { session_states_.is_first_dml_sql_got_ = val; }
   bool is_first_dml_sql_got() const { return session_states_.is_first_dml_sql_got_; }
@@ -352,8 +416,8 @@ public:
   bool is_last_request_in_trans() { return session_states_.is_last_request_in_trans_; }
   void set_trans_internal_routing(bool is_internal_routing) { session_states_.is_trans_internal_routing_ = is_internal_routing; }
   bool is_trans_internal_routing() const { return session_states_.is_trans_internal_routing_; }
-  void set_need_return_last_bound_ss(bool is_need_return_last_bound_ss) { session_states_.is_need_return_last_bound_ss_ = is_need_return_last_bound_ss; }
-  bool is_need_return_last_bound_ss() const { return session_states_.is_need_return_last_bound_ss_; }
+  void set_need_return_second_last_server_session(bool is_need_return_second_last_ss) { session_states_.is_need_return_second_last_ss_ = is_need_return_second_last_ss; }
+  bool is_need_return_second_last_server_session() const { return session_states_.is_need_return_second_last_ss_; }
   void set_proxy_enable_trans_internal_routing(bool is_enable_internal_route) { session_states_.is_proxy_enable_trans_internal_routing_ = is_enable_internal_route; }
   // treat disable_trans_internal_routeing where shard_conn change for sharding
   bool is_proxy_enable_trans_internal_routing() const { return session_states_.is_proxy_enable_trans_internal_routing_
@@ -386,6 +450,9 @@ public:
     select_plan_ = plan;
   }
 
+  void disable_conn_pool() { connection_pool_mode_ = ObConnectionPoolMode::NONE; }
+  bool is_in_trans_internal_routing() const { return session_states_.is_in_trans_internal_routing_; }
+  void set_in_trans_internal_routing(bool val) { session_states_.is_in_trans_internal_routing_ = val; }
   bool can_direct_ok() const { return session_states_.can_direct_ok_; }
   void set_can_direct_ok(bool val) { session_states_.can_direct_ok_ = val; }
 
@@ -458,9 +525,7 @@ public:
     uint32_t can_direct_ok_:                                1;
     uint32_t is_proxy_mysql_client_:                        1; // used for ObMysqlClient
     uint32_t can_direct_send_request_:                      1; // used for ObMysqlClient
-    uint32_t can_server_session_release_:                   1;  //used for session release
-
-
+    uint32_t reset_session_status_failed_:                  1;  // 对会话连接池获取的 server session 进行重置失败后标记
     // when kill self's session, it is true
     uint32_t vc_ready_killed_:                              1;
     uint32_t is_waiting_trans_first_request_:               1;
@@ -474,7 +539,7 @@ public:
     uint32_t is_last_request_in_trans_:                     1;
     // means current client session has the ability to free routing in trans or not
     uint32_t is_trans_internal_routing_:                    1;
-    uint32_t is_need_return_last_bound_ss_:                 1;
+    uint32_t is_need_return_second_last_ss_:                 1;
     uint32_t need_delete_cluster_:                          1;
     //default false, will route with merge status careless
     //it is true after user first dml sql arrived.
@@ -484,6 +549,7 @@ public:
     uint32_t using_ldg_:                                    1;
     uint32_t using_service_name_:                           1;
     uint32_t enable_standby_read_write_split_:              1;
+    uint32_t is_in_trans_internal_routing_:                 1;
     uint32_t :                                              0;
   } session_states_;
 
@@ -541,25 +607,25 @@ private:
   uint32_t cs_id_;//Unique client session identifier, assignment by proxy self
   uint64_t proxy_sessid_;
 
-  // Attetion! (bound_ss_ != NULL && cur_ss_ != NULL) will never appear.
+  // Attetion! (last_ss_ != NULL && cur_ss_ != NULL) will never appear.
   // last used server session, which is listening by client session.
   // it's mainly used to pick server session in a transaction.
-  ObMysqlServerSession *bound_ss_;
+  ObMysqlServerSession *last_ss_;
   // current used server session, which is listening by mysql sm.
   // it's mainly used to traverse all server sessions.
   // curr_ss_ is pointed to the server session used by mysql sm.
-  ObMysqlServerSession *cur_ss_;
+  const ObMysqlServerSession * cur_ss_;
   // last_insert_id server session.
   // it's changed every time when last_insert_id is changed.
   // NOTE:: it is only appoint to server session, no hold it
-  ObMysqlServerSession *lii_ss_;
-  ObMysqlServerSession *last_bound_ss_;
+  const ObMysqlServerSession *lii_ss_;
+  ObMysqlServerSession *second_last_ss_;
 
   // only a pointer used for table lock route, no hold it
-  ObMysqlServerSession *lock_ss_;
+  const ObMysqlServerSession *lock_ss_;
   // to indicate client session closed because a key server session close.
   // only a pointer, no hold it
-  ObMysqlServerSession *closed_key_ss_;
+  const ObMysqlServerSession *closed_key_ss_;
 
   // for sharding txn route in multi_shard transaction
   net::ObIpEndpoint sharding_txn_ss_addr_;
@@ -575,14 +641,15 @@ private:
   ObClientReadState read_state_;
 
   event::ObVIO *ka_vio_;
-  event::ObVIO *server_ka_vio_;
+  event::ObVIO *last_ss_keep_alive_vio_;
 
   ObConnTenantInfo ct_info_;
 
   //session info
   ObClientSessionInfo session_info_;
+  ObConnectionPoolMode connection_pool_mode_;
   ObMysqlSessionManager session_manager_; // server session manager
-  ObMysqlSessionManagerNew session_manager_new_; // server session manager
+  ObMysqlSessionManagerSharding session_manager_sharding_; // server session manager
   ObSessionStats session_stats_;
   ObTraceStats *trace_stats_;
   optimizer::ObShardingSelectLogPlan *select_plan_;
@@ -710,28 +777,6 @@ inline common::ObMysqlRandom &get_random_seed(const event::ObEThread &t)
 {
   return *(const_cast<event::ObEThread *>(&t)->random_seed_);
 }
-
-int init_cs_map_for_thread();
-int init_cs_map_for_one_thread(int64_t index);
-int init_cs_map_for_one_thread(event::ObEThread *thread);
-
-int init_cs_id_list_for_thread();
-int init_cs_id_list_for_one_thread(int64_t index);
-int init_cs_id_list_for_one_thread(event::ObEThread *thread);
-
-int init_random_seed_for_thread();
-int init_random_seed_for_one_thread(int64_t index);
-int init_random_seed_for_one_thread(event::ObEThread *thread);
-
-bool is_proxy_conn_id_avail(const uint64_t conn_id);
-bool is_server_conn_id_avail(const uint64_t conn_id);
-bool is_conn_id_avail(const int64_t conn_id, bool &is_proxy_generated);
-int extract_thread_id(const uint32_t cs_id, int64_t &thread_id);
-int extract_thread_id_v1(const uint32_t cs_id, int64_t &thread_id);
-int extract_thread_id_v2(const uint32_t cs_id, int64_t &thread_id);
-void extract_proxy_id_v2(const uint32_t cs_id, int64_t &proxy_id);
-
-
 class ObClientSessionIDList
 {
 

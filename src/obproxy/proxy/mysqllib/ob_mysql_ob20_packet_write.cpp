@@ -105,7 +105,7 @@ int ObMysqlOB20PacketWriter::write_compressed_packet(ObMIOBuffer &mio_buf,
 }
 
 int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const common::ObString &packet_str,
-                                             Ob20HeaderParam &ob20_head_param)
+                                             Ob20HeaderParam &ob20_head_param, const ObIArray<ObObJKV> *extra_info)
 {
   int ret = OB_SUCCESS;
 
@@ -131,7 +131,7 @@ int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("written_len dismatch", K(written_len), K(buf_len), K(ret));
     } else if (OB_FAIL(ObProto20Utils::consume_and_compress_data(tmp_mio_reader, &mio_buf,
-                                                                 tmp_mio_reader->read_avail(), ob20_head_param))) {
+                                                                 tmp_mio_reader->read_avail(), ob20_head_param, extra_info))) {
       LOG_WDIAG("fail to consume and compress data", K(ret));
     } else {
       LOG_DEBUG("succ to write raw packet in ob20 format");

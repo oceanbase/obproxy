@@ -137,6 +137,10 @@ public:
                                                          ProcessFunc process_func, UpdateIntervalFunc update_func,
                                                          const bool is_repeat = false,
                                                          event::ObEventThreadType etype = event::ET_BLOCKING);
+  static ObAsyncCommonTask *create_and_start_repeat_task_on_ethread(const int64_t interval_us, const char *task_name,
+                                                                    ProcessFunc process_func, UpdateIntervalFunc update_func,
+                                                                    event::ObEThread *thread,
+                                                                    const bool is_repeat = false);
   virtual DECLARE_TO_STRING;
 
 protected:
@@ -186,6 +190,84 @@ inline int ObAsyncCommonTask::update_task_interval(ObAsyncCommonTask *cont)
     }
   }
   return ret;
+}
+
+inline ObAsyncCommonTask *ObAsyncCommonTask::create_and_start_repeat_task_on_ethread(
+                                             const int64_t interval_us,
+                                             const char *task_name,
+                                             ProcessFunc process_func,
+                                             UpdateIntervalFunc update_func,
+                                             event::ObEThread *ethread,
+                                             const bool is_repeat /*false*/)
+{
+  event::ObEventThreadType etype;
+  ObAsyncCommonTask *cont = NULL;
+  int ret = common::OB_SUCCESS;
+  event::ObProxyMutex *mutex = NULL;
+  if (OB_ISNULL(ethread)) {
+    ret = common::OB_INVALID_ARGUMENT;
+    PROXY_LOG(WDIAG, "ethread is null", K(ret));
+  } else if (OB_ISNULL(process_func)) {
+    ret = common::OB_INVALID_ARGUMENT;
+    PROXY_LOG(WDIAG, "process func is null", K(ret));
+  } else if (OB_ISNULL(mutex = event::new_proxy_mutex())) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_LOG(EDIAG, "fail to alloc memory for mutex", K(ret));
+  } else if (OB_FAIL(ethread->get_origin_etype(etype))) {
+    PROXY_LOG(EDIAG, "fail to get origin etype", K(ret));
+  } else if (OB_ISNULL(cont = new(std::nothrow) ObAsyncCommonTask(
+      mutex, task_name, process_func, update_func, is_repeat, etype))) {
+    ret = common::OB_ALLOCATE_MEMORY_FAILED;
+    PROXY_LOG(EDIAG, "fail to alloc memory for mutex", K(ret));
+    if (OB_LIKELY(NULL != mutex)) {
+      mutex->free();
+      mutex = NULL;
+    }
+  } else {
+    cont->set_interval(interval_us);
+    ObHRTime atimeout = 0;
+    int32_t callback_event = EVENT_ASYNC_PROCESS_START;
+
+    if (is_repeat) {
+      atimeout = 0;
+      callback_event = ASYNC_PROCESS_START_REPEAT_TASK_EVENT;
+    } else {
+      atimeout = event::get_hrtime() + HRTIME_USECONDS(interval_us);
+      callback_event = ASYNC_PROCESS_DO_REPEAT_TASK_EVENT;
+    }
+
+    event::ObEvent *event = NULL;
+    if (OB_ISNULL(event = op_reclaim_alloc(event::ObEvent))) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_EVENT_LOG(EDIAG, "fail to alloc mem for schedule_imm", K(ret));
+    } else if (OB_FAIL(event->init(*cont, atimeout, 0))) {
+      PROXY_EVENT_LOG(WDIAG, "fail init ObEvent", K(ret));
+    } else {
+  #ifdef ENABLE_TIME_TRACE
+      event->start_time_ = get_hrtime();
+  #endif
+      event->callback_event_ = callback_event;
+      event->ethread_ = ethread;
+      if (NULL != event->continuation_->mutex_) {
+        event->mutex_ = event->continuation_->mutex_;
+      } else {
+        event->continuation_->mutex_ = event->ethread_->mutex_;
+        event->mutex_ = event->continuation_->mutex_;
+      }
+      event->ethread_->event_queue_external_.enqueue(event, false);
+    }
+
+    if (OB_FAIL(ret) && NULL != event) {
+      op_reclaim_free(event);
+      event = NULL;
+    }
+  }
+
+  if (OB_FAIL(ret) && OB_LIKELY(NULL != cont)) {
+    cont->destroy();
+    cont = NULL;
+  }
+  return cont;
 }
 
 inline ObAsyncCommonTask *ObAsyncCommonTask::create_and_start_repeat_task(

@@ -19,8 +19,9 @@
 #include "obutils/ob_proxy_create_server_conn_cont.h"
 #include "dbconfig/ob_proxy_db_config_info.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
-#include "obutils/ob_proxy_conn_num_check_cont.h"
 #include "iocore/eventsystem/ob_event_system.h"
+#include "iocore/net/ob_unix_net_vconnection.h"
+#include "iocore/eventsystem/ob_session_pool_event_processor.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy;
@@ -44,6 +45,11 @@ ObSessionPoolProcessor::~ObSessionPoolProcessor()
   if (NULL != pool_stat_dump_cont_) {
     pool_stat_dump_cont_->destroy();
     pool_stat_dump_cont_ = NULL;
+  }
+
+  if (NULL != pool_reset_conn_cont_) {
+    pool_reset_conn_cont_->destroy();
+    pool_reset_conn_cont_ = NULL;
   }
 }
 int ObSessionPoolProcessor::create_refresh_server_session_cont()
@@ -92,37 +98,6 @@ int ObSessionPoolProcessor::create_server_conn_cont()
   } else {
     ret = cont->schedule_create_conn_cont(true);
     LOG_INFO("create_server_conn_cont", K(interval_us));
-  }
-  if (OB_FAIL(ret)) {
-    if (NULL != cont) {
-      cont->destroy();
-      cont = NULL;
-      mutex = NULL;
-    } else {
-      if (NULL != mutex) {
-        mutex->free();
-        mutex = NULL;
-      }
-    }
-  }
-  return ret;
-}
-
-int ObSessionPoolProcessor::create_conn_num_check_cont()
-{
-  int ret = OB_SUCCESS;
-  ObProxyConnNumCheckCont *cont = NULL;
-  ObProxyMutex *mutex = NULL;
-  int64_t interval_us = HRTIME_USECONDS(get_global_proxy_config().session_pool_cont_delay_interval);
-  if (OB_ISNULL(mutex = new_proxy_mutex())) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_EDIAG("alloc memory for proxy mutex error", K(ret));
-  } else if (OB_ISNULL(cont = new (std::nothrow) ObProxyConnNumCheckCont(mutex, interval_us))) {
-    ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_EDIAG("fail to alloc ObProxyConnNumCheckCont", K(ret));
-  } else {
-    ret = cont->schedule_check_conn_num_cont(true);
-    LOG_INFO("create_conn_num_check_cont", K(interval_us));
   }
   if (OB_FAIL(ret)) {
     if (NULL != cont) {
@@ -215,7 +190,7 @@ int ObSessionPoolProcessor::do_pool_stat_dump()
   int ret = OB_SUCCESS;
   ObSEArray<ObMysqlServerSessionListPool*, 1024> all_session_list_pool_array;
   get_global_session_manager().get_all_session_list_pool(all_session_list_pool_array);
-  for (int64_t i = 0; i < all_session_list_pool_array.count(); i++) {
+  for (int64_t i = 0; i < OB_SUCC(ret) && all_session_list_pool_array.count(); i++) {
     ObMysqlServerSessionListPool* session_list_pool = all_session_list_pool_array.at(i);
     ObProxySchemaKey& schema_key = session_list_pool->schema_key_;
     DRWLock::RDLockGuard  guard(session_list_pool->rwlock_);
@@ -230,6 +205,63 @@ int ObSessionPoolProcessor::do_pool_stat_dump()
   }
   return ret;
 }
+
+int ObSessionPoolProcessor::do_reset_conn()
+{
+  int ret = OB_SUCCESS;
+  ObSEArray<ObMysqlServerSessionListPool*, 4> all_session_list_pool_array;
+  ObHRTime now = common::hrtime_to_usec(get_hrtime());
+
+  if (OB_FAIL(get_global_session_manager().get_all_session_list_pool(all_session_list_pool_array))) {
+    SESSION_POOL_LOG(EDIAG, "fail to get_all_session_list_pool", K(ret));
+  }
+  SESSION_POOL_LOG(DEBUG, "do_reset_conn start", K(all_session_list_pool_array.count()),
+                          "is_et_session_pool", this_ethread()->is_event_thread_type(event::ET_SESS_POOL));
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < all_session_list_pool_array.count(); i++) {
+    ObMysqlServerSessionListPool* session_list_pool = all_session_list_pool_array.at(i);
+    DRWLock::RDLockGuard guard(session_list_pool->rwlock_);
+    ObMysqlServerSessionListPool::IPHashTable& session_pool = session_list_pool->server_session_list_pool_;
+    ObMysqlServerSessionListPool::IPHashTable::iterator spot = session_pool.begin();
+    ObMysqlServerSessionListPool::IPHashTable::iterator last = session_pool.end();
+    for (; OB_SUCC(ret) && spot != last; ++spot) {
+      MUTEX_LOCK(lock, spot->mutex_, &self_ethread());
+      DRWLock::WRLockGuard guard(spot->get_ss_list_rwlock());
+      ObMysqlServerSession *cur_ss = NULL;
+      net::ObUnixNetVConnection *vc = NULL;
+      if (OB_NOT_NULL(cur_ss = (ObMysqlServerSession*) spot->server_session_list_.head())
+          && OB_NOT_NULL(vc = static_cast<net::ObUnixNetVConnection*>(cur_ss->get_netvc()))
+          && vc->thread_ == this_ethread()) {
+        while (cur_ss != NULL) {
+          if (cur_ss->state_ == KEEP_ALIVE_GLOBAL_SHARED_NOT_RESET) {
+            int64_t time_to_reset = cur_ss->last_active_time_ + get_global_proxy_config().session_pool_reset_interval;
+            SESSION_POOL_LOG(DEBUG, "do_reset_conn", K(cur_ss->last_active_time_), K(time_to_reset), K(now));
+            if (time_to_reset <= now) {
+              SESSION_POOL_LOG(DEBUG, "do_reset_conn update session state to KEEP_ALIVE_GLOBAL_SHARED_IN_RESET");
+              cur_ss->state_ = KEEP_ALIVE_GLOBAL_SHARED_IN_RESET;
+              ObIOBufferReader *rst_conn_reader = cur_ss->get_reset_conn_reader();
+              int64_t len = rst_conn_reader == NULL ? 0 : rst_conn_reader->read_avail();
+              cur_ss->do_io_write(&*spot, len, rst_conn_reader);
+              SESSION_POOL_LOG(DEBUG, "trigger write reset_conn", K(len), KP(rst_conn_reader), K(cur_ss->ss_id_), KP(this_ethread()));
+              OBPROXY_POOL_LOG(TRACE, "reset_session: sending", "com_reset_conn_len", len,
+                                      "server_sessid", cur_ss->server_sessid_, "ss_id", cur_ss->ss_id_,
+                                      "server_addr", cur_ss->server_ip_, "session_state", cur_ss->get_state_str(), "local_addr", cur_ss->local_ip_,
+                                      "dbkey", cur_ss->schema_key_.dbkey_.config_string_, "cur_request_id", cur_ss->get_server_request_id(),
+                                      "cur_compressed_seq", cur_ss->get_cur_compressed_seq(),
+                                      "ob_capability", cur_ss->get_session_info().get_server_ob_capability(),
+                                      "server_vc", cur_ss->get_netvc());
+            }
+          }
+          cur_ss = static_cast<ObMysqlServerSession *>(spot->server_session_list_.next(cur_ss));
+        }
+      }
+    }
+    session_list_pool->dec_ref();
+    session_list_pool = NULL;
+  }
+  return ret;
+}
+
 void ObSessionPoolProcessor::update_pool_stat_dump_interval()
 {
   ObAsyncCommonTask *cont = get_global_session_pool_processor().get_pool_stat_dump_cont();
@@ -255,6 +287,40 @@ int ObSessionPoolProcessor::start_pool_stat_dump_task()
       LOG_DEBUG("start pool_stat_dump_task", K(interval_us));
     }
   }
+  return ret;
+}
+void ObSessionPoolProcessor::update_reset_conn_interval()
+{
+  if (OB_NOT_NULL((self_ethread().reset_conn_task_))) {
+    int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
+                          get_global_proxy_config().session_pool_reset_interval);
+    ObAsyncCommonTask *task = reinterpret_cast<ObAsyncCommonTask*>(self_ethread().reset_conn_task_);
+    task->set_interval(interval_us);
+  }
+}
+
+int ObSessionPoolProcessor::start_reset_conn_task(ObEThread *session_pool_thread)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(session_pool_thread)) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_NET_LOG(WDIAG, "unexpected null thread", K(ret));
+  } else {
+    int64_t interval_us = ObRandomNumUtils::get_random_half_to_full(
+        get_global_proxy_config().session_pool_reset_interval);
+    if (OB_ISNULL(session_pool_thread->reset_conn_task_ = ObAsyncCommonTask::create_and_start_repeat_task_on_ethread(
+        interval_us,
+        "reset_conn_task",
+        ObSessionPoolProcessor::do_reset_conn,
+        ObSessionPoolProcessor::update_reset_conn_interval,
+        session_pool_thread, false))) {
+      ret = OB_ERR_UNEXPECTED;
+      PROXY_NET_LOG(WDIAG, "fail to create and start reset connection task on session pool thread", K(ret));
+    } else {
+      SESSION_POOL_LOG(TRACE, "succ to create and start reset conn task on session pool thread", KP(session_pool_thread), K(interval_us));
+    }
+  }
+
   return ret;
 }
 
@@ -300,9 +366,7 @@ int ObSessionPoolProcessor::start_session_pool_task()
     ret = create_server_conn_cont();
   }
   if (OB_SUCC(ret)) {
-    if (OB_FAIL(create_conn_num_check_cont())) {
-      LOG_WDIAG("create_conn_num_check_cont failed", K(ret));
-    } else if (OB_FAIL(start_pool_stat_dump_task())) {
+    if (OB_FAIL(start_pool_stat_dump_task())) {
       LOG_WDIAG("start_pool_stat_dump_task failed", K(ret));
     }
   }

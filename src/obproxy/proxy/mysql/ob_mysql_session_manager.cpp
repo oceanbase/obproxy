@@ -12,7 +12,10 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysql/ob_mysql_session_manager.h"
+#include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "proxy/mysql/ob_mysql_client_session.h"
+#include "proxy/mysqllib/ob_mysql_request_builder.h"
+#include "proxy/mysql/ob_mysql_sm.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::common::hash;
@@ -35,6 +38,33 @@ ObServerSessionPool::ObServerSessionPool(ObProxyMutex *mutex)
   SET_HANDLER(&ObServerSessionPool::event_handler);
 }
 
+void ObServerSessionPool::purge_to_global_session_pool()
+{
+  int ret = OB_SUCCESS;
+  IPHashTable::iterator last = ip_pool_.end();
+  IPHashTable::iterator tmp_iter;
+  for (IPHashTable::iterator spot = ip_pool_.begin(); spot != last;) {
+    tmp_iter = spot;
+    ++spot;
+    // 如果是 binlog server 会话或者不支持 COM_CHANGE_USER 重置会话, 直接关闭即可
+    if (!tmp_iter->can_use_connection_pool()) {
+      close_and_destroy_session(tmp_iter.value_);
+    } else if (OB_FAIL(get_global_session_manager().release_server_session(*tmp_iter))) {
+      LOG_WDIAG("fail to release session to global session pool", K(*tmp_iter));
+      // if fail to release to global pool then destory it
+      close_and_destroy_session(tmp_iter.value_);
+    } else {
+      SESSION_POOL_LOG(DEBUG, "succ to release to global session pool", "ss_id", tmp_iter->ss_id_,
+                              "server_sessid", tmp_iter->server_sessid_, "server_ip", tmp_iter->server_ip_);
+    }
+  }
+  ip_pool_.reset();
+
+  if (is_delete_when_empty_) {
+    destroy();
+  }
+}
+
 void ObServerSessionPool::purge()
 {
   IPHashTable::iterator last = ip_pool_.end();
@@ -42,7 +72,7 @@ void ObServerSessionPool::purge()
   for (IPHashTable::iterator spot = ip_pool_.begin(); spot != last;) {
     tmp_iter = spot;
     ++spot;
-    tmp_iter->do_io_close();
+    close_and_destroy_session(tmp_iter.value_);
   }
   ip_pool_.reset();
 
@@ -128,7 +158,6 @@ int ObServerSessionPool::remove_server_session(ObMysqlServerSession* server_sess
 int ObServerSessionPool::release_session(ObMysqlServerSession &ss)
 {
   int ret = OB_SUCCESS;
-  ss.state_ = MSS_KA_SHARED;
   ObNetVConnection *server_vc = NULL;
   // Now we need to issue a read on the connection to detect
   // if it closes on us. We will get called back in the
@@ -152,8 +181,9 @@ int ObServerSessionPool::release_session(ObMysqlServerSession &ss)
     // put it in the pools.
     ret = ip_pool_.set_refactored(&ss);
     if (OB_SUCCESS == ret || OB_HASH_EXIST == ret) {
+      ss.state_ = KEEP_ALIVE_LOCAL_SHARED;
       ret = OB_SUCCESS;
-      LOG_DEBUG("[release session] server session placed into shared pool",
+      LOG_DEBUG("[release session] server session placed into local session pool",
                 "ss_id", ss.ss_id_);
     } else {
       LOG_WDIAG("fail to release server session into shared pool", K(ret));
@@ -253,7 +283,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
       if (OB_UNLIKELY(ss->get_session_info().is_key_session())) {
         // close by client session, do nothing here
         server_session_err_code = ss->get_session_info().get_key_session_code();
-      } else if (OB_LIKELY(MSS_KA_SHARED == ss->state_)) {
+      } else if (OB_LIKELY(KEEP_ALIVE_LOCAL_SHARED == ss->state_)) {
         // Out of the pool! Now!
         if (OB_ISNULL(ip_pool_.remove(hash_key))) {
           //impossible happen here
@@ -261,7 +291,7 @@ int ObServerSessionPool::event_handler(int event, void *data)
           LOG_WDIAG("no server_session found in shared pool", K(ret));
         }
         // Drop connection on this end.
-        ss->do_io_close();
+        close_and_destroy_session(ss);
       }
     }
 
@@ -296,28 +326,116 @@ void ObServerSessionPool::set_hash_key(const ObString &hash_key)
   hash_key_.assign_ptr(hash_key_buf_, min_len);
 }
 
-int ObMysqlSessionManager::acquire_server_session(const sockaddr &addr, const ObString &auth_user,
-                                                  ObMysqlServerSession *&server_session)
-{
-  int ret = OB_SESSION_NOT_FOUND;
-  server_session = NULL;
-  if (OB_LIKELY(NULL != (server_session = session_pool_.acquire_session(addr, auth_user)))) {
-    ret = OB_SUCCESS;
-    LOG_DEBUG("[acquire session] pool search successful");
-  }
-  return ret;
-}
-
-int ObMysqlSessionManager::release_session(ObMysqlServerSession &to_release)
+int ObMysqlSessionManager::acquire_server_session_local(
+  const sockaddr &addr, const ObString &auth_user, ObMysqlServerSession *&server_session)
 {
   int ret = OB_SUCCESS;
-  if (OB_FAIL(session_pool_.release_session(to_release))) {
-    LOG_WDIAG("fail to release session to shared pool", K(ret));
+  if (OB_LIKELY(NULL != (server_session = local_session_pool_.acquire_session(addr, auth_user)))) {
+    PROXY_CS_LOG(DEBUG, "succ to acquire session from local session pool");
   }
   return ret;
 }
 
-int64_t ObMysqlSessionManagerNew::get_svr_session_count()
+int ObMysqlSessionManager::acquire_server_session_global(
+  const sockaddr &addr,
+  const ObString &auth_user,
+  const ObProxySchemaKey& schema_key,
+  ObMysqlServerSession *&server_session)
+{
+  int ret = OB_SUCCESS;
+  server_session = NULL;
+  ObCommonAddr common_addr;
+  if (OB_FAIL(common_addr.assign(addr))) {
+    PROXY_CS_LOG(WDIAG, "[acquire_server_session] fail to assign common addr", K(ret), "addr", ObIpEndpoint(addr));
+  } else if (OB_FAIL(get_global_session_manager().acquire_server_session(schema_key, common_addr, server_session,
+                                                                         &matched_rules_))) {
+    if (ret == OB_HASH_NOT_EXIST) {
+      SESSION_POOL_LOG(DEBUG, "not found schema key from global session pool",
+                              "server_ip", ObIpEndpoint(addr), K(schema_key), K(auth_user));
+      ret = OB_SUCCESS;
+    } else {
+      SESSION_POOL_LOG(WDIAG, "fail to acquire session in global session pool",
+                       K(ret), K(schema_key), "addr", ObIpEndpoint(addr));
+    }
+  } else {
+    if (server_session != NULL) {
+      SESSION_POOL_LOG(DEBUG, "acquire matched session from global conn pool",
+                              "ss_id", server_session->ss_id_, "server_ip", server_session->server_ip_,
+                              "server_sessid", server_session->server_sessid_, K(schema_key), K(auth_user));
+    } else {
+      SESSION_POOL_LOG(DEBUG, "not found matched session from global session pool",
+                              "server_ip", ObIpEndpoint(addr), K(schema_key), K(auth_user));
+    }
+  }
+
+  return ret;
+}
+
+int ObMysqlSessionManager::release_server_session(ObMysqlServerSession *session, bool force_close)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(session)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected null ptr of session", K(ret), KP(session));
+  } else if (force_close) {
+    LOG_DEBUG("force to close the releasing session", K(session));
+    close_and_destroy_session(session);
+  } else if (OB_FAIL(local_session_pool_.release_session(*session))) {
+    LOG_WDIAG("fail to release session to shared pool", K(ret));
+  } else {
+    LOG_DEBUG("succ to release session to local session pool", K(session));
+  }
+
+  return ret;
+}
+
+int ObMysqlSessionManager::setup_reset_conn_buffer(ObMysqlSM *sm)
+{
+  int ret = OB_SUCCESS;
+  if (sm != NULL) {
+    static char reset_conn[5] {0x1, 0x0, 0x0, 0x0, 0x1f};
+    ObString mysql_reset_conn(sizeof(reset_conn), reset_conn);
+
+    ObServerSessionPool::IPHashTable::iterator last = local_session_pool_.ip_pool_.end();
+    ObServerSessionPool::IPHashTable::iterator tmp_iter;
+    for (ObServerSessionPool::IPHashTable::iterator spot = local_session_pool_.ip_pool_.begin(); spot != last;) {
+      tmp_iter = spot;
+      ++spot;
+      ObMIOBuffer *reset_conn_buf = tmp_iter.value_->get_reset_conn_buf();
+      if (reset_conn_buf != NULL) {
+        // 之前构建好没有发出去的 reset_connection 全部消费掉
+        tmp_iter.value_->get_reset_conn_reader()->consume_all();
+        TMP_DISABLE_PROTOCOL_DIAGNOSIS(sm->protocol_diagnosis_);
+        ObMysqlRequestBuilder::build_request_from_packet_str(sm, mysql_reset_conn, *reset_conn_buf,
+                                                             tmp_iter.value_,
+                                                             tmp_iter.value_->get_server_protocol());
+        REENABLE_PROTOCOL_DIAGNOSIS(sm->protocol_diagnosis_);
+        SESSION_POOL_LOG(DEBUG, "succ to build reset conn request",
+                                "server_ip", tmp_iter.value_->server_ip_, "local_ip", tmp_iter.value_->local_ip_,
+                                "request_id", tmp_iter.value_->request_id_ - 1, // request_id 已经递增了
+                                "server_sessid", tmp_iter.value_->server_sessid_,
+                                "reset_conn_len", tmp_iter.value_->get_reset_conn_reader()->read_avail());
+      }
+    }
+  } else {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected null sm", K(ret));
+  }
+
+  return ret;
+}
+
+void ObMysqlSessionManager::purge_keepalives()
+{
+  if (is_enable_global_session_pool() && can_use_connection_pool_) {
+    local_session_pool_.purge_to_global_session_pool();
+  } else {
+    local_session_pool_.purge();
+  }
+}
+
+
+int64_t ObMysqlSessionManagerSharding::get_svr_session_count()
 {
   int64_t session_count = 0;
 
@@ -332,24 +450,53 @@ int64_t ObMysqlSessionManagerNew::get_svr_session_count()
   return session_count;
 }
 
-int ObMysqlSessionManagerNew::acquire_server_session(const ObString &hash_key,
-                                                       const sockaddr &addr, const ObString &auth_user,
-                                                       ObMysqlServerSession *&server_session)
+int ObMysqlSessionManagerSharding::acquire_server_session(dbconfig::ObShardConnector *shard_conn,
+                                                          const sockaddr &addr,
+                                                          const ObString &auth_user,
+                                                          const ObProxySchemaKey& schema_key,
+                                                          ObMysqlServerSession *&server_session)
 {
-  int ret = OB_SESSION_NOT_FOUND;
+  int ret = OB_SUCCESS;
   server_session = NULL;
   ObServerSessionPool *session_pool = NULL;
 
-  if (OB_SUCCESS == session_pool_hash_.get_refactored(hash_key, session_pool)) {
-    if (NULL != (server_session = session_pool->acquire_session(addr, auth_user))) {
-      ret = OB_SUCCESS;
+  if (OB_ISNULL(shard_conn)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected null ptr", KP(shard_conn));
+  } else if (OB_SUCC(session_pool_hash_.get_refactored(shard_conn->shard_name_.config_string_, session_pool))) {
+    if (OB_NOT_NULL(server_session = session_pool->acquire_session(addr, auth_user))) {
       LOG_DEBUG("[acquire session] pool search successful");
     }
   }
+
+  if (OB_SUCC(ret) && OB_ISNULL(server_session) && is_enable_global_session_pool()) {
+    ObCommonAddr common_addr;
+    //mysql 有域名模式，使用地址信息来获取
+    if (shard_conn != NULL && common::DB_MYSQL == shard_conn->server_type_ && !shard_conn->is_physic_ip_) {
+      if (OB_FAIL(common_addr.assign(shard_conn->physic_addr_.config_string_,
+        shard_conn->physic_port_.config_string_, shard_conn->is_physic_ip_))) {
+        PROXY_CS_LOG(WDIAG,"assign addr faield", K(shard_conn->physic_addr_.config_string_),
+          K(shard_conn->physic_port_.config_string_), K(ret));
+      }
+    } else if (OB_FAIL(common_addr.assign(addr))) {
+      PROXY_CS_LOG(WDIAG, "assign addr failed", K(ret));
+    } else if (OB_FAIL(get_global_session_manager().acquire_server_session(schema_key, common_addr, server_session))) {
+      PROXY_CS_LOG(WDIAG, "[acquire_server_session] fail to acquire session in global session pool",
+                   K(auth_user), K(schema_key), "addr", ObIpEndpoint(addr));
+    } else {
+      PROXY_CS_LOG(DEBUG, "[acquire_server_session] succ to acquire session in global session pool",
+                   K(auth_user), K(schema_key), "addr", ObIpEndpoint(addr));
+    }
+  }
+
+  if (ret == OB_HASH_NOT_EXIST) {
+    ret = OB_SESSION_NOT_FOUND;
+  }
+
   return ret;
 }
 
-int ObMysqlSessionManagerNew::acquire_random_session(const ObString &hash_key,
+int ObMysqlSessionManagerSharding::acquire_random_session(const ObString &hash_key,
                                                        ObMysqlServerSession *&server_session)
 {
   int ret = OB_SESSION_NOT_FOUND;
@@ -365,7 +512,7 @@ int ObMysqlSessionManagerNew::acquire_random_session(const ObString &hash_key,
   return ret;
 }
 
-int ObMysqlSessionManagerNew::release_session(const ObString &hash_key, ObMysqlServerSession &to_release)
+int ObMysqlSessionManagerSharding::release_session(const ObString &hash_key, ObMysqlServerSession &to_release)
 {
   int ret = OB_SUCCESS;
   ObServerSessionPool *session_pool = NULL;
@@ -394,7 +541,7 @@ int ObMysqlSessionManagerNew::release_session(const ObString &hash_key, ObMysqlS
   return ret;
 }
 
-void ObMysqlSessionManagerNew::purge_keepalives()
+void ObMysqlSessionManagerSharding::purge_keepalives()
 {
   if (session_pool_hash_.count() > 0) {
     SessionPoolHashTable::iterator last = session_pool_hash_.end();

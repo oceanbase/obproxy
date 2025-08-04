@@ -511,6 +511,41 @@ private:
   ObObjType target_type_;
 };
 
+class ObExprTimeBase: public ObProxyFuncExpr
+{
+public:
+  explicit ObExprTimeBase(): target_type_(ObNullType) {}
+  explicit ObExprTimeBase(ObObjType &target_type) : target_type_(target_type) {}
+  virtual ~ObExprTimeBase() {}
+  int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+           common::ObIArray<common::ObObj> &result_obj_array,
+           const int32_t type);
+  void set_target_type(ObObjType target_type) override { target_type_ = target_type; }
+private:
+  ObObjType target_type_;
+};
+
+// month('xxx')
+class ObProxyExprMonth : public ObExprTimeBase
+{
+public:
+  explicit ObProxyExprMonth() {}
+  explicit ObProxyExprMonth(ObObjType &target_type) { set_target_type(target_type); }
+  virtual ~ObProxyExprMonth() {}
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array) override;
+};
+
+class ObProxyExprYear : public ObExprTimeBase
+{
+public:
+  explicit ObProxyExprYear() {}
+  explicit ObProxyExprYear(ObObjType &target_type) { set_target_type(target_type); }
+  virtual ~ObProxyExprYear() {}
+  virtual int calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem &calc_item,
+                   common::ObIArray<common::ObObj> &result_obj_array) override;
+};
+
 class ObProxyExprNvl : public ObProxyFuncExpr
 {
 public:

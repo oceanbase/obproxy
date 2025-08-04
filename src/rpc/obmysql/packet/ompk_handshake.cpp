@@ -55,10 +55,11 @@ OMPKHandshake::OMPKHandshake()
   server_capabilities_lower_.capability_flag_.OB_SERVER_SECURE_CONNECTION = 1;
 
   server_capabilities_upper_.capability_ = 0;
-  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_STATEMENTS = 1;
-  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_RESULTS = 1;
+  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_STATEMENTS = 0; // observer 默认关闭该能力
+  server_capabilities_upper_.capability_flag_.OB_SERVER_MULTIPLE_RESULTS = 0; // observer 默认关闭该能力
   server_capabilities_upper_.capability_flag_.OB_SERVER_PS_MULTIPLE_RESULTS = 1;
   server_capabilities_upper_.capability_flag_.OB_SERVER_PLUGIN_AUTH = 1;
+  server_capabilities_upper_.capability_flag_.OB_SERVER_SESSION_VARIABLE_TRACK = 1; // observer 默认开启该能力
   //server_capabilities_upper_.capability_flag_.OB_SERVER_CONNECT_ATTRS = 1;
 
   if (server_capabilities_upper_.capability_flag_.OB_SERVER_PLUGIN_AUTH != 0) {
@@ -269,7 +270,7 @@ const char *OMPKHandshake::get_handshake_inner_pulgin_name(const ObString outer_
   } else if (0 == outer_string.case_compare(AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT)) {
     name = AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT;
   } else {
-    return NULL;
+    name = NULL;
   }
 
   return name;

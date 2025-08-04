@@ -135,9 +135,6 @@ do { \
   ObProxyParseResult *p = yyget_extra(yyscanner);\
   if (OB_NOTNULL(p)) {\
     p->has_ignored_word_ = true;\
-    if (IN_TRANS_PARSE_MODE == p->parse_mode_) {\
-      return ERROR;\
-    }\
   }\
 } while (0);
 
@@ -147,9 +144,6 @@ do { \
   if (OB_NOTNULL(p)) {\
     p->has_ignored_word_ = true;\
     p->is_dual_request_ = true; \
-    if (IN_TRANS_PARSE_MODE == p->parse_mode_) {\
-      return ERROR;\
-    }\
   }\
 } while (0);
 
@@ -379,7 +373,7 @@ set_ob_read_consistency    (set{space}+(@@session{space}*\.{space}*ob_read_consi
 set_tx_read_only        (set{space}+(@@session{space}*\.{space}*(tx|transaction)_read_only|@@(tx|transaction)_read_only|(tx|transaction)_read_only){space}*)
 /* binlog related variables, and will return a binlog_variable token */
 binlog_user_var        (slave_uuid|master_heartbeat_period|master_binlog_checksum)
-binlog_sys_var         (gtid_mode|server_id|server_uuid|gtid_executed|gtid_purged|gtid_next|gtid_owned|enforce_gtid_consistency|gtid_executed_compression_period|binlog_gtid_simple_recovery|binlog_gtid_recovery_ordinal|binlog_gtid_recovery_ignore_duplicates|log_bin_basename)
+binlog_sys_var         (gtid_mode|server_id|server_uuid|gtid_executed|gtid_purged|gtid_next|gtid_owned|enforce_gtid_consistency|gtid_executed_compression_period|binlog_gtid_simple_recovery|binlog_gtid_recovery_ordinal|binlog_gtid_recovery_ignore_duplicates|log_bin_basename|binlog_expire_logs_seconds)
 all_binlog_var         (\"{binlog_user_var}\"|\'{binlog_user_var}\'|\"{binlog_sys_var}\"|\'{binlog_sys_var}\')
 opt_sys_var_alias           (((@@global|@@session|@@local){space}*\.{space}*)|@@)
 binlog_user_var_alias       (@{space}*{binlog_user_var})
@@ -416,7 +410,7 @@ comma         ,
 leftbracket   \(
 rightbracket  \)
 explain_route             (explain{space}+route)
-show_proxykv              (show{space}+proxykv)
+show_proxyrpc             (show{space}+proxyrpc)
 show_proxynet             (show{space}+proxynet)
 show_proxyconfig          (show{space}+proxyconfig)
 show_proxysession         (show{space}+proxysession)
@@ -506,6 +500,13 @@ UNIQUE           { return UNIQUE; }
 {retry_ddl_task} { return RETRY_DDL_TASK; }
 TABLEGROUP       { return TABLEGROUP; }
 JOIN             { return JOIN; }
+
+LEFT             { return LEFT; }
+CROSS            { return CROSS; }
+RIGHT            { return RIGHT; }
+INNER            { return INNER; }
+OUTER            { return OUTER; }
+FULL             { return FULL; }
 
  /* ps stmt */
 USING            { return USING; }
@@ -611,8 +612,9 @@ TENANT           { RETURN_NON_RESERVED_KEYWORD(TENANT); }
 
  /*internal cmd*/
 {explain_route} { SET_HAS_EXPLAIN_ROUTE(); return EXPLAIN_ROUTE; }
- /*show proxykv*/
-{show_proxykv}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_KV); return SHOW_PROXYKV; }
+ /*show proxyrpc*/
+{show_proxyrpc}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_RPC); return SHOW_PROXYRPC; }
+REQUESTSTAT      { RETURN_NON_RESERVED_KEYWORD(REQUESTSTAT); }
  /*show net*/
 {show_proxynet}  { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_NET); return SHOW_PROXYNET; }
 THREAD           { RETURN_NON_RESERVED_KEYWORD(THREAD); }
@@ -642,6 +644,8 @@ DETAIL              { RETURN_NON_RESERVED_KEYWORD(DETAIL); }
  /*show sm*/
 {show_proxysm}      { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_SM); return SHOW_PROXYSM; }
 
+RPC                 { RETURN_NON_RESERVED_KEYWORD(RPC); }
+
  /*show cluster*/
 {show_proxycluster} { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_CLUSTER); return SHOW_PROXYCLUSTER; }
 
@@ -656,6 +660,9 @@ DETAIL              { RETURN_NON_RESERVED_KEYWORD(DETAIL); }
 
 ROUTINE             { RETURN_NON_RESERVED_KEYWORD(ROUTINE); }
 GLOBALINDEX        { RETURN_NON_RESERVED_KEYWORD(GLOBALINDEX); }
+QUERYASYNC          { RETURN_NON_RESERVED_KEYWORD(QUERYASYNC); }
+TABLETLS            { RETURN_NON_RESERVED_KEYWORD(TABLETLS); }
+RPCCTX              { RETURN_NON_RESERVED_KEYWORD(RPCCTX); }
 
  /*show vip*/
 {show_proxyvip}     { SET_ICMD_STMT(OBPROXY_T_ICMD_SHOW_VIP); return SHOW_PROXYVIP; }

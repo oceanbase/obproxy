@@ -1164,6 +1164,47 @@ template <>
     return OB_SUCCESS;                                                  \
   }
 
+/*
+  对于 ObTextType, ObMediumTextType, ObLongTextType 类型的反序列化有些特殊,
+  序列化字符串为 lob_header(4bytes), content(xxbytes), 其中包含了 lob header(4bytes),
+  由于 lob header 对于 obproxy 没有用处, 所以在反序列化时就去掉 lob header
+  Q.为什么要修改反序列化而不是在访问字符串时增加一个 offset(4bytes) 来访问字符串内容?
+  A.obproxy 从 sql 中解析出来的 medium text obj 是不带 lob header 的,
+    要把从 sql 解析出来的 medium text obj 与反序列化的 medium text obj 比较需要跳过 lob header.
+    除了 medium text obj 之间的比较, 还有 medium text obj 与其他 obj 之间的转换以及比较,
+    这些地方涉及的函数非常多，会在很多基本的函数里面都加入特判 medium text
+*/
+#define DEF_LOB_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)                       \
+  template <>                                                           \
+      inline int obj_val_serialize<OBJTYPE>(const ObObj &obj, char* buf, \
+                                            const int64_t buf_len, int64_t& pos) \
+  {                                                                     \
+   int ret = OB_SUCCESS;                                                \
+   OB_UNIS_ENCODE(obj.get_##TYPE());                                    \
+   return ret;                                                          \
+   }                                                                    \
+                                                                        \
+  template <>                                                           \
+  inline int obj_val_deserialize<OBJTYPE>(ObObj &obj, const char* buf,  \
+                                          const int64_t data_len, int64_t& pos) \
+  {                                                                     \
+   int ret = OB_SUCCESS;                                                \
+   VTYPE v = VTYPE();                                                   \
+   OB_UNIS_DECODE(v);                                                   \
+   if (OB_SUCC(ret)) {                                                  \
+     obj.set_lob_##TYPE(OBJTYPE, v);                                    \
+   }                                                                    \
+   return ret;                                                          \
+  }                                                                    \
+                                                                        \
+  template <>                                                           \
+  inline int64_t obj_val_get_serialize_size<OBJTYPE>(const ObObj &obj)         \
+  {                                                                     \
+   int64_t len = 0;                                                     \
+   OB_UNIS_ADD_LEN(obj.get_##TYPE());                                   \
+   return len;                                                          \
+   }
+
 #define DEF_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)                       \
   template <>                                                           \
       inline int obj_val_serialize<OBJTYPE>(const ObObj &obj, char* buf, \
@@ -1195,15 +1236,20 @@ template <>
    return len;                                                          \
    }
 
+#define DEF_LOB_TEXT_FUNCS(OBJTYPE, TYPE, VTYPE) \
+  DEF_TEXT_PRINT_FUNCS(OBJTYPE);             \
+  DEF_STRING_CS_FUNCS(OBJTYPE);                 \
+  DEF_LOB_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)
+
 #define DEF_TEXT_FUNCS(OBJTYPE, TYPE, VTYPE) \
   DEF_TEXT_PRINT_FUNCS(OBJTYPE);             \
   DEF_STRING_CS_FUNCS(OBJTYPE);                 \
   DEF_TEXT_SERIALIZE_FUNCS(OBJTYPE, TYPE, VTYPE)
 
 DEF_TEXT_FUNCS(ObTinyTextType, string, ObString);
-DEF_TEXT_FUNCS(ObTextType, string, ObString);
-DEF_TEXT_FUNCS(ObMediumTextType, string, ObString);
-DEF_TEXT_FUNCS(ObLongTextType, string, ObString);
+DEF_LOB_TEXT_FUNCS(ObTextType, string, ObString);
+DEF_LOB_TEXT_FUNCS(ObMediumTextType, string, ObString);
+DEF_LOB_TEXT_FUNCS(ObLongTextType, string, ObString);
 
 
 ////////////////

@@ -241,7 +241,7 @@ int ObProxyExprColumn::calc(const ObProxyExprCtx &ctx, const ObProxyExprCalcItem
     LOG_WDIAG("cacl expr failed", K(ret));
   } else if (result_obj_array.count() == len && ObProxyExprCalcItem::FROM_SQL_FIELD == calc_item.source_) {
     bool found = false;
-    for (int64_t i = 0; OB_SUCC(ret) && i < calc_item.sql_result_->field_num_; i++) {
+    for (int64_t i = 0; OB_SUCC(ret) && OB_NOT_NULL(calc_item.sql_result_) && i < calc_item.sql_result_->field_num_; i++) {
       SqlField* field = calc_item.sql_result_->fields_.at(i);
       if (0 == field->column_name_.config_string_.case_compare(column_name_)
           && (field->column_values_.count() > 0)) {
@@ -1719,6 +1719,67 @@ int ObProxyExprToDays::calc(const ObProxyExprCtx &ctx,
               result_obj.set_int(target_type_, day_int);
             }
             LOG_DEBUG("succ calc `to_days('xxx')`", "get_date", param_result.at(0).get_date(), K(day_int), K(result_obj));
+            if (OB_FAIL(result_obj_array.push_back(result_obj))) {
+              LOG_WDIAG("result obj array push back failed", K(ret));
+            }
+          }
+        }
+
+      } while (OB_SUCC(ret) && ++index < cnt);
+    }
+  }
+  ObProxyExpr::print_proxy_expr(this);
+  return ret;
+}
+
+
+int ObProxyExprMonth::calc(const ObProxyExprCtx &ctx,
+                           const ObProxyExprCalcItem &calc_item,
+                           common::ObIArray<common::ObObj> &result_obj_array)
+{
+  return ObExprTimeBase::calc(ctx, calc_item, result_obj_array, DT_MON);
+}
+
+int ObProxyExprYear::calc(const ObProxyExprCtx &ctx,
+                           const ObProxyExprCalcItem &calc_item,
+                           common::ObIArray<common::ObObj> &result_obj_array)
+{
+  return ObExprTimeBase::calc(ctx, calc_item, result_obj_array, DT_YEAR);
+}
+
+int ObExprTimeBase::calc(const ObProxyExprCtx &ctx,
+                         const ObProxyExprCalcItem &calc_item,
+                         common::ObIArray<common::ObObj> &result_obj_array,
+                         const int32_t type)
+{
+  int ret = OB_SUCCESS;
+  common::ObSEArray<common::ObSEArray<common::ObObj, 4>, 4> param_result_array;
+  int cnt = 0;
+  int64_t len = result_obj_array.count();
+
+  if (OB_FAIL(ObProxyExpr::calc(ctx, calc_item, result_obj_array))) {
+    LOG_WDIAG("calc expr failed", K(ret), K(param_array_.count()));
+  } else if (len == result_obj_array.count()) {
+    if (OB_UNLIKELY(param_array_.count() != 1)) {
+      ret = OB_EXPR_CALC_ERROR;
+      LOG_WDIAG("to_days function only have one param", K(param_array_.count()), K(ret));
+    } else if (OB_FAIL(calc_param_expr(ctx, calc_item, param_result_array, cnt))) {
+      LOG_WDIAG("calc param expr failed", K(ret));
+    } else {
+      int index = 0;
+      do {
+        common::ObSEArray<common::ObObj, 4> param_result;
+        LOCATE_PARAM_RESULT(param_result_array, param_result, index);
+        // 对date、datetime类型，不需要time_zone信息，只有timestamp才考虑time_zone
+        // 相关函数目前只会输入date类型，暂不考虑time_zone offset
+        ObObj result_obj = param_result.at(0);
+        if (OB_SUCC(ret)) {
+          ObTime ob_time;
+          if (OB_FAIL(ob_obj_to_ob_time_with_date(param_result.at(0), NULL, ob_time))) {
+            LOG_WDIAG("failed to cast obj to ob_time", K(param_result.at(0)), K(ret));
+          } else {
+            result_obj.set_int(target_type_, ob_time.parts_[type]);
+            LOG_DEBUG("succ calc func about date-time", K(type), K(ob_time), K(result_obj));
             if (OB_FAIL(result_obj_array.push_back(result_obj))) {
               LOG_WDIAG("result obj array push back failed", K(ret));
             }

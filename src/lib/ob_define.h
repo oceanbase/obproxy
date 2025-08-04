@@ -35,6 +35,7 @@ namespace oceanbase
 {
 namespace common
 {
+const int16_t LOB_HEADER_LENGTH = 4;
   // decimal int related
 const int16_t MAX_PRECISION_DECIMAL_INT_32  = 9;
 const int16_t MAX_PRECISION_DECIMAL_INT_64  = 18;
@@ -640,6 +641,7 @@ enum ObCapabilityFlagShift
   OB_CAP_ENABLE_CLIENT_SESSION_ID_V2_SHIFT,         // 21
   OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT,             // 22
   OB_CAP_FEEDBACK_PROXY_SHIFT,                      // 23
+  OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT,              // 24
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -663,10 +665,12 @@ enum ObCapabilityFlagShift
 #define OB_CAP_PROXY_FULL_LINK_TRACING_EXT OB_CAP_GET_TYPE(common::OB_CAP_PROXY_FULL_LINK_TRACING_EXT_SHIFT)
 #define OB_CAP_SERVER_DUP_SESS_INFO_SYNC OB_CAP_GET_TYPE(common::OB_CAP_SERVER_DUP_SESS_INFO_SYNC_SHIFT)
 #define OB_CAP_LOCAL_FILES OB_CAP_GET_TYPE(common::OB_CAP_LOAD_DATA_LOCAL_FILE_SHIFT)
-#define OB_CAP_ENABLE_UNIQUE_CS_ID OB_CAP_GET_TYPE(common::OB_CAP_ENABLE_UNIQUE_CS_ID_SHIFT)
 #define OB_CAP_ENABLE_CLIENT_SESSION_ID_V2 OB_CAP_GET_TYPE(common::OB_CAP_ENABLE_CLIENT_SESSION_ID_V2_SHIFT)
 #define OB_CAP_OB_PROTOCOL_V2_COMPRESS OB_CAP_GET_TYPE(common::OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT)
 #define OB_CAP_FEEDBACK_PROXY OB_CAP_GET_TYPE(common::OB_CAP_FEEDBACK_PROXY_SHIFT)
+#define OB_CAP_CHANGE_USER_CONN_ATTRS OB_CAP_GET_TYPE(common::OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT)
+#define OB_CAP_CHECK_ENABLE_CAPS(enable_caps, src_caps) ((enable_caps & src_caps) == enable_caps)
+#define OB_CAP_CHECK_DISABLE_CAPS(disable_caps, src_caps) ((~disable_caps | src_caps) == ~disable_caps)
 
 // for obproxy debug
 #define OBPROXY_DEBUG 0

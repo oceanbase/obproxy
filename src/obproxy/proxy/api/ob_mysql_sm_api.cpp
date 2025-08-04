@@ -880,7 +880,7 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                        buf_start,
                                                        &ObMysqlSM::tunnel_handler_transform_read,
                                                        MT_TRANSFORM,
-                                                       "transform read"))) {
+                                                       "transform request read"))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("failed to add producer", K_(sm_->sm_id), K(ret));
     } else {
@@ -891,7 +891,7 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                   request_transform_info_.vc_,
                                                   &ObMysqlSM::tunnel_handler_request_transfer_server,
                                                   MT_MYSQL_SERVER,
-                                                  "observer"))) {
+                                                  "observer request transfer"))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("failed to add consumer", K_(sm_->sm_id), K(ret));
       } else {
@@ -940,7 +940,7 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
                                                      sm_->server_entry_->vc_,
                                                      &ObMysqlSM::tunnel_handler_transform_write,
                                                      MT_TRANSFORM,
-                                                     "transform write"))) {
+                                                     "transform response write"))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
   } else {
@@ -1044,7 +1044,7 @@ int ObMysqlSMApi::setup_transfer_from_transform()
                                                        buf_start,
                                                        &ObMysqlSM::tunnel_handler_transform_read,
                                                        MT_TRANSFORM,
-                                                       "transform read"))) {
+                                                       "transform response read"))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("failed to add producer", K(p), K_(sm_->sm_id), K(ret));
     } else {

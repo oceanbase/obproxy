@@ -256,11 +256,11 @@ void schedule_init_common(TestFuncParam *param, ObHRTime atimeout)
   param->started_ = true;
   param->func_type_ = TEST_NULL;
   if (param->common_ethread_) {
-    int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_CALL];
-    param->ethread_ = g_event_processor.event_thread_[ET_CALL][cur_thread];
+    int64_t cur_thread = (test_last_thread + 1) % g_event_processor.thread_count_for_type_[ET_NET];
+    param->ethread_ = g_event_processor.event_thread_[ET_NET][cur_thread];
   } else {
-    test_last_thread = g_event_processor.next_thread_for_type_[ET_CALL];
-    param->ethread_ = g_event_processor.assign_thread(ET_CALL);
+    test_last_thread = g_event_processor.next_thread_for_type_[ET_NET];
+    param->ethread_ = g_event_processor.assign_thread(ET_NET);
   }
   ASSERT_TRUE(NULL != param->ethread_);
   param->cookie_ = param;

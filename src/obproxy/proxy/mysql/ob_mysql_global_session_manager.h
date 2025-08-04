@@ -35,7 +35,7 @@ class ObMysqlClientSession;
 class ObMysqlClientSessionMap;
 class ObMysqlSM;
 class ObMysqlServerSession;
-class ObProxyConnNumCheckCont;
+class ObMysqlServerSessionListPool;
 /*
  * <dbkey, <serveraddr, SessionList>> use for store free server_session list
  * local_ip_pool used for show all session in pool
@@ -53,14 +53,15 @@ public:
   void do_kill_session();
   void reset();
   //add when server_session create
-  int add_server_session(ObMysqlServerSession* server_session);
+  // int add_server_session(ObMysqlServerSession* server_session);
   // remove when server_ession do_io_close()
-  int remove_server_session(const ObMysqlServerSession* server_session);
-  int remove_server_session_internal(const ObMysqlServerSession* server_session);
-  int remove_from_list(ObMysqlServerSession* server_session);
-  ObMysqlServerSession* acquire_from_list();
+  // int remove_server_session(const ObMysqlServerSession* server_session);
+  void remove_from_list_and_pool(ObMysqlServerSession* server_session);
+  ObMysqlServerSession* acquire_first_from_list();
+  ObMysqlServerSession* acquire_matched_from_list(const ObServerSessionMatchRules &r);
   int release_to_list(ObMysqlServerSession& server_session);
   int do_pool_log(const ObProxySchemaKey& schema_key, bool force_log = false);
+  common::DRWLock &get_ss_list_rwlock() { return ss_list_rwlock_; }
 public:
   static const int64_t HASH_BUCKET_SIZE = 16;
   struct ObLocalIPHashing
@@ -81,21 +82,22 @@ public:
   };
   //client ip HashTable,using for show all the session
   typedef common::hash::ObBuildInHashMap<ObLocalIPHashing, HASH_BUCKET_SIZE> LocalIPHashTable;
-  common::DRWLock  rwlock_;
+private:
+ // 不能对 ss_list_rwlock_ 加写锁后, 向 mutex_ 加锁, 会导致锁依赖死锁
+ // 因为 main_handler 执行会先加 mutex_ 锁, 再加 ss_lit_rwlock_
+  common::DRWLock  ss_list_rwlock_;
+public:
   net::ObIpEndpoint server_ip_;
   net::ObIpEndpoint local_ip_;
   oceanbase::obproxy::obutils::ObProxyConfigString auth_user_;
   ObCommonAddr common_addr_;
   common::ObAtomicList server_session_list_;
   LocalIPHashTable local_ip_pool_;
-  int64_t free_count_; // free_count is server_session_list_ elem count
-  int64_t total_count_; // live_count is all count, include now is being used
-  int64_t using_count_;
-  int64_t max_used_;
-  int64_t create_count_;
-  int64_t destroy_count_;
+  int64_t idle_count_; // live_count is all count, include now is being used
   int64_t last_log_time_;
   event::ObProxyMutex m_;
+
+  ObMysqlServerSessionListPool *pool_; // 持有当前 List 的 ObMysqlServerSessionListPool 指针
 public:
   LINK(ObMysqlServerSessionList, ip_hash_link_);
 
@@ -110,32 +112,21 @@ public:
   int init(const ObProxySchemaKey& schema_key);
   void destroy() {op_free(this);}
   virtual void free() {destroy();}
-  int do_close_extra_session_conn(const ObCommonAddr& key, int64_t need_close_num);
-
-  int accquire_server_seession_list(const ObCommonAddr& key, ObMysqlServerSessionList* &ss_list);
+  int acquire_ss_list(const ObCommonAddr& key, ObMysqlServerSessionList* &ss_list);
   int acquire_server_session(const ObCommonAddr &key,
                              ObMysqlServerSession* &server_session,
-                             bool new_client = true);
-  int acquire_server_session(const ObCommonAddr &addr, const ObString &auth_user,
-                             ObMysqlServerSession* &server_session, bool new_client = true);
-  //add when server_session create
-  int add_server_session(ObMysqlServerSession& server_session);
-  // remove when server_ession do_io_close()
-  int remove_server_session(const ObMysqlServerSession& server_session);
-
-  int release_session(ObMysqlServerSession &ss);
+                             ObServerSessionMatchRules *rules);
+  int release_server_session(ObMysqlServerSession &ss);
   int purge_session_list_pool();
   int do_kill_session();
   int do_kill_session_by_ssid(int64_t ss_id);
-  int64_t incr_client_session_count();
-  int64_t decr_client_session_count();
+  int64_t incr_idle_session_count();
+  int64_t decr_idle_session_count();
   int64_t get_current_session_conn_count(const ObCommonAddr& key);
   int add_server_addr_if_not_exist(const ObCommonAddr& common_addr);
   int add_server_addr_if_not_exist(const common::ObString& server_ip, int32_t server_port, bool is_physical);
   int remove_server_addr_if_exist(const common::ObString& server_ip, int32_t server_port, bool is_physical);
   int remove_server_addr_if_exist(const ObCommonAddr& common_addr);
-
-
   int incr_fail_count(const ObCommonAddr& addr);
   void reset_fail_count(const ObCommonAddr& addr);
   int get_fail_count(const ObCommonAddr& addr);
@@ -154,13 +145,13 @@ public:
       return lhs.equals(rhs);
     }
   };
-  TO_STRING_KV(K_(client_session_count), K_(schema_key));
+  TO_STRING_KV(K_(idle_session_count), K_(schema_key));
   typedef common::hash::ObBuildInHashMap<ObIPHashing, HASH_BUCKET_SIZE> IPHashTable; // Sessions by Server IP address.
   common::DRWLock  rwlock_;
   common::DRWLock  sig_rwlock_;
   IPHashTable server_session_list_pool_;
   ObProxySchemaKey schema_key_;
-  int64_t client_session_count_;
+  int64_t idle_session_count_;
   ObMysqlSchemaServerAddrInfo* schema_server_addr_info_;
   LINK(ObMysqlServerSessionListPool, session_list_pool_);
 };
@@ -170,22 +161,19 @@ class ObMysqlGlobalSessionManager
 public:
   static const int64_t SESSIONPOOLLIST_HASH_BUCKET_SIZE = 64;
   static const int64_t HASH_BUCKET_SIZE = 16;
-  ObMysqlGlobalSessionManager() {}
+  ObMysqlGlobalSessionManager() {};
   ~ObMysqlGlobalSessionManager();
   //add when server_session create
-  int add_server_session(ObMysqlServerSession& ss);
+  // int add_server_session(ObMysqlServerSession& ss);
   // remove when server_ession do_io_close()
-  int remove_server_session(const ObMysqlServerSession& ss);
+  // int remove_server_session(const ObMysqlServerSession& ss);
 
   int acquire_server_session(const ObProxySchemaKey& schema_key,
                              const ObCommonAddr& addr,
-                             const common::ObString& auth_user,
                              ObMysqlServerSession *&server_session,
-                             bool new_client = true);
-  int release_session(ObMysqlServerSession &to_release);
+                             ObServerSessionMatchRules *rules = NULL);
+  int release_server_session(ObMysqlServerSession &to_release);
   int purge_session_manager_keepalives(const common::ObString& dbkey);
-  int do_close_extra_session_conn(const ObProxySchemaKey& schema_key, const ObCommonAddr& hash_key,
-    int64_t need_close_num);
   int64_t get_current_session_conn_count(const common::ObString& dbkey,
                                          const ObCommonAddr& common_addr);
   ObMysqlServerSessionListPool* get_server_session_list_pool(const common::ObString& dbkey);

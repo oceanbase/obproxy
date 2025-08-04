@@ -93,7 +93,7 @@ int ObRpcNetHandler::new_connection(ObNetVConnection &new_vc)
           // session_info_.set_server_type(server_type);
           PROXY_SS_LOG(INFO, "rpc net hander born", K_(ss_id), K_(server_ip),
                        K(server_type));
-          state_ = RPC_NET_MSS_INIT;
+          state_ = RPC_NET_INIT;
           is_inited_ = true;
         }
       } else {
@@ -126,17 +126,12 @@ void ObRpcNetHandler::do_io_shutdown(const ShutdownHowToType howto)
 void ObRpcNetHandler::do_io_close(const int alerrno)
 {
   PROXY_SS_LOG(INFO, "rpc net handler do_io_close", K(*this), KP(rpc_net_vc_), KP(this));
-  if (RPC_NET_MSS_ACTIVE == state_) {
+  if (RPC_NET_KEEP_ALIVE_ACTIVE == state_) {
     RPC_DECREMENT_DYN_STAT(CURRENT_SERVER_TRANSACTIONS);
     --server_trans_stat_;
   }
 
   if (NULL != rpc_net_vc_) {
-    //TODO RPC ZDW not support
-    //if (is_pool_session_) {
-    //  get_global_session_manager().remove_server_session(*this);
-    //  OBPROXY_POOL_LOG(INFO, "close_session", K(schema_key_), K(local_ip_), K(server_ip_));
-    //}
     rpc_net_vc_->do_io_close(alerrno);
     rpc_net_vc_ = NULL;
   }
@@ -158,7 +153,7 @@ int ObRpcNetHandler::release()
   int ret = OB_SUCCESS;
   PROXY_SS_LOG(DEBUG, "Releasing server session", K(server_trans_stat_));
   // Set our state to KA for stat issues
-  state_ = RPC_NET_MSS_KA_SHARED;
+  state_ = RPC_NET_SERVER_SESSION_KEEP_ALIVE_SHARED;
   //TODO RPC not supported
   // if (is_pool_session_) {
   //  if (OB_NOT_NULL(client_session_)
@@ -185,7 +180,7 @@ int ObRpcNetHandler::release()
     // if hava shard_connector, should push into new session pool, even if is not shardingUser
     //ObShardConnector *shard_conn = session_info_.get_shard_connector();
     //if (OB_NOT_NULL(shard_conn)) {
-    //  if (OB_FAIL(client_session_->get_session_manager_new_new().release_session(
+    //  if (OB_FAIL(client_session_->get_session_manager_sharding_new().release_session(
     //              shard_conn->shard_name_.config_string_, *this))) {
     //    PROXY_SS_LOG(WDIAG, "fail to release server session to new session manager, it will be closed", K(ret));
     //  }
@@ -203,11 +198,11 @@ int ObRpcNetHandler::release()
 const char *ObRpcNetHandler::get_state_str() const
 {
   const char *ret = "RPC_NET_MSS_INVALID";
-  static const char *state[RPC_NET_MSS_MAX] = {"RPC_NET_MSS_INIT",
-    "RPC_NET_MSS_ACTIVE",
-    "RPC_NET_MSS_KA_CLIENT_SLAVE",
-    "RPC_NET_MSS_KA_SHARED"};
-  if (OB_LIKELY(state_ <RPC_NET_MSS_MAX)) {
+  static const char *state[RPC_NET_STATE_MAX] = {"RPC_NET_INIT",
+    "RPC_NET_KEEP_ALIVE_ACTIVE",
+    "RPC_NET_KEEP_ALIVE_CLIENT_SLAVE",
+    "RPC_NET_SERVER_SESSION_KEEP_ALIVE_SHARED"};
+  if (OB_LIKELY(state_ <RPC_NET_STATE_MAX)) {
     ret = state[state_];
   }
   return ret;
@@ -574,7 +569,7 @@ int ObServerAddrLookupHandler::handle_callback(int event, void *data)
 //    ObRpcNetHandler *ss = cs.get_cur_server_session();
 //    if (NULL != ss && NULL != ss->get_client_session()
 //        && cs.get_cs_id() == ss->get_client_session()->get_cs_id()) {
-//      query_info.server_addr_.assign(cs.get_cur_server_session()->get_netvc()->get_remote_addr());
+//      query_info.server_addr_.assign(cs.get_cur_server_session()->get_server_addr());
 //      query_info.real_conn_id_ = ss->get_server_sessid();
 //      query_info.errcode_ = OB_ENTRY_EXIST;
 //      PROXY_SS_LOG(DEBUG, "target used server session is existed");

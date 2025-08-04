@@ -936,10 +936,8 @@ int ObURowIDData::get_rowkey_for_heap_organized_table(ObIArray<ObObj> &rowkey)
   return ret;
 }
 
-int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
-                                                         obproxy::opsql::ObExprResolverResult &resolve_result,
-                                                         int64_t &partition_id,
-                                                         common::ObIAllocator &allocator)
+int ObURowIDData::get_obobj_or_partition_id_from_decoded(int64_t &partition_id,
+                                                         ObIArray<ObObj>& result_obj_arr)
 {
   int ret = OB_SUCCESS;
 
@@ -972,7 +970,7 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
     case NO_PK_ROWID_VERSION:
     case PK_ROWID_VERSION: {
       // ob2.x 3.x
-      if (OB_FAIL(get_obobj_from_decoded(part_info, resolve_result, allocator))) {
+      if (OB_FAIL(get_pk_vals(result_obj_arr))) {
         COMMON_LOG(WDIAG, "fail to get obobj from decoded", K(ret));
       }
       break;
@@ -983,86 +981,6 @@ int ObURowIDData::get_obobj_or_partition_id_from_decoded(obproxy::proxy::ObProxy
     }
   }
   
-  return ret;
-}
-
-// used for ob2.x 3.x
-int ObURowIDData::get_obobj_from_decoded(obproxy::proxy::ObProxyPartInfo &part_info,
-                                         obproxy::opsql::ObExprResolverResult &resolve_result,
-                                         common::ObIAllocator &allocator)
-{
-  int ret = OB_SUCCESS;
-
-  ObArray<ObObj> pk_vals;
-  if (OB_FAIL(get_pk_vals(pk_vals))) {
-    COMMON_LOG(WDIAG, "fail to get pk vals", K(ret));
-  } else {
-    ObProxyPartKeyInfo &key_info = part_info.get_part_key_info();
-
-    for (int64_t i = 0; OB_SUCC(ret) && i < key_info.key_num_; ++i) {
-      ObProxyPartKey &part_key = key_info.part_keys_[i];
-      if (part_key.generated_col_idx_ >= 0) {
-        // src column of generated key, do nothing
-      } else {
-        if (PART_KEY_LEVEL_ONE == part_key.level_ && !resolve_result.ranges_[0].start_key_.is_valid()) {
-          if (OB_FAIL(resolve_result.ranges_[0].build_row_key(part_info.get_part_columns().count(), allocator))) {
-            COMMON_LOG(WDIAG, "fail to build row key", K(ret));
-          }
-        } else if (PART_KEY_LEVEL_TWO == part_key.level_ && !resolve_result.ranges_[1].start_key_.is_valid()) {
-          if (OB_FAIL(resolve_result.ranges_[1].build_row_key(part_info.get_sub_part_columns().count(), allocator))) {
-            COMMON_LOG(WDIAG, "fail to build row key", K(ret));
-          }
-        }
-
-        if (OB_SUCC(ret)) {
-          if (part_key.idx_in_rowid_ >= 0
-             && part_key.idx_in_rowid_ < pk_vals.count()) {
-            ObObj &obj = pk_vals.at(part_key.idx_in_rowid_);
-            ObObjType type = obj.get_type();
-            if (ObCharType == type || ObNCharType == type) {
-              int32_t val_len = obj.get_val_len();
-              const char* obj_str = obj.get_string_ptr();
-              while (val_len > 1) {
-                if (OB_PADDING_CHAR == *(obj_str + val_len - 1)) {
-                  --val_len;
-                } else {
-                  break;
-                }
-              }
-              obj.set_string(type, obj.get_string_ptr(), val_len);
-            }
-
-            if (part_key.level_ == 0 || part_key.level_ > 2) {
-              ret = OB_ERR_UNEXPECTED;
-              COMMON_LOG(WDIAG, "part key level unexpected", K(part_key.level_), K(ret));
-            } else {
-              int level = static_cast<int>(part_key.level_ - 1);
-              ObObj *target_start = const_cast<ObObj*>(resolve_result.ranges_[level].start_key_.get_obj_ptr())
-                                    + part_key.idx_in_part_columns_;
-              ObObj *target_end = const_cast<ObObj*>(resolve_result.ranges_[level].end_key_.get_obj_ptr())
-                                  + part_key.idx_in_part_columns_;
-              if (OB_ISNULL(target_start) || OB_ISNULL(target_end)) {
-                ret = OB_ERR_UNEXPECTED;
-                COMMON_LOG(WDIAG, "fail to get val from rowid, resolve result may be empty", K(level),
-                          "idx_in_part_columns", part_key.idx_in_part_columns_, K(ret));
-              } else {
-                // no need to deep copy
-                *target_start = obj;
-                *target_end = obj;
-                resolve_result.ranges_[level].border_flag_.set_inclusive_start();
-                resolve_result.ranges_[level].border_flag_.set_inclusive_end();
-                COMMON_LOG(DEBUG, "succ to get val from rowid", K(obj), K(level), K(part_key.idx_in_part_columns_), K(ret));
-              }
-            }
-          } else {
-            ret = OB_ERR_UNEXPECTED;
-            COMMON_LOG(WDIAG, "calc partition id using rowid failed", K(part_key.idx_in_rowid_), K(pk_vals.count()), K(ret));
-          }
-        }
-      }
-    } // for
-  } // else
-
   return ret;
 }
 

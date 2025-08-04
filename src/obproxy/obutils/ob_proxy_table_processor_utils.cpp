@@ -427,7 +427,9 @@ int ObProxyTableProcessorUtils::get_config_version(ObMysqlProxy &mysql_proxy, in
 
 // get proxy info from ObProxyTableInfo::PROXY_KV_TABLE_NAME
 int ObProxyTableProcessorUtils::get_vip_tenant_info(ObMysqlProxy &mysql_proxy,
-    ObVipTenantCache::VTHashMap &cache_map)
+                                                    ObVipTenantCache::VTHashMap &cache_map,
+                                                    const int64_t old_version,
+                                                    const int64_t new_version)
 {
   int ret = OB_SUCCESS;
   ObMysqlResultHandler result_handler;
@@ -439,8 +441,9 @@ int ObProxyTableProcessorUtils::get_vip_tenant_info(ObMysqlProxy &mysql_proxy,
     LOG_WDIAG("fail to fill sql", K(len), K(sql), K(ret));
   } else if (OB_FAIL(mysql_proxy.read(sql, result_handler))) {
     LOG_WDIAG("fail to read all vip tenant", K(sql), K(ret));
-  } else if (OB_FAIL(fill_local_vt_cache(result_handler, cache_map))) {
-    LOG_WARN("fetch Config from Metadb and replace into obproxy failed", K(ret));
+  } else if (OB_FAIL(fill_local_vip_tenant_cache(result_handler, cache_map, old_version, new_version))) {
+    LOG_WARN("fetch Config from Metadb and replace into obproxy failed",
+             K(old_version), K(new_version), K(ret));
   } else {
     LOG_DEBUG("succ to vip tenant info", "count", cache_map.count());
   }
@@ -450,16 +453,17 @@ int ObProxyTableProcessorUtils::get_vip_tenant_info(ObMysqlProxy &mysql_proxy,
 int ObProxyTableProcessorUtils::concate_sql_value(
     char *sql_buf, int64_t &sql_buf_len, const int64_t max_buf_len, const int64_t vid, const ObString &vip,
     const int64_t vport, const ObString &tenant_name, const ObString &cluster_name,
-    const ObString &name, const ObString &value, const ObString &level)
+    const ObString &name, const ObString &value, const ObString &level, const int64_t version)
 {
   int ret = OB_SUCCESS;
-  const char *sql_value = "(%ld, '%.*s', %ld, '%.*s', '%.*s', '%.*s', '%.*s', '%.*s'),";
+  const char *sql_value = "(%ld, '%.*s', %ld, '%.*s', '%.*s', '%.*s', '%.*s', '%.*s', "
+                          "'{\"version\": \"%ld\"}'),";
   int64_t len = 0;
   len = static_cast<int32_t>(snprintf(
       sql_buf + sql_buf_len, max_buf_len - sql_buf_len, sql_value, vid,
       vip.length(), vip.ptr(), vport, cluster_name.length(), cluster_name.ptr(),
       tenant_name.length(), tenant_name.ptr(), name.length(), name.ptr(),
-      value.length(), value.ptr(), level.length(), level.ptr()));
+      value.length(), value.ptr(), level.length(), level.ptr(), version));
   if (OB_UNLIKELY(len <= 0)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("fail to add value to sql buf", K(cluster_name), K(tenant_name),
@@ -471,8 +475,8 @@ int ObProxyTableProcessorUtils::concate_sql_value(
   return ret;
 }
 
-int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result_handler,
-    ObVipTenantCache::VTHashMap &cache_map)
+int ObProxyTableProcessorUtils::fill_local_vip_tenant_cache(ObMysqlResultHandler &result_handler,
+    ObVipTenantCache::VTHashMap &cache_map, const int64_t old_version, const int64_t new_version)
 {
   int ret = OB_SUCCESS;
   int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
@@ -499,15 +503,15 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
   int64_t batch_size = get_global_proxy_config().metadb_batch_size;
   int64_t cnt = 0;
   int64_t sleep_time = get_global_proxy_config().metadb_batch_interval;
-  LOG_INFO("begin to fill_local_vt_cache", K(batch_size), K(sleep_time));
+  LOG_INFO("begin to fill_local_vip_tenant_cache", K(batch_size), K(new_version), K(sleep_time));
 
   char *sql_buf = NULL;
-  const char *origin_sql = "replace into proxy_config(vid, vip, vport, cluster_name, tenant_name, name, value, config_level) values";
+  const char *origin_sql = "replace into proxy_config(vid, vip, vport, cluster_name, tenant_name, name, value, config_level, info) values";
   int64_t sql_buf_len = 0;
   const int64_t origin_sql_len = static_cast<int64_t>(strlen(origin_sql));
   // batch * 一个rslist最多插入配置 * metadb插入配置最大长度
-  // 256: metadb每条插入最大长度，tenant_name最长为64，cluster_name为256, 一个配置的长度不超过512
-  const int64_t max_buf_len = batch_size * 4 * 512 + sizeof(origin_sql) + 1;
+  // 512: metadb每条插入最大长度，tenant_name最长为64，cluster_name为256, 一个配置的长度不超过512
+  const int64_t max_buf_len = batch_size * 4 * 512 + origin_sql_len + 1;
   if (OB_ISNULL(sql_buf = static_cast<char*>(op_fixed_mem_alloc(max_buf_len)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("fail to alloc mem for sql buf", K(ret));
@@ -582,18 +586,21 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
         int32_t rw_len = snprintf(rw_buf, sizeof(rw_buf), "%ld", rw_type);
         request_target_string.assign_ptr(request_target_buf, request_len);
         rw_string.assign_ptr(rw_buf, rw_len);
-        if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP"))) {
+        if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, "", "", "proxy_tenant_name", tenant_name, "LEVEL_VIP", new_version))) {
           LOG_WDIAG("fail to concate proxy_tenant_name to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
-        } else if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP"))) {
+        } else if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport,
+        "", "", "rootservice_cluster_name", cluster_name, "LEVEL_VIP", new_version))) {
           LOG_WDIAG("fail to concate rootservice_cluster_name to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(ret));
         }
         if (OB_SUCC(ret) && -1 != rw_type) {
-          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP"))) {
+          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport,
+            tenant_name, cluster_name, "obproxy_read_only", rw_string, "LEVEL_VIP", new_version))) {
             LOG_WDIAG("fail to concate obproxy_read_only to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(rw_type), K(ret));
           }
         }
         if (OB_SUCC(ret) && -1 != request_target_type) {
-          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport, tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP"))) {
+          if (OB_FAIL(concate_sql_value(sql_buf, sql_buf_len, max_buf_len, vid, vip, vport,
+            tenant_name, cluster_name, "obproxy_read_consistency", request_target_string, "LEVEL_VIP", new_version))) {
             LOG_WDIAG("fail to concate obproxy_read_consistency to sql value", K(vid), K(vip), K(vport), K(tenant_name), K(cluster_name), K(request_target_type), K(ret));
           }
         }
@@ -647,14 +654,22 @@ int ObProxyTableProcessorUtils::fill_local_vt_cache(ObMysqlResultHandler &result
     // 此时执行成功(OB_ITER_END == iter_ret)，并没有剩余配置需要插入
     ret = OB_SUCCESS;
   }
-
-  LOG_INFO("end fill_local_vt_cache", K(cnt), K(ret));
+  // 插入新配置完成，直接删除version!=new_version的所有配置（version=0不会删除）
+  // 这样的好处是: 当更新MetaDb中间出现了宕机，old_version可能没删除
+  //    重启ODP后，可能会出现两个old_version的配置，使用!=new_version可以删除遗留的所有old_version配置
+  if (OB_SUCC(ret) && OB_LIKELY(new_version != old_version && new_version != 0)) {
+    if (OB_FAIL(get_global_config_processor().delete_config_for_not_eq_version(new_version))) {
+      LOG_WDIAG("fail to delete old version config", K(old_version));
+    }
+  }
+  LOG_INFO("end fill_local_vip_tenant_cache",
+           K(cnt), K(new_version), K(old_version), K(ret));
   if (OB_NOT_NULL(sql_buf)) {
     op_fixed_mem_free(sql_buf, max_buf_len);
   }
 
   if (OB_LIKELY(OB_ITER_END == iter_ret) && OB_SUCC(ret)) {
-    LOG_DEBUG("succ to fill local vt cache", K(ret));
+    LOG_DEBUG("succ to fill local vip tenant cache", K(ret));
   } else {
     if (need_free && OB_LIKELY(NULL != vip_tenant)) {
       op_free(vip_tenant);

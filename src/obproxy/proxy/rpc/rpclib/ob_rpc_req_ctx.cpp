@@ -250,9 +250,10 @@ int ObRpcReqCtx::check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dumm
         }
       }
       if (OB_SUCC(ret) && !need_ignore) {
+        bool found_servers_changed = false;
         if (OB_FAIL(dummy_ldc.assign(dummy_entry->get_tenant_servers(), simple_servers_info,
             new_idc_name, is_base_servers_added, cluster_resource->get_cluster_name(),
-            cluster_resource->get_cluster_id()))) {
+            cluster_resource->get_cluster_id(), found_servers_changed))) {
           if (OB_EMPTY_RESULT == ret) {
             if (dummy_entry->is_entry_from_rslist()) {
               // set_need_delete_cluster();
@@ -266,6 +267,11 @@ int ObRpcReqCtx::check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dumm
             }
           } else {
             PROXY_CS_LOG(WDIAG, "fail to assign dummy_ldc", K(ret));
+          }
+        }
+        if (OB_SUCC(ret) && OB_UNLIKELY(found_servers_changed)) {
+          if (!dummy_entry->is_sys_dummy_entry() && dummy_entry->cas_set_dirty_state()) {
+            PROXY_CS_LOG(WDIAG, "dummy_entry isn't AVAIL state, can't set it dirty for rpc", KPC(dummy_entry), K(ret));
           }
         }
       }

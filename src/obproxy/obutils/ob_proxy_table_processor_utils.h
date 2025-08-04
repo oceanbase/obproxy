@@ -67,9 +67,13 @@ public:
 
   // get proxy info from ObProxyTableInfo::PROXY_VIP_TENANT_TABLE_NAME
   static int get_vip_tenant_info(proxy::ObMysqlProxy &mysql_proxy,
-                                 ObVipTenantCache::VTHashMap &cache_map);
-  static int fill_local_vt_cache(proxy::ObMysqlResultHandler &result_handler,
-                                 ObVipTenantCache::VTHashMap &cache_map);
+                                 ObVipTenantCache::VTHashMap &cache_map,
+                                 const int64_t old_version,
+                                 const int64_t new_version);
+  static int fill_local_vip_tenant_cache(proxy::ObMysqlResultHandler &result_handler,
+                                 ObVipTenantCache::VTHashMap &cache_map,
+                                 const int64_t old_version,
+                                 const int64_t new_version);
 
   static int concate_sql_value(char *sql_buf, int64_t &sql_buf_len,
                                const int64_t max_buf_len, const int64_t vid,
@@ -78,7 +82,8 @@ public:
                                const common::ObString &cluster_name,
                                const common::ObString &name,
                                const common::ObString &value,
-                               const common::ObString &level);
+                               const common::ObString &level,
+                               const int64_t version);
   static int update_proxy_table_config(proxy::ObMysqlProxy &mysql_proxy,
                                        const char *proxy_ip,
                                        const int32_t proxy_port,

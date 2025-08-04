@@ -55,7 +55,7 @@ namespace omt
 class ObDefaultSysVarSet;
 namespace proxy
 {
-const int64_t OB_AUTH_SWITCH_RESP_LEN = 24; // header - 4 bytes, auth data - 20 bytes
+const int64_t OB_AUTH_SWITCH_RESP_LEN = 20; // header - 4 bytes, auth data - 20 bytes
 
 enum ObClientSessionIDVersion : uint32_t {
   CLIENT_SESSION_ID_V1 = 1, // original client session id , depends on 8bit proxy_id, only sync with client
@@ -210,13 +210,14 @@ public:
   /* server session capability */
   uint64_t get_server_ob_capability() const { return cap_; }
   void set_server_ob_capability(const uint64_t cap) { cap_ = cap; }
-  bool is_checksum_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_CHECKSUM); }
+  bool is_compressed_mysql_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_CHECKSUM); }
   bool is_safe_read_weak_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_SAFE_WEAK_READ); }
   bool is_new_partition_hit_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_PRIORITY_HIT); }
   bool is_checksum_switch_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_CHECKSUM_SWITCH); }
   bool is_ob_protocol_v2_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_OB_PROTOCOL_V2); }
   bool is_extra_ok_packet_for_stats_enabled() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_EXTRA_OK_PACKET_FOR_STATISTICS); }
   bool is_pl_route_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_PL_ROUTE); }
+  bool is_change_user_reset_session_supported() const { return OB_TEST_CAPABILITY(cap_, OB_CAP_CHANGE_USER_CONN_ATTRS); }
   bool is_full_link_trace_supported() const {
     return is_ob_protocol_v2_supported() && OB_TEST_CAPABILITY(cap_, OB_CAP_PROXY_FULL_LINK_TRACING);
   }
@@ -268,6 +269,36 @@ public:
 
   const common::ObAddr &get_ob_server() const { return ob_server_;}
   const ObSessionVarVersion &get_session_var_version() const { return version_; }
+  void reuse()
+  {
+    // 重置系统变量版本
+    version_.common_hot_sys_var_version_ = 0;
+    version_.common_sys_var_version_ = 0;
+    version_.mysql_hot_sys_var_version_ = 0;
+    version_.mysql_sys_var_version_ = 0;
+    version_.hot_sys_var_version_ = 0;
+    version_.sys_var_version_ = 0;
+    version_.user_var_version_ = 0;
+    version_.last_insert_id_version_ = 0;
+    version_.sess_info_version_ = 0;
+    // 重置 session info
+    sess_info_field_version_.reset();
+    // 重置 PS 相关缓存
+    ps_id_ = 0;
+    destroy_ps_id_pair_map();
+    destroy_cursor_id_pair_map();
+    reuse_text_ps_version_set();
+    // 重置标记位
+    is_sharding_txn_session_ = false;
+    is_lock_session_ = false;
+    is_trans_coordinator_session_ = false;
+    is_binlog_session_ = false;
+    // 重置 sharding conn
+    if (NULL != shard_conn_) {
+      shard_conn_->dec_ref();
+      shard_conn_ = NULL;
+    }
+  }
 
   int64_t get_common_hot_sys_var_version() const { return version_.common_hot_sys_var_version_; }
   int64_t get_common_sys_var_version() const { return version_.common_sys_var_version_; }
@@ -295,6 +326,8 @@ public:
   void set_is_sharding_txn_session(bool is_sharding_txn_session) { is_sharding_txn_session_ = is_sharding_txn_session; }
   void set_is_lock_session(bool is_lock_session) { is_lock_session_ = is_lock_session; }
   void set_is_trans_coordinator_session(bool is_trans_coordinator_session) { is_trans_coordinator_session_ = is_trans_coordinator_session; }
+  void set_is_binlog_session(bool is_binlog_session) { is_binlog_session_ = is_binlog_session; }
+  bool is_binlog_session() { return is_binlog_session_; }
   ObProxyChecksumSwitch get_checksum_switch() const { return checksum_switch_; }
   void set_checksum_switch(const ObProxyChecksumSwitch checksum_switch) { checksum_switch_ = checksum_switch; }
   bool is_checksum_on() const { return CHECKSUM_ON == checksum_switch_;}
@@ -387,6 +420,7 @@ private:
   bool is_sharding_txn_session_;
   bool is_lock_session_;
   bool is_trans_coordinator_session_;
+  bool is_binlog_session_;
   common::DBServerType server_type_;
   dbconfig::ObShardConnector *shard_conn_;
 
@@ -597,6 +631,29 @@ public:
 
   //get and set methords
   const ObSessionVarVersion &get_session_version() { return version_; }
+  int reuse()
+  {
+    int ret = OB_SUCCESS;
+    version_.common_hot_sys_var_version_ = 0;
+    version_.common_sys_var_version_ = 0;
+    version_.mysql_hot_sys_var_version_ = 0;
+    version_.mysql_sys_var_version_ = 0;
+    version_.hot_sys_var_version_ = 0;
+    version_.sys_var_version_ = 0;
+    version_.user_var_version_ = 0;
+    version_.last_insert_id_version_ = 0;
+    version_.sess_info_version_ = 0;
+    sess_info_list_.reset();
+    destroy_ps_id_entry_map();
+    destroy_ps_id_addrs_map();
+    destroy_service_name_session_info();
+    destroy_cursor_id_addr_map();
+    destroy_piece_info_map();
+    destroy_text_ps_name_entry_map();
+    ret = remove_all_user_variable();
+    return ret;
+  }
+
   int64_t get_common_hot_sys_var_version() const { return version_.common_hot_sys_var_version_; }
   int64_t get_common_sys_var_version() const { return version_.common_sys_var_version_; }
   int64_t get_mysql_hot_sys_var_version() const { return version_.mysql_hot_sys_var_version_; }
@@ -664,7 +721,8 @@ public:
   bool need_reset_sess_info_vars(const ObServerSessionInfo &server_info) const;
   bool need_reset_conf_sys_vars() const;
   // include all
-  bool need_reset_all_session_vars() const { return is_global_vars_changed_; }
+  // [TODO] 同步全量系统变量必定失败, 因为存在只读系统变量, 这段逻辑可以删除, 先返回 false 避免进入这段逻辑
+  bool need_reset_all_session_vars() const { return false; }
   bool is_user_idc_name_set() const { return is_user_idc_name_set_; }
   bool is_proxy_route_policy_set() const { return is_proxy_route_policy_set_; }
 
@@ -1103,7 +1161,8 @@ public:
   ObSessionVarVersion hash_version_;
   ObSessionVarValHash val_hash_;
   ObProxyObProto20Request ob20_request_;  // handle ob v2.0 protocol request info from client
-  bool is_session_pool_client_; // used for ObMysqlClient
+  // [TODO] 以前连接池默认关闭的,这个变量也用不到,不太明确这个变量的意义,怕与新连接池逻辑混淆出问题,所以注释掉
+  // bool is_session_pool_client_; // deprecated, used for ObMysqlClient
   uint32_t lock_session_num_; // used for table lock/lock function route
 
 private:
@@ -1294,170 +1353,199 @@ inline void ObClientSessionInfo::set_idc_name(const ObString &name)
 
 inline bool ObClientSessionInfo::need_reset_database(const ObServerSessionInfo &server_info) const
 {
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    return get_db_name_version() > server_info.get_db_name_version() && enable_reset_db_;
-  }
-  if (get_database_name().empty()) return false;
-  // need reset when database_name not equal
-  PROXY_LOG(DEBUG, "need_reset_database", K(get_database_name()), K(server_info.get_database_name()));
-  if (is_oracle_mode()) {
-    return get_database_name().compare(server_info.get_database_name()) != 0;
-  } else {
-    return get_database_name().case_compare(server_info.get_database_name()) != 0;
-  }
+  //PROXY_LOG(DEBUG, "buggy check need_reset_database",
+   // K(get_db_name_version()), K(get_database_name()), K(server_info.get_db_name_version()), K(server_info.get_database_name()));
+  return get_db_name_version() > server_info.get_db_name_version() && enable_reset_db_;
+  // [TODO] 保留连接池未开启的处理代码
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   return get_db_name_version() > server_info.get_db_name_version() && enable_reset_db_;
+  // }
+  // if (get_database_name().empty()) return false;
+  // // need reset when database_name not equal
+  // PROXY_LOG(DEBUG, "need_reset_database", K(get_database_name()), K(server_info.get_database_name()));
+  // if (is_oracle_mode()) {
+  //   return get_database_name().compare(server_info.get_database_name()) != 0;
+  // } else {
+  //   return get_database_name().case_compare(server_info.get_database_name()) != 0;
+  // }
 }
 
 inline bool ObClientSessionInfo::need_reset_common_hot_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    bret =  get_common_hot_sys_var_version() > server_info.get_common_hot_sys_var_version();
-  } else {
-    bool bret_hash = false;
-    if (is_common_hot_sys_version_changed()) {
-      bret_hash = true;
-    } else if (val_hash_.common_hot_sys_var_hash_ != server_info.val_hash_.common_hot_sys_var_hash_) {
-      bret_hash = true;
-    }
-    bret =  !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_common_hot_session_vars(server_info.field_mgr_);
-    PROXY_LOG(DEBUG, "need_reset_common_hot_session_vars", K(bret), K(bret_hash));
-  }
-  return bret;
+  return get_common_hot_sys_var_version() > server_info.get_common_hot_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   bret =  get_common_hot_sys_var_version() > server_info.get_common_hot_sys_var_version();
+  // } else {
+  //   bool bret_hash = false;
+  //   if (is_common_hot_sys_version_changed()) {
+  //     bret_hash = true;
+  //   } else if (val_hash_.common_hot_sys_var_hash_ != server_info.val_hash_.common_hot_sys_var_hash_) {
+  //     bret_hash = true;
+  //   }
+  //   bret =  !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_common_hot_session_vars(server_info.field_mgr_);
+  //   PROXY_LOG(DEBUG, "need_reset_common_hot_session_vars", K(bret), K(bret_hash));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_common_cold_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    bret =  get_common_sys_var_version() > server_info.get_common_sys_var_version();
-  } else {
-    bool is_changed = is_common_cold_sys_version_changed();
-    if (is_changed) {
-      bret = true;
-    } else if (0 == version_.common_sys_var_version_) {
-      bret = false;
-    } else if (val_hash_.common_cold_sys_var_hash_ != server_info.val_hash_.common_cold_sys_var_hash_) {
-      bret = true;
-    }
-    PROXY_LOG(DEBUG, "need_reset_common_cold_session_vars", K(bret), K(is_changed));
-  }
-  return bret;
+  return get_common_sys_var_version() > server_info.get_common_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   bret =  get_common_sys_var_version() > server_info.get_common_sys_var_version();
+  // } else {
+  //   bool is_changed = is_common_cold_sys_version_changed();
+  //   if (is_changed) {
+  //     bret = true;
+  //   } else if (0 == version_.common_sys_var_version_) {
+  //     bret = false;
+  //   } else if (val_hash_.common_cold_sys_var_hash_ != server_info.val_hash_.common_cold_sys_var_hash_) {
+  //     bret = true;
+  //   }
+  //   PROXY_LOG(DEBUG, "need_reset_common_cold_session_vars", K(bret), K(is_changed));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_mysql_hot_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  bool bret_hash = false;
-  if (!is_session_pool_client_) {
-    bret = get_mysql_hot_sys_var_version() > server_info.get_mysql_hot_sys_var_version();
-  } else {
-    bool is_changed = is_mysql_hot_sys_version_changed();
-    if (is_changed) {
-      bret_hash = true;
-    } else if (val_hash_.mysql_hot_sys_var_hash_ != server_info.val_hash_.mysql_hot_sys_var_hash_) {
-      bret_hash = true;
-    }
-    bret = !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_mysql_hot_session_vars(server_info.field_mgr_);
-    PROXY_LOG(DEBUG, "need_reset_mysql_hot_session_vars", K(bret), K(bret_hash), K(is_changed));
-  }
-  return bret;
+  return get_mysql_hot_sys_var_version() > server_info.get_mysql_hot_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // bool bret = false;
+  // bool bret_hash = false;
+  // if (!is_session_pool_client_) {
+  //   bret = get_mysql_hot_sys_var_version() > server_info.get_mysql_hot_sys_var_version();
+  // } else {
+  //   bool is_changed = is_mysql_hot_sys_version_changed();
+  //   if (is_changed) {
+  //     bret_hash = true;
+  //   } else if (val_hash_.mysql_hot_sys_var_hash_ != server_info.val_hash_.mysql_hot_sys_var_hash_) {
+  //     bret_hash = true;
+  //   }
+  //   bret = !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_mysql_hot_session_vars(server_info.field_mgr_);
+  //   PROXY_LOG(DEBUG, "need_reset_mysql_hot_session_vars", K(bret), K(bret_hash), K(is_changed));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_mysql_cold_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  if (!is_session_pool_client_) {
-    bret =  get_mysql_sys_var_version() > server_info.get_mysql_sys_var_version();
-  } else {
-    bool is_changed = is_mysql_cold_sys_version_changed();
-    if (is_changed) {
-      bret = true;
-    } else if (val_hash_.mysql_cold_sys_var_hash_ != server_info.val_hash_.mysql_cold_sys_var_hash_) {
-      bret = true;
-    }
-    PROXY_LOG(DEBUG, "need_reset_mysql_cold_session_vars", K(bret), K(is_changed));
-  }
-  return bret;
+  return get_mysql_sys_var_version() > server_info.get_mysql_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // bool bret = false;
+  // if (!is_session_pool_client_) {
+  //   bret =  get_mysql_sys_var_version() > server_info.get_mysql_sys_var_version();
+  // } else {
+  //   bool is_changed = is_mysql_cold_sys_version_changed();
+  //   if (is_changed) {
+  //     bret = true;
+  //   } else if (val_hash_.mysql_cold_sys_var_hash_ != server_info.val_hash_.mysql_cold_sys_var_hash_) {
+  //     bret = true;
+  //   }
+  //   PROXY_LOG(DEBUG, "need_reset_mysql_cold_session_vars", K(bret), K(is_changed));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_hot_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    bret =  get_hot_sys_var_version() > server_info.get_hot_sys_var_version();
-  } else {
-    bool bret_hash_diff = false;
-    bool is_changed = is_sys_hot_version_changed();
-    if (is_changed) {
-      bret = true;
-    } else if (val_hash_.hot_sys_var_hash_ != server_info.val_hash_.hot_sys_var_hash_) {
-      bret_hash_diff = true;
-      bret = true;
-    }
-    PROXY_LOG(DEBUG, "need_reset_hot_session_vars", K(bret), K(bret_hash_diff), K(is_changed));
-  }
-  return bret;
+  return get_hot_sys_var_version() > server_info.get_hot_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // bool bret = false;
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   bret =  get_hot_sys_var_version() > server_info.get_hot_sys_var_version();
+  // } else {
+  //   bool bret_hash_diff = false;
+  //   bool is_changed = is_sys_hot_version_changed();
+  //   if (is_changed) {
+  //     bret = true;
+  //   } else if (val_hash_.hot_sys_var_hash_ != server_info.val_hash_.hot_sys_var_hash_) {
+  //     bret_hash_diff = true;
+  //     bret = true;
+  //   }
+  //   PROXY_LOG(DEBUG, "need_reset_hot_session_vars", K(bret), K(bret_hash_diff), K(is_changed));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_cold_session_vars(const ObServerSessionInfo &server_info) const
 {
-  bool bret = false;
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    bret = get_sys_var_version() > server_info.get_sys_var_version();
-  } else {
-    bool is_changed= is_sys_cold_version_changed();
-    if (is_changed) {
-      bret = true;
-    } else if (0 == version_.sys_var_version_) {
-      bret = false;
-    } else if (val_hash_.cold_sys_var_hash_ != server_info.val_hash_.cold_sys_var_hash_) {
-      bret = true;
-    }
-    PROXY_LOG(DEBUG, "need_reset_cold_session_vars", K(bret), K(is_changed));
-  }
-  return bret;
+  return get_sys_var_version() > server_info.get_sys_var_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // bool bret = false;
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   bret = get_sys_var_version() > server_info.get_sys_var_version();
+  // } else {
+  //   bool is_changed= is_sys_cold_version_changed();
+  //   if (is_changed) {
+  //     bret = true;
+  //   } else if (0 == version_.sys_var_version_) {
+  //     bret = false;
+  //   } else if (val_hash_.cold_sys_var_hash_ != server_info.val_hash_.cold_sys_var_hash_) {
+  //     bret = true;
+  //   }
+  //   PROXY_LOG(DEBUG, "need_reset_cold_session_vars", K(bret), K(is_changed));
+  // }
+  // return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_user_session_vars(const ObServerSessionInfo &server_info) const
 {
   bool bret = false;
-  if (OB_LIKELY(!is_session_pool_client_)) {
-    if (OB_UNLIKELY(get_user_var_version() > server_info.get_user_var_version())) {
-      int ret = OB_SUCCESS;
-      common::ObSEArray<common::ObString, 32> names;
-      ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
-      if (OB_FAIL(client_info->get_all_user_var_names(names))) {
-        PROXY_LOG(WDIAG, "fail get all var name for source", K(ret));
-      } else {
-        int64_t count = names.count();
-        bret = (0 != count);
-        PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(count));
-      }
+  if (OB_UNLIKELY(get_user_var_version() > server_info.get_user_var_version())) {
+    int ret = OB_SUCCESS;
+    common::ObSEArray<common::ObString, 32> names;
+    ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
+    if (OB_FAIL(client_info->get_all_user_var_names(names))) {
+      PROXY_LOG(WDIAG, "fail get all var name for source", K(ret));
+    } else {
+      int64_t count = names.count();
+      bret = (0 != count);
+      PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(count));
     }
-  } else {
-    bool is_changed = is_user_var_version_changed();
-    if (is_changed) {
-      bret = true;
-    } else if (0 == version_.user_var_version_) {
-      bret = false;
-    } else if (val_hash_.user_var_hash_ != server_info.val_hash_.user_var_hash_) {
-      bret = true;
-    }
-    PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(is_changed));
   }
+  // [TODO] 保留连接池未开启的处理代码
+  // if (OB_LIKELY(!is_session_pool_client_)) {
+  //   if (OB_UNLIKELY(get_user_var_version() > server_info.get_user_var_version())) {
+  //     int ret = OB_SUCCESS;
+  //     common::ObSEArray<common::ObString, 32> names;
+  //     ObClientSessionInfo* client_info = const_cast<ObClientSessionInfo*>(this);
+  //     if (OB_FAIL(client_info->get_all_user_var_names(names))) {
+  //       PROXY_LOG(WDIAG, "fail get all var name for source", K(ret));
+  //     } else {
+  //       int64_t count = names.count();
+  //       bret = (0 != count);
+  //       PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(count));
+  //     }
+  //   }
+  // } else {
+  //   bool is_changed = is_user_var_version_changed();
+  //   if (is_changed) {
+  //     bret = true;
+  //   } else if (0 == version_.user_var_version_) {
+  //     bret = false;
+  //   } else if (val_hash_.user_var_hash_ != server_info.val_hash_.user_var_hash_) {
+  //     bret = true;
+  //   }
+  //   PROXY_LOG(DEBUG, "need_reset_user_session_vars", K(bret), K(is_changed));
+  // }
   return bret;
 }
 
 inline bool ObClientSessionInfo::need_reset_last_insert_id(const ObServerSessionInfo &server_info) const
 {
-  if (OB_LIKELY(is_oceanbase_server())) {
-    if (OB_LIKELY(!is_session_pool_client_)) {
-      return get_last_insert_id_version() > server_info.get_last_insert_id_version();
-    }
-    return !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_last_insert_id_var(server_info.field_mgr_);
-  } else {
-    return false;
-  }
+  return get_last_insert_id_version() > server_info.get_last_insert_id_version();
+  // [TODO] 保留连接池未开启的处理代码
+  // if (OB_LIKELY(is_oceanbase_server())) {
+  //   if (OB_LIKELY(!is_session_pool_client_)) {
+  //     return get_last_insert_id_version() > server_info.get_last_insert_id_version();
+  //   }
+  //   return !(const_cast<ObClientSessionInfo*>(this))->field_mgr_.is_same_last_insert_id_var(server_info.field_mgr_);
+  // } else {
+  //   return false;
+  // }
 }
 
 inline bool ObClientSessionInfo::need_reset_safe_read_snapshot(const ObServerSessionInfo &server_info) const

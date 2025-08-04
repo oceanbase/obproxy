@@ -11,6 +11,7 @@ devdeps-prometheus-cpp-0.8.0-8.el7.x86_64.rpm
 devdeps-gtest-1.8.0-3.el7.x86_64.rpm
 devdeps-grpc-1.20.1-9.el7.x86_64.rpm
 devdeps-sqlite-3.38.1-2.el7.x86_64.rpm
+devdeps-libunwind-static-1.6.2-222022100410.el7.x86_64.rpm
 
 [tools]
 obdevtools-gcc9-9.3.0-3.el7.x86_64.rpm

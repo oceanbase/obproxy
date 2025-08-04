@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.3.4.0],
+            [4.3.5.0],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.3.4.0"
+    obapi_version="4.3.5.0"
     AC_SUBST(obapi_version)
 
     AC_ARG_VAR([TOPDIR], [The path of the project])
@@ -50,6 +50,7 @@
 
     AC_CANONICAL_HOST
 
+    AM_CONDITIONAL([IS_X86_64], [test "$host_cpu" = "x86_64"])
     dnl configure compiler flags
     AC_ARG_WITH([release],
     AS_HELP_STRING([--with-release],

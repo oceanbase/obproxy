@@ -9,6 +9,8 @@ rpc/obmysql/packet/ompk_eof.h\
 rpc/obmysql/packet/ompk_eof.cpp\
 rpc/obmysql/packet/ompk_row.h\
 rpc/obmysql/packet/ompk_row.cpp\
+rpc/obmysql/packet/ompk_auth_switch_req.h\
+rpc/obmysql/packet/ompk_auth_switch_req.cpp\
 rpc/obmysql/packet/ompk_change_user.h\
 rpc/obmysql/packet/ompk_change_user.cpp\
 rpc/obmysql/packet/ompk_field.h\

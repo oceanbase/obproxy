@@ -43,6 +43,9 @@ public:
   // for convenience compactible with ObString
   inline int64_t length()  const { return obj_cnt_; }
   inline const ObObj *ptr() const { return obj_ptr_; }
+  // dangerous, no range check
+  inline const ObObj& get_obj_at(int64_t idx) const { return obj_ptr_[idx]; };
+  inline ObObj& get_obj_at(int64_t idx) { return obj_ptr_[idx]; };
   inline bool is_legal() const { return !(NULL == obj_ptr_ && obj_cnt_ > 0); }
   inline bool is_valid() const { return NULL != obj_ptr_ && obj_cnt_ > 0; }
   // is min rowkey or max rowkey

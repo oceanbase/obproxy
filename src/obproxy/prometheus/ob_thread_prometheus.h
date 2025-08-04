@@ -33,6 +33,7 @@
 
 #include "lib/hash/ob_hashmap.h"
 #include "lib/string/ob_string.h"
+// #include "obkv/table/ob_table.h"
 #include "obutils/ob_async_common_task.h"
 #include "iocore/eventsystem/ob_continuation.h"
 #include "iocore/eventsystem/ob_ethread.h"
@@ -126,7 +127,7 @@ public:
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
   struct MonitorInfoKey {
-    MonitorInfoKey() : request_type_(), stmt_type_(), rpc_pkt_code_(),
+    MonitorInfoKey() : request_type_(), stmt_type_(), rpc_pkt_code_(), rpc_entity_type_(),
                        route_type_(proxy::ObRouteInfoType::INVALID),
                        route_policy_(proxy::ObRoutePolicyEnum::MERGE_IDC_ORDER),
                        cluster_name_(), tenant_name_(), database_name_() {
@@ -183,6 +184,7 @@ public:
     ObProxyRequestType request_type_;
     ObProxyBasicStmtType stmt_type_;
     obrpc::ObRpcPacketCode rpc_pkt_code_;
+    obkv::ObTableEntityType rpc_entity_type_;
     proxy::ObRouteInfoType route_type_;
     proxy::ObRoutePolicyEnum route_policy_;
 
@@ -274,7 +276,8 @@ private:
              && lhs.tenant_name_ == rhs.tenant_name_
              && lhs.cluster_name_ == rhs.cluster_name_
              && lhs.request_type_ == rhs.request_type_
-             && lhs.rpc_pkt_code_ == rhs.rpc_pkt_code_;
+             && lhs.rpc_pkt_code_ == rhs.rpc_pkt_code_
+             && lhs.rpc_entity_type_ == rhs.rpc_entity_type_;
     }
   };
   static const int64_t MONITOR_INFO_HASH_BUCKET_SIZE = 1024;

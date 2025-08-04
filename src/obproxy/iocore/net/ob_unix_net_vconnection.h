@@ -122,6 +122,8 @@ public:
   int init();
   int close();
   void free();
+  int migrate_to_session_pool_thread();
+  int migrate_from_session_pool_thread();
 
   int accept_event(int event, event::ObEvent *e);
   int main_event(int event, event::ObEvent *e);

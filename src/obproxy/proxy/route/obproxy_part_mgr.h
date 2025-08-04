@@ -44,10 +44,8 @@ public:
   void destroy();
   
   int get_part_with_part_name(const common::ObString &part_name,
-                              int64_t &part_id,
-                              ObProxyPartInfo &part_info,
-                              ObServerRoute &route,
-                              ObProxyExprCalculator &expr_calculator);
+                              int64_t &first_part_id,
+                              int64_t &partition_id);
   int get_first_part_id_by_random(const int64_t rand_num, 
                                   int64_t &first_part_id,
                                   int64_t &tablet_id);

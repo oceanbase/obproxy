@@ -77,6 +77,7 @@ namespace prometheus
 #define LABEL_RPC_RESULT "rpcResult"
 #define LABEL_RPC_SLOW "slowRpcQuery"
 #define LABEL_RPC_SHARD "shardRpcQuery"
+#define LABEL_RPC_TABLE_TYPE "tableType"
 #define LABEL_TIME_TYPE "timeType"
 #define LABEL_SESSION_TYPE "sessionType"
 #define LABEL_SESSION_CLIENT "client"

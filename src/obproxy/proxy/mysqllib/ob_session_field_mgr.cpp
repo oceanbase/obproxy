@@ -2705,6 +2705,118 @@ bool ObSessionFieldMgr::is_same_last_insert_id_var(const ObSessionFieldMgr& fiel
   return result;
 }
 
+Trie ObSessionFieldMgr::sys_var_trie_;
+
+TrieNode::~TrieNode() {
+  SysVarTypeHashTable::iterator end = children_.begin();
+  SysVarTypeHashTable::iterator cur = children_.end();
+  for (; cur != end; ++cur) {
+    TrieNode *node = &(*cur);
+    op_reclaim_free(node);
+  }
+  children_.reset();
+}
+
+// 进程结束时调用
+Trie::~Trie() {
+  if (root_ != NULL) {
+    op_reclaim_free(root_);
+    root_ = NULL;
+  }
+}
+
+int Trie::init_root() {
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(root_ = op_reclaim_alloc(TrieNode))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+  }
+
+  return ret;
+}
+
+int Trie::init_sys_var_trie() {
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.init_root())) {
+    LOG_WDIAG("fail to init sys var trie root node", K(ret));
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_GLOBAL_VARIABLES_VERSION, OBPROXY_VAR_GLOBAL_VARIABLES_VERSION))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_GLOBAL_VARIABLES_VERSION);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_USER_PRIVILEGE, OBPROXY_VAR_USER_PRIVILEGE))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_USER_PRIVILEGE);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_SET_TRX_EXECUTED, OBPROXY_VAR_SET_TRX_EXECUTED))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_SET_TRX_EXECUTED);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED, OBPROXY_VAR_SET_TRX_EXECUTED))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_PARTITION_HIT, OBPROXY_VAR_PARTITION_HIT))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_PARTITION_HIT);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_LAST_INSERT_ID, OBPROXY_VAR_LAST_INSERT_ID))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_LAST_INSERT_ID);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_CAPABILITY_FLAG, OBPROXY_VAR_CAPABILITY_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_CAPABILITY_FLAG);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_SAFE_WEAK_READ_SNAPSHOT, OBPROXY_VAR_SAFE_READ_SNAPSHOT))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_SAFE_WEAK_READ_SNAPSHOT);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_ROUTE_POLICY, OBPROXY_VAR_ROUTE_POLICY_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_ROUTE_POLICY);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_ENABLE_TRANSMISSION_CHECKSUM, OBPROXY_VAR_ENABLE_TRANSMISSION_CHECKSUM_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_ENABLE_TRANSMISSION_CHECKSUM);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_STATEMENT_TRACE_ID, OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_STATEMENT_TRACE_ID);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_READ_CONSISTENCY, OBPROXY_VAR_READ_CONSISTENCY_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_READ_CONSISTENCY);
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_WEAK_READ_REPLICA_HIT, OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG))) {
+    LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_WEAK_READ_REPLICA_HIT);
+  }
+
+  return ret;
+}
+
+int Trie::insert(const ObString var_name, ObProxySysVarType type) {
+  int ret = OB_SUCCESS;
+  TrieNode *current = root_;
+  int64_t len = var_name.length();
+  for (int64_t i = 0; i < len && OB_SUCC(ret); ++i) {
+    char c = var_name[i];
+    TrieNode *child = current->children_.get(c);
+    if (child == NULL) {
+      if (OB_NOT_NULL(child = op_reclaim_alloc(TrieNode))) {
+        child->c_ = c;
+        current->children_.set_refactored(child);
+      } else {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_EDIAG("fail to alloc mem for TrieNode", K(ret), K(c));
+      }
+    }
+    current = child;
+  }
+  current->type_ = type;
+
+  return ret;
+}
+
+ObProxySysVarType Trie::find(const common::ObString &var_name) const {
+  const char *str = var_name.ptr();
+  int64_t length = var_name.length();
+  TrieNode *current = root_;
+  ObProxySysVarType type_found = OBPROXY_VAR_INVALID;
+  bool finish = false;
+  for (int64_t i = 0; !finish && i < length; ++i) {
+    char c = str[i];
+    TrieNode *child = current->children_.get(c);
+    // 字符 c 没有对应的子树, 查找结束
+    if (child == NULL) {
+      finish = true;
+    // 字符 c 存在子树
+    } else {
+      // 只有最后一个 char 在树中找到了之后才给 type_found 赋值
+      current = child;
+      if (i == length - 1 && current->type_ != OBPROXY_VAR_INVALID) {
+        type_found = current->type_;
+      }
+    }
+  }
+  return type_found;
+}
+
 int ObDefaultSysVarSet::init()
 {
   int ret = OB_SUCCESS;

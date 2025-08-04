@@ -33,18 +33,22 @@ public:
   ~ObSessionPoolProcessor();
   int create_refresh_server_session_cont();
   int create_server_conn_cont();
-  int create_conn_num_check_cont();
   int handle_one_logic_tenent(dbconfig::ObDbConfigLogicTenant* logic_tenant,
                                     int32_t& logic_tenant_count,
                                     int32_t& logic_db_count,
                                     int32_t& shard_conn_count);
   int start_session_pool_task();
   int start_pool_stat_dump_task();
+  static int start_reset_conn_task(event::ObEThread *ethread);
   static int do_pool_stat_dump();
+  static int do_reset_conn();
   static void update_pool_stat_dump_interval();
+  static void update_reset_conn_interval();
   ObAsyncCommonTask* get_pool_stat_dump_cont() {return pool_stat_dump_cont_;}
+  ObAsyncCommonTask* get_pool_reset_conn_cont() {return pool_reset_conn_cont_;}
 private:
   ObAsyncCommonTask * pool_stat_dump_cont_;
+  ObAsyncCommonTask * pool_reset_conn_cont_;
   DISALLOW_COPY_AND_ASSIGN(ObSessionPoolProcessor);
 };
 

@@ -22,6 +22,8 @@ namespace common
 void init_proc_map_info();
 extern bool g_enable_backtrace;
 const int64_t LBT_BUFFER_LENGTH = 1024;
+int light_backtrace(void **buffer, int size);
+int light_backtrace(void **buffer, int size, int64_t rbp);
 int ob_backtrace(void **buffer, int size);
 // save one layer of call stack
 #define OB_BACKTRACE_M(buffer, size)                      \

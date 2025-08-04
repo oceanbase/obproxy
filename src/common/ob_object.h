@@ -242,7 +242,7 @@ public:
   OB_INLINE bool is_varying_len_char_type() const { return is_varchar(); }
   OB_INLINE bool is_numeric_type() const { return ob_is_numeric_type(get_type()); }
   OB_INLINE bool is_integer_type() const { return ob_is_integer_type(get_type()); }
-  OB_INLINE bool is_string_type() const { return ob_is_string_tc(get_type()); }
+  OB_INLINE bool is_string_type() const { return ob_is_string_tc(get_type()) || ob_is_text_tc(get_type()); }
   OB_INLINE bool is_temporal_type() const { return ob_is_temporal_type(get_type()); }
   OB_INLINE bool is_nchar() const { return type_ == static_cast<uint8_t>(ObNCharType); }
   OB_INLINE bool is_nvarchar2() const { return type_ == static_cast<uint8_t>(ObNVarchar2Type); }
@@ -460,6 +460,7 @@ public:
 
   void set_string(const ObObjType type, const char *ptr, const ObString::obstr_size_t size);
   void set_string(const ObObjType type, const ObString &value);
+  void set_lob_string(const ObObjType type, const ObString &value);
   void set_varchar(const ObString &value);
   void set_varchar(const char *ptr, const ObString::obstr_size_t size);
   void set_varchar(const char *cstr);
@@ -1218,6 +1219,14 @@ inline void ObObj::set_string(const ObObjType type, const ObString &value)
   meta_.set_collation_level(CS_LEVEL_IMPLICIT);
   v_.string_ = value.ptr();
   val_len_ = value.length();
+}
+
+inline void ObObj::set_lob_string(const ObObjType type, const ObString &value)
+{
+  meta_.set_type(type);
+  meta_.set_collation_level(CS_LEVEL_IMPLICIT);
+  v_.string_ = value.ptr() + LOB_HEADER_LENGTH;
+  val_len_ = strlen(v_.string_);
 }
 
 inline void ObObj::set_varchar(const ObString &value)

@@ -898,7 +898,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
         }
         // split part expression
         if (part_info.get_part_level() >= PARTITION_LEVEL_ONE
-            && OB_FAIL(split_part_expr(part_expr, part_info.get_part_columns()))) {
+            && OB_FAIL(split_part_expr(part_expr, part_info.get_first_part_columns()))) {
           LOG_WDIAG("fail to split part expr", K(ret));
         } else if (part_info.get_part_level() == PARTITION_LEVEL_TWO
                    && OB_FAIL(split_part_expr(sub_part_expr, part_info.get_sub_part_columns())) ) {
@@ -947,6 +947,7 @@ int ObRouteUtils::fetch_part_info(ObResultSetFetcher &rs_fetcher, ObProxyPartInf
       }
     }
   }
+
   return ret;
 }
 
@@ -1118,7 +1119,7 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
           ret = OB_ALLOCATE_MEMORY_FAILED;
           LOG_WDIAG("fail to alloc part key name for primary key expr", K(buf), "size", part_key_name.length(), K(ret));
         } else if (FALSE_IT(MEMCPY(buf, part_key_name.ptr(), part_key_name.length()))) {
-        } else if (OB_FAIL(part_info.get_part_columns().push_back(ObString(part_key_name.length(), buf)))) {
+        } else if (OB_FAIL(part_info.get_first_part_columns().push_back(ObString(part_key_name.length(), buf)))) {
           LOG_WDIAG("fail to push back primary key columns", K(part_key_name), K(ret));
         } else {
           LOG_DEBUG("succ to push back primary key columns", K(part_key_name));
@@ -1183,9 +1184,10 @@ inline int ObRouteUtils::fetch_part_key(ObResultSetFetcher &rs_fetcher,
       part_key->obj_type_ = part_key_type;
       part_key->idx_in_rowid_ = idx_in_rowid;
       part_key->accuracy_.valid_ = 0;               // not valid accuracy
+      part_key->idx_in_part_columns_ = 0;
       // 如果建表时不含表达式，这个columns返回的是列名
       ObIArray<ObString> &columns = (part_key->level_ == PART_KEY_LEVEL_ONE ?
-                                    part_info.get_part_columns() : part_info.get_sub_part_columns());
+                                    part_info.get_first_part_columns() : part_info.get_sub_part_columns());
       for (int i = 0; i < columns.count(); i++) {
         ObString col(part_key->name_.str_len_, part_key->name_.str_);
         if (columns.at(i).case_compare(col) == 0) {
@@ -1287,7 +1289,6 @@ int ObRouteUtils::add_part_key_expr(const ObString &part_expr,
       LOG_DEBUG("unsupported function", K(func_name));
     } else {
       part_info.set_has_part_func_key(true);
-      part_info.set_part_func_key_level(static_cast<share::schema::ObPartitionLevel>(part_key.level_));
       part_key.part_key_func_info_.part_key_func_type_ = type;
       part_key.part_key_func_info_.func_params_ = result.param_node_;
       LOG_DEBUG("succ to add part_key_func", K(func_name), K(type), K(part_key_info.key_num_), K(part_info), K(ret));
@@ -1408,7 +1409,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
     if (OB_FAIL(part_info.get_part_mgr().build_range_part(share::schema::PARTITION_LEVEL_ONE,
                                                           part_info.get_first_part_option().part_func_type_,
                                                           part_info.get_first_part_option().part_num_,
-                                                          part_info.get_part_columns().count(),
+                                                          part_info.get_first_part_columns().count(),
                                                           part_info.is_template_table(),
                                                           part_info.get_part_key_info(),
                                                           rs_fetcher,
@@ -1420,7 +1421,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
     if (OB_FAIL(part_info.get_part_mgr().build_list_part(share::schema::PARTITION_LEVEL_ONE,
                                                          part_info.get_first_part_option().part_func_type_,
                                                          part_info.get_first_part_option().part_num_,
-                                                         part_info.get_part_columns().count(),
+                                                         part_info.get_first_part_columns().count(),
                                                          part_info.is_template_table(),
                                                          part_info.get_part_key_info(),
                                                          rs_fetcher,
@@ -1434,7 +1435,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                          part_info.get_first_part_option().part_func_type_,
                                                          part_info.get_first_part_option().part_num_,
                                                          part_info.get_first_part_option().part_space_,
-                                                         part_info.get_part_columns().count(),
+                                                         part_info.get_first_part_columns().count(),
                                                          part_info.is_template_table(),
                                                          part_info.get_part_key_info(),
                                                          &rs_fetcher,
@@ -1447,7 +1448,7 @@ int ObRouteUtils::fetch_first_part(ObResultSetFetcher &rs_fetcher, ObProxyPartIn
                                                         part_info.get_first_part_option().part_func_type_,
                                                         part_info.get_first_part_option().part_num_,
                                                         part_info.get_first_part_option().part_space_,
-                                                        part_info.get_part_columns().count(),
+                                                        part_info.get_first_part_columns().count(),
                                                         part_info.is_template_table(),
                                                         part_info.get_part_key_info(),
                                                         &rs_fetcher,

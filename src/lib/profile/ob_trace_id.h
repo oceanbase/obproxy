@@ -14,6 +14,7 @@
 #include <pthread.h>
 #include "lib/net/ob_addr.h"
 #include "lib/atomic/ob_atomic.h"
+
 #ifndef OCEANBASE_COMMON_OB_TRACE_ID_H
 #define OCEANBASE_COMMON_OB_TRACE_ID_H
 namespace oceanbase
@@ -62,6 +63,28 @@ struct ObCurTraceId
     }
     inline const uint64_t* get() const { return uval_; }
     inline void reset() { uval_[0] = 0; uval_[1] = 0; }
+    inline int64_t to_string(char *buf, const int64_t buf_len) const
+    {
+      int64_t pos = 0;
+      common::databuff_printf(buf, buf_len, pos, TRACE_ID_FORMAT, uval_[0], uval_[1]);
+      return pos;
+    }
+
+    inline int64_t safe_to_string(char *buf, const int64_t buf_len) const
+    {
+      int64_t pos = 0;
+      // [TODO] need use lnprintf
+      int len = snprintf(buf, buf_len, TRACE_ID_FORMAT, uval_[0], uval_[1]);
+      if (len < 0) {
+        // nothing
+      } else if (len < buf_len - pos) {
+        pos += len;
+      } else {
+        pos = buf_len - 1;  //skip '\0' written by snprintf
+      }
+      return pos;
+    }
+
   private:
     union
     {

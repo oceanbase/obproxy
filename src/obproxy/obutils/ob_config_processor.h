@@ -103,6 +103,7 @@ public:
   int store_proxy_config_with_level(int64_t vid, const ObString &vip, int64_t vport,
       const ObString &cluster_name, const ObString &tenant_name,
       const ObString &name, const ObString &value, const ObString &level);
+  int delete_config_for_not_eq_version(const int64_t version);
 
   int get_proxy_config(const ObVipAddr &addr, const common::ObString &cluster_name,
                        const common::ObString &tenant_name, const common::ObString& name,

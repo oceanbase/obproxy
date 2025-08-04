@@ -29,7 +29,7 @@ using namespace event;
 #define TEST_SPAWN_THREADS_NUM          1
 #define TEST_DEFAULT_NEXT_THREAD        0
 #define TEST_DEFAULT_DTHREAD_NUM        0
-#define TEST_ET_SPAWN                   (ET_CALL + 1)
+#define TEST_ET_SPAWN                   (ET_NET + 1)
 
 #define OB_ALIGN(size, boundary)    (((size) + ((boundary) - 1)) & ~((boundary) - 1))
 
@@ -171,19 +171,19 @@ void TestEventProcessor::check_start(TestFuncParam *param)
   ASSERT_EQ(OB_INIT_TWICE, g_event_processor.start(-1, 0));
 
   ASSERT_EQ(TEST_ET_CALL_THREADS_NUM, g_event_processor.event_thread_count_);
-  ASSERT_EQ(TEST_ET_CALL_THREADS_NUM, g_event_processor.thread_count_for_type_[ET_CALL]);
+  ASSERT_EQ(TEST_ET_CALL_THREADS_NUM, g_event_processor.thread_count_for_type_[ET_NET]);
   ASSERT_EQ(1, g_event_processor.thread_group_count_);
   ASSERT_EQ(0, g_event_processor.dedicate_thread_count_);
   ASSERT_TRUE(g_event_processor.started_);
   for (int64_t i = 0; i < TEST_ET_CALL_THREADS_NUM; ++i) {
     ASSERT_TRUE(g_event_processor.all_event_threads_[i] != NULL);
-    ASSERT_TRUE(g_event_processor.event_thread_[ET_CALL][i]
+    ASSERT_TRUE(g_event_processor.event_thread_[ET_NET][i]
                 == g_event_processor.all_event_threads_[i]);
     ASSERT_TRUE(REGULAR == g_event_processor.all_event_threads_[i]->tt_);
-    ASSERT_TRUE(g_event_processor.all_event_threads_[i]->is_event_thread_type(ET_CALL));
+    ASSERT_TRUE(g_event_processor.all_event_threads_[i]->is_event_thread_type(ET_NET));
   }
 
-  next_thread[ET_CALL] = TEST_DEFAULT_NEXT_THREAD;
+  next_thread[ET_NET] = TEST_DEFAULT_NEXT_THREAD;
   ++event_type_count;
   param->test_ok_ = true;
 }
@@ -540,7 +540,7 @@ void TestEventProcessor::check_allocate(TestFuncParam *param)
 
 void TestEventProcessor::check_assign_thread(TestFuncParam *param)
 {
-  ObEventThreadType event_type = ET_CALL;
+  ObEventThreadType event_type = ET_NET;
   for (int i = 0; i < 10; ++i) {
     ASSERT_TRUE(NULL != g_event_processor.assign_thread(event_type));
     if (g_event_processor.next_thread_for_type_[event_type] > 1) {
@@ -738,7 +738,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_imm1)
 {
   LOG_DEBUG("eventprocessor schedule_imm");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
 
   TestEventProcessor::check_schedule_imm(test_param[0]);
   wait_condition(test_param[0]->wait_cond_);
@@ -761,7 +761,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_at1)
   LOG_DEBUG("eventprocessor schedule_at");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
   test_param[0]->at_delta_ = HRTIME_SECONDS(2);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
 
   TestEventProcessor::check_schedule_at(test_param[0]);
   wait_condition(test_param[0]->wait_cond_);
@@ -784,7 +784,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_in1)
 {
   LOG_DEBUG("eventprocessor schedule_in");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
   test_param[0]->atimeout_ = TEST_TIME_SECOND_IN;
 
   TestEventProcessor::check_schedule_in(test_param[0]);
@@ -808,7 +808,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_in3_minus_negative_queue)
 {
   LOG_DEBUG("eventprocessor schedule_in (-negative_queue)");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
   test_param[0]->atimeout_ = 0 - TEST_TIME_SECOND_IN - get_hrtime_internal();
 
   TestEventProcessor::check_schedule_in(test_param[0]);
@@ -820,7 +820,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_every1)
 {
   LOG_DEBUG("eventprocessor schedule_every");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
   test_param[0]->aperiod_ = TEST_TIME_SECOND_EVERY;
 
   TestEventProcessor::check_schedule_every(test_param[0]);
@@ -842,14 +842,14 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_every2_minus_spawn_negative_q
 
 TEST_F(TestEventProcessor, eventprocessor_schedule1_in)
 {
-  LOG_DEBUG("eventprocessor schedule (ET_CALL in)");
+  LOG_DEBUG("eventprocessor schedule (ET_NET in)");
   test_param[0] = create_funcparam_test(true, handle_schedule_test, new_proxy_mutex());
   ASSERT_TRUE(NULL != test_param[0]->cont_->mutex_);
 
   if (NULL == (test_param[0]->event_ = op_reclaim_alloc(ObEvent))) {
     LOG_ERROR("fail to alloc mem for processor_schedule test");
   } else {
-    test_param[0]->event_type_ = ET_CALL;
+    test_param[0]->event_type_ = ET_NET;
     test_param[0]->event_->callback_event_ = EVENT_INTERVAL;
     test_param[0]->atimeout_ = TEST_TIME_SECOND_IN;
     ASSERT_EQ(common::OB_SUCCESS, test_param[0]->event_->init(*test_param[0]->cont_,
@@ -891,7 +891,7 @@ TEST_F(TestEventProcessor, eventprocessor_schedule_imm_signal1)
 {
   LOG_DEBUG("eventprocessor schedule_imm_signal");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
 
   TestEventProcessor::check_schedule_imm_signal(test_param[0]);
   wait_condition(test_param[0]->wait_cond_);
@@ -913,7 +913,7 @@ TEST_F(TestEventProcessor, eventprocessor_prepare_schedule_imm1)
 {
   LOG_DEBUG("eventprocessor prepare_schedule_imm");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
-  test_param[0]->event_type_ = ET_CALL;
+  test_param[0]->event_type_ = ET_NET;
 
   TestEventProcessor::check_prepare_schedule_imm(test_param[0]);
   wait_condition(test_param[0]->wait_cond_);
@@ -933,7 +933,7 @@ TEST_F(TestEventProcessor, eventprocessor_prepare_schedule_imm2_spawn)
 
 TEST_F(TestEventProcessor, eventprocessor_do_schedule1_every)
 {
-  LOG_DEBUG("eventprocessor do_schedule (ET_CALL every)");
+  LOG_DEBUG("eventprocessor do_schedule (ET_NET every)");
   test_param[0] = create_funcparam_test(true, handle_schedule_test);
 
   //  test_param[0]->func_type_ = TEST_DO_SCHEDULE;
@@ -946,7 +946,7 @@ TEST_F(TestEventProcessor, eventprocessor_do_schedule1_every)
     ASSERT_EQ(common::OB_SUCCESS, test_param[0]->event_->init(*test_param[0]->cont_,
         get_hrtime_internal() + test_param[0]->aperiod_, test_param[0]->aperiod_));
     ASSERT_TRUE(test_param[0]->event_->is_inited_);
-    test_param[0]->event_type_ = ET_CALL;
+    test_param[0]->event_type_ = ET_NET;
     test_param[0]->event_->ethread_ = g_event_processor.assign_thread(
         test_param[0]->event_type_);
     if (NULL != test_param[0]->event_->continuation_->mutex_) {

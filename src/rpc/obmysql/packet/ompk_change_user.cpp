@@ -75,6 +75,18 @@ int64_t OMPKChangeUser::get_serialize_size() const
   return len;
 }
 
+int OMPKChangeUser::add_connect_attr(const ObStringKV &string_kv)
+{
+  int ret = OB_SUCCESS;
+  if (string_kv.key_.empty()) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", K(string_kv), K(ret));
+  } else if (OB_FAIL(connect_attrs_.push_back(string_kv))) {
+    LOG_WDIAG("fail to push back string kv", K(string_kv), K(ret));
+  }
+  return ret;
+}
+
 int OMPKChangeUser::decode()
 {
   int ret = OB_SUCCESS;

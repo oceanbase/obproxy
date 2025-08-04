@@ -168,7 +168,7 @@ bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string
       ObProxyPartInfo part_info;
       ObExprResolverContext ctx;
       ObExprResolverResult expr_result;
-      ctx.relation_info_ = &result.relation_info_;
+      ctx.relation_info_ = &result.all_relation_info_;
       ctx.part_info_ = &part_info;
       if (OB_SUCCESS == do_expr_resolver(ctx, expr_result)) {
         DUMP_RESULT("RANGES: %.*s\n",

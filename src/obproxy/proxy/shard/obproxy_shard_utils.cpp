@@ -189,19 +189,19 @@ int ObProxyShardUtils::change_connector(ObDbConfigLogicDb &logic_db_info,
         session_info.set_need_close_last_server_session(true);
         session_info.set_allow_use_last_session(false);
         if (OB_ISNULL(txn_shard_conn)) {
-          if (OB_ISNULL(client_session.get_server_session())
-              || OB_ISNULL(client_session.get_server_session()->get_session_info().get_shard_connector())) {
+          if (OB_ISNULL(client_session.get_last_server_session())
+              || OB_ISNULL(client_session.get_last_server_session()->get_session_info().get_shard_connector())) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("last txn sever session is NULL", K(ret));
           } else {
-            session_info.set_txn_shard_connector(client_session.get_server_session()->get_session_info().get_shard_connector());
-            client_session.get_server_session()->get_session_info().set_is_sharding_txn_session(true);
+            session_info.set_txn_shard_connector(client_session.get_last_server_session()->get_session_info().get_shard_connector());
+            client_session.get_last_server_session()->get_session_info().set_is_sharding_txn_session(true);
             client_session.set_sharding_txn_ss_addr(
-                           client_session.get_server_session()->get_netvc()->get_remote_addr());
+                           client_session.get_last_server_session()->get_netvc()->get_remote_addr());
             LOG_DEBUG("set shard txn shard", "remote addr",
                       client_session.get_sharding_txn_ss_addr(), "txn shard name",
                       client_session.get_session_info().get_txn_shard_connector()->shard_name_.config_string_, "server shard conn",
-                      client_session.get_server_session()->get_session_info().get_shard_connector()->shard_name_.config_string_);
+                      client_session.get_last_server_session()->get_session_info().get_shard_connector()->shard_name_.config_string_);
           }
         } else {
           // have set txn shard connector, nothing
@@ -337,33 +337,50 @@ int ObProxyShardUtils::change_user_auth(ObMysqlClientSession &client_session,
 }
 
 //外部逻辑会去掉引号, 所以这里面要加上引号
-void ObProxyShardUtils::replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
+int ObProxyShardUtils::replace_oracle_table(ObSqlString &new_sql, const ObString &real_name,
                                              bool &hava_quoto, bool is_single_shard_db_table,
                                              bool is_database)
 {
+  int ret = OB_SUCCESS;
+
   if (is_database) {
-    new_sql.append("\"", 1);
-    new_sql.append(real_name);
-    new_sql.append("\"", 1);
+    if (OB_FAIL(new_sql.append("\"", 1))) {
+      LOG_WDIAG("fail to append", K(ret));
+    } else if (OB_FAIL(new_sql.append(real_name))) {
+      LOG_WDIAG("fail to append", K(ret));
+    } else if (OB_FAIL(new_sql.append("\"", 1))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   } else {
     // 如果有引号, 带上引号
     if (hava_quoto) {
-      new_sql.append("\"", 1);
-      new_sql.append(real_name);
-      new_sql.append("\"", 1);
+      if (OB_FAIL(new_sql.append("\"", 1))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (OB_FAIL(new_sql.append(real_name))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (OB_FAIL(new_sql.append("\"", 1))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     } else {
       // 如果没有引号
       if (is_single_shard_db_table) {
-        new_sql.append(real_name);
+        if (OB_FAIL(new_sql.append(real_name))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       } else {
-        new_sql.append("\"", 1);
-        new_sql.append(real_name);
-        new_sql.append("\"", 1);
+        if (OB_FAIL(new_sql.append("\"", 1))) {
+          LOG_WDIAG("fail to append", K(ret));
+        } else if (OB_FAIL(new_sql.append(real_name))) {
+          LOG_WDIAG("fail to append", K(ret));
+        } else if (OB_FAIL(new_sql.append("\"", 1))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       }
     }
   }
 
   hava_quoto = false;
+  return ret;
 }
 
 int ObProxyShardUtils::rewrite_shard_dml_request(const ObString &sql,
@@ -422,7 +439,9 @@ int ObProxyShardUtils::rewrite_shard_dml_request(const ObString &sql,
 
 
   if (OB_SUCC(ret)) {
-    new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos);
+    if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   }
 
   return ret;
@@ -446,29 +465,49 @@ int ObProxyShardUtils::rewrite_shard_request_db(const char *sql_ptr, int64_t dat
       database_pos -= 1;
       database_len += 2;
     }
-    new_sql.append(sql_ptr + copy_pos, database_pos - copy_pos);
+    if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, database_pos - copy_pos))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
 
-    if (is_oracle_mode) {
-      replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (is_oracle_mode) {
+      if (OB_FAIL(replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     } else {
-      new_sql.append(real_database_name);
+      if (OB_FAIL(new_sql.append(real_database_name))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
 
     copy_pos = database_pos + database_len;
-    if (database_pos < table_pos) {
-      new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (database_pos < table_pos) {
+      if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
   } else {
     // 如果 SQL 里没有 database, 单库单表就不加了
     // add real database name before logic table name
-    new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
-    if (!is_single_shard_db_table && !real_database_name.empty()) {
+    if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos))) {
+      LOG_WDIAG("fail to append", K(ret));
+    } else if (!is_single_shard_db_table && !real_database_name.empty()) {
       if (is_oracle_mode) {
-        replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true);
-      } else {
-        new_sql.append(real_database_name);
+        if (OB_FAIL(replace_oracle_table(new_sql, real_database_name, database_hava_quoto, is_single_shard_db_table, true))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
+      } else if (OB_FAIL(new_sql.append(real_database_name))) {
+        LOG_WDIAG("fail to append", K(ret));
       }
-      new_sql.append(".", 1);
+
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (OB_FAIL(new_sql.append(".", 1))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
   }
 
@@ -491,12 +530,17 @@ int ObProxyShardUtils::rewrite_shard_request_table_no_db(const char *sql_ptr,
     table_len += 2;
   }
 
-  new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos);
+  if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, table_pos - copy_pos))) {
+    LOG_WDIAG("fail to append", K(ret));
   // 替换表名
-  if (is_oracle_mode) {
-    replace_oracle_table(new_sql, real_table_name, table_have_quoto, is_single_shard_db_table, false);
+  } else if (is_oracle_mode) {
+    if (OB_FAIL(replace_oracle_table(new_sql, real_table_name, table_have_quoto, is_single_shard_db_table, false))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   } else {
-    new_sql.append(real_table_name);
+    if (OB_FAIL(new_sql.append(real_table_name))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   }
 
   copy_pos = table_pos + table_len;
@@ -529,9 +573,13 @@ int ObProxyShardUtils::rewrite_shard_request_table(const char *sql_ptr,
   } else {
     // 替换表名
     if (is_oracle_mode) {
-      replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
+      if (OB_FAIL(replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     } else {
-      new_sql.append(real_table_name);
+      if (OB_FAIL(new_sql.append(real_table_name))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
 
     copy_pos = table_pos + table_len;
@@ -555,12 +603,17 @@ int ObProxyShardUtils::rewrite_shard_request_hint_table(const char *sql_ptr, int
       index_table_pos -= 1;
       index_table_len += 2;
     }
-    new_sql.append(sql_ptr + copy_pos, index_table_pos);
 
-    if (is_oracle_mode) {
-      replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false);
+    if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, index_table_pos))) {
+      LOG_WDIAG("fail to append", K(ret));
+    } else if (is_oracle_mode) {
+      if (OB_FAIL(replace_oracle_table(new_sql, real_table_name, table_hava_quoto, is_single_shard_db_table, false))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     } else {
-      new_sql.append(real_table_name);
+      if (OB_FAIL(new_sql.append(real_table_name))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
 
     copy_pos = index_table_pos + index_table_len;
@@ -627,8 +680,11 @@ int ObProxyShardUtils::rewrite_shard_request(ObClientSessionInfo &session_info,
   }
 
   if (OB_SUCC(ret)) {
-    new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos);
-    LOG_DEBUG("succ to rewrite sql", K(sql), K(new_sql));
+    if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos))) {
+      LOG_WDIAG("fail to append", K(ret));
+    } else {
+      LOG_DEBUG("succ to rewrite sql", K(sql), K(new_sql));
+    }
   }
 
   return ret;
@@ -748,13 +804,22 @@ int ObProxyShardUtils::testload_rewrite_name_base_on_parser_node(common::ObSqlSt
     LOG_WDIAG("use invalid node to rewrite sql", K(ret), K(last_pos));
   } else {
     if (last_pos < node->token_off_) {
-      new_sql.append(sql_ptr + last_pos, node->token_off_ - last_pos);
+      if (OB_FAIL(new_sql.append(sql_ptr + last_pos, node->token_off_ - last_pos))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
 
-    new_sql.append(new_name);
-    last_pos = node->token_off_ + node->token_len_;
-    LOG_DEBUG("ObProxyShardUtils::testload_rewrite_name_base_on_parser_node",
-               K(ret), K(last_pos), K(node->token_off_), K(node->token_len_));
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else {
+      if (OB_FAIL(new_sql.append(new_name))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else {
+        last_pos = node->token_off_ + node->token_len_;
+        LOG_DEBUG("ObProxyShardUtils::testload_rewrite_name_base_on_parser_node",
+                  K(ret), K(last_pos), K(node->token_off_), K(node->token_len_));
+      }
+    }
   }
   return ret;
 }
@@ -987,9 +1052,15 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
       }
       i++;
     }
-    if (sql_len >= last_pos) {
+
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (sql_len >= last_pos) {
       LOG_DEBUG("TAIL SQL is", K(last_pos), K(sql_len), "sql_prt", ObString::make_string(sql_ptr));
-      new_sql.append(sql_ptr + last_pos, sql_len - last_pos); //added
+      //added
+      if (OB_FAIL(new_sql.append(sql_ptr + last_pos, sql_len - last_pos))) {
+        LOG_WDIAG("fail to append", K(ret));
+      }
     }
   }
   LOG_DEBUG("ObProxyShardUtils::check_and_rewrite_testload_request all", K(ret), K(new_sql));
@@ -1376,10 +1447,11 @@ int ObProxyShardUtils::handle_information_schema_request(ObMysqlClientSession &c
 
     if (OB_SUCC(ret) && is_rewrite_sql) {
       const uint32_t PARSE_EXTRA_CHAR_NUM = 2;
-      new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos - PARSE_EXTRA_CHAR_NUM);
 
       // 4. push reader forward by consuming old buffer and write new sql into buffer
-      if (OB_FAIL(client_buffer_reader.consume_all())) {
+      if (OB_FAIL(new_sql.append(sql_ptr + copy_pos, sql_len - copy_pos - PARSE_EXTRA_CHAR_NUM))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (OB_FAIL(client_buffer_reader.consume_all())) {
         LOG_WDIAG("fail to consume all", K(ret));
       } else {
         ObMIOBuffer *writer = client_buffer_reader.mbuf_;
@@ -1693,8 +1765,8 @@ int ObProxyShardUtils::handle_shard_request(ObMysqlClientSession &client_session
   } else {
     bool is_multi_stmt = sql_array.count() > 1;
     ObSqlParseResult parse_result;
-    ObSqlParseResult* real_parse_result = NULL;
     ObProxySqlParser sql_parser;
+    ObSqlParseResult* real_parse_result = NULL;
     for (int64_t i = 0; OB_SUCC(ret) && i < sql_array.count(); ++i) {
       const ObString& sql = sql_array.at(i);
       if (0 == i) {
@@ -1773,8 +1845,9 @@ int ObProxyShardUtils::do_handle_shard_request(ObMysqlClientSession &client_sess
   ObString table_name = parse_result.get_origin_table_name();
   if (OB_UNLIKELY(is_unsupport_type_in_multi_stmt(parse_result))) {
     // 保持兼容
-    new_sql.append(sql);
-
+    if (OB_FAIL(new_sql.append(sql))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   } else if (table_name.empty()) {
     if (OB_FAIL(handle_dml_request(client_session, trans_state, table_name, db_info,
                                    sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
@@ -1974,7 +2047,12 @@ int ObProxyShardUtils::handle_select_request(ObMysqlClientSession &client_sessio
 
   if (OB_SUCC(ret)) {
     if (is_scan_all) {
-      //handle scan all later
+      if (!get_global_proxy_config().enable_scan_all_request) {
+        ret = OB_ERR_DISTRIBUTED_NOT_SUPPORTED;
+        LOG_WDIAG("scan all sql is not supported because of the config enable_scan_all_request", K(sql), K(new_sql), K(ret));
+      } else {
+        //handle scan all later
+      }
     } else {
       if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name,
                                        sql, new_sql, parse_result, es_index, group_index, last_es_index))) {
@@ -2009,9 +2087,10 @@ int ObProxyShardUtils::handle_dml_request(ObMysqlClientSession &client_session,
     if (OB_UNLIKELY(table_name.empty()
         && !parse_result.has_dbmesh_hint()
         && !parse_result.is_use_dbp_hint())) {
-      new_sql.append(sql);
       // no table sql, use txn shard connector
-      if (OB_FAIL(do_set_txn_shard_connector(client_session, trans_state, db_info))) {
+      if (OB_FAIL(new_sql.append(sql))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (OB_FAIL(do_set_txn_shard_connector(client_session, trans_state, db_info))) {
         LOG_WDIAG("fail to set txn shard connector", K(ret));
       }
     } else if (OB_FAIL(handle_dml_real_info(db_info, client_session, trans_state, table_name,
@@ -2328,9 +2407,6 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
       && tenant_info->ld_map_.count() > 0) {
     LOG_DEBUG("succ to get logic tenant info", KPC(tenant_info));
     session_info.set_user_identity(USER_TYPE_SHARDING);
-    if (get_global_proxy_config().is_pool_mode) {
-      client_session.set_session_pool_client(true);
-    }
     session_info.set_logic_tenant_name(hsr.tenant_name_);
     if (get_global_proxy_config().enable_shard_authority) {
       session_info.set_enable_shard_authority();
@@ -2413,7 +2489,7 @@ int ObProxyShardUtils::handle_shard_auth(ObMysqlClientSession &client_session, c
 
         if (OB_SUCC(ret)) {
           session_info.set_shard_connector(shard_conn);
-          if (client_session.is_session_pool_client()) {
+          if (client_session.is_enable_sharding_conn_pool()) {
             //连接池不会真正建联，需要保存下database_name
             const ObString& real_database_name = shard_conn->database_name_.config_string_;
             session_info.set_database_name(real_database_name);

@@ -3212,3 +3212,5 @@ OB_SERIALIZE_MEMBER(ObObkvRouteResult,
                     part_info_,
                     first_parts_,
                     sub_parts_);
+
+OB_SERIALIZE_MEMBER((ObTableMetaResponse, ObTableResult), data_);

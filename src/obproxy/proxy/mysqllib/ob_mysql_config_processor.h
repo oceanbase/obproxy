@@ -99,6 +99,7 @@ public:
   CfgPort rpc_listen_port_;
   CfgInt stack_size_;
   CfgInt work_thread_num_;
+  CfgInt session_pool_thread_num_;
   CfgInt task_thread_num_;
   CfgInt block_thread_num_;
   CfgInt grpc_thread_num_;

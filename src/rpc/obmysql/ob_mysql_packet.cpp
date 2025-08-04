@@ -119,12 +119,14 @@ int64_t ObMySQLRawPacket::get_serialize_size() const
 int ObMySQLRawPacket::serialize(char *buf, const int64_t length, int64_t &pos) const
 {
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(NULL == buf || length <= 0 || pos < 0
-                  || length - pos < get_serialize_size() || NULL == cdata_)) {
+  if (OB_UNLIKELY(NULL == buf || length <= 0 || pos < 0 || length - pos < get_serialize_size())) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", KP(buf), K(length), K(get_serialize_size()), K(pos), K(ret));
   } else if (OB_FAIL(ObMySQLUtil::store_int1(buf, length, cmd_, pos))) {
     LOG_WDIAG("fail to store cmd", K(length), K(cmd_), K(pos), K(ret));
+  } else if (get_serialize_size() != 1  && cdata_ == NULL) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", K(get_serialize_size()), KP(cdata_));
   } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(buf, length, get_cdata(), get_clen(), pos))) {
     LOG_WDIAG("fail to store content", K(length), K(get_cdata()), K(get_clen()), K(pos), K(ret));
   }

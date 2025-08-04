@@ -133,7 +133,7 @@ enum ObDiagnosisType {
   HANDLE_RESPONSE,                // level 1
   RETRY,                          // level 1
 };
-extern void deep_copy_string(ObIAllocator *alloc, ObString &src, ObString &dest);
+extern void deep_copy_string(ObIAllocator *alloc, const ObString &src, ObString &dest);
 extern ObDiagnosisLevel get_type_level(ObDiagnosisType type);
 /*
   if you want to add new ObDiagnosisXxxXxxx
@@ -729,12 +729,12 @@ public:
   explicit ObDiagnosisResolveToken(
     int ret,
     ObIAllocator *alloc,
-    ObProxyTokenType token_type,
-    ObString &token,
-    ObProxyExprType expr_type,
-    ObProxyExprType generated_func,
-    ObProxyExprType part_key_func,
-    ObObj &obj)
+    const ObProxyTokenType token_type,
+    const ObString &token,
+    const ObProxyExprType expr_type,
+    const ObProxyExprType generated_func,
+    const ObProxyExprType part_key_func,
+    const ObObj &obj)
     : ObDiagnosisBase(RESOLVE_TOKEN, ret, alloc) {
       token_type_ = token_type;
       deep_copy_string(alloc_, token, token_);
@@ -1016,12 +1016,12 @@ public:
     int16_t version);
   void diagnosis_resolve_token(
     int ret,
-    ObProxyTokenType token_type,
-    ObString &token,
-    ObProxyExprType expr_type,
-    ObProxyExprType generated_func_type,
-    ObProxyExprType part_key_func,
-    ObObj &obj);
+    const ObProxyTokenType token_type,
+    const ObString &token,
+    const ObProxyExprType expr_type,
+    const ObProxyExprType generated_func_type,
+    const ObProxyExprType part_key_func,
+    const ObObj &obj);
   void diagnosis_resolve_expr(
     int ret,
     ObString &part_range,
@@ -1215,12 +1215,12 @@ inline void ObRouteDiagnosis::diagnosis_calc_rowid(
 
 inline void ObRouteDiagnosis::diagnosis_resolve_token(
   int ret,
-  ObProxyTokenType token_type,
-  ObString &token,
-  ObProxyExprType expr_type,
-  ObProxyExprType generated_func_type,
-  ObProxyExprType part_key_func,
-  ObObj &obj)
+  const ObProxyTokenType token_type,
+  const ObString &token,
+  const ObProxyExprType expr_type,
+  const ObProxyExprType generated_func_type,
+  const ObProxyExprType part_key_func,
+  const ObObj &obj)
 {
   _ROUTE_DIAGNOSIS_POINT(
     ObDiagnosisResolveToken,

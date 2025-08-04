@@ -1168,7 +1168,8 @@ int ObMysqlClient::setup_read_handshake()
       client_session->set_can_send_request();
       client_session->is_need_update_dummy_entry_ = true;
     }
-    client_session->set_session_pool_client(is_session_pool_client_);
+    // pre conn is deprecated
+    // client_session->set_session_pool_client(is_session_pool_client_);
     if (is_session_pool_client_) {
       // client_session->set_is_dbmesh_user(false);
       client_session->schema_key_ = schema_key_;

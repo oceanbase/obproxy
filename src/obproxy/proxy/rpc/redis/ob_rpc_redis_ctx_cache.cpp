@@ -213,7 +213,7 @@ const char* ObRpcRedisCtx::get_client_flag(const ObRpcRedisCtx::ObRPcRedisClient
 
 void ObRpcRedisCtx::set_last_cmd(char *buf)
 {
-  if (strlen(buf)> 0 && strlen(buf) < 50) {
+  if (OB_NOT_NULL(buf) &&strlen(buf)> 0 && strlen(buf) < 50) {
     MEMCPY(cmd_, buf, strlen(buf));
     cmd_[strlen(buf)] = '\0';
   }

@@ -50,13 +50,17 @@ public:
 
 private:
   void reset();
+  void free_local_buffer();
   int handle_prepare_execute_ok(event::ObIOBufferReader *reader);
   int handle_prepare_param();
-  int handle_prepare_column(event::ObIOBufferReader *reader);
+  int handle_prepare_column(event::ObIOBufferReader *reader, ObMysqlAnalyzeResult& result);
+  int handle_prepare_column_def(event::ObIOBufferReader *reader);
+  int handle_prepare_column_eof();
   int handle_prepare_execute_eof(event::ObIOBufferReader *reader);
 
 private:
-  event::ObIOBufferReader *local_reader_;
+  event::ObIOBufferReader *local_produce_reader_;   // consume() 中向下游写入数据时使用
+  event::ObIOBufferReader *local_analyze_reader_;   // consume() 中解析报文使用
   event::ObMIOBuffer *local_buffer_;
   packet::ObMysqlPacketReader pkt_reader_;
   EnumPrepareExecuteStateType prepare_execute_state_;

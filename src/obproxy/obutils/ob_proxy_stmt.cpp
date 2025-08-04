@@ -515,6 +515,7 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
           case T_OP_EQ:
           case T_OP_IN:
           case T_OP_EXISTS:
+          case T_OP_NE:
             if (OB_FAIL(handle_column_and_value(tmp_node))) {
               LOG_WDIAG("fail to handle where node", K(sql_string_), K(ret));
             }
@@ -550,6 +551,7 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
         switch(tmp_node->type_) {
           case T_OP_EQ:
           case T_OP_AND:
+          case T_OP_NE:
             break;
           default:
             has_unsupport_expr_type_for_config_ = true;
@@ -572,6 +574,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
   if (t_case_level_ > 0) {
     is_skip_field = true;
   }
+  const bool is_not_eq = (T_OP_NE == node->type_);
   if (OB_ISNULL(field_results_)) {
     LOG_WDIAG("unexpected null");
     ret = OB_ERR_UNEXPECTED;
@@ -650,8 +653,10 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
 
     if (OB_SUCC(ret) && !is_skip_field) {
       int duplicate_column_idx = -1;
-      for (int i = 0; i < field_results_->fields_.count(); i++) {
-        if (0 == sql_field.column_name_.config_string_.case_compare(field_results_->fields_[i]->column_name_.config_string_)) {
+      common::ObSEArray<SqlField*, 5> &fields = is_not_eq ? field_results_->not_eq_fields_ : field_results_->fields_;
+      int &field_num = is_not_eq ? field_results_->not_eq_field_num_ : field_results_->field_num_;
+      for (int i = 0; i < fields.count(); i++) {
+        if (0 == sql_field.column_name_.config_string_.case_compare(fields[i]->column_name_.config_string_)) {
           duplicate_column_idx = i;
           break;
         }
@@ -659,7 +664,7 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
       if (-1 != duplicate_column_idx) {
         for (int i = 0; OB_SUCC(ret) && i < sql_field.column_values_.count(); i++) {
           SqlColumnValue tmp_column_value = sql_field.column_values_[i];
-          if (OB_FAIL(field_results_->fields_.at(duplicate_column_idx)->column_values_.push_back(tmp_column_value))) {
+          if (OB_FAIL(fields.at(duplicate_column_idx)->column_values_.push_back(tmp_column_value))) {
             LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
           }
         }
@@ -669,13 +674,13 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
           LOG_WDIAG("fail to allocate memory for sqlfield", K(ret));
         } else {
           *tmp_field = sql_field;
-          if (OB_FAIL(field_results_->fields_.push_back(tmp_field))) {
+          if (OB_FAIL(fields.push_back(tmp_field))) {
             tmp_field->reset();
             tmp_field = NULL;
             LOG_WDIAG("push_back failed", K(ret), K(sql_string_));
           } else {
-            ++field_results_->field_num_;
-            LOG_DEBUG("add sql_field", KPC(tmp_field), K(field_results_->field_num_));
+            ++field_num;
+            LOG_DEBUG("add sql_field", KPC(tmp_field), K(field_num));
           }
         }
       }

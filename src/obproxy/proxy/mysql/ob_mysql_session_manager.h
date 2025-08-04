@@ -17,6 +17,7 @@
 #include "lib/hash/ob_build_in_hashmap.h"
 #include "iocore/eventsystem/ob_event_system.h"
 #include "proxy/mysql/ob_mysql_server_session.h"
+#include "dbconfig/ob_proxy_db_config_info.h"
 
 namespace oceanbase
 {
@@ -26,9 +27,9 @@ namespace proxy
 {
 class ObMysqlClientSession;
 class ObMysqlSM;
-class ObMysqlSessionManagerNew;
+class ObMysqlSessionManagerSharding;
 
-// A pool of server sessions.
+// A local session pool of ObMysqlSessionManager
 //
 // This is a continuation so that it can get callbacks from the server sessions.
 // This is used to track remote closes on the sessions so they can be cleaned up.
@@ -94,11 +95,13 @@ public:
 
   // Close all sessions and then clear the table.
   void purge();
+  // Release all keepalive server session to global session pool.
+  void purge_to_global_session_pool();
   void destroy();
 
   void set_hash_key(const ObString &hash_key);
   const ObString &get_hash_key() const { return hash_key_; }
-  void set_session_manager(ObMysqlSessionManagerNew *session_manager) { session_manager_ = session_manager; }
+  void set_session_manager(ObMysqlSessionManagerSharding *session_manager) { session_manager_ = session_manager; }
   void set_delete_when_empty(bool is_delete_when_empty) { is_delete_when_empty_ = is_delete_when_empty; }
 
 public:
@@ -110,42 +113,52 @@ public:
 
 private:
   bool is_delete_when_empty_;
-  ObMysqlSessionManagerNew *session_manager_;
+  ObMysqlSessionManagerSharding *session_manager_;
   ObString hash_key_;
   char hash_key_buf_[OB_PROXY_FULL_USER_NAME_MAX_LEN];
 
 private:
   DISALLOW_COPY_AND_ASSIGN(ObServerSessionPool);
 };
-
 class ObMysqlSessionManager
 {
 public:
-  ObMysqlSessionManager() { }
-  ~ObMysqlSessionManager() { }
-
-  int release_session(ObMysqlServerSession &to_release);
-  void purge_keepalives() { session_pool_.purge(); }
-  ObMysqlServerSession *get_server_session(const int64_t index) { return session_pool_.get_server_session(index); }
-  int64_t get_svr_session_count() const { return session_pool_.get_svr_session_count(); }
-  ObServerSessionPool &get_session_pool() { return session_pool_; }
-  int acquire_server_session(const sockaddr &addr, const ObString &auth_user,
-                             ObMysqlServerSession *&server_session);
-  void set_mutex(event::ObProxyMutex *mutex) { session_pool_.mutex_ = mutex; }
+  ObMysqlSessionManager() : can_use_connection_pool_(false), enable_global_session_pool_(false) {}
+  ~ObMysqlSessionManager() {};
+  inline bool is_enable_global_session_pool() { return enable_global_session_pool_; }
+  inline void set_enable_global_session_pool(bool enable) { enable_global_session_pool_ = enable; }
+  inline void set_can_use_connection_pool(bool val) { can_use_connection_pool_ = val; }
+  inline bool can_use_connection_pool() const { return can_use_connection_pool_; }
+  // 回收会话, 放回 local pool
+  int release_server_session(ObMysqlServerSession *session, bool force_close = false);
+  void purge_keepalives();
+  ObMysqlServerSession *get_server_session(const int64_t index) { return local_session_pool_.get_server_session(index); }
+  int64_t get_svr_session_count() const { return local_session_pool_.get_svr_session_count(); }
+  ObServerSessionPool &get_session_pool() { return local_session_pool_; }
+  int acquire_server_session_local(const sockaddr &addr, const ObString &auth_user, ObMysqlServerSession *&server_session);
+  int acquire_server_session_global(const sockaddr &addr, const ObString &auth_user,
+                                    const ObProxySchemaKey& schema_key,
+                                    ObMysqlServerSession *&server_session);
+  void set_mutex(event::ObProxyMutex *mutex) { local_session_pool_.mutex_ = mutex; }
   bool is_session_pool_full() const { return get_svr_session_count() >= MAX_SERVER_SESSION_COUNT; }
+  inline void set_session_matched_rules(const ObServerSessionMatchRules &rules) { matched_rules_ = rules; }
+  int setup_reset_conn_buffer(ObMysqlSM *sm);
 
   //NOTE::client_session_ also hold one server session
   static const int64_t MAX_SERVER_SESSION_COUNT = 9;
 private:
-  ObServerSessionPool session_pool_;
+  bool can_use_connection_pool_;
+  bool enable_global_session_pool_;
+  ObServerSessionPool local_session_pool_;
+  ObServerSessionMatchRules matched_rules_;
   DISALLOW_COPY_AND_ASSIGN(ObMysqlSessionManager);
 };
 
-class ObMysqlSessionManagerNew
+class ObMysqlSessionManagerSharding
 {
 public:
-  ObMysqlSessionManagerNew() { }
-  ~ObMysqlSessionManagerNew() { mutex_.release(); }
+  ObMysqlSessionManagerSharding() : is_enable_global_session_pool_(false) { }
+  ~ObMysqlSessionManagerSharding() { mutex_.release(); }
 
 public:
   static const int64_t HASH_BUCKET_SIZE = 16;
@@ -172,19 +185,25 @@ public:
   typedef common::hash::ObBuildInHashMap<ObServerSessionPoolHashing, HASH_BUCKET_SIZE> SessionPoolHashTable; // Sessions by IP address.
 
 public:
+  void set_enable_global_session_pool(bool enable) { is_enable_global_session_pool_ = enable; }
+  inline bool is_enable_global_session_pool() { return is_enable_global_session_pool_; }
   SessionPoolHashTable &get_session_pool_hash() { return session_pool_hash_; }
   int release_session(const ObString &hash_key, ObMysqlServerSession &to_release);
   void purge_keepalives();
   int64_t get_svr_session_count();
-  int acquire_server_session(const ObString &hash_key, const sockaddr &addr, const ObString &auth_user,
+  int acquire_server_session(dbconfig::ObShardConnector *conn,
+                             const sockaddr &addr,
+                             const ObString &auth_user,
+                             const ObProxySchemaKey &schema_key,
                              ObMysqlServerSession *&server_session);
   int acquire_random_session(const ObString &hash_key, ObMysqlServerSession *&server_session);
   void set_mutex(event::ObProxyMutex *mutex) { mutex_ = mutex; }
 
 private:
+  bool is_enable_global_session_pool_;
   SessionPoolHashTable session_pool_hash_;
   common::ObPtr<event::ObProxyMutex> mutex_;
-  DISALLOW_COPY_AND_ASSIGN(ObMysqlSessionManagerNew);
+  DISALLOW_COPY_AND_ASSIGN(ObMysqlSessionManagerSharding);
 };
 
 } // end of namespace proxy

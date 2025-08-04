@@ -688,72 +688,112 @@ int ObShardingSelectLogPlan::rewrite_sql(ObSqlString &new_sql)
 
   if (derived_columns_.empty() && derived_orders_.empty()
       && (dml_stmt->limit_size_ == -1 || dml_stmt->limit_size_ == 0)) {
-    new_sql.append(sql);
+    if (OB_FAIL(new_sql.append(sql))) {
+      LOG_WDIAG("fail to append", K(ret));
+    }
   } else {
     const char *sql_ptr = sql.ptr();
     int64_t sql_len = sql.length();
 
     if (derived_columns_.empty() && derived_orders_.empty()) {
       int64_t limit_position = dml_stmt->limit_token_off_;
-      new_sql.append(sql_ptr, limit_position);
-      new_sql.append("LIMIT ");
-      if (dml_stmt->limit_size_ == 0) {
-        new_sql.append_fmt("%d", dml_stmt->limit_size_);
+      if (OB_FAIL(new_sql.append(sql_ptr, limit_position))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (OB_FAIL(new_sql.append("LIMIT "))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (dml_stmt->limit_size_ == 0) {
+        if (OB_FAIL(new_sql.append_fmt("%d", dml_stmt->limit_size_))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       } else {
-        new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_);
+        if (OB_FAIL(new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       }
     } else {
       int64_t from_position = dml_stmt->get_from_token_off();
       int64_t limit_position = dml_stmt->limit_token_off_;
-      new_sql.append(sql_ptr, from_position);
-
-      if (!derived_columns_.empty()) {
-        new_sql.append(", ");
+      if (OB_FAIL(new_sql.append(sql_ptr, from_position))) {
+        LOG_WDIAG("fail to append", K(ret));
+      } else if (!derived_columns_.empty()) {
+        if (OB_FAIL(new_sql.append(", "))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
         int64_t derived_column_count = derived_columns_.count();
-        for (int64_t i = 0; i < derived_column_count; i++) {
+        for (int64_t i = 0; OB_SUCC(ret) && i < derived_column_count; i++) {
           ObString derived_column = derived_columns_.at(i);
           if (i == derived_column_count - 1) {
-            new_sql.append(derived_column);
-            new_sql.append(" ");
+            if (OB_FAIL(new_sql.append(derived_column))) {
+              LOG_WDIAG("fail to append", K(ret));
+            } else if (OB_FAIL(new_sql.append(" "))) {
+              LOG_WDIAG("fail to append", K(ret));
+            }
           } else {
-            new_sql.append(derived_column);
-            new_sql.append(", ");
+            if (OB_FAIL(new_sql.append(derived_column))) {
+              LOG_WDIAG("fail to append", K(ret));
+            } else if (OB_FAIL(new_sql.append(", "))) {
+              LOG_WDIAG("fail to append", K(ret));
+            }
           }
         }
       }
 
-      if (limit_position > 0) {
-        new_sql.append(sql_ptr + from_position, limit_position - from_position);
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (limit_position > 0) {
+        if (OB_FAIL(new_sql.append(sql_ptr + from_position, limit_position - from_position))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       } else {
-        new_sql.append(sql_ptr + from_position, sql_len - from_position);
+        if (OB_FAIL(new_sql.append(sql_ptr + from_position, sql_len - from_position))) {
+          LOG_WDIAG("fail to append", K(ret));
+        }
       }
 
-      if (!derived_orders_.empty()) {
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (!derived_orders_.empty()) {
         // 兜底group by id; 有分号的场景
         while (!new_sql.empty() && ';' == new_sql.ptr()[new_sql.length() - 1]) {
           new_sql.set_length(new_sql.length() - 1);
         }
 
-        new_sql.append(" ORDER BY ");
-        int64_t derived_order_by_count = derived_orders_.count();
-        for (int64_t i = 0; i < derived_order_by_count; i++) {
-          ObString derived_order_by = derived_orders_.at(i);
-          if (i == derived_order_by_count - 1) {
-            new_sql.append(derived_order_by);
-            new_sql.append(" ");
-          } else {
-            new_sql.append(derived_order_by);
-            new_sql.append(",");
+        if (OB_FAIL(new_sql.append(" ORDER BY "))) {
+          LOG_WDIAG("fail to append", K(ret));
+        } else {
+          int64_t derived_order_by_count = derived_orders_.count();
+          for (int64_t i = 0; OB_SUCC(ret) && i < derived_order_by_count; i++) {
+            ObString derived_order_by = derived_orders_.at(i);
+            if (i == derived_order_by_count - 1) {
+              if (OB_FAIL(new_sql.append(derived_order_by))) {
+                LOG_WDIAG("fail to append", K(ret));
+              } else if (OB_FAIL(new_sql.append(" "))) {
+                LOG_WDIAG("fail to append", K(ret));
+              }
+            } else {
+              if (OB_FAIL(new_sql.append(derived_order_by))) {
+                LOG_WDIAG("fail to append", K(ret));
+              } else if (OB_FAIL(new_sql.append(","))) {
+                LOG_WDIAG("fail to append", K(ret));
+              }
+            }
           }
         }
       }
 
-      if (limit_position > 0) {
-        new_sql.append("LIMIT ");
-        if (dml_stmt->limit_size_ == 0) {
-          new_sql.append_fmt("%d", dml_stmt->limit_size_);
+      if (OB_FAIL(ret)) {
+        // nothing
+      } else if (limit_position > 0) {
+        if (OB_FAIL(new_sql.append("LIMIT "))) {
+          LOG_WDIAG("fail to append", K(ret));
+        } else if (dml_stmt->limit_size_ == 0) {
+          if (OB_FAIL(new_sql.append_fmt("%d", dml_stmt->limit_size_))) {
+            LOG_WDIAG("fail to append", K(ret));
+          }
         } else {
-          new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_);
+          if (OB_FAIL(new_sql.append_fmt("%d", dml_stmt->limit_offset_ + dml_stmt->limit_size_))) {
+            LOG_WDIAG("fail to append", K(ret));
+          }
         }
       }
     }

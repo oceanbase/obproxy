@@ -40,7 +40,7 @@ namespace proxy
 ObServerSessionInfo::ObServerSessionInfo() :
     cap_(0), compatible_capability_(0), checksum_switch_(CHECKSUM_ON), is_inited_(false),
     is_sharding_txn_session_(false), is_lock_session_(false), is_trans_coordinator_session_(false),
-    server_type_(DB_OB_MYSQL), shard_conn_(NULL),
+    is_binlog_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),
     ps_id_(0), ps_id_pair_map_(), cursor_id_pair_map_(), allocator_(), text_ps_version_set_()
 {
   const int BUCKET_SIZE = 8;
@@ -229,8 +229,6 @@ ObClientSessionInfo::ObClientSessionInfo()
       last_server_sess_id_(0), sync_conf_sys_var_(false),
       login_config_(NULL), has_send_init_sql_(false)
 {
-  // const int BUCKET_SIZE = 8;
-  is_session_pool_client_ = true;
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
   MEMSET(idc_name_buf_, 0, sizeof(idc_name_buf_));
   MEMSET(client_host_buf_, 0, sizeof(client_host_buf_));
@@ -433,7 +431,7 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, const 
         ret = OB_ERR_UNEXPECTED;
         LOG_EDIAG("data is error", K(info_type), K(info_len), K(len), K(ret));
       } else {
-        LOG_DEBUG("extra info", K(info_type), K(info_len), K(len));
+        LOG_DEBUG("[SESSION_INFO_SYNC] extra info", K(info_type), K(info_len), K(len));
         char* info_value = NULL;
         ObString info_value_string;
         int64_t version = 0;
@@ -458,7 +456,7 @@ int ObClientSessionInfo::update_sess_sync_info(const ObString& sess_info, const 
     trace_log.log_it("[get_sess]", "type", type_record);
     if (OB_SUCC(ret)) {
       version_.inc_sess_info_version();
-      LOG_DEBUG("update sess info succ", K(sess_info));
+      LOG_DEBUG("[SESS_INFO_SYNC] update(inc) client session info version", "version", version_.sess_info_version_);
     }
   }
   return ret;
@@ -482,6 +480,7 @@ int ObClientSessionInfo::update_server_sess_info_version(ObServerSessionInfo &se
     }
     if (OB_SUCC(ret)) {
       server_info.set_sess_info_version(get_sess_info_version());
+      LOG_DEBUG("[SESSION_INFO_SYNC] update(set) server session info version", "version", get_sess_info_version());
     }
   } else {
     // error packet, check if necessary to push up totoal version
@@ -497,6 +496,7 @@ int ObClientSessionInfo::update_server_sess_info_version(ObServerSessionInfo &se
     }
     if (OB_SUCC(ret) && need_update_global_version) {
       server_info.set_sess_info_version(get_sess_info_version());
+      LOG_DEBUG("[SESSION_INFO_SYNC] error packet, update(set) server session info version", "version", get_sess_info_version());
     }
   }
   return ret;
@@ -528,6 +528,7 @@ int ObClientSessionInfo::update_server_sess_info_version_not_dup_sync(ObServerSe
   }
   if (OB_SUCC(ret) && need_update_global_version) {
     server_info.set_sess_info_version(get_sess_info_version());
+    LOG_DEBUG("[SESSION_INFO_SYNC] not_dup, update(set) server session info version", "version", get_sess_info_version());
   }
   return ret;
 }

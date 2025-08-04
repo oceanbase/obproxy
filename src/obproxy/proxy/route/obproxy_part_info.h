@@ -76,9 +76,8 @@ public:
 
 
   share::schema::ObPartitionLevel get_part_level() const { return part_level_; }
-  share::schema::ObPartitionLevel get_part_func_key_level() const { return part_func_key_level_; }
   common::ObCollationType get_table_cs_type() const { return table_cs_type_; }
-  common::ObIArray<common::ObString> &get_part_columns() { return part_columns_; }
+  common::ObIArray<common::ObString> &get_first_part_columns() { return first_part_columns_; }
   common::ObIArray<common::ObString> &get_sub_part_columns() { return sub_part_columns_; }
   ObProxyPartOption &get_first_part_option() { return first_part_option_; }
   ObProxyPartOption &get_sub_part_option() { return sub_part_option_; }
@@ -87,7 +86,6 @@ public:
   common::ObIAllocator &get_allocator() { return allocator_; }
 
   void set_part_level(const share::schema::ObPartitionLevel level) { part_level_ = level; }
-  void set_part_func_key_level(const share::schema::ObPartitionLevel level) { part_func_key_level_ = level; }
   void set_table_cs_type(const common::ObCollationType cs_type) { table_cs_type_ = cs_type; }
   int64_t get_cluster_version() const { return cluster_version_; }
   void set_cluster_version(const int64_t cluster_version) { cluster_version_ = cluster_version; }
@@ -104,7 +102,17 @@ public:
   void set_sub_part_range_type(ObString type) { sub_part_range_type_ = type; }
   ObString get_sub_part_range_type() const { return sub_part_range_type_; }
 
+
+  // The three function below is used for get the idx of a column
+  //     in part key columns at different part level.
+  // Because of the special impelmentation of (part key func clac), it's temporily unusable.
+  // In other condition, it could be useful.
+
+  // 1. get idx of a column in all part columns
+  int64_t get_part_idx(const ObString& column_name);
+  // 2. get idx of a column in all first part columns
   int64_t get_first_part_idx(const ObString& column_name);
+  // 3. get idx of a column in all sub part columns
   int64_t get_sub_part_idx(const ObString& column_name);
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
@@ -119,7 +127,6 @@ private:
   bool is_primary_key_as_part_expr_:             1;
   uint16_t :                                     0;
   share::schema::ObPartitionLevel part_level_;
-  share::schema::ObPartitionLevel part_func_key_level_;
   common::ObCollationType table_cs_type_;
 
   ObString part_expr_;
@@ -127,7 +134,7 @@ private:
   ObString part_range_type_;
   ObString sub_part_range_type_;
 
-  common::ObSEArray<common::ObString, 2> part_columns_;
+  common::ObSEArray<common::ObString, 2> first_part_columns_;
   common::ObSEArray<common::ObString, 2> sub_part_columns_;
 
   common::ObArenaAllocator allocator_;

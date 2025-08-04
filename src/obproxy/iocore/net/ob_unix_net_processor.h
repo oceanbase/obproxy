@@ -43,6 +43,7 @@ namespace net
 
 class ObUnixNetVConnection;
 class ObNetAccept;
+class ObNetHandler;
 
 struct ObUnixNetProcessor : public ObNetProcessor
 {
@@ -74,11 +75,6 @@ private:
 };
 
 extern ObUnixNetProcessor g_unix_net_processor;
-
-// Set up a thread to receive events from the ObNetProcessor
-// This function should be called for all threads created to
-// accept such events by the ObEventProcesor.
-extern int initialize_thread_for_net(event::ObEThread *thread);
 
 uint32_t net_next_connection_number();
 

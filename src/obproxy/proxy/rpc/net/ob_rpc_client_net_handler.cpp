@@ -903,7 +903,7 @@ int ObRpcClientNetHandler::release(ObIOBufferReader *r)
         read_state_ = MCS_KEEP_ALIVE;
         net_entry_.read_vio_ = do_io_read(this, INT64_MAX, read_buffer_);
         // TODO: add keep alive
-        // if (OB_LIKELY(server_ka_vio_ != ka_vio_)) {
+        // if (OB_LIKELY(last_ss_keep_alive_vio_ != ka_vio_)) {
         //   rpc_net_vc_->add_to_keep_alive_lru();
         //   //set_wait_timeout();
         // }
@@ -1079,9 +1079,10 @@ int ObRpcClientNetHandler::check_update_ldc(ObLDCLocation &dummy_ldc)
         }
       }
       if (OB_SUCC(ret) && !need_ignore) {
+        bool found_servers_changed = false;
         if (OB_FAIL(dummy_ldc.assign(dummy_entry_->get_tenant_servers(), simple_servers_info,
             new_idc_name, is_base_servers_added, cluster_resource->get_cluster_name(),
-            cluster_resource->get_cluster_id()))) {
+            cluster_resource->get_cluster_id(), found_servers_changed))) {
           if (OB_EMPTY_RESULT == ret) {
             if (dummy_entry_->is_entry_from_rslist()) {
               set_need_delete_cluster();
@@ -1095,6 +1096,11 @@ int ObRpcClientNetHandler::check_update_ldc(ObLDCLocation &dummy_ldc)
             }
           } else {
             PROXY_CS_LOG(WDIAG, "fail to assign dummy_ldc", K_(cs_id), K(ret));
+          }
+        }
+        if (OB_SUCC(ret) && OB_UNLIKELY(found_servers_changed)) {
+          if (!dummy_entry_->is_sys_dummy_entry() && dummy_entry_->cas_set_dirty_state()) {
+            PROXY_CS_LOG(WDIAG, "dummy_entry isn't AVAIL state, can't set it dirty", KPC_(dummy_entry), K(ret));
           }
         }
       }

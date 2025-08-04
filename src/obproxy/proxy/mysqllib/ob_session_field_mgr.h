@@ -28,6 +28,7 @@
 #include "proxy/mysqllib/ob_field_heap.h"
 #include "lib/string/ob_sql_string.h"
 #include <map>
+#include "lib/hash/ob_build_in_hashmap.h"
 
 namespace oceanbase
 {
@@ -365,15 +366,76 @@ protected:
   bool is_inited_;
 };
 
+// this is the enum of the vars we care about in save changed session info
+enum ObProxySysVarType
+{
+  OBPROXY_VAR_GLOBAL_VARIABLES_VERSION = 0,
+  OBPROXY_VAR_USER_PRIVILEGE,
+  OBPROXY_VAR_SET_TRX_EXECUTED,
+  OBPROXY_VAR_PARTITION_HIT,
+  OBPROXY_VAR_LAST_INSERT_ID,
+  OBPROXY_VAR_CAPABILITY_FLAG,
+  OBPROXY_VAR_SAFE_READ_SNAPSHOT,
+  OBPROXY_VAR_ROUTE_POLICY_FLAG,
+  OBPROXY_VAR_ENABLE_TRANSMISSION_CHECKSUM_FLAG,
+  OBPROXY_VAR_STATEMENT_TRACE_ID_FLAG,
+  OBPROXY_VAR_READ_CONSISTENCY_FLAG,
+  OBPROXY_VAR_WEAK_READ_HIT_REPLICA_FLAG,
+  OBPROXY_VAR_OTHERS,
+  OBPROXY_VAR_INVALID,
+};
+
 class ObDefaultSysVarSet;
+class TrieNode {
+public:
+  TrieNode() : c_(0), type_(OBPROXY_VAR_INVALID) {}
+  ~TrieNode();
+  char c_;
+  ObProxySysVarType type_;
+  LINK(TrieNode, char_trie_node_hash_link_);
+  static const int64_t HASH_BUCKET_SIZE = 16;
+  struct SysVarTypeHashing
+  {
+    typedef char Key;
+    typedef TrieNode Value;
+    typedef ObDLList(TrieNode, char_trie_node_hash_link_) ListHead;
+
+    static uint64_t hash(Key key) { return key; }
+    static Key key(Value const *value) {
+      Key key = '\0';
+      if (OB_NOT_NULL(value)) {
+        key = value->c_;
+      }
+      return key;
+    }
+    static bool equal(Key lhs, Key rhs) { return lhs == rhs; }
+  };
+  //client ip HashTable,using for show all the session
+  typedef common::hash::ObBuildInHashMap<SysVarTypeHashing, HASH_BUCKET_SIZE> SysVarTypeHashTable;
+  SysVarTypeHashTable children_;
+};
+
+class Trie {
+public:
+  Trie() : root_(NULL) {}
+  ~Trie();
+  int init_root();
+  int insert(const common::ObString var_name, ObProxySysVarType type);
+  ObProxySysVarType find(const common::ObString &var_name) const;
+  static int init_sys_var_trie();
+
+private:
+  TrieNode *root_;
+};
+
 class ObSessionFieldMgr : public ObFieldBaseMgr
 {
-public:
+  public:
   ObSessionFieldMgr();
   virtual ~ObSessionFieldMgr() {}
   virtual int init();
   virtual void destroy();
-
+  static Trie sys_var_trie_;
 public:
   typedef bool (*NeedFunc)(const common::ObString& var_name);
   // calc val hash

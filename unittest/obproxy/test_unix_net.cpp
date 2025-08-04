@@ -549,13 +549,15 @@ struct TestProcessorAccept : public event::ObContinuation
   {
     UNUSED(event);
     UNUSED(data);
+    int ret = OB_SUCCESS;
+    event::ObAction* action = NULL;
     INFO_NET("TEST", "TestProcessorAccept : handle_start_accept");
     if (NULL == (session_accept_ = new(std::nothrow) TestSessionAccept(mutex_, vc_number_,
         multi_writer_, check_cop_))) {
       ERROR_NET("failed to allocate memory for TestSessionAccept");
     } else {
-      accept_action_ = static_cast<ObNetAcceptAction *>(g_net_processor.accept(
-          *session_accept_, options_));
+      ret = g_net_processor.accept(*session_accept_, action, options_);
+      accept_action_ = static_cast<ObNetAcceptAction*>(action);
       started_ = true;
     }
     return EVENT_CONT;
@@ -774,7 +776,7 @@ bool TestUnixNet::call_client_do_io(int32_t client_id)
     ERROR_NET("failed to allocate memory for TestClientDoIO %d", client_id);
   } else {
     ObEThread *ethread = NULL;
-    while (g_epoll_ethread == (ethread = g_event_processor.assign_thread(ET_CALL))) { }
+    while (g_epoll_ethread == (ethread = g_event_processor.assign_thread(ET_NET))) { }
     ethread->schedule_imm_local(g_client_do_io[client_id]);
     ret = true;
   }
