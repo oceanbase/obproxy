@@ -10,7 +10,7 @@
 
 Name: %NAME
 Version: %VERSION
-Release: %{RELEASE}%{?dist}
+Release: %{RELEASEID}%{?dist}
 Summary: OceanBase Database Proxy
 Group: Applications/Databases
 URL: http://oceanbase.alibaba-inc.com/
@@ -45,7 +45,7 @@ make distclean >/dev/null 2>&1
 find . -path ./tools/codestyle/astyle/build -prune -o -path ./doc -prune -o -name Makefile -exec rm -f {} \;
 find . -name .deps -prune -exec rm -rf {} \;
 
-./configure RELEASEID=%{RELEASE} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
+./configure RELEASEID=%{RELEASEID}%{?dist} --prefix=%{_prefix} --with-test-case=no --with-release=yes --with-tblib-root=/opt/csr/common --with-easy-root=/usr --with-easy-lib-path=/usr/lib64 --with-svnfile --enable-shared=default --enable-silent-rules
 mkdir -p unittest
 make $MAKE_ARGS
 
