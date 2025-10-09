@@ -341,7 +341,7 @@ extern int ob_expr_parser_gbk_yylex \
 #undef YY_DECL
 #endif
 
-#line 321 "ob_expr_parser_gbk.l"
+#line 336 "ob_expr_parser_gbk.l"
 
 
 #line 348 "ob_expr_parser_gbk_lex.h"

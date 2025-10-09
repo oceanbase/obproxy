@@ -127,28 +127,26 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
 }
 inline void ObProxyParser::init_result_sharding(ObProxyParseResult &p)
 {
-  if (p.is_sharding_req_) {
-    p.dbmesh_route_info_.tb_idx_str_.str_len_ = 0;
-    p.dbmesh_route_info_.table_name_str_.str_len_ = 0;
-    p.dbmesh_route_info_.group_idx_str_.str_len_ = 0;
-    p.dbmesh_route_info_.es_idx_str_.str_len_ = 0;
-    p.dbmesh_route_info_.testload_str_.str_len_ = 0;
-    p.dbmesh_route_info_.disaster_status_str_.str_len_ = 0;
-    p.dbmesh_route_info_.tnt_id_str_.str_len_ = 0;
-    p.dbmesh_route_info_.head_ = NULL;
-    p.dbmesh_route_info_.tail_ = NULL;
-    p.dbmesh_route_info_.node_count_ = 0;
-    p.dbmesh_route_info_.index_count_ = 0;
-    p.dbp_route_info_.has_group_info_ = false;
-    p.dbp_route_info_.table_name_.str_len_ = 0;
-    p.dbp_route_info_.group_idx_str_.str_len_ = 0;
-    p.dbp_route_info_.scan_all_ = false;
-    p.dbp_route_info_.sticky_session_ = false;
-    p.dbp_route_info_.has_shard_key_ = false;
-    p.dbp_route_info_.shard_key_count_ = 0;
-    p.is_sharding_req_ = false;
-    p.has_shard_comment_ = false;
-  }
+  p.dbmesh_route_info_.tb_idx_str_.str_len_ = 0;
+  p.dbmesh_route_info_.table_name_str_.str_len_ = 0;
+  p.dbmesh_route_info_.group_idx_str_.str_len_ = 0;
+  p.dbmesh_route_info_.es_idx_str_.str_len_ = 0;
+  p.dbmesh_route_info_.testload_str_.str_len_ = 0;
+  p.dbmesh_route_info_.disaster_status_str_.str_len_ = 0;
+  p.dbmesh_route_info_.tnt_id_str_.str_len_ = 0;
+  p.dbmesh_route_info_.head_ = NULL;
+  p.dbmesh_route_info_.tail_ = NULL;
+  p.dbmesh_route_info_.node_count_ = 0;
+  p.dbmesh_route_info_.index_count_ = 0;
+  p.dbp_route_info_.has_group_info_ = false;
+  p.dbp_route_info_.table_name_.str_len_ = 0;
+  p.dbp_route_info_.group_idx_str_.str_len_ = 0;
+  p.dbp_route_info_.scan_all_ = false;
+  p.dbp_route_info_.sticky_session_ = false;
+  p.dbp_route_info_.has_shard_key_ = false;
+  p.dbp_route_info_.shard_key_count_ = 0;
+  p.is_sharding_req_ = false;
+  p.has_shard_comment_ = false;
 }
 
 inline void ObProxyParser::init_result_ps(ObProxyParseResult &p)

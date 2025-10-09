@@ -945,7 +945,6 @@ enum ObServerRespErrorType
 
     event::ObMIOBuffer *internal_buffer_;
     event::ObIOBufferReader *internal_reader_;
-    event::ObMIOBuffer *internal_write_buffer_;
     common::ObPtr<event::ObIOBufferBlock> cache_block_; // 仅在 reset_internal_buffer() 中会赋值
 
     ObProxyRerouteInfo reroute_info_;

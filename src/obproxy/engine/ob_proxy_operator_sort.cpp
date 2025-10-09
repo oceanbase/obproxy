@@ -506,7 +506,7 @@ int ObProxyMemMergeSortUnit::calc_order_values()
 // 返回 true 排在前面
 bool ObProxyMemMergeSortUnit::compare(const ObProxyMemMergeSortUnit* sort_unit) const
 {
-  bool bret = true;
+  bool bret = false;
   const ObIArray<ObObj> &order_values = sort_unit->get_order_values();
   int i = 0;
   int64_t count_this = order_values_.count();
@@ -527,7 +527,7 @@ bool ObProxyMemMergeSortUnit::compare(const ObProxyMemMergeSortUnit* sort_unit) 
   }
 
   if (i == count) {
-    bret = count_this <= count_other;
+    bret = count_this < count_other;
   }
 
   return bret;
@@ -668,8 +668,31 @@ int ObProxyStreamSortUnit::init(ObProxyResultResp* result_set, ResultFields *res
 
 bool ObProxyStreamSortUnit::compare(const ObProxyStreamSortUnit* sort_unit) const
 {
-  bool bret = ObProxyMemMergeSortUnit::compare(sort_unit);
-  return !bret;
+  bool bret = false;
+  const ObIArray<ObObj> &order_values = sort_unit->get_order_values();
+  int i = 0;
+  int64_t count_this = order_values_.count();
+  int64_t count_other = order_values.count();
+  int64_t count = count_this <= count_other ? count_this : count_other;
+
+  for (; i < count; i++) {
+    int cmp = order_values_.at(i).compare(order_values.at(i));
+    ObProxyOrderItem *order_expr = order_exprs_.at(i);
+    if (0 != cmp) {
+      if (order_expr->order_direction_ == NULLS_FIRST_ASC) {
+        bret = cmp > 0;
+      } else {
+        bret = cmp < 0;
+      }
+      break;
+    }
+  }
+
+  if (i == count) {
+    bret = count_this > count_other;
+  }
+
+  return bret;
 }
 
 int ObProxyStreamSortUnit::next()

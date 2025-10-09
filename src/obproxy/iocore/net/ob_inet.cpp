@@ -379,7 +379,7 @@ int get_local_addr_list(ObIpAddr *ipaddr, const int64_t total_cnt,
     } else {
       struct addrinfo *curr = NULL;
       struct in_addr *addr = NULL;
-      for (curr = addrs; NULL != curr; curr = curr->ai_next) {
+      for (curr = addrs; NULL != curr && valid_cnt < total_cnt; curr = curr->ai_next) {
         if (NULL != curr->ai_addr) {
           addr = &((reinterpret_cast<struct sockaddr_in *>(curr->ai_addr))->sin_addr);
           if ((NULL != addr) && (need_all || (addr->s_addr != htonl(INADDR_LOOPBACK) && addr->s_addr != htonl(INADDR_ANY)))) {

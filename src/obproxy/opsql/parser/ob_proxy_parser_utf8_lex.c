@@ -9308,7 +9308,7 @@ YY_RULE_SETUP
 case 24:
 YY_RULE_SETUP
 #line 512 "ob_proxy_parser_utf8.l"
-{ return STATUS; }
+{ RETURN_NON_RESERVED_KEYWORD(STATUS); }
 	YY_BREAK
 case 25:
 YY_RULE_SETUP
@@ -10542,17 +10542,17 @@ YY_RULE_SETUP
 case 238:
 YY_RULE_SETUP
 #line 877 "ob_proxy_parser_utf8.l"
-{ return WEAK; }
+{ RETURN_NON_RESERVED_KEYWORD(WEAK); }
 	YY_BREAK
 case 239:
 YY_RULE_SETUP
 #line 878 "ob_proxy_parser_utf8.l"
-{ return STRONG; }
+{ RETURN_NON_RESERVED_KEYWORD(STRONG); }
 	YY_BREAK
 case 240:
 YY_RULE_SETUP
 #line 879 "ob_proxy_parser_utf8.l"
-{ return FROZEN; }
+{ RETURN_NON_RESERVED_KEYWORD(FROZEN); }
 	YY_BREAK
 case 241:
 YY_RULE_SETUP

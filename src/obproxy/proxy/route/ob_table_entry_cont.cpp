@@ -603,9 +603,6 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
   if (state_ == LOOKUP_PART_INFO_STATE && OB_ITER_END == ret && table_param_.is_single_partition_table_) {
     // part_info get null resultset, maybe it is non partition table
     // maybe truncate etc cause server response error OB_SCHEMA_ERROR
-    if (OB_LIKELY(NULL != newest_table_entry_)) {
-      newest_table_entry_->set_single_partition_table(false);
-    }
     table_param_.is_single_partition_table_ = false;
     is_need_retry_ = true;
     ret = OB_SUCCESS;
@@ -635,7 +632,8 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
       if (OB_LIKELY(NULL != newest_table_entry_)) {
         is_reused_ = true;
         newest_table_entry_->reuse();
-        LOG_DEBUG("reuse table entry", KPC(newest_table_entry_), K(cur_build_count_), K(is_reused_));
+        newest_table_entry_->set_single_partition_table(table_param_.is_single_partition_table_);
+        LOG_DEBUG("reuse table entry", K(cur_build_count_), K(is_reused_));
       } else {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("newest_table_entry_ is null in retrying", K(ret));

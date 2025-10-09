@@ -90,10 +90,11 @@ multi_byte_space              [\u3000]
 multi_byte_comma              [\uff0c]
 multi_byte_left_parenthesis   [\uff08]
 multi_byte_right_parenthesis  [\uff09]
+multi_byte_connect_char       /*According to connection character to set by gen_parse.sh*/
 hexval                  (x'([a-fA-F0-9]+)')|(0x([a-fA-F0-9]+))
 nstring_val             ([u|n]'[^'|\']*')
 space                   [ \t\n\r\f]
-identifer               ([A-Za-z0-9$_]*)
+identifer               (([A-Za-z0-9$_#]|{multi_byte_connect_char})*)
 
 /* limit the length of int_num from 1 to 17 in case of int64_t out of bound, 17 -> [ ( length of 2^64 ) - 2 ]*/
 int_num                 [0-9]{1,17}

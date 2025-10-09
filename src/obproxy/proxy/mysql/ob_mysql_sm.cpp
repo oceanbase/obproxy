@@ -8865,11 +8865,7 @@ void ObMysqlSM::do_internal_request()
             } else {
               pending_action_ = cmd_handler;
               ObHRTime execute_timeout = 0;
-              if (cmd_info.is_mysql_compatible_cmd()) {
-                execute_timeout = client_session_->get_session_info().get_query_timeout();
-              } else {
-                execute_timeout = HRTIME_SECONDS(30);
-              }
+              execute_timeout = get_query_timeout();
               set_internal_cmd_timeout(execute_timeout);
               LOG_DEBUG("assign pending_action", K_(sm_id), K_(pending_action), K(execute_timeout));
             }

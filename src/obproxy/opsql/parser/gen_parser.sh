@@ -46,7 +46,6 @@ UTF8_CHAR ({U_2}{U}|{U_3}{U}{U}|{u_except_space}|{U_3_2}{U}{U}|{u_except_comma_p
 sed '/following character status will be rewrite by gen_parse.sh according to connection character/d' -i ob_proxy_parser_utf8.l
 sed '/multi_byte_connect_char       \/\*According to connection character to set by gen_parse.sh\*\//r utf8.txt' -i ob_proxy_parser_utf8.l
 sed '/multi_byte_connect_char       \/\*According to connection character to set by gen_parse.sh\*\//d' -i ob_proxy_parser_utf8.l
-sed 's/space            \[ \\t\\n\\r\\f\]/space            (\[ \\t\\n\\r\\f\]|{multi_byte_space})/g' -i ob_proxy_parser_utf8.l
 sed 's/multi_byte_connect_char/UTF8_CHAR/g' -i ob_proxy_parser_utf8.l
 ##4.generate oracle utf8 parser files
 
@@ -162,7 +161,6 @@ GB_CHAR ({GB_1_1}{GB_2}|{g_except_space}|{GB_1_3}{GB_2}|{g_except_comma_parenthe
 sed '/following character status will be rewrite by gen_parse.sh according to connection character/d' -i ob_proxy_parser_gbk.l
 sed '/multi_byte_connect_char       \/\*According to connection character to set by gen_parse.sh\*\//r gbk.txt' -i ob_proxy_parser_gbk.l
 sed '/multi_byte_connect_char       \/\*According to connection character to set by gen_parse.sh\*\//d' -i ob_proxy_parser_gbk.l
-sed 's/space            \[ \\t\\n\\r\\f\]/space            (\[ \\t\\n\\r\\f\]|{multi_byte_space})/g' -i ob_proxy_parser_gbk.l
 sed 's/multi_byte_connect_char/GB_CHAR/g' -i ob_proxy_parser_gbk.l
 ##4.generate oracle gbk parser files
 

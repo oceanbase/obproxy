@@ -643,7 +643,7 @@ public:
     version_.user_var_version_ = 0;
     version_.last_insert_id_version_ = 0;
     version_.sess_info_version_ = 0;
-    sess_info_list_.reset();
+    destroy_sess_info_list();
     destroy_ps_id_entry_map();
     destroy_ps_id_addrs_map();
     destroy_service_name_session_info();

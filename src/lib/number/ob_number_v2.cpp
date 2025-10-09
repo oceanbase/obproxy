@@ -900,6 +900,8 @@ int ObNumber::round_integer_(
         } else {
           integer_digits[integer_length - 1] = 0;
         }
+      } else if (integer_length == round_length) {
+        // nothing, for defense
       } else {
         integer_length -= round_length;
         uint64_t roundv = (uint64_t)integer_digits[integer_length - 1]

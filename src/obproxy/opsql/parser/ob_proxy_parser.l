@@ -493,7 +493,7 @@ TRUNCATE         { return TRUNCATE; }
 RENAME           { return RENAME; }
 INDEX            { return INDEX; }
 TABLE            { return TABLE; }
-STATUS           { return STATUS; }
+STATUS           { RETURN_NON_RESERVED_KEYWORD(STATUS); }
 FROM             { return FROM; }
 UNIQUE           { return UNIQUE; }
 {stop_ddl_task}  { return STOP_DDL_TASK; }
@@ -858,9 +858,9 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>"query_timeout"     { return QUERY_TIMEOUT; }
 <hint>{int_num}           { RETURN_INT_NUM(); }
 <hint>"read_consistency"  { return READ_CONSISTENCY; }
-<hint>WEAK                { return WEAK; }
-<hint>STRONG              { return STRONG; }
-<hint>FROZEN              { return FROZEN; }
+<hint>WEAK                { RETURN_NON_RESERVED_KEYWORD(WEAK); }
+<hint>STRONG              { RETURN_NON_RESERVED_KEYWORD(STRONG); }
+<hint>FROZEN              { RETURN_NON_RESERVED_KEYWORD(FROZEN); }
 <hint>INDEX               { return INDEX; }
 <hint>TRACE_LOG           { return TRACE_LOG; }
 <hint>{leftbracket}|{rightbracket}  { return yytext[0]; }
