@@ -182,6 +182,7 @@ public:
   void set_readonly_replica() { replica_type_ = replica_type_ | WITH_READONLY; };
   void set_column_store_replica() { replica_type_ = replica_type_ | WITH_COLUMN_STORE; };
   void set_all_weakread_replica();
+  TO_STRING_KV(K_(replica_type));
 public:
   int64_t replica_type_;
 };

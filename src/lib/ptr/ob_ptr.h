@@ -68,6 +68,8 @@ public:
     }
   }
 
+  inline int64_t get_ref_count() const { return ATOMIC_LOAD(&ref_count_); }
+
   volatile int64_t ref_count_;
 };
 

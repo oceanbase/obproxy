@@ -16,6 +16,8 @@ obproxy/obutils/ob_proxy_table_processor.h\
 obproxy/obutils/ob_proxy_table_processor.cpp\
 obproxy/obutils/ob_proxy_table_processor_utils.h\
 obproxy/obutils/ob_proxy_table_processor_utils.cpp\
+obproxy/obutils/ob_proxy_stmt_ctx.h\
+obproxy/obutils/ob_proxy_stmt_ctx.cpp\
 obproxy/obutils/ob_proxy_stmt.h\
 obproxy/obutils/ob_proxy_stmt.cpp\
 obproxy/obutils/ob_proxy_sql_parser.h\

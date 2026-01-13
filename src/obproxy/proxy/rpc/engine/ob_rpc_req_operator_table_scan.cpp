@@ -136,8 +136,8 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_batch_request(proxy::ObRpcRe
 
           if (OB_FAIL(sub_batch_request->init_as_sub_batch_operation_request(*batch_request, index))) {
             LOG_WDIAG("invalid to get sub opertion in batch request", K(ret), K_(rpc_trace_id));
-          } else if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_batch_request, batch_request_len, cont_index_ + 1, partition_id))) {
-            LOG_WDIAG("fail to init sub rpc req for batch request", K(ret), K_(rpc_trace_id));
+          // } else if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_batch_request, batch_request_len, cont_index_ + 1, partition_id))) {
+          //   LOG_WDIAG("fail to init sub rpc req for batch request", K(ret), K_(rpc_trace_id));
           } else if (request_sm->init(sub_rpc_req)) {
             LOG_WDIAG("fail to init sub request_sm for batch request", K(ret), K_(rpc_trace_id));
           } else {
@@ -166,13 +166,13 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_batch_request(proxy::ObRpcRe
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
-        LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
-      } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
-        LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      } else {
-        LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      }
+      // if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
+      //   LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
+      // } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
+      //   LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // } else {
+      //   LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // }
     } else {
       for (int64_t i = 0; i < rpc_reqs.count(); ++i) {
         ObRpcReq *sub_rpc_req = rpc_reqs.at(i);
@@ -197,7 +197,6 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_ls_request(
 {
   int ret = OB_SUCCESS;
   ObRpcTableLSOperationRequest *ls_request = NULL;
-  int64_t ls_request_len = sizeof(ObRpcTableLSOperationRequest);
   if (OB_ISNULL(rpc_req)
       || OB_ISNULL(ls_request = dynamic_cast<ObRpcTableLSOperationRequest *>(rpc_req->get_rpc_request()))) {
     ret = OB_INVALID_ARGUMENT;
@@ -237,8 +236,8 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_ls_request(
         ObRpcOBKVInfo &sub_obkv_info = sub_rpc_req->get_obkv_info();
         if (OB_FAIL(sub_ls_req->init_as_sub_ls_operation_request(*ls_request, ls_id, tablet_ids))) {
           LOG_WDIAG("invalid to get sub opertion in batch request", K(ret), K_(rpc_trace_id));
-        } else if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_ls_req, ls_request_len, cont_index_ + 1, tablet_id, ls_id))) {
-          LOG_WDIAG("fail to init sub rpc req for ls request", K(ret), K_(rpc_trace_id));
+        // } else if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_ls_req, ls_request_len, cont_index_ + 1, tablet_id, ls_id))) {
+        //   LOG_WDIAG("fail to init sub rpc req for ls request", K(ret), K_(rpc_trace_id));
         } else if (request_sm->init(sub_rpc_req)) {
           LOG_WDIAG("fail to init sub request_sm for ls request", K(ret), K_(rpc_trace_id));
         } else {
@@ -267,13 +266,13 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_ls_request(
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
-        LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
-      } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
-        LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      } else {
-        LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      }
+      // if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
+      //   LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
+      // } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
+      //   LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // } else {
+      //   LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // }
     } else {
       for (int64_t i = 0; i < rpc_reqs.count(); ++i) {
         ObRpcReq *sub_rpc_req = rpc_reqs.at(i);
@@ -298,7 +297,6 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_query_request(
 {
   int ret = OB_SUCCESS;
   ObRpcTableQueryRequest *query_request = NULL;
-  int64_t query_request_len = sizeof(ObRpcTableQueryRequest);
   if (OB_ISNULL(rpc_req)
    || OB_ISNULL(query_request = dynamic_cast<ObRpcTableQueryRequest *>(rpc_req->get_rpc_request()))) {
     ret = OB_INVALID_ARGUMENT;
@@ -329,9 +327,10 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_query_request(
       if (OB_SUCC(ret) && OB_NOT_NULL(sub_query_request)) {
         sub_query_request->set_packet_meta(query_request->get_packet_meta());
         sub_query_request->set_table_operation(query_request->get_query());
-        if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_query_request, query_request_len, cont_index_ + 1, partition_id))) {
-          LOG_WDIAG("fail to init sub rpc req for query request", K(ret), K_(rpc_trace_id));
-        } else if (request_sm->init(sub_rpc_req)) {
+        // if (OB_FAIL(sub_rpc_req->sub_rpc_req_init(rpc_req, request_sm, sub_query_request, query_request_len, cont_index_ + 1, partition_id))) {
+        //   LOG_WDIAG("fail to init sub rpc req for query request", K(ret), K_(rpc_trace_id));
+        // } else
+        if (request_sm->init(sub_rpc_req)) {
           LOG_WDIAG("fail to init sub request_sm for query request", K(ret), K_(rpc_trace_id));
         } else {
           executor::ObProxyRpcParallelParam param;
@@ -358,13 +357,13 @@ int ObProxyRpcReqTableScanOp::handle_shard_rpc_obkv_query_request(
     }
 
     if (OB_SUCC(ret)) {
-      if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
-        LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
-      } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
-        LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      } else {
-        LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
-      }
+      // if (OB_FAIL(rpc_req->alloc_sub_rpc_req_array(rpc_reqs.count()))) {
+      //   LOG_WDIAG("fail to call alloc_sub_rpc_req_array", K(ret), K_(rpc_trace_id));
+      // } else if (OB_FAIL(rpc_req->set_sub_rpc_req(rpc_reqs))) {
+      //   LOG_WDIAG("fail to call set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // } else {
+      //   LOG_DEBUG("succ to set_sub_rpc_req", K(ret), K_(rpc_trace_id));
+      // }
     } else {
       for (int64_t i = 0; i < rpc_reqs.count(); ++i) {
         ObRpcReq *sub_rpc_req = rpc_reqs.at(i);

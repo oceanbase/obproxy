@@ -24,7 +24,6 @@ namespace obproxy
 namespace optimizer
 {
 
-ObProxyRpcReqOptimizerProcessor g_ob_proxy_rpc_req_optimizer_processor;
 
 int ObProxyRpcReqOptimizerProcessor::alloc_allocator(ObIAllocator *&allocator)
 {

@@ -50,6 +50,7 @@ cal_version(const uint64_t major, const uint64_t minor, const uint64_t major_pat
 #define CLUSTER_VERSION_2_1_0_0 (oceanbase::common::cal_version(2, 1, 0, 0))
 #define CLUSTER_VERSION_4_0_0_0 (oceanbase::common::cal_version(4, 0, 0, 0))
 #define CLUSTER_VERSION_4_3_5_2 (oceanbase::common::cal_version(4, 3, 5, 2))
+#define CLUSTER_VERSION_4_4_1_0 (oceanbase::common::cal_version(4, 4, 1, 0))
 
 // 仅用于判断一级分区为空结果集时，是不是按照错误进行返回的报错
 #define IS_CLUSTER_VERSION_LESS_THAN_V2_1_0_0(version) (version < CLUSTER_VERSION_2_1_0_0)
@@ -57,6 +58,8 @@ cal_version(const uint64_t major, const uint64_t minor, const uint64_t major_pat
 #define IS_CLUSTER_VERSION_LESS_THAN_V4(version) (version < CLUSTER_VERSION_4_0_0_0)
 // 仅用于判断获取路由的sql, observer 4.3.5.2新增字段rpc_port 以及schema_version
 #define IS_CLUSTER_VERSION_BEFORE_4_3_5_2(version) (version < CLUSTER_VERSION_4_3_5_2)
+// 仅用于判断server开启分布式能力后是否支持路由反馈
+#define IS_CLUSTER_VERSION_BEFORE_4_4_1_0(version) (version < CLUSTER_VERSION_4_4_1_0)
 
 } // end of namespace common
 } // end of namespace oceanbase

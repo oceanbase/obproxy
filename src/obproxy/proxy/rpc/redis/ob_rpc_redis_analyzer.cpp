@@ -107,7 +107,7 @@ int ObRpcRedisAnalyzer::build_err_msg(ObRpcReq &rpc_req, ObString &err_content, 
   ObConnectionAttributes &server_info = rpc_req.get_server_addr();
   ObConnectionAttributes &obproxy_info = obkv_info.client_info_;
 
-  if (obkv_info.rpc_origin_error_code_ == OB_PASSWORD_WRONG) {
+  if (obkv_info.get_error_code() == OB_PASSWORD_WRONG) {
     err_content.assign_ptr(proxy::OB_REDIS_OB_PASSWORD_WRONG.ptr(), proxy::OB_REDIS_OB_PASSWORD_WRONG.length());
   } else {
     ObString trace_id = rpc_trace_id.get_rpc_trace_id_buf();
@@ -117,8 +117,8 @@ int ObRpcRedisAnalyzer::build_err_msg(ObRpcReq &rpc_req, ObString &err_content, 
     char ip_buff[MAX_IP_ADDR_LENGTH];
     ip_buff[0]='\0';
     if (is_error_from_server) {
-      error_msg = common::ob_strerror(obkv_info.rpc_origin_error_code_);
-      error_name = common::ob_strerrorname(obkv_info.rpc_origin_error_code_);
+      error_msg = common::ob_strerror(obkv_info.get_error_code());
+      error_name = common::ob_strerrorname(obkv_info.get_error_code());
       ops_ip_ntop(server_info.addr_, ip_buff, sizeof(ip_buff));
       port = server_info.get_port();
     } else {
@@ -129,11 +129,11 @@ int ObRpcRedisAnalyzer::build_err_msg(ObRpcReq &rpc_req, ObString &err_content, 
     }
     if (OB_ISNULL(redis_info)) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("invliad ob redis info to build error message", K(ret), "origin_error_core", obkv_info.rpc_origin_error_code_);
+      LOG_WDIAG("invliad ob redis info to build error message", K(ret), "origin_error_core", obkv_info.get_error_code());
     } else if (OB_SUCC(redis_info->init_error_redis_msg_buf(common::OB_MAX_ERROR_MSG_LEN))){
       char *buf = redis_info->get_error_redis_msg_buf();
       int len = sprintf(buf, "ERR errCode:%d, errCodeName:%s, errMsg:%s, server:%s:%d, trace:%.*s",
-            obkv_info.rpc_origin_error_code_, error_name, error_msg, ip_buff, port, trace_id.length(), trace_id.ptr());
+            obkv_info.get_error_code(), error_name, error_msg, ip_buff, port, trace_id.length(), trace_id.ptr());
       if (len > 0) {
         err_content.assign_ptr(buf, len);
       } else {

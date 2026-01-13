@@ -129,6 +129,10 @@ const char *ObRpcReqDebugNames::get_action_name(enum ObRpcRequestSMActionType ev
       ret = "RPC_REQ_HANDLE_SHARD_REQUEST_DONE";
       break;
     }
+    case RPC_REQ_REQUEST_CANCEL_FROM_SPLIT_CONT: {
+      ret = "RPC_REQ_REQUEST_CANCEL_FROM_SPLIT_CONT";
+      break;
+    }
     case RPC_REQ_REQUEST_ERROR: {
       ret = "RPC_REQ_REQUEST_ERROR";
       break;

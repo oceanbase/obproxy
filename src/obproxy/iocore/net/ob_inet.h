@@ -1248,6 +1248,8 @@ inline int ops_ip_pton(char const *text, ObIpAddr &addr)
   return ret;
 }
 
+inline bool is_big_endian() { return __ORDER_BIG_ENDIAN__ == __BYTE_ORDER__; }
+
 // Convert address to string as a hexidecimal value.
 // The string is always null terminated, the output string is clipped
 // if dst is insufficient.

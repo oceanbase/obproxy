@@ -510,6 +510,8 @@ public:
 
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntityFactory &entity_factory, const ObTableOperationResult &other);
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntity &result_entity, const ObTableOperationResult &other);
+  // int deep_copy(common::ObIAllocator &allocator, const ObTableOperationResult &other);
+  void reset();
   DECLARE_TO_STRING;
 private:
   ObTableOperationType::Type operation_type_;
@@ -658,6 +660,7 @@ public:
   int push_back(const ObTableOperationResult &res);// {table_operations_result_.push_back(res);}
   //void set_allocator(common::ObIAllocator *alloc) { alloc_ = alloc; }
   //int deep_copy(common::ObIAllocator &allocator, ObITableEntityFactory &entity_factory, const ObTableBatchOperationResult &other);
+  // int deep_copy(common::ObIAllocator &allocator, const ObTableBatchOperationResult &other);
   int64_t get_table_operation_result_count() { return table_operations_result_.count(); }
   //common::ObIAllocator *get_allocator() { return alloc_; }
   TO_STRING_KV("operatiton_result_count", table_operations_result_.count(),
@@ -961,6 +964,8 @@ public:
   void rewind();
   int add_all_property_shallow_copy(const ObTableQueryResult &other);
   int add_all_row_shallow_copy(const ObTableQueryResult &other);
+  // int add_all_property_deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other);
+  // int add_all_row_deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other);
 
   int64_t get_row_count() const { return row_count_; }
   int64_t get_property_count() const { return properties_names_.count(); }
@@ -968,12 +973,13 @@ public:
   int get_empty_obobj(ObObj *&obobj, int64_t count);
   common::ObDataBuffer &get_buf() { return buf_; }
   const common::ObDataBuffer &get_buf() const { return buf_; }
-  //virtual int deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other);
+  // virtual int deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other);
+  // int deep_copy_data_buffer(common::ObIAllocator &allocator, const ObDataBuffer &other_buf, ObDataBuffer &new_buf);
 private:
 // const int64_t OB_MAX_PACKET_BUFFER_LENGTH = (1 << 26) - (1 << 20); // buffer length for max packet, 63MB
   static const int64_t MAX_BUF_BLOCK_SIZE =  ((1 << 26) - (1 << 20)) - (1024*1024LL);
   static const int64_t DEFAULT_BUF_BLOCK_SIZE = common::OB_MALLOC_BIG_BLOCK_SIZE - (1024*1024LL);
-  int alloc_buf_if_need(const int64_t size);
+  int alloc_buf_if_need(common::ObIAllocator &allocator, const int64_t size);
 private:
   common::ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> properties_names_;            // serialize
   int64_t row_count_;                                                             // serialize
@@ -1414,7 +1420,9 @@ class ObTableSingleOpResult final
 public:
   ObTableSingleOpResult() : table_result_(), operation_type_(ObTableOperationType::GET), single_entity_(), affected_rows_(0) {}
   int64_t get_affected_rows() const { return affected_rows_; }
+  int deep_copy_buffers(common::ObIAllocator &allocator);
   void set_affected_rows(int64_t affected_rows) { affected_rows_ = affected_rows; }
+  // int deep_copy(common::ObIAllocator &allocator, const ObTableSingleOpResult &other);
   TO_STRING_KV(K(table_result_), K(operation_type_), K(single_entity_), K(affected_rows_));
 private:
   OB_UNIS_IGNORE_TABLE_RESULT table_result_;
@@ -1440,6 +1448,7 @@ public:
     all_rowkey_names_ = all_rowkey_names;
   }
   ObSEArray<ObTableSingleOpResult, SUB_REQ_COUNT> &get_single_op_result() { return single_op_result_; }
+  // int deep_copy(common::ObIAllocator &allocator, const ObTableTabletOpResult &other);
   TO_STRING_KV(K_(single_op_result), K_(all_properties_names), K_(all_rowkey_names));
 private:
   ObSEArray<ObTableSingleOpResult, SUB_REQ_COUNT>  single_op_result_; 
@@ -1465,6 +1474,8 @@ public:
   ObSEArray<ObTableTabletOpResult, SUB_REQ_COUNT>  &get_tablet_op_result() { return tablet_op_result_; }
   OB_INLINE ObSEArray<ObString, 1> &get_rowkey_names() { return rowkey_names_; }
   OB_INLINE ObSEArray<ObString, 4> &get_properties_names() { return properties_names_; }
+  void reset();
+  // int deep_copy(common::ObIAllocator &allocator, const ObTableLSOpResult &other);
   TO_STRING_KV(K_(tablet_op_result), K_(rowkey_names), K_(properties_names));
 private:
   DISALLOW_COPY_AND_ASSIGN(ObTableLSOpResult);
@@ -1637,6 +1648,99 @@ public:
   TO_STRING_KV(K_(data));
 public:
   ObString data_;
+};
+
+class ObHbaseCell final{
+  OB_UNIS_VERSION(1);
+public:
+  ObHbaseCell() : properties_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObObj)) {}
+  ~ObHbaseCell() {}
+  OB_INLINE int get_column_Q_value(ObObj &obj) const {
+    int ret = OB_SUCCESS;
+    if (OB_LIKELY(properties_.count() > 0)) {
+      obj = properties_.at(0);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+    return ret;
+  }
+  OB_INLINE int get_column_T_value(ObObj &obj) const {
+    int ret = OB_SUCCESS;
+    if (OB_LIKELY(properties_.count() > 1)) {
+      obj = properties_.at(1);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+    return ret;
+  }
+  OB_INLINE int get_column_V_value(ObObj &obj) const {
+    int ret = OB_SUCCESS;
+    if (OB_LIKELY(properties_.count() > 2)) {
+      obj = properties_.at(2);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+    return ret;
+  }
+  OB_INLINE int get_column_TTL_value(ObObj &obj) const {
+    int ret = OB_SUCCESS;
+    if (OB_LIKELY(properties_.count() > 3)) {
+      obj = properties_.at(3);
+    } else {
+      ret = OB_INVALID_ARGUMENT;
+    }
+    return ret;
+  }
+  OB_INLINE int64_t get_properties_count() const { return properties_.count();}
+  TO_STRING_KV(K_(properties));
+public:
+  ObSEArray<ObObj, 4> properties_; //Q T V (TTL)
+};
+
+/*
+    family:   cf1
+    Keys:     [Key1]     [Key2]        [Key3] ...
+    Index:     [0]         [1]          [2] ...
+    cellNum:   [1]         [3]          [2] ...
+    cells:    [QTV] [QTV][QTV][QTV] [QTV][QTV]
+*/
+class ObHbaseCfRow final{
+  OB_UNIS_VERSION(1);
+public:
+  ObHbaseCfRow() : column_family_(), key_indexs_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(int64_t)),
+                   cell_nums_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(int64_t)),
+                   cells_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObHbaseCell)) {}
+  ~ObHbaseCfRow() {}
+  TO_STRING_KV(K_(column_family), K_(key_indexs), K_(cell_nums), K_(cells));
+public:
+  ObString column_family_;
+  ObSEArray<int64_t, 4> key_indexs_;
+  ObSEArray<int64_t, 4>cell_nums_;
+  ObSEArray<ObHbaseCell, 4> cells_;
+
+};
+
+class ObHbaseCellResult final{
+  OB_UNIS_VERSION(1);
+public:
+  ObHbaseCellResult() : key_index_(0), cell_result_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObObj)) {}
+  ~ObHbaseCellResult() {}
+  TO_STRING_KV(K_(key_index), K_(cell_result));
+public:
+  int64_t key_index_;
+  ObSEArray<ObObj, 4> cell_result_;
+};
+
+class ObHbaseOperationResponse final : public ObTableResult
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObHbaseOperationResponse() : op_type_(ObTableOperationType::INSERT_OR_UPDATE), cell_results_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObHbaseCellResult)) {}
+  ~ObHbaseOperationResponse() {}
+  TO_STRING_KV(K_(op_type), K_(cell_results));
+public:
+  ObTableOperationType::Type op_type_;
+  ObSEArray<ObHbaseCellResult, 4> cell_results_;
 };
 
 } // end namespace obkv

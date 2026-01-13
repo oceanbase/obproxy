@@ -94,12 +94,19 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
-    return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
-            && NULL != sm->client_session_
-            && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && !sm->trans_state_.trans_info_.resp_result_.is_decompressed()
-            && (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == sm->get_server_session_protocol()
-                || ObProxyProtocol::PROTOCOL_OCEANBASE_20 == sm->get_server_session_protocol()));
+    bool bret = (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
+                 && NULL != sm->client_session_
+                 && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
+                 && !sm->trans_state_.trans_info_.resp_result_.is_decompressed()
+                 && (ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL == sm->get_server_session_protocol()
+                     || ObProxyProtocol::PROTOCOL_OCEANBASE_20 == sm->get_server_session_protocol()));
+
+  if (bret && OB_NOT_NULL(sm->protocol_diagnosis_)) {
+    sm->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_DECOMPRESS_WORK);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_decompress work");
+  }
+
+   return bret;
   }
 
 private:

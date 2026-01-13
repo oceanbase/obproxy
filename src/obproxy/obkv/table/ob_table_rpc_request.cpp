@@ -490,8 +490,15 @@ int ObRpcTableQueryRequest::calc_partition_id(common::ObArenaAllocator &allocato
     }
     partition_id = partition_ids.at(idx);
     obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
-    obkv_info.set_partition_id(0);
-    set_partition_id(0);
+    // obkv_info.set_partition_id(0);
+    // set_partition_id(0);
+    if (is_distribute_need_tablet_id()) {
+      obkv_info.set_partition_id(partition_id);
+      set_partition_id(partition_id);
+    } else {
+      obkv_info.set_partition_id(0);
+      set_partition_id(0);
+    }
   } else if (partition_ids.count() == 1) {
     partition_id = partition_ids.at(0);
     obkv_info.set_definitely_single(true);
@@ -634,8 +641,15 @@ int ObRpcTableQueryAndMutateRequest::calc_partition_id(common::ObArenaAllocator 
       idx = 0;
     }
     partition_id = partition_ids.at(idx);
-    set_partition_id(0);
-    obkv_info.set_partition_id(0);
+    // set_partition_id(0);
+    // obkv_info.set_partition_id(0);
+    if (is_distribute_need_tablet_id()) {
+      obkv_info.set_partition_id(partition_id);
+      set_partition_id(partition_id);
+    } else {
+      obkv_info.set_partition_id(0);
+      set_partition_id(0);
+    }
   } else if (partition_ids.count() == 1) {
     partition_id = partition_ids.at(0);
     set_partition_id(partition_ids.at(0));
@@ -789,8 +803,15 @@ int ObRpcTableQuerySyncRequest::calc_partition_id(common::ObArenaAllocator &allo
     }
     partition_id = partition_ids.at(idx);
     obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
-    obkv_info.set_partition_id(0);
-    set_partition_id(0);
+    // obkv_info.set_partition_id(0);
+    // set_partition_id(0);
+    if (is_distribute_need_tablet_id()) {
+      obkv_info.set_partition_id(partition_id);
+      set_partition_id(partition_id);
+    } else {
+      obkv_info.set_partition_id(0);
+      set_partition_id(0);
+    }
     if (OB_NOT_NULL(query_async_entry)) {
       query_async_entry->reset_tablet_ids();
       query_async_entry->get_tablet_ids().push_back(partition_id);
@@ -1018,9 +1039,14 @@ int ObRpcTableLSOperationRequest::calc_partition_id(common::ObArenaAllocator &al
         // because if one ls_id contians multi tabelt_id, we have to rewrite whole req
         if (obkv_info.is_server_support_distributed_execute_ && is_hbase_request() && tablet_id_index_map_.size() >= 1) {
           obkv_info.set_ls_id(common::ObLSID::INVALID_LS_ID);
-          obkv_info.set_partition_id(0);
+          // obkv_info.set_partition_id(0);
           partition_id = first_partition_id_;
           set_ls_id(common::ObLSID::INVALID_LS_ID);
+          if (IS_CLUSTER_VERSION_BEFORE_4_4_1_0(cluster_version_)) {
+            obkv_info.set_partition_id(0);
+          } else {
+            obkv_info.set_partition_id(first_partition_id_);
+          }
         } else if (tablet_id_index_map_.size() == 1) {
           obkv_info.set_definitely_single(true);
           obkv_info.set_ls_id(ls_id);
@@ -1427,4 +1453,139 @@ int ObRpcTableMetaRequest::calc_partition_id(ObArenaAllocator &allocator,
   UNUSEDx(allocator, ob_rpc_req, part_info, partition_id);
   LOG_WDIAG("try to calculate partition id of meta request", K(lbt()));
   return OB_NOT_SUPPORTED;
+}
+
+int ObRpcHbaseOperationRequest::analyze_request(const char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(hbase_request_.deserialize(buf, buf_len, pos))) {
+    LOG_WDIAG("deserialize hbase request wrong", KP(buf), K(buf_len), K(pos), K(ret));
+  }
+
+  return ret;
+}
+
+int ObRpcHbaseOperationRequest::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+
+  int64_t meta_size = rpc_packet_meta_.get_serialize_size();
+  int64_t origin_pos = pos;
+  int64_t check_sum_pos;
+
+  pos += meta_size;      // 将pos设置为meta之后
+  check_sum_pos = pos;   // 后续做checksum需要从这个pos开始
+
+  if (pos > buf_len) {
+    ret = OB_SIZE_OVERFLOW;
+    LOG_WDIAG("fail to encode ObRpcTableLoginRequest", K(ret), KP(buf), K(buf_len), K(pos), K(meta_size));
+  } else {
+    // 序列化hbase_requestt
+    OB_UNIS_ENCODE(hbase_request_);
+
+    if (OB_SUCC(ret)) {
+      // 首先计算checksum
+      int64_t meta_request_size = pos - check_sum_pos;
+      uint64_t check_sum = ob_crc64(static_cast<void *>(buf + check_sum_pos), meta_request_size);
+      int64_t ez_payload_size = rpc_packet_meta_.rpc_header_.get_encoded_size() + meta_request_size;
+
+      rpc_packet_meta_.ez_header_.ez_payload_size_ = static_cast<uint32_t>(ez_payload_size);
+      rpc_packet_meta_.rpc_header_.checksum_ = check_sum;
+
+      // 这里传入原始的pos, 序列化meta信息
+      if (OB_FAIL(rpc_packet_meta_.serialize(buf, buf_len, origin_pos))) {
+        LOG_WDIAG("fail to encode meta", K_(rpc_packet_meta), K(ret));
+      } else if (origin_pos != check_sum_pos) {
+        // double check
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("origin pos is not equal to check sum pos, unexpected", K(ret), K(origin_pos), K(check_sum_pos));
+      } else {
+        // success
+      }
+    }
+  }
+
+  return ret;
+}
+
+int64_t ObRpcHbaseOperationRequest::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcRequest::get_encode_size();
+  len += hbase_request_.get_serialize_size();
+  return len;
+}
+
+int ObRpcHbaseOperationRequest::construct_rowkey_info()
+{
+  int ret = OB_SUCCESS;
+  ObArenaAllocator *allocator = &allocator_;
+  //only one rowkey column and one rowkey value
+  if (OB_ISNULL(sub_request_columns_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_COLUMNS_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, sizeof(ROWKEY_COLUMN)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to init sub request columns arr", K(ret));
+  } else if (OB_ISNULL(sub_request_rowkey_val_arr_ = OB_NEWx(SUB_REQUEST_ROWKEY_VAL_ARR, allocator, common::ObModIds::OB_RPC_TABLE_IGNORE_FIELD, sizeof(ROWKEY_VALUE)))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to init sub request rowkey arr", K(ret));
+  }
+  if (OB_SUCC(ret)) {
+    ROWKEY_VALUE_OBJ(rowkey_value);
+    // ROWKEY_COLUMN_OBJ(rowkey_column);
+    if (OB_FAIL(rowkey_value.prepare_allocate(3))) {//K, Q, T (时序表需要)
+      LOG_WDIAG("fail to prepare allocate for rowkey value", K(ret));
+    } else {
+      ObObj obj;
+      // construct rowkey value
+      if (OB_FAIL(hbase_request_.get_column_K_value(rowkey_value.at(0)))) {
+        LOG_WDIAG("fail to get column K value", K(ret));
+      } else if (OB_FAIL(hbase_request_.get_column_Q_value(rowkey_value.at(1)))) {
+        LOG_WDIAG("fail to get column Q value", K(ret));
+      } else if (OB_FAIL(hbase_request_.get_column_T_value(rowkey_value.at(2)))) {
+        LOG_WDIAG("fail to get column T value", K(ret));
+      } else if (OB_FAIL(sub_request_rowkey_val_arr_->push_back(rowkey_value))) {
+        LOG_WDIAG("fail to push back rowkey value", K(ret));
+      } else {
+        // success
+      }
+
+      if (OB_SUCC(ret)) {
+        const ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> &hbase_rowkey_columns = get_hbase_rowkey_columns();
+        if (OB_FAIL(sub_request_columns_arr_->push_back(hbase_rowkey_columns))) {
+          LOG_WDIAG("fail to push back rowkey column", K(ret));
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+int ObRpcHbaseOperationRequest::calc_partition_id(ObArenaAllocator &allocator,
+                                                  ObRpcReq &ob_rpc_req,
+                                                  ObProxyPartInfo &part_info,
+                                                  int64_t &partition_id)
+{
+  int ret = OB_SUCCESS;
+  const ObRpcReqTraceId &rpc_trace_id = ob_rpc_req.get_trace_id();
+  ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
+
+  // do not need concern about rpc request with partition id
+  // first ObHbaseCfRow -> first cell
+  int64_t tablet_id = ObTabletID::INVALID_TABLET_ID;
+  if (OB_FAIL(construct_rowkey_info())) {
+    LOG_WDIAG("fail to construct Hbase rowkey info", K(ret));
+  } else if (OB_FAIL(calc_partition_id_by_sub_rowkey(allocator, part_info, 0, tablet_id))) {
+    LOG_WDIAG("fail to calc tablet id for single operation", K(ret), K(rpc_trace_id));
+  } else if (OB_UNLIKELY(!obkv_info.is_server_support_distributed_execute_ || !is_valid())) {
+    ret = OB_NOT_SUPPORTED;
+    LOG_WDIAG("hbase operation request is not supported", K(obkv_info.is_server_support_distributed_execute_), K(is_valid()), K(rpc_trace_id));
+  } else {
+    obkv_info.set_partition_id(0);
+    partition_id = tablet_id;
+  }
+
+  if (OB_SUCC(ret)) {
+    LOG_DEBUG("calc partition id for hbase operation request", KP(this), K(rpc_trace_id));
+  }
+  return ret;
 }

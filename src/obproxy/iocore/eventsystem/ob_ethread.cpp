@@ -302,7 +302,7 @@ inline void ObEThread::process_event(ObEvent *e, const int calling_code)
         try {
           e->continuation_->handle_event(calling_code, e);
         } catch (const std::exception& e) {
-          LOG_EDIAG("get std::exception, continue", "exception", e.what());
+          LOG_ERROR("Caught std::exception, continue", "exception", e.what());
         }
 
 

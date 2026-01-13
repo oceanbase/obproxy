@@ -93,7 +93,7 @@ int ObProxyShardRpcReqRequestPlan::handle_shard_rpc_request(proxy::ObRpcReq *cli
     if (OB_FAIL(execute_plan->generate_plan())) {
       LOG_WDIAG("fail to generate plan", K(ret));
     } else {
-      client_request->execute_plan_ = execute_plan;
+      // client_request->execute_plan_ = execute_plan;
     }
   }
   // trans_state.

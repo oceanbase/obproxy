@@ -358,9 +358,11 @@ void ObRpcServerNetHandler::do_io_close(const int alerrno)
 
   state_ = OB_RPC_SERVER_ENTRY_DESTROY;
 
-  RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
-  RPC_NET_SESSION_PROMETHEUS_STAT(server_ip_, PROMETHEUS_CURRENT_SESSION, false, -1);
-  //   RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
+  if (is_inited_) {
+    RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
+    RPC_NET_SESSION_PROMETHEUS_STAT(server_ip_, PROMETHEUS_CURRENT_SESSION, false, -1);
+    //   RPC_SUM_GLOBAL_DYN_STAT(CURRENT_SERVER_CONNECTIONS, -1); // Make sure to work on the global stat
+  }
   destroy();
 }
 
@@ -612,21 +614,15 @@ int ObRpcServerNetHandler::setup_server_request_send()
         } else if (OB_UNLIKELY(OB_ISNULL(request))) { //request has cancled() or invalid, not send again
           //invalid request, not need send it next
           PROXY_SS_LOG(INFO, "request which send server is invalid ", K_(ss_id), K_(server_ip), K_(local_ip));
-        } else if (request->canceled() && request->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
-          PROXY_SS_LOG(INFO, "request which send server is canced", K_(ss_id), K_(server_ip), K_(local_ip), K(request),
-          "rpc_trace_id", request->get_trace_id());
-          ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-          request->cleanup(cleanup_params);
         } else if (request->canceled() && request->magic_ == RPC_REQ_SM_MAGIC_DEAD) {
           PROXY_SS_LOG(INFO, "request has been canceled and destroyed", K_(ss_id), K_(server_ip), K_(local_ip));
-        } else if (request->get_sm_state() <= ObRpcReq::RpcReqSmState::RPC_REQ_SM_ADDR_SEARCH && request->magic_ != RPC_REQ_SM_MAGIC_DEAD) {
-          PROXY_SS_LOG(WDIAG, "setup sever send request, but request state is not ready", K_(ss_id), K_(server_ip), K_(local_ip), K(request), "rpc_trace_id", request->get_trace_id());
+        } else if (request->magic_ != RPC_REQ_SM_MAGIC_DEAD && (request->canceled() || request->get_sm_state() <= ObRpcReq::RpcReqSmState::RPC_REQ_SM_ADDR_SEARCH)) {
+          PROXY_SS_LOG(WDIAG, "request which send server is canced or request state is not ready", K(request->canceled()), K(request->get_sm_state()), K_(ss_id), K_(server_ip), K_(local_ip), K(request), "rpc_trace_id", request->get_trace_id());
           ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
           request->cleanup(cleanup_params);
         } else {
-          if (OB_ISNULL(request->get_snet_sm())) {
-            request->snet_sm_ = this;
-          }
+          //maybe request retry by server table entry, need update snet_sm_
+          request->snet_sm_ = this;
           const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
           if (!request->is_use_request_inner_buf()) {
             buf = request->get_request_buf();
@@ -636,7 +632,7 @@ int ObRpcServerNetHandler::setup_server_request_send()
             buf_len = request->get_request_inner_buf_len();
           }
           PROXY_SS_LOG(DEBUG, "[RPC_REQUEST]sending request...", K_(ss_id), K_(server_ip), K_(local_ip), KPC(request),
-                         K(buf), K(buf_len), "use_inner_buf", request->is_use_request_inner_buf(),
+                         K(buf), K(buf_len), "use_inner_buf", request->is_use_request_inner_buf(), "use_request_buf_for_serialize", request->is_use_request_buf_for_serialize(),
                         K(this), "server_addr", server_ip_, "local_addr", local_ip_, K(rpc_trace_id));
           if (OB_ISNULL(buf) || buf_len < 0) {
             ret = OB_ERR_UNEXPECTED;
@@ -825,6 +821,24 @@ int ObRpcServerNetHandler::calc_request_need_send(ObRpcReqList &retry_list)
   return ret;
 }
 
+int ObRpcServerNetHandler::get_rpc_req_by_channel_id_from_sending_req_list(int32_t request_id, ObRpcReq *&rpc_req)
+{
+  int ret = OB_SUCCESS;
+  ObRpcReqList::iterator it = sending_req_list_.begin();
+  // request is FIFO, so we can find the request by channel id from the head of the list
+  for (; it != sending_req_list_.end(); ++it) {
+    if (NULL != *it && request_id == (*it)->get_server_channel_id()) {
+      rpc_req = *it;
+      // avoid duplicate add to cid_to_req_map
+      if (OB_FAIL(sending_req_list_.erase(it))) {
+        PROXY_SS_LOG(WDIAG, "fail to erase rpc req from sending req list", K_(ss_id), K_(server_ip), K_(local_ip), K(ret));
+      }
+      break;
+    }
+  }
+  return ret;
+}
+
 int ObRpcServerNetHandler::save_rpc_response(ObRpcReq *rpc_req)
 {
   int ret = OB_SUCCESS;
@@ -987,17 +1001,26 @@ int ObRpcServerNetHandler::state_server_response_read(int event, void *data)
 
               if (OB_FAIL(cid_to_req_map_.erase_refactored(request_id, &rpc_req))) {
                 if (OB_HASH_NOT_EXIST == ret) {
-                  status = RPC_REQUEST_READ_DONE;
-                  PROXY_SS_LOG(DEBUG, "client request has been delete maybe timeout", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(rpc_req),
-                              K(ret), K(request_id), K(cid_to_req_map_.size()));
                   ret = OB_SUCCESS;
+                  if (OB_FAIL(get_rpc_req_by_channel_id_from_sending_req_list(request_id, rpc_req))) {
+                    PROXY_SS_LOG(WDIAG, "fail to erase from sending_req_list, will cause duplicate add to cid_to_req_map", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret), K(request_id),
+                                K(cid_to_req_map_.size()));
+                  } else if (OB_ISNULL(rpc_req) || rpc_req->canceled()) {
+                    PROXY_SS_LOG(DEBUG, "client request has been delete maybe timeout", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(rpc_req),
+                              K(ret), K(request_id), K(cid_to_req_map_.size()));
+                    status = RPC_REQUEST_READ_DONE;
+                  } else {
+                    PROXY_SS_LOG(DEBUG, "client request has not been set in cid_to_req_map", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(rpc_req),
+                                K(ret), K(request_id), K(cid_to_req_map_.size()));
+                  }
                 } else {
                   PROXY_SS_LOG(WDIAG, "fail to call erase_refactored", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret), K(request_id),
                               K(cid_to_req_map_.size()));
                 }
               } else if (rpc_req->canceled()) {
                 status = RPC_REQUEST_READ_DONE;
-              } else {
+              }
+              if (OB_SUCC(ret) && status != RPC_REQUEST_READ_DONE && OB_NOT_NULL(rpc_req)) {
                 const ObRpcReqTraceId &rpc_trace_id = rpc_req->get_trace_id();
                 PROXY_SS_LOG(DEBUG, "[RPC_REQUEST]client request has found to handle", K_(ss_id), K_(server_ip), K_(local_ip), KPC(rpc_req),
                               "count", cid_to_req_map_.size(), K(this), "server_addr", server_ip_, K(rpc_trace_id));
@@ -1751,10 +1774,11 @@ int ObRpcServerNetHandler::cleanup_request_in_server_handing(ObRpcReq *request)
     const ObRpcReqTraceId &rpc_trace_id = request->get_trace_id();
     if (OB_FAIL(cid_to_req_map_.erase_refactored(channel_id, &cache_request))) {
       if (OB_HASH_NOT_EXIST == ret) {
-        PROXY_SS_LOG(DEBUG, "client request has been delete maybe timeout", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(request),
-                    K(ret), K(channel_id), K(cid_to_req_map_.size()), K(rpc_trace_id));
+        // 1. sending_req_list_ will be detected by inactivity timeout
+        // 2. need_send_req_list_ will be deteced in setup_server_request_send
         ret = OB_SUCCESS;
-        RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+        PROXY_SS_LOG(DEBUG, "client request will be cleaned by other task soon", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(request),
+                    K(ret), K(channel_id), K(cid_to_req_map_.size()), K(rpc_trace_id));
       } else {
         PROXY_SS_LOG(WDIAG, "fail to call erase_refactored", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret), K(channel_id),
                     K(cid_to_req_map_.size()), K(rpc_trace_id));
@@ -1762,15 +1786,11 @@ int ObRpcServerNetHandler::cleanup_request_in_server_handing(ObRpcReq *request)
     } else if (request != cache_request) {
       const ObRpcReqTraceId &rpc_trace_id2 = cache_request->get_trace_id();
       ret = OB_ERR_UNEXPECTED;
-      request->snet_sm_ = NULL;
-      cache_request->snet_sm_ = NULL;
-      RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
-      RPC_REQ_SNET_ENTER_STATE(cache_request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      // maybe thread is not same, need wait period task to clean it
       PROXY_SS_LOG(EDIAG, "invalid request to cleanup in server net", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret),
                   K(request), K(cache_request), K(rpc_trace_id), K(rpc_trace_id2));
     } else {
-      request->snet_sm_ = NULL;
-      RPC_REQ_SNET_ENTER_STATE(request, ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+      request->server_handle_request_failed();
       PROXY_SS_LOG(DEBUG, "rpc request to cleanup in server net", K_(ss_id), K_(server_ip), K_(local_ip), K(this), K(ret),
                    K(request), K(rpc_trace_id));
     }

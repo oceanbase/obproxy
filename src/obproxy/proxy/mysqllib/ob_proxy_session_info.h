@@ -1274,6 +1274,8 @@ public:
   ObPsIdEntryMap ps_id_entry_map_;
   ObTextPsNameEntry* text_ps_name_entry_;
   ObTextPsNameEntryMap text_ps_name_entry_map_;
+  char *digest_sql_buf_;
+  int32_t digest_sql_len_;
 private:
   uint32_t cursor_id_;
   ObCursorIdAddrMap cursor_id_addr_map_;

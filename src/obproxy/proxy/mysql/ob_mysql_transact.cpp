@@ -141,7 +141,9 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
 
       client_session->set_trans_internal_routing(is_trans_internal_routing);
       LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing,
-                                                         "in trans internal routing", client_session->is_in_trans_internal_routing());
+                  "in trans internal routing", client_session->is_in_trans_internal_routing(),
+                  "is_in_trans", is_in_trans,
+                  "last_request_in_trans", last_request_in_trans);
     }
     client_session->set_last_request_in_trans(is_in_trans);
   }
@@ -235,7 +237,7 @@ void ObMysqlTransact::update_sql_cmd(ObTransState &s)
   }
 
   // reuse the protocol diagnosis request analzyer to prepare to record request packets
-  if (s.sm_->protocol_diagnosis_ != NULL) {
+  if (OB_NOT_NULL(s.sm_->protocol_diagnosis_)) {
     s.sm_->protocol_diagnosis_->reuse_req_analyzer();
     PROXY_TXN_LOG(DEBUG, "[ObMysqlTransact::update_sql_cmd] reuse protocol diagnosis request analyzer");
   }
@@ -677,10 +679,10 @@ void ObMysqlTransact::handle_send_ps_close_reset_server(ObTransState &s,
   int ret = OB_SUCCESS;
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
   bool need_rewrite_login_req = false;
+  ObClientSessionInfo &cs_info = client_session->get_session_info();
   // 判断是否需要切换到addr对应的租户/集群中
   if (using_service_name) {
     s.sm_->set_need_renew_cluster_resource(false);
-    ObClientSessionInfo &cs_info = client_session->get_session_info();
     ObHSRResult &hsr = cs_info.get_login_req().get_hsr_result();
     ObString cluster_name;
     ObString tenant_name;
@@ -727,10 +729,32 @@ void ObMysqlTransact::handle_send_ps_close_reset_server(ObTransState &s,
         && OB_FAIL(client_session->attach_last_to_second_last_session())) {
       LOG_WDIAG("fail to attach bound ss to last bound ss", K(ret));
     }
-
-    if (OB_SUCC(ret)) {
+    // client session上的ps资源，只需要在第一次跳转时删除，减少重复删除
+    if (OB_SUCC(ret) && client_session->is_first_send_ps_close_reset_request()) {
+      obmysql::ObMySQLCmd cmd = s.trans_info_.sql_cmd_;
       client_session->set_first_handle_ps_close_reset_request(false);
       client_session->set_first_send_ps_close_reset_request(false);
+      uint32_t client_ps_id = cs_info.get_client_ps_id();
+      ObProxyMysqlRequest &client_request = s.trans_info_.client_request_;
+      // 对ps close、reset，都一定会清理cursor和piece资源
+      if (OB_MYSQL_COM_STMT_CLOSE == cmd || OB_MYSQL_COM_STMT_RESET == cmd) {
+        cs_info.remove_cursor_id_addr(client_ps_id);
+        cs_info.remove_piece_info(client_ps_id);
+      }
+      if (OB_MYSQL_COM_STMT_CLOSE == cmd) {
+        cs_info.remove_ps_id_entry(client_ps_id);
+        cs_info.remove_ps_id_addrs(client_ps_id);
+      } else if (client_request.get_parse_result().is_text_ps_drop_stmt()) {
+        ObString text_ps_name = client_request.get_parse_result().get_text_ps_name();
+        cs_info.delete_text_ps_name_entry(text_ps_name);
+        cs_info.remove_ps_id_addrs(client_ps_id);
+      }
+      cs_info.remove_service_name_ps_info(client_ps_id);
+      LOG_DEBUG("first clear ps close/reset resource",
+                "cmd", ObProxyParserUtils::get_sql_cmd_name(cmd), K(ret));
+    }
+
+    if (OB_SUCC(ret)) {
       s.server_info_.set_addr(addr);
       s.pll_info_.lookup_success_ = true;
       // 删除准备发送的prepare信息
@@ -1494,6 +1518,7 @@ void ObMysqlTransact::handle_not_exist_replica(ObTransState &s, const omt::ObTar
 
   int tmp_ret = OB_NO_REPLICA_VALID;
   s.mysql_errcode_ = OB_NO_REPLICA_VALID;
+  LOG_WDIAG("not exist replica, will disconnect", K(target_replica_type), K(policy), K(tmp_ret));
   if (is_weight_load_balance_route(policy)) {
     s.mysql_errmsg_ = "Unset weight zone, check config weakread_weight_zone/proxy_route_policy";
   } else if (is_target_replica_route(policy)) {
@@ -3515,6 +3540,7 @@ inline int ObMysqlTransact::build_oceanbase_user_request(
           }
         }
         reader = request_buffer_reader;
+        // 直接写入 MySQL 协议请求
         PROTOCOL_DIAGNOSIS(MULTI_MYSQL, send, s.sm_->protocol_diagnosis_, *reader, reader->read_avail());
       }
 
@@ -4535,17 +4561,11 @@ int ObMysqlTransact::handle_ps_reset_succ(ObTransState &s, bool &is_user_request
 
   /* 把 cursor_id_pair 清除掉 */
   ObClientSessionInfo &cs_info = get_client_session_info(s);
-  ObMysqlServerSession *ss = s.sm_->get_server_session();
   ObServerSessionInfo &ss_info = get_server_session_info(s);
   uint32_t client_ps_id = cs_info.get_client_ps_id();
   /* 可以直接删除, 有就删除, 没有就算了 */
   ss_info.remove_cursor_id_pair(client_ps_id);
   cs_info.remove_service_name_cursor_info(client_ps_id);
-  cs_info.remove_cursor_id_addr(client_ps_id);
-  cs_info.remove_piece_info(client_ps_id);
-  if (OB_FAIL(cs_info.remove_request_send_addr(ss->get_netvc()->get_remote_addr()))) {
-    LOG_WDIAG("fail to erase server addr", K(ret));
-  }
 
   return ret;
 }
@@ -6018,11 +6038,17 @@ inline void ObMysqlTransact::handle_first_response_packet(ObTransState &s) {
       && s.current_.send_action_ != SERVER_SEND_HANDSHAKE
       && s.current_.send_action_ != SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN
       && !is_user_request) {
-    // internal response, get trnasaction state from resp immediately
-    bool is_resp_in_trans = (!resp.is_trans_completed());
-    bool is_only_sync_trans_sess = resp.is_error_resp();
-    record_trans_state(s, is_resp_in_trans);
+    ObMySQLCmd cmd = s.trans_info_.client_request_.get_packet_meta().cmd_;
+    if (obmysql::OB_MYSQL_COM_STMT_CLOSE != cmd
+        && obmysql::OB_MYSQL_COM_STMT_RESET != cmd) {
+      // 对session变量同步下，不记录ps close/reset的事务状态
+      //  因为observer可能返回的不正确，导致事务状态不正确，导致后续处理错误记录协调者
+      // internal response, get trnasaction state from resp immediately
+      bool is_resp_in_trans = (!resp.is_trans_completed());
+      record_trans_state(s, is_resp_in_trans);
+    }
 
+    bool is_only_sync_trans_sess = resp.is_error_resp();
     if (OB_SUCCESS != ObProxySessionInfoHandler::save_changed_sess_info(s.sm_->get_client_session()->get_session_info(),
                                                                         s.sm_->get_server_session()->get_session_info(),
                                                                         resp.get_extra_info(),
@@ -6466,10 +6492,16 @@ inline void ObMysqlTransact::handle_response_from_server(ObTransState &s)
                    "sql", s.trans_info_.get_print_sql());
         }
       }
-      COLLECT_INTERNAL_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,
-                        obutils::OB_PROXY_INTERNAL_TRACE,
-                        OB_PROXY_INTERNAL_ERROR,
-                        "unexpected proxy internal state: %s", get_server_state_name(s.current_.state_));
+      if (obmysql::ObMySQLCmd::OB_MYSQL_COM_QUIT == request_cmd) {
+        COLLECT_INTERNAL_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,
+                          obutils::OB_CLIENT_VC_TRACE,
+                          OB_SUCCESS, "user normal logout");
+      } else {
+        COLLECT_INTERNAL_DIAGNOSIS(s.sm_->connection_diagnosis_trace_,
+                          obutils::OB_PROXY_INTERNAL_TRACE,
+                          OB_PROXY_INTERNAL_ERROR,
+                          "unexpected proxy internal state: %s", get_server_state_name(s.current_.state_));
+      }
       handle_server_connection_break(s);
       break;
     }
@@ -7168,13 +7200,8 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
       if (OB_LIKELY(NULL != s.sm_->client_session_) && OB_LIKELY(NULL != s.sm_->get_server_session())) {
         ObClientSessionInfo &client_info = get_client_session_info(s);
         ObServerSessionInfo &server_info = get_server_session_info(s);
-        //obutils::ObSqlParseResult &sql_result = s.trans_info_.client_request_.get_parse_result();
-        obmysql::ObMySQLCmd cmd = s.trans_info_.client_request_.get_packet_meta().cmd_;
-        if (obmysql::OB_MYSQL_COM_STMT_CLOSE == cmd
-            || obmysql::OB_MYSQL_COM_STMT_RESET == cmd
-            || is_binlog_request(s)
+        if (is_binlog_request(s)
             || s.sm_->client_session_->is_can_send_request()) {
-          /* CLOSE 请求不同步任何东西, 直接发送出去 */
           s.current_.send_action_ = SERVER_SEND_REQUEST;
           s.next_action_ = SM_ACTION_API_SEND_REQUEST;
           break;
@@ -7263,7 +7290,7 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
             && !s.sm_->client_session_->is_proxy_mysql_client()
             && client_info.can_send_init_sql()) {
             s.current_.send_action_ = SERVER_SEND_INIT_SQL;
-          } else {
+        } else {
           s.current_.send_action_ = SERVER_SEND_REQUEST;
         }
 
@@ -7298,10 +7325,19 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
       ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
       obmysql::ObMySQLCmd cmd = s.trans_info_.client_request_.get_packet_meta().cmd_;
       ObProxyMysqlRequest &client_request = s.trans_info_.client_request_;
-      // OB_MYSQL_COM_STMT_RESET 请求, 如果执行正确, 跳转; 否则返回 errro 包给 client
-      if ((obmysql::OB_MYSQL_COM_STMT_RESET == cmd || client_request.get_parse_result().is_text_ps_drop_stmt())
-        && resp.is_ok_resp()) {
-        TRANSACT_RETURN(SM_ACTION_API_READ_REQUEST, ObMysqlTransact::handle_request);
+      // Mysql标准：COM_STMT_RESET 请求, 如果执行正确, 跳转; 否则返回 errro 包给 client
+      // 但proxy维护了多个ss info，如果中间出现error包，无法统一ss info的状态，可能出现未定义行为
+      // 所以这里直接断连接，避免潜在的问题
+      if (OB_UNLIKELY(obmysql::OB_MYSQL_COM_STMT_RESET == cmd
+                      || client_request.get_parse_result().is_text_ps_drop_stmt())) {
+        if (resp.is_ok_resp()) {
+          TRANSACT_RETURN(SM_ACTION_API_READ_REQUEST, ObMysqlTransact::handle_request);
+        } else {
+          s.current_.state_ = INTERNAL_ERROR;
+          LOG_WDIAG("recive resp which isn't ok for ps reset/drop, will disconnect",
+                    "cmd", ObProxyParserUtils::get_sql_cmd_name(cmd));
+          handle_server_connection_break(s);
+        }
       } else {
         s.next_action_ = SM_ACTION_SERVER_READ;
         if (get_client_session_info(s).is_oceanbase_server()) {
@@ -8048,6 +8084,7 @@ void ObMysqlTransact::ObTransState::refresh_protocol_config()
     // default oceanbase 2.0 protocol
     sm_->set_server_protocol(ObProxyProtocol::PROTOCOL_OCEANBASE_20);
   }
+
   PROXY_CS_LOG(DEBUG, "client session start with ",
                       "cs_id", sm_->get_client_session()->get_cs_id(),
                       "server_protocol", sm_->get_server_protocol(),
@@ -8951,7 +8988,7 @@ bool ObMysqlTransact::is_internal_request(ObTransState &s)
   // 3. OB_MYSQL_COM_HANDSHAKE request, obproxy build the handshake packet and return to client directly
   // 4. OB_MYSQL_COM_PING request, obproxy build OK packet and return to client directly
   // 5. the first sql statement to start one transaction, like 'begin' or 'start transaction',
-  //    obproxy will build an ok packet and return client directly
+  //    and the sql is not large request, obproxy will build an ok packet and return client directly
   // 6. parse result indicate internal request
   // 7. if it's a bad route request, like the first statement after begin(or start transaction)
   //    don't has valid table name;
@@ -8973,12 +9010,14 @@ bool ObMysqlTransact::is_internal_request(ObTransState &s)
                       && !is_single_shard_db_table(s))))
           || (s.is_trans_first_req()
               && !s.is_hold_xa_start()
-              && s.trans_info_.client_request_.get_parse_result().need_hold_start_trans())
+              && s.trans_info_.client_request_.get_parse_result().is_single_start_trans()
+              && !s.trans_info_.client_request_.is_large_request())
           || (s.is_trans_first_req()
               && !s.is_hold_start_trans()
               && !s.is_hold_xa_start()
-              && s.trans_info_.client_request_.get_parse_result().need_hold_xa_start()
-              && get_global_proxy_config().enable_xa_route)
+              && s.trans_info_.client_request_.get_parse_result().is_single_xa_start()
+              && get_global_proxy_config().enable_xa_route
+              && !s.trans_info_.client_request_.is_large_request())
           || s.trans_info_.client_request_.get_parse_result().is_internal_request()
           || is_bad_route_request(s))
           || !is_supported_mysql_cmd(s.trans_info_.sql_cmd_)
@@ -9037,7 +9076,10 @@ bool ObMysqlTransact::is_binlog_request(const ObTransState &s)
 void ObMysqlTransact::handle_binlog_request(ObTransState &s)
 {
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
-  client_session->attach_last_to_second_last_session();
+  // 连接迁移会导致session_manager增加连接数，对内部请求每次swap mutex时会校验连接池为空，这里没必要迁移
+  if (!client_session->is_proxy_mysql_client()) {
+    client_session->attach_last_to_second_last_session();
+  }
 
   ObClientSessionInfo &cs_info = get_client_session_info(s);
   ObString cluster_name = cs_info.get_priv_info().cluster_name_;

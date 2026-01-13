@@ -115,7 +115,9 @@ void ObTenantAllocator::print_usage() const
     if (!is_allocator_mod(idx)) {
       ObModItem item = obj_mgr_.get_mod_usage(idx);;
       sum_item += item;
-      if (item.count_ > 0) {
+      if (item.hold_ > 0
+          || item.used_ > 0
+          || item.count_ > 0) {
         ret = databuff_printf(
             buf, BUFLEN, pos,
             "[MEMORY] hold=% 15ld used=% 15ld count=% 8ld avg_used=% 15ld mod=%s\n",

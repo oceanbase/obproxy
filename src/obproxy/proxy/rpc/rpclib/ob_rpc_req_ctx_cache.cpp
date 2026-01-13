@@ -517,7 +517,8 @@ int ObRpcReqCtxCache::process(const int64_t buck_id, ObRpcReqCtxCacheParam *para
       case ObRpcReqCtxCacheParam::ADD_RPC_REQ_CTX_OP: {
         ctx = insert_entry(param->hash_, param->key_, param->ctx_);
         if (NULL != ctx) {
-          // ctx->set_deleted_state();
+          // need inform thread cache to delete this ctx
+          ctx->set_deleting_state();
           ctx->dec_ref(); // free old ctx
           ctx = NULL;
         }

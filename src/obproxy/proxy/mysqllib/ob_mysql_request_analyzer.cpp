@@ -188,7 +188,6 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
             && !client_request.is_sharding_user()
             && !client_request.is_proxysys_user()
             && !ctx.using_ldg_
-            && !ctx.using_service_name_
             && OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT != sql_cmd
             && OB_MYSQL_COM_CHANGE_USER != sql_cmd
             && OB_MYSQL_COM_AUTH_SWITCH_RESP != sql_cmd) {

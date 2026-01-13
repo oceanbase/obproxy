@@ -192,7 +192,8 @@ ObMysqlTunnelProducer::ObMysqlTunnelProducer()
       handler_state_(0), memory_flow_control_count_(0),
       cpu_flow_control_count_(0), consumer_reenable_count_(0),
       num_consumers_(0), alive_(false), read_success_(false),
-      own_iobuffer_(true), cost_time_(0), flow_control_source_(0), name_(NULL)
+      own_iobuffer_(true), cost_time_(0), flow_control_source_(0),
+      type_(PRODUCER_UNKONWN)
 {
 }
 
@@ -252,7 +253,7 @@ ObMysqlTunnelConsumer::ObMysqlTunnelConsumer()
       vc_type_(MT_MYSQL_CLIENT), vc_(NULL), buffer_reader_(NULL),
       vc_handler_(NULL), write_vio_(NULL), skip_bytes_(0),
       bytes_written_(0), handler_state_(0), alive_(false),
-      write_success_(false),  cost_time_(0), name_(NULL)
+      write_success_(false),  cost_time_(0), type_(CONSUMER_UNKONWN)
 {
 }
 
@@ -307,7 +308,8 @@ inline ObMysqlTunnelConsumer *ObMysqlTunnel::alloc_consumer()
 // Adds a new producer to the tunnel
 ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
     ObVConnection *vc, const int64_t nbytes_arg, ObIOBufferReader *reader_start,
-    MysqlProducerHandler sm_handler, ObMysqlTunnelType vc_type, const char *name_arg,
+    MysqlProducerHandler sm_handler, ObMysqlTunnelType vc_type,
+    const ObMysqlTunnelProducerType type,
     const bool own_iobuffer)
 {
   int ret = OB_SUCCESS;
@@ -315,11 +317,11 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
   int64_t read_avail = 0;
   int64_t ntodo = 0;
 
-  if (OB_ISNULL(vc) || OB_ISNULL(reader_start) || OB_ISNULL(name_arg)) {
+  if (OB_ISNULL(vc) || OB_ISNULL(reader_start) || type == PRODUCER_UNKONWN) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("add_producer, invalid argument", K(vc), K(reader_start), K(name_arg), K(ret));
+    LOG_WDIAG("add_producer, invalid argument", K(vc), K(reader_start), K(type), K(ret));
   } else {
-    LOG_DEBUG("adding producer", K_(sm_->sm_id), K(name_arg), K(nbytes_arg));
+    LOG_DEBUG("adding producer", K_(sm_->sm_id), K(type), K(nbytes_arg));
     read_avail = reader_start->read_avail();
     if (nbytes_arg < 0) {
       ntodo = nbytes_arg;
@@ -350,7 +352,7 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
       p->read_buffer_ = reader_start->mbuf_;
       p->vc_handler_ = sm_handler;
       p->vc_type_ = vc_type;
-      p->name_ = name_arg;
+      p->type_ = type;
       p->own_iobuffer_ = own_iobuffer;
 
       p->memory_flow_control_count_ = 0;
@@ -385,26 +387,26 @@ ObMysqlTunnelProducer *ObMysqlTunnel::add_producer(
 // source failed
 ObMysqlTunnelConsumer *ObMysqlTunnel::add_consumer(
     ObVConnection *vc, ObVConnection *producer, MysqlConsumerHandler sm_handler,
-    ObMysqlTunnelType vc_type, const char *name_arg, const int64_t skip_bytes)
+    ObMysqlTunnelType vc_type, const ObMysqlTunnelConsumerType type, const int64_t skip_bytes)
 {
   int ret = OB_SUCCESS;
   ObMysqlTunnelProducer *p = NULL;
   ObMysqlTunnelConsumer *c = NULL;
 
-  if (OB_ISNULL(vc) || OB_ISNULL(producer) || OB_ISNULL(name_arg) || OB_UNLIKELY(skip_bytes < 0)) {
+  if (OB_ISNULL(vc) || OB_ISNULL(producer) || OB_UNLIKELY(skip_bytes < 0) || type == CONSUMER_UNKONWN) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("add_consumer, invalid argument", K(vc), K(producer), K(name_arg), K(skip_bytes), K(ret));
+    LOG_WDIAG("add_consumer, invalid argument", K(vc), K(producer), K(type), K(skip_bytes), K(ret));
   } else if (OB_ISNULL(p = get_producer(producer))) {
     ret = OB_ERR_SYS;
     LOG_WDIAG("add_consumer, failed to get producer", K(producer), K(ret));
   } else {
-    LOG_DEBUG("adding consumer", K_(sm_->sm_id), K(name_arg));
+    LOG_DEBUG("adding consumer", K_(sm_->sm_id), "type", get_consumer_type_name(type));
 
     // Check to see if the producer terminated
     // without sending all of its data
     if (!p->alive_ && !p->read_success_) {
       LOG_DEBUG("add_consumer, consumer not added due to producer failure",
-                K_(sm_->sm_id), K(name_arg), K_(p->alive), K_(p->read_success));
+                K_(sm_->sm_id), "type", get_consumer_type_name(type), K_(p->alive), K_(p->read_success));
     } else if (OB_LIKELY(NULL != (c = alloc_consumer()))) {
       c->producer_ = p;
       c->vc_ = vc;
@@ -412,7 +414,7 @@ ObMysqlTunnelConsumer *ObMysqlTunnel::add_consumer(
       c->skip_bytes_ = skip_bytes;
       c->vc_handler_ = sm_handler;
       c->vc_type_ = vc_type;
-      c->name_ = name_arg;
+      c->type_ = type;
       c->cost_time_ = 0;
 
       // Register the consumer with the producer
@@ -607,7 +609,7 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
   bool cmd_complete = false;
   bool trans_complete = false;
 
-  LOG_DEBUG("producer_handler_packet", K_(sm_->sm_id), K_(p.name),
+  LOG_DEBUG("producer_handler_packet", K_(sm_->sm_id), "type", get_producer_type_name(p.type_),
             "event", ObMysqlDebugNames::get_event_name(event));
 
   // We only interested in translating certain events
@@ -629,7 +631,7 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
                                                                        sm_->trans_state_.trans_info_.sql_cmd_))) {
         LOG_WDIAG("process request content analyze request error",
                  K_(p.packet_analyzer_.packet_type), K_(sm_->sm_id),
-                 K_(p.name),
+                 "type", get_producer_type_name(p.type_),
                  K(cmd_complete), K(trans_complete));
         // FIX ME: we return EOS here since it will cause the
         // the client to be reenabled. ERROR makes more sense
@@ -708,7 +710,10 @@ inline int ObMysqlTunnel::producer_handler_packet(int event, ObMysqlTunnelProduc
                 p.bytes_read_ -= written;
                 LOG_DEBUG("the data of next request from the producer was moved to client buffer",
                           K(p.bytes_read_), K(written));
-
+              }
+              if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+                sm_->protocol_diagnosis_->req_forward_data_flow_.tunnel_next_req_of_send_long_ = written;
+                PROTOCOL_FORWARD_LOG(TRACE, "reserve the next request data follow send_long_data", "reserve_next_request", written);
               }
             }
           }
@@ -738,7 +743,7 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
   MysqlProducerHandler jump_point = NULL;
   bool sm_callback = false;
 
-  LOG_DEBUG("producer_handler", K_(sm_->sm_id), K_(p.name),
+  LOG_DEBUG("producer_handler", K_(sm_->sm_id), "type", get_producer_type_name(p.type_),
             "event", ObMysqlDebugNames::get_event_name(event));
 
   ObMysqlClientSession *client_vc = NULL;
@@ -746,12 +751,29 @@ bool ObMysqlTunnel::producer_handler(int event, ObMysqlTunnelProducer &p)
   if (IS_DEBUG_ENABLED()) {
     if (p.read_vio_ != NULL) {
       LOG_DEBUG("callback producer_handler after read data from read_vio",
-               "name", p.name_,
+               "type", get_producer_type_name(p.type_),
                "ndone", p.read_vio_->ndone_,
                "init_bytes", p.init_bytes_done_,
                "nbytes", p.read_vio_->nbytes_,
                "event",  ObMysqlDebugNames::get_event_name(event),
                "callback", p.read_vio_->cont_);
+    }
+  }
+  if (p.read_vio_ != NULL && OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    if (p.type_ == PRODUCER_CLIENT_REQUEST_READ) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.producer_client_read_ = p.read_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "producer client read request data", "producer_client_read", p.read_vio_->ndone_);
+    } else if (p.type_ == PRODUCER_TRANSFORM_REQUEST_READ) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.producer_transform_read_ = p.read_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "producer transform read request data", "producer_transform_read", p.read_vio_->ndone_);
+    } else if (p.type_ == PRODUCER_OBSERVER_RESPONSE_READ) {
+      sm_->protocol_diagnosis_->resp_forward_data_flow_.producer_observer_read_ = p.read_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "producer observer read response data", "producer_observer_read", p.read_vio_->ndone_);
+    } else if (p.type_ == PRODUCER_TRANSFORM_RESPONSE_READ) {
+      sm_->protocol_diagnosis_->resp_forward_data_flow_.producer_transform_read_ = p.read_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "producer transform read response data", "producer_transform_read", p.read_vio_->ndone_);
+    } else {
+      PROTOCOL_FORWARD_LOG(TRACE, "unexpected branch", "type", get_producer_type_name(p.type_), K(p.read_vio_->ndone_));
     }
   }
   switch (event) {
@@ -906,7 +928,7 @@ void ObMysqlTunnel::consumer_reenable(ObMysqlTunnelConsumer &c)
 
     LOG_DEBUG("consumer_reenable", K(backlog), "enable_flow_control",
               params->enable_flow_control_, "flow_high_water_mark",
-              params->flow_high_water_mark_, K(p), K_(p->name), K(p->is_source()),
+              params->flow_high_water_mark_, K(p), "type", get_producer_type_name(p->type_), K(p->is_source()),
               K(p->vc_type_), K(p->flow_control_source_));
     if (backlog > params->flow_high_water_mark_) {
       LOG_DEBUG("Throttle", K(p), K(backlog), "producer_backlog", p->backlog());
@@ -923,7 +945,7 @@ void ObMysqlTunnel::consumer_reenable(ObMysqlTunnelConsumer &c)
         if (srcp != p) {
           backlog = srcp->backlog(params->flow_low_water_mark_);
         }
-        LOG_DEBUG("handle srcp", K(backlog), K(srcp), K_(srcp->name),
+        LOG_DEBUG("handle srcp", K(backlog), K(srcp), "type", get_producer_type_name(srcp->type_),
                   "flow_low_water_mark", params->flow_low_water_mark_);
 
         if (backlog <= params->flow_low_water_mark_) {
@@ -960,7 +982,7 @@ void ObMysqlTunnel::consumer_reenable(ObMysqlTunnelConsumer &c)
             ++(p->cpu_flow_control_count_);
             LOG_DEBUG("consumer reenable",
                       K(atimeout_in), K_(p->consumer_reenable_count),
-                      K(local_thread_queue_size), K_(p->name));
+                      K(local_thread_queue_size), "type", get_producer_type_name(p->type_));
           }
         }
         p->read_vio_->reenable_in(atimeout_in);
@@ -983,7 +1005,7 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
   MysqlConsumerHandler jump_point = NULL;
   ObMysqlTunnelProducer *p = c.producer_;
 
-  LOG_DEBUG("consumer_handler", K_(sm_->sm_id), K_(c.name),
+  LOG_DEBUG("consumer_handler", K_(sm_->sm_id), "type", get_consumer_type_name(c.type_),
             "event", ObMysqlDebugNames::get_event_name(event));
 
   if (OB_ISNULL(p) || OB_UNLIKELY(!c.alive_) || OB_ISNULL(c.buffer_reader_)) {
@@ -1013,11 +1035,28 @@ bool ObMysqlTunnel::consumer_handler(int event, ObMysqlTunnelConsumer &c)
   if (IS_DEBUG_ENABLED()) {
     if (c.write_vio_ != NULL) {
       LOG_DEBUG("callback consumer_handler after write data to write_vio",
-               "name", c.name_,
+               "type", get_consumer_type_name(c.type_),
                "ndone", c.write_vio_->ndone_,
                "nbytes", c.write_vio_->nbytes_,
                "event",  ObMysqlDebugNames::get_event_name(event),
                "callback", c.write_vio_->cont_);
+    }
+  }
+  if (c.write_vio_ != NULL && OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    if (c.type_ == CONSUMER_OBSERVER_REQUEST_WRITE) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.consumer_observer_write_ = c.write_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer observer write request data", "consumer_observer_write", c.write_vio_->ndone_);
+    } else if (c.type_ == CONSUMER_TRANSFORM_REQUEST_WRITE) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.consumer_transform_write_ = c.write_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer transform write request data", "consumer_transform_write", c.write_vio_->ndone_);
+    } else if (c.type_ == CONSUMER_CLIENT_RESPONSE_WRITE) {
+      sm_->protocol_diagnosis_->resp_forward_data_flow_.consumer_client_write_ = c.write_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer client write response data", "consumer_client_write", c.write_vio_->ndone_);
+    } else if (c.type_ == CONSUMER_TRANSFORM_RESPONSE_WRITE) {
+      sm_->protocol_diagnosis_->resp_forward_data_flow_.consumer_transform_write_ = c.write_vio_->ndone_;
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer transform write response data", "consumer_transform_write", c.write_vio_->ndone_);
+    } else {
+      PROTOCOL_FORWARD_LOG(TRACE, "unexpected branch", "type", get_consumer_type_name(c.type_), K(c.write_vio_->ndone_));
     }
   }
 
@@ -1180,7 +1219,7 @@ int ObMysqlTunnel::finish_all_internal(ObMysqlTunnelProducer &p, const bool chai
       } else {
         total_bytes = p.bytes_read_ + p.init_bytes_done_;
         c->write_vio_->nbytes_ = total_bytes - c->skip_bytes_ - c->buffer_reader_->reserved_size_;
-        LOG_DEBUG("producer finish", "name", p.name_, K(&p), K(total_bytes),
+        LOG_DEBUG("producer finish", "type", get_producer_type_name(p.type_), K(&p), K(total_bytes),
                   K(c->write_vio_->ndone_), K(c->write_vio_->nbytes_),
                   K(p.bytes_read_), K(p.init_bytes_done_),
                   K(c->skip_bytes_), K(c->buffer_reader_->reserved_size_));

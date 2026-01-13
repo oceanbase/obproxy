@@ -19,6 +19,7 @@
 #include "lib/string/ob_sql_string.h"
 #include "lib/container/ob_se_array.h"
 #include "opsql/func_expr_resolver/proxy_expr/ob_proxy_expr.h"
+#include "obutils/ob_proxy_stmt_ctx.h"
 
 namespace oceanbase
 {
@@ -120,7 +121,8 @@ enum SortListType {
 class ObProxyDMLStmt : public ObProxyStmt
 {
 public:
-  typedef common::hash::ObHashMap<common::ObString, opsql::ObProxyExpr *, common::hash::NoPthreadDefendMode> ExprMap;
+  typedef ObProxyStmtCtx::ExprMap ExprMap;
+  typedef ObProxyStmtCtx::ExprArray ExprArray;
   typedef common::ObSEArray<ObProxyExprTablePos, 4> TablePosArray;
   typedef common::ObSEArray<ObProxyDbTablePos, 4> DbTablePosArray;
 
@@ -129,7 +131,6 @@ public:
   virtual ~ObProxyDMLStmt();
   int init();
   virtual int handle_parse_result(const ParseResult &parse_result) override;
-  int handle_all_table_node(ParseNode* node);
   void set_table_name(const common::ObString& table_name) { table_name_ = table_name; }
   void set_field_results(SqlFieldResult* real_field_results_ptr) { field_results_ = real_field_results_ptr; }
   void set_use_column_value_from_hint(bool use_column_value_from_hint) { use_column_value_from_hint_ = use_column_value_from_hint; }
@@ -152,7 +153,9 @@ public:
   bool has_unsupport_expr_type() const { return has_unsupport_expr_type_; }
   bool has_unsupport_expr_type_for_config() const { return has_unsupport_expr_type_for_config_; }
   bool has_sub_select() const { return has_sub_select_; }
-  ExprMap& get_table_exprs_map() { return table_exprs_map_; }
+  ExprMap& get_table_exprs_map() { return table_and_alias_ctx_.get_all_table_exprs_map(); }
+
+  ExprArray& get_table_exprs_array() { return table_and_alias_ctx_.get_all_table_exprs_array(); }
   TablePosArray& get_table_pos_array() { return table_pos_array_; }
   DbTablePosArray& get_db_table_pos_array() { return db_table_pos_array_; }
 
@@ -165,6 +168,10 @@ protected:
   int handle_table_node_to_expr(ParseNode* node);
   int get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &expr_table);
   int handle_table_and_db_node(ParseNode* node, ObProxyExprTable* &expr_table);
+
+  //for join
+  int handle_join_table(ParseNode* node);
+
   //for from in delete and update
   int handle_table_references(ParseNode *node);
 
@@ -207,14 +214,16 @@ protected:
   bool has_unsupport_expr_type_for_config_;
   bool has_sub_select_;
   bool use_column_value_from_hint_;
-  ExprMap table_exprs_map_;
-  ExprMap alias_table_map_;
+  int64_t sub_select_level_;
+
+  ObProxyStmtCtx table_and_alias_ctx_;
   common::ObSEArray<ObProxyExprTablePos, 4> table_pos_array_;
   common::ObSEArray<ObProxyDbTablePos, 4> db_table_pos_array_;
 
 /*for sub select*/
 public:
   int handle_project_list(ParseNode* node);
+  int handle_sub_select(ParseNode* node);
   int handle_project_string(ParseNode* node);
   int handle_hint_clause(ParseNode* node);
   int handle_groupby_clause(ParseNode* node);

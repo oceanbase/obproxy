@@ -65,6 +65,7 @@ int ObRespAnalyzer::init(
   params_.is_extra_ok_for_stats_ = is_extra_ok_for_stats;
   params_.is_compressed_ = is_compressed;
   ob20_analyzer_.set_enable_transmission_checksum(enable_trans_checksum);
+  mysql_resp_result_.set_cmd(req_cmd);
   if (is_decompress_mode() && OB_FAIL(alloc_mysql_pkt_buf())) {
     LOG_WDIAG("fail to init resp analyzer because of failing to alloc_mysql_pkt_buf", K(analyze_mode_), K(ret));
   } else {
@@ -97,6 +98,7 @@ int ObRespAnalyzer::init(
   params_.is_autocommit_ = is_autocommit;
   params_.is_binlog_req_ = is_binlog_req;
   is_inited_ = true;
+  mysql_resp_result_.set_cmd(req_cmd);
   LOG_DEBUG("succ to init resp analyzer",
             K(protocol_), K(req_cmd_), K(protocol_mode_),
             K(is_extra_ok_for_stats), K(is_in_trans),
@@ -151,6 +153,10 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
 {
   int ret = OB_SUCCESS;
   if (STREAM_MYSQL_END == stream_mysql_state_) {
+    if (OB_NOT_NULL(protocol_diagnosis_)
+        && cur_stmt_has_more_result_) {
+      protocol_diagnosis_->reset_extra_ok_exists();
+    }
     last_mysql_pkt_seq_ = mysql_analyzer_.get_pkt_seq(); // save last pkt seq
     bool is_ob_mode = is_oceanbase_mode();
     reserved_len_ = 0; // after read one whole packet, we reset reserved_len_
@@ -424,12 +430,7 @@ int ObRespAnalyzer::handle_analyze_mysql_body(const char *buf, const int64_t len
 int ObRespAnalyzer::handle_not_analyze_mysql_pkt_type()
 {
   int ret = OB_SUCCESS;
-  PROTOCOL_DIAGNOSIS(SINGLE_MYSQL_WITH_FOLD, recv, protocol_diagnosis_,
-                     mysql_analyzer_.get_pkt_len(),
-                     mysql_analyzer_.get_pkt_seq(),
-                     0,
-                     (ending_type_ == MAX_PACKET_ENDING_TYPE) ?
-                      ObMysqlPacketRecord::get_fold_type(mysql_resp_result_) : OB_PACKET_FOLD_TYPE_NONE);
+
   if (OB_UNLIKELY(OB_MYSQL_COM_STATISTICS == req_cmd_)) {
     int64_t string_eof_pkt_cnt = mysql_resp_result_.get_pkt_cnt(STRING_EOF_ENDING_TYPE);
     if (0 == string_eof_pkt_cnt) {
@@ -455,18 +456,19 @@ int ObRespAnalyzer::handle_not_analyze_mysql_pkt_type()
 
   stream_mysql_state_ = STREAM_MYSQL_BODY;
 
+  PROTOCOL_DIAGNOSIS(SINGLE_MYSQL_WITH_FOLD, recv, protocol_diagnosis_,
+    mysql_analyzer_.get_pkt_len(),
+    mysql_analyzer_.get_pkt_seq(),
+    0,
+    (ending_type_ == MAX_PACKET_ENDING_TYPE) ?
+     ObMysqlPacketRecord::get_fold_type(req_cmd_, mysql_resp_result_) : OB_PACKET_FOLD_TYPE_NONE);
   return ret;
 }
 
 int ObRespAnalyzer::handle_analyze_mysql_pkt_type(const char *buf)
 {
   int ret = OB_SUCCESS;
-  PROTOCOL_DIAGNOSIS(SINGLE_MYSQL_WITH_FOLD, recv, protocol_diagnosis_,
-                     mysql_analyzer_.get_pkt_len(),
-                     mysql_analyzer_.get_pkt_seq(),
-                     mysql_analyzer_.get_pkt_type(),
-                     (ending_type_ == MAX_PACKET_ENDING_TYPE) ?
-                      ObMysqlPacketRecord::get_fold_type(mysql_resp_result_) : OB_PACKET_FOLD_TYPE_NONE);
+
   reserved_len_ += 1;
   // binlog service seq check
   if(OB_UNLIKELY(OB_MYSQL_COM_BINLOG_DUMP == req_cmd_ || OB_MYSQL_COM_BINLOG_DUMP_GTID == req_cmd_)) {
@@ -500,6 +502,22 @@ int ObRespAnalyzer::handle_analyze_mysql_pkt_type(const char *buf)
       } else {
         mysql_resp_result_.set_resp_type(RESULT_SET_RESP_TYPE);
       }
+
+      // 包含多个 mysql packet 的 resultset 一定含有 extra ok packet
+      // binlog没有extra ok packet
+      if (OB_NOT_NULL(protocol_diagnosis_)) {
+        if (mysql_resp_result_.get_resp_type() == RESULT_SET_RESP_TYPE
+            // prepare execute response 中的 ok packet 除了 error 后面的 ok packet 外, 都需要透传 (REWRITE)
+            && (req_cmd_ != OB_MYSQL_COM_STMT_PREPARE_EXECUTE || ERROR_PACKET_ENDING_TYPE == ending_type_)
+            && mysql_resp_result_.get_all_pkt_cnt() != 1
+            && !params_.is_binlog_req_) {
+          // 这里标记后, 协议诊断会在协议转发完成后检查是否裁剪过 extra ok 包
+          // 如果发现没有裁剪过 extra ok 包则会打印 EDIAG 日志
+          protocol_diagnosis_->set_extra_ok_exists();
+        } else {
+          protocol_diagnosis_->reset_extra_ok_exists();
+        }
+      }
     }
 
     if (need_copy_ok_pkt() || (params_.is_binlog_req_ && EOF_PACKET_ENDING_TYPE == ending_type_)) {
@@ -515,6 +533,14 @@ int ObRespAnalyzer::handle_analyze_mysql_pkt_type(const char *buf)
       }
     }
   }
+
+  PROTOCOL_DIAGNOSIS(SINGLE_MYSQL_WITH_FOLD, recv, protocol_diagnosis_,
+    mysql_analyzer_.get_pkt_len(),
+    mysql_analyzer_.get_pkt_seq(),
+    mysql_analyzer_.get_pkt_type(),
+    (ending_type_ == MAX_PACKET_ENDING_TYPE) ?
+     ObMysqlPacketRecord::get_fold_type(req_cmd_, mysql_resp_result_) : OB_PACKET_FOLD_TYPE_NONE);
+
   return ret;
 }
 

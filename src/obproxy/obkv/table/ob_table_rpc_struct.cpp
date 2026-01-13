@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "ob_table_rpc_struct.h"
+#include "common/ob_table_object.h"
 #include "lib/utility/ob_unify_serialize.h"
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obkv;
@@ -30,7 +31,9 @@ OB_SERIALIZE_MEMBER(ObTableLoginRequest,
                     pass_secret_,
                     pass_scramble_,
                     database_name_,
-                    ttl_us_);
+                    ttl_us_,
+                    client_info_,
+                    allow_distribute_capability_);
 
 OB_SERIALIZE_MEMBER(ObTableLoginResult,
                     server_capabilities_,
@@ -694,6 +697,9 @@ int ObTableQueryRequest::serialize_v4_(char *buf, const int64_t buf_len, int64_t
               entity_type_,
               consistency_level_,
               query_);
+  if (OB_SUCC(ret) && is_need_option_flag_) {
+    LST_DO_CODE(OB_UNIS_ENCODE, option_flag_);
+  }
   return ret;
 }
 /*
@@ -758,6 +764,9 @@ int64_t ObTableQueryRequest::get_serialize_size_v4_(void) const
               entity_type_,
               consistency_level_,
               query_);
+  if (is_need_option_flag_) {
+    len += 1;  // option_flag_
+  }
   return len;
 }
 
@@ -834,6 +843,10 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableQueryRequest)
     } else if (OB_FAIL(rpc_request->add_sub_req_buf(ObRpcFieldBuf(origin_buf, pos - origin_pos)))) {
       LOG_WDIAG("fail to add sub req buf", K(ret));
     }
+  }
+  if (OB_SUCC(ret) && pos < data_len) {
+    is_need_option_flag_ = true;
+    OB_UNIS_DECODE(option_flag_);
   }
   return ret;
 }
@@ -953,6 +966,9 @@ int ObTableQueryAndMutateRequest::serialize_v4_(char *buf, const int64_t buf_len
               entity_type_,
               query_and_mutate_,
               binlog_row_image_type_);
+  if (OB_SUCC(ret) && is_need_option_flag_) {
+    LST_DO_CODE(OB_UNIS_ENCODE, option_flag_);
+  }
   return ret;
 }
 /*
@@ -1017,6 +1033,10 @@ int64_t ObTableQueryAndMutateRequest::get_serialize_size_v4_(void) const
               entity_type_,
               query_and_mutate_,
               binlog_row_image_type_);
+
+  if (is_need_option_flag_) {
+    len += 1;  // option_flag_
+  }
   return len;
 }
 /*
@@ -1150,6 +1170,10 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableQueryAndMutateRequest)
     LOG_WDIAG("fail to deserialize query_and_mutate op", K(ret));
   }
   LST_DO_CODE(OB_UNIS_DECODE, binlog_row_image_type_);
+  if (OB_SUCC(ret) && pos < data_len) {
+    is_need_option_flag_ = true;
+    OB_UNIS_DECODE(option_flag_);
+  }
   return ret;
 }
 
@@ -1463,3 +1487,94 @@ OB_SERIALIZE_MEMBER(ObTableMetaRequest,
                      credential_,
                      meta_type_,
                      data_);
+
+OB_DEF_DESERIALIZE(ObHbaseOperationRequest, ) {
+  int ret = OB_SUCCESS;
+  LST_DO_CODE(OB_UNIS_DECODE, credential_, table_name_, option_flag_, op_type_);
+  if (OB_SUCC(ret)) {
+    int64_t keys_count = 0;
+    if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &keys_count))) {
+      LOG_WDIAG("fail to decode keys count", K(ret));
+    } else if (OB_FAIL(keys_.prepare_allocate(keys_count))) {
+      LOG_WDIAG("fail to prepare allocate keys", K(ret));
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < keys_count; ++i) {
+        // attention!!! can only use ObTableSerialUtil::deserialize to deserialize ObObj
+        // because ObObj type is not same as ObTableObjType
+        if (OB_FAIL(ObTableSerialUtil::deserialize(buf, data_len, pos, keys_.at(i)))) {
+          LOG_WDIAG("fail to deserialize key", K(ret));
+        }
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    int64_t same_cf_rows_count = 0;
+    if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &same_cf_rows_count))) {
+      LOG_WDIAG("fail to decode same_cf_rows count", K(ret));
+    } else if (OB_FAIL(same_cf_rows_.prepare_allocate(same_cf_rows_count))) {
+      LOG_WDIAG("fail to prepare allocate same_cf_rows", K(ret));
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < same_cf_rows_count; ++i) {
+        if (OB_FAIL(same_cf_rows_.at(i).deserialize(buf, data_len, pos))) {
+          LOG_WDIAG("fail to deserialize cf_row", K(ret));
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObHbaseOperationRequest, ) {
+  int ret = OB_SUCCESS;
+  LST_DO_CODE(OB_UNIS_ENCODE, credential_, table_name_, option_flag_, op_type_);
+  int64_t keys_count = keys_.count();
+  if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, keys_count))) {
+    LOG_WDIAG("fail to encode keys count", K(ret));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < keys_count; ++i) {
+      if (OB_FAIL(ObTableSerialUtil::serialize(buf, buf_len, pos, keys_.at(i)))) {
+        LOG_WDIAG("fail to serialize key", K(ret));
+      }
+    }
+  }
+  int64_t same_cf_rows_count = same_cf_rows_.count();
+  if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, same_cf_rows_count))) {
+    LOG_WDIAG("fail to encode same_cf_rows count", K(ret));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < same_cf_rows_count; ++i) {
+      if (OB_FAIL(same_cf_rows_.at(i).serialize(buf, buf_len, pos))) {
+        LOG_WDIAG("fail to serialize cf_row", K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObHbaseOperationRequest, ) {
+  int64_t len = 0;
+  LST_DO_CODE(OB_UNIS_ADD_LEN, credential_, table_name_, option_flag_, op_type_);
+  int64_t keys_count = keys_.count();
+  OB_UNIS_ADD_LEN(keys_count);
+  for (int64_t i = 0; i < keys_count; ++i) {
+    len += ObTableSerialUtil::get_serialize_size(keys_.at(i));
+  }
+  int64_t same_cf_rows_count = same_cf_rows_.count();
+  OB_UNIS_ADD_LEN(same_cf_rows_count);
+  for (int64_t i = 0; i < same_cf_rows_count; ++i) {
+    len += same_cf_rows_.at(i).get_serialize_size();
+  }
+  return len;
+}
+
+int ObHbaseOperationRequest::get_column_K_value(ObObj &obj) const {
+  int64_t key_index = get_key_index();
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(key_index < 0 || key_index >= keys_.count())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid key index", K(ret), K(key_index), K(keys_.count()));
+  } else {
+    obj = keys_.at(key_index);
+  }
+  return OB_SUCCESS;
+}

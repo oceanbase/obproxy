@@ -15,7 +15,6 @@
 #include "utils/ob_proxy_utils.h"
 
 using namespace oceanbase::common;
-static const int BUCKET_SIZE = 64;
 namespace oceanbase
 {
 namespace obproxy
@@ -26,7 +25,7 @@ namespace obutils
 ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(allocator), limit_offset_(0), limit_size_(-1),
                 limit_token_off_(-1), dml_field_results_(), comments_(), table_name_(), is_inited_(false),
                 has_unsupport_expr_type_(false), has_unsupport_expr_type_for_config_(false), has_sub_select_(false), use_column_value_from_hint_(false),
-                table_exprs_map_(), alias_table_map_(), table_pos_array_(), db_table_pos_array_(), select_exprs_(),
+                sub_select_level_(0), table_and_alias_ctx_(allocator), table_pos_array_(), db_table_pos_array_(), select_exprs_(),
                 group_by_exprs_(), order_by_exprs_(), has_rollup_(false), has_for_update_(false), from_token_off_(-1), t_case_level_(0)
 {
   field_results_ = &dml_field_results_;
@@ -34,12 +33,6 @@ ObProxyDMLStmt::ObProxyDMLStmt(common::ObIAllocator& allocator): ObProxyStmt(all
 
 ObProxyDMLStmt::~ObProxyDMLStmt()
 {
-  ExprMap::iterator iter = table_exprs_map_.begin();
-  ExprMap::iterator end = table_exprs_map_.end();
-  for (; iter != end; iter++) {
-    ObProxyExpr *expr = iter->second;
-    expr->~ObProxyExpr();
-  }
 
   for (int64_t i = 0; i < select_exprs_.count(); i++) {
     ObProxyExpr *expr = select_exprs_.at(i);
@@ -55,9 +48,6 @@ ObProxyDMLStmt::~ObProxyDMLStmt()
     ObProxyOrderItem *order_expr = order_by_exprs_.at(i);
     order_expr->~ObProxyOrderItem();
   }
-
-  table_exprs_map_.destroy();
-  alias_table_map_.destroy();
 }
 
 int ObProxyDMLStmt::init()
@@ -66,10 +56,8 @@ int ObProxyDMLStmt::init()
   if (is_inited_) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("init twice", K(ret));
-  } else if (OB_FAIL(table_exprs_map_.create(BUCKET_SIZE, ObModIds::OB_HASH_BUCKET_PROXY_MAP))) {
-    LOG_WDIAG("fail to init table expr map", K(ret));
-  } else if (OB_FAIL(alias_table_map_.create(BUCKET_SIZE, ObModIds::OB_HASH_BUCKET_PROXY_MAP))) {
-    LOG_WDIAG("fail to init alias table set", K(ret));
+  } else if (OB_FAIL(table_and_alias_ctx_.init())) {
+    LOG_WDIAG("fail to init table_and_alias_ctx_", K(ret));
   } else {
     is_inited_ = true;
   }
@@ -79,53 +67,24 @@ int ObProxyDMLStmt::init()
 int ObProxyDMLStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
+  int tmp_ret = OB_SUCCESS;
 
-  if (OB_ISNULL(parse_result.result_tree_) || OB_ISNULL(parse_result.result_tree_->children_[0])) {
+  bool need_recycle_ctx = true;
+  if (OB_ISNULL(parse_result.result_tree_)
+      || OB_ISNULL(parse_result.result_tree_->children_[0])) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("parse result info is null unexpected", K(ret));
-  } else if (OB_FAIL(handle_all_table_node(parse_result.result_tree_->children_[0]))) {
-    LOG_WDIAG("fail to handle_all_table_node", K(ret));
+  } else if (OB_FAIL(table_and_alias_ctx_.inc_ctx_level())) {
+    need_recycle_ctx = false;
+    LOG_WDIAG("fail to inc ctx level", K(ret));
   } else if (OB_FAIL(handle_comment_list(parse_result))) {
-    LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+    LOG_WDIAG("handle comment list failed", K(ret), K(sql_string_));
   }
 
-  return ret;
-}
-
-int ObProxyDMLStmt::handle_all_table_node(ParseNode* node)
-{
-  int ret = OB_SUCCESS;
-  ParseNode* tmp_node = NULL;
-
-  if (OB_ISNULL(node)) {
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("unexpected NULL node", K(ret));
-  } else {
-    for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
-      tmp_node = node->children_[i];
-      if (NULL == tmp_node) {
-        // do nothing
-      } else {
-        switch(tmp_node->type_) {
-          case T_FROM_LIST:
-            if (OB_FAIL(handle_from_list(tmp_node))) {
-              LOG_WDIAG("fail to handle from list", K(ret));
-            }
-            break;
-          case T_TABLE_REFERENCES:
-          case T_INSERT_INTO_CLAUSE:
-            if (OB_FAIL(handle_table_references(tmp_node))) {
-              LOG_WDIAG("handle table references failed", K(ret));
-            }
-            break;
-          default:
-            if (OB_FAIL(handle_all_table_node(tmp_node))) {
-              LOG_WDIAG("fail to handle from list", K(sql_string_), K(ret));
-            }
-            break;
-        }
-      }
-    }
+  if (need_recycle_ctx
+      && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = table_and_alias_ctx_.dec_ctx_level()))) {
+    LOG_WDIAG("fail to dec ctx level", K(tmp_ret), K(ret));
+    ret = tmp_ret;
   }
 
   return ret;
@@ -274,14 +233,179 @@ int ObProxyDMLStmt::handle_from_list(ParseNode* node)
           }
           break;
         }
+        case T_JOINED_TABLE:
+          if (OB_FAIL(handle_join_table(tmp_node))) {
+            LOG_WDIAG("fail to handle join talbe", K(sql_string_), K(ret));
+          }
+          break;
+        default: {
+          LOG_DEBUG("relationless tree type", K(tmp_node->type_));
+          break;
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
+/* ----------------A simple AST(Abstract Syntatic Tree) Example----------------
+SQL: \/*+DBP:$ROUTE={GROUP_ID(02)}*\/ select * from t1 join (select * from t4 where t4.id = 1) t4 on t1.id = t4.id or t1.c1 = t4.c1;
+(result_tree_ is
+(tree_str= T_STMT_LIST (null):pos:0, text_len:0, num_child_:1, token_off:-1, token_len:-1
+-- T_SELECT (null):pos:0, text_len:0, num_child_:23, token_off:31, token_len:6
+---- There is one NULL child node
+---- There is one NULL child node
+---- T_PROJECT_LIST (null):pos:0, text_len:0, num_child_:1, token_off:-1, token_len:-1
+------ T_PROJECT_STRING *:pos:0, text_len:0, num_child_:1, token_off:-1, token_len:-1
+-------- T_STAR (null):pos:0, text_len:0, num_child_:0, token_off:38, token_len:1
+---- There is one NULL child node
+---- T_FROM_LIST (null):pos:0, text_len:0, num_child_:1, token_off:40, token_len:4
+------ T_JOINED_TABLE (null):pos:0, text_len:0, num_child_:5, token_off:-1, token_len:-1
+-------- T_JOIN_INNER (null):pos:0, text_len:0, num_child_:0, token_off:-1, token_len:-1
+-------- T_ORG (null):pos:0, text_len:0, num_child_:4, token_off:-1, token_len:-1
+---------- T_RELATION_FACTOR t1:pos:0, text_len:0, num_child_:2, token_off:-1, token_len:-1
+------------ There is one NULL child node
+------------ T_IDENT t1:pos:0, text_len:0, num_child_:0, token_off:45, token_len:2
+---------- There is one NULL child node
+---------- There is one NULL child node
+---------- There is one NULL child node
+-------- T_ALIAS (null):pos:0, text_len:0, num_child_:2, token_off:-1, token_len:-1
+---------- T_SELECT (null):pos:0, text_len:0, num_child_:23, token_off:54, token_len:6
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ T_PROJECT_LIST (null):pos:0, text_len:0, num_child_:1, token_off:-1, token_len:-1
+-------------- T_PROJECT_STRING *:pos:0, text_len:0, num_child_:1, token_off:-1, token_len:-1
+---------------- T_STAR (null):pos:0, text_len:0, num_child_:0, token_off:61, token_len:1
+------------ There is one NULL child node
+------------ T_FROM_LIST (null):pos:0, text_len:0, num_child_:1, token_off:63, token_len:4
+-------------- T_ORG (null):pos:0, text_len:0, num_child_:4, token_off:-1, token_len:-1
+---------------- T_RELATION_FACTOR t4:pos:0, text_len:0, num_child_:2, token_off:-1, token_len:-1
+------------------ There is one NULL child node
+------------------ T_IDENT t4:pos:0, text_len:0, num_child_:0, token_off:68, token_len:2
+---------------- There is one NULL child node
+---------------- There is one NULL child node
+---------------- There is one NULL child node
+------------ T_WHERE_CLAUSE (null):pos:0, text_len:0, num_child_:2, token_off:71, token_len:5
+-------------- T_OP_EQ t4.id = 1:pos:0, text_len:0, num_child_:2, token_off:77, token_len:9
+---------------- T_COLUMN_REF t4.id:pos:0, text_len:0, num_child_:3, token_off:77, token_len:5
+------------------ There is one NULL child node
+------------------ T_IDENT t4:pos:0, text_len:0, num_child_:0, token_off:77, token_len:2
+------------------ T_IDENT id:pos:0, text_len:0, num_child_:0, token_off:80, token_len:2
+---------------- T_INT 1:pos:0, text_len:1, num_child_:0, token_off:85, token_len:1
+-------------- There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+------------ There is one NULL child node
+---------- T_IDENT t4:pos:0, text_len:0, num_child_:0, token_off:88, token_len:2
+-------- T_OP_OR (null):pos:0, text_len:0, num_child_:2, token_off:-1, token_len:-1
+---------- T_OP_EQ t1.id = t4.id:pos:0, text_len:0, num_child_:2, token_off:94, token_len:13
+------------ T_COLUMN_REF t1.id:pos:0, text_len:0, num_child_:3, token_off:94, token_len:5
+-------------- There is one NULL child node
+-------------- T_IDENT t1:pos:0, text_len:0, num_child_:0, token_off:94, token_len:2
+-------------- T_IDENT id:pos:0, text_len:0, num_child_:0, token_off:97, token_len:2
+------------ T_COLUMN_REF t4.id:pos:0, text_len:0, num_child_:3, token_off:102, token_len:5
+-------------- There is one NULL child node
+-------------- T_IDENT t4:pos:0, text_len:0, num_child_:0, token_off:102, token_len:2
+-------------- T_IDENT id:pos:0, text_len:0, num_child_:0, token_off:105, token_len:2
+---------- T_OP_EQ t1.c1 = t4.c1:pos:0, text_len:0, num_child_:2, token_off:111, token_len:13
+------------ T_COLUMN_REF t1.c1:pos:0, text_len:0, num_child_:3, token_off:111, token_len:5
+-------------- There is one NULL child node
+-------------- T_IDENT t1:pos:0, text_len:0, num_child_:0, token_off:111, token_len:2
+-------------- T_IDENT c1:pos:0, text_len:0, num_child_:0, token_off:114, token_len:2
+------------ T_COLUMN_REF t4.c1:pos:0, text_len:0, num_child_:3, token_off:119, token_len:5
+-------------- There is one NULL child node
+-------------- T_IDENT t4:pos:0, text_len:0, num_child_:0, token_off:119, token_len:2
+-------------- T_IDENT c1:pos:0, text_len:0, num_child_:0, token_off:122, token_len:2
+-------- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+---- There is one NULL child node
+comment[0] is \/*+DBP:$ROUTE={GROUP_ID(02)}*\/
+)
+*/
+int ObProxyDMLStmt::handle_join_table(ParseNode* node)
+{
+  int ret = OB_SUCCESS;
+
+  for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+    ParseNode *tmp_node = node->children_[i];
+    if (NULL == tmp_node) {
+      //do nothing
+    } else {
+      switch (tmp_node->type_) {
+        case T_ORG:
+        case T_ALIAS:
+          if (OB_FAIL(handle_table_node_to_expr(tmp_node))) {
+            LOG_WDIAG("fail to handle table node to expr", K(sql_string_), K_(tmp_node->type), K(ret));
+          }
+          break;
+        case T_JOINED_TABLE:
+          if (OB_FAIL(handle_join_table(tmp_node))) {
+            LOG_WDIAG("fail to handle join table", K_(tmp_node->type), K(ret));
+          }
+          break;
+        case T_OP_EQ:
+        case T_OP_NE:
+          // on_clause like:
+          // t1 join t2 on t1.id = t2.id
+          if (OB_FAIL(handle_where_clause(tmp_node))) {
+            LOG_WDIAG("fail to handle equal node", K_(tmp_node->type), K(ret));
+          }
+          break;
+        case T_OP_AND:
+        case T_OP_OR:
+          // on_clause like:
+          // t1 join t2 on t1.id = t2.id and t1.xx = t2.xx
+          if (OB_FAIL(handle_where_clause(tmp_node))) {
+            LOG_WDIAG("fail to handle handle/or node", K_(tmp_node->type), K(ret));
+          }
+          break;
+        case T_OP_BTW:
+          // on_clause like:
+          // t1 join t2 on t1.id = t2.id
+          if (OB_FAIL(handle_where_clause(tmp_node))) {
+            LOG_WDIAG("fail to handle between node", K_(tmp_node->type), K(ret));
+          }
+          break;
         default:
-          if (OB_FAIL(handle_from_list(tmp_node))) {
-            LOG_WDIAG("fail to handle from list", K(sql_string_), K(ret));
+          if (OB_FAIL(handle_where_clause(tmp_node))) {
+            LOG_WDIAG("fail to handle between node", K_(tmp_node->type), K(ret));
           }
           break;
       }
     }
   }
+
   return ret;
 }
 
@@ -303,17 +427,21 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
           }
           break;
         case T_IDENT:
-          if (is_sub_query) {
-            // skip alias
-          } else if (OB_ISNULL(expr_table)) {
+          // expr_table = NULL in sub query is possible
+          if (OB_ISNULL(expr_table)
+              && !is_sub_query) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("fail to get expr table", K(ret));
-          } else if (OB_UNLIKELY(NULL == tmp_node->str_value_ || 0 >= tmp_node->str_len_)) {
+          } else if (OB_UNLIKELY(NULL == tmp_node->str_value_ || 0 > tmp_node->str_len_)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
+          } else if (OB_UNLIKELY(0 == tmp_node->str_len_)) {
+            // empty alias name, nothing
+            // example: select * from (select * from t1);
+            LOG_DEBUG("empty alias name", KP(tmp_node), KP(tmp_node->str_value_));
           } else {
             ObString alias_table(static_cast<int32_t>(tmp_node->str_len_), tmp_node->str_value_);
-            if (OB_FAIL(alias_table_map_.set_refactored(alias_table, expr_table))) {
+            if (OB_FAIL(table_and_alias_ctx_.add_alias_name(alias_table, expr_table))) {
               if (OB_HASH_EXIST == ret) {
                 // dumplicate alias, ignore
                 ret = OB_SUCCESS;
@@ -324,12 +452,15 @@ int ObProxyDMLStmt::handle_table_node_to_expr(ParseNode* node)
           }
           break;
         case T_SELECT:
+          has_unsupport_expr_type_for_config_ = true;
           has_sub_select_ = true;
+          sub_select_level_++;
           if (OB_FAIL(do_handle_parse_result(tmp_node))) {
             LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
           } else {
             is_sub_query = true;
           }
+          sub_select_level_--;
           break;
         default:
           has_unsupport_expr_type_ = true;
@@ -370,7 +501,7 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
   } else {
     ObString table_name(static_cast<int32_t>(table_node->str_len_), table_node->str_value_);
     string_to_upper_case(table_name.ptr(), table_name.length()); // change all to upper to store
-    if (OB_FAIL(table_exprs_map_.get_refactored(table_name, expr))) { /* same table keep last one. */
+    if (OB_FAIL(table_and_alias_ctx_.find_table_name(table_name, expr))) { /* same table keep last one. */
       if (OB_HASH_NOT_EXIST == ret) {
         if(table_name_.empty())
           table_name_ = table_name; // set 'table_name_' be the first table name in SQL, and convert to UPPER CASE
@@ -387,7 +518,7 @@ int ObProxyDMLStmt::get_table_and_db_expr(ParseNode* node, ObProxyExprTable* &ex
           }
           expr_table->set_table_name(table_node->str_value_, static_cast<int32_t>(table_node->str_len_));
 
-          if (OB_FAIL(table_exprs_map_.set_refactored(table_name, expr_table))) { /* same table keep last one. */
+          if (OB_FAIL(table_and_alias_ctx_.add_table_name(table_name, expr_table))) { /* same table keep last one. */
             LOG_WDIAG("fail to add table expr", K(table_name), K(ret));
           }
         }
@@ -440,14 +571,16 @@ int ObProxyDMLStmt::handle_table_and_db_node(ParseNode* node, ObProxyExprTable* 
   } else {
     ObProxyExpr* expr = NULL;
     ObString table_name = ObString::make_string(table_node->str_value_);
-    if (OB_SUCCESS == alias_table_map_.get_refactored(table_name, expr)) {
-      if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
+    if (OB_SUCCESS == table_and_alias_ctx_.find_alias_name(table_name, expr)) {
+      if (OB_ISNULL(expr)) {
+        LOG_WDIAG("null expr, maybe sub query alias", K(table_name));
+      } else if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("dynamic_cast failed", K(ret));
       }
     } else {
       string_to_upper_case(table_name.ptr(), table_name.length()); // change all to upper to store
-      if (OB_SUCCESS == table_exprs_map_.get_refactored(table_name, expr)) {
+      if (OB_SUCCESS == table_and_alias_ctx_.find_table_name(table_name, expr)) {
         if (OB_ISNULL(expr_table = dynamic_cast<ObProxyExprTable*>(expr))) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("dynamic_cast failed", K(ret));
@@ -534,16 +667,25 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
           case T_CASE:
             t_case_level_++;
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WDIAG("handle_where_nodes failed", K(sql_string_), K(ret));
+              LOG_WDIAG("handle where clause failed", K(sql_string_), K(ret));
             }
             t_case_level_--;
             break;
           case T_NULL: { // ignore NULL in where clause
             break;
           }
+          case T_SELECT:
+            has_unsupport_expr_type_for_config_ = true;
+            has_sub_select_ = true;
+            sub_select_level_++;
+            if (OB_FAIL(do_handle_parse_result(tmp_node))) {
+              LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            }
+            sub_select_level_--;
+            break;
           default:
             if (OB_FAIL(handle_where_clause(tmp_node))) {
-              LOG_WDIAG("handle_where_nodes failed", K(sql_string_), K(ret));
+              LOG_WDIAG("handle where clause failed", K(sql_string_), K(ret));
             }
             break;
         }
@@ -638,9 +780,11 @@ int ObProxyDMLStmt::handle_column_and_value(ParseNode* node)
             is_skip_field = true;
             has_unsupport_expr_type_for_config_ = true;
             has_sub_select_ = true;
+            sub_select_level_++;
             if (OB_FAIL(do_handle_parse_result(tmp_node))) {
               LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
             }
+            sub_select_level_--;
             break;
           }
           default:
@@ -946,73 +1090,88 @@ int ObProxyDMLStmt::handle_explain_node(const ParseResult &parse_result, ParseNo
 int ObProxyDMLStmt::do_handle_parse_result(ParseNode* node)
 {
   int ret = OB_SUCCESS;
-
+  int tmp_ret = OB_SUCCESS;
+  bool need_recycle_ctx = true;
   ParseNode* tmp_node = NULL;
 
-  for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
-    tmp_node = node->children_[i];
-    if (NULL == tmp_node) {
-      // do nothing
-    } else if (i == PARSE_SELECT_HAVING) {
-      has_unsupport_expr_type_ = true;
-      LOG_DEBUG("having not support", K(ret), K(sql_string_));
-    } else {
-      switch(tmp_node->type_) {
-        case T_FROM_LIST:
-          from_token_off_ = tmp_node->token_off_;
-          ret = handle_from_list(tmp_node);
-          break;
-        default:
-          break;
+  if (OB_FAIL(table_and_alias_ctx_.inc_ctx_level())) {
+    need_recycle_ctx = false;
+    LOG_WDIAG("fail to inc ctx level", K(ret));
+  } else {
+    for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+      tmp_node = node->children_[i];
+      if (NULL == tmp_node) {
+        // do nothing
+      } else if (i == PARSE_SELECT_HAVING) {
+        has_unsupport_expr_type_ = true;
+        LOG_DEBUG("having not support", K(ret), K(sql_string_));
+      } else {
+        switch(tmp_node->type_) {
+          case T_FROM_LIST:
+            from_token_off_ = tmp_node->token_off_;
+            ret = handle_from_list(tmp_node);
+            break;
+          default:
+            break;
+        }
+      }
+    }
+
+    for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+      tmp_node = node->children_[i];
+      if (NULL == tmp_node) {
+        // do nothing
+      } else {
+        switch(tmp_node->type_) {
+          case T_HINT_OPTION_LIST:
+            ret = handle_hint_clause(tmp_node);
+            break;
+          case T_PROJECT_LIST:
+            ret = handle_project_list(tmp_node);
+            break;
+          case T_FROM_LIST:
+            break;
+          case T_WHERE_CLAUSE:
+            ret = handle_where_clause(tmp_node);
+            break;
+          case T_GROUPBY_CLAUSE:
+            ret = handle_groupby_clause(tmp_node);
+            break;
+          case T_ORDER_BY:
+            ret = handle_orderby_clause(tmp_node);
+            break;
+          case T_COMMA_LIMIT_CLAUSE:
+          case T_LIMIT_CLAUSE:
+            ret = handle_limit_clause(tmp_node);
+            break;
+          case T_SFU_INT:
+            has_for_update_ = true;
+            break;
+          case T_SET_UNION:
+            ret = handle_union_clause(tmp_node);
+            break;
+          case T_SELECT:
+            has_unsupport_expr_type_for_config_ = true;
+            has_sub_select_ = true;
+            sub_select_level_++;
+            if (OB_FAIL(do_handle_parse_result(tmp_node))) {
+              LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+            }
+            sub_select_level_--;
+            break;
+          case T_QEURY_EXPRESSION_LIST: //distinct not support now
+          default:
+            has_unsupport_expr_type_ = true;
+            LOG_DEBUG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
+        }
       }
     }
   }
 
-  for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
-    tmp_node = node->children_[i];
-    if (NULL == tmp_node) {
-      // do nothing
-    } else {
-      switch(tmp_node->type_) {
-        case T_HINT_OPTION_LIST:
-          ret = handle_hint_clause(tmp_node);
-          break;
-        case T_PROJECT_LIST:
-          ret = handle_project_list(tmp_node);
-          break;
-        case T_FROM_LIST:
-          break;
-        case T_WHERE_CLAUSE:
-          ret = handle_where_clause(tmp_node);
-          break;
-        case T_GROUPBY_CLAUSE:
-          ret = handle_groupby_clause(tmp_node);
-          break;
-        case T_ORDER_BY:
-          ret = handle_orderby_clause(tmp_node);
-          break;
-        case T_COMMA_LIMIT_CLAUSE:
-        case T_LIMIT_CLAUSE:
-          ret = handle_limit_clause(tmp_node);
-          break;
-        case T_SFU_INT:
-          has_for_update_ = true;
-          break;
-        case T_SET_UNION:
-          ret = handle_union_clause(tmp_node);
-          break;
-        case T_SELECT:
-          has_sub_select_ = true;
-          if (OB_FAIL(do_handle_parse_result(tmp_node))) {
-            LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
-          }
-          break;
-        case T_QEURY_EXPRESSION_LIST: //distinct not support now
-        default:
-          has_unsupport_expr_type_ = true;
-          LOG_DEBUG("unsupport type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
-      }
-    }
+  if (need_recycle_ctx
+      && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = table_and_alias_ctx_.dec_ctx_level()))) {
+    LOG_WDIAG("fail to dec ctx level", K(tmp_ret), K(ret));
+    ret = tmp_ret;
   }
 
   return ret;
@@ -1256,8 +1415,9 @@ int ObProxyDMLStmt::handle_project_list(ParseNode* node)
       switch(tmp_node->type_) {
         case T_PROJECT_STRING:
           if (OB_FAIL(project_string_to_expr(tmp_node, expr))) {
-            LOG_WDIAG("project_string_to_expr failed", K(sql_string_), K(ret));
-          } else if (OB_FAIL(select_exprs_.push_back(expr))) {
+            LOG_WDIAG("project string to expr failed", K(sql_string_), K(ret));
+          } else if (OB_NOT_NULL(expr)
+                     && OB_FAIL(select_exprs_.push_back(expr))) {
             LOG_WDIAG("push to array failed", K(sql_string_), K(ret));
           }
           break;
@@ -1271,6 +1431,42 @@ int ObProxyDMLStmt::handle_project_list(ParseNode* node)
       }
     }
   }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_FAIL(handle_sub_select(node))) {
+    LOG_WDIAG("handle sub select in projection failed", K(ret));
+  }
+  return ret;
+}
+
+int ObProxyDMLStmt::handle_sub_select(ParseNode* node)
+{
+  int ret = OB_SUCCESS;
+  ParseNode* tmp_node = NULL;
+  ObProxyExpr* expr = NULL;
+  for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+    tmp_node = node->children_[i];
+    expr = NULL;
+    if (NULL == tmp_node) {
+      // do nothing
+    } else {
+      switch(tmp_node->type_) {
+        case T_SELECT:
+          has_unsupport_expr_type_for_config_ = true;
+          has_sub_select_ = true;
+          if (OB_FAIL(do_handle_parse_result(tmp_node))) {
+            LOG_WDIAG("fail to do handle parse result", "node_type", get_type_name(tmp_node->type_), K(ret));
+          }
+          break;
+        default:
+          if (OB_FAIL(handle_sub_select(tmp_node))) {
+            LOG_WDIAG("handle sub select failed", K_(sql_string), K(ret));
+          }
+      }
+    }
+  }
+
   return ret;
 }
 
@@ -1355,8 +1551,8 @@ int ObProxyDMLStmt::alias_node_to_expr(ParseNode* node, ObProxyExpr* &expr, Pars
       switch(tmp_node->type_) {
         case T_IDENT:
           if (OB_ISNULL(expr)) {
-            ret = OB_ERR_UNEXPECTED;
-            LOG_WDIAG("fail to get expr table", K(ret));
+            // nothing
+            LOG_DEBUG("maybe sub select", K_(sub_select_level), K_(has_sub_select));
           } else if (OB_UNLIKELY(NULL == tmp_node->str_value_ || 0 >= tmp_node->str_len_)) {
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("alias token meet some wrong", "str len", tmp_node->str_len_, K(ret));
@@ -1479,6 +1675,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
 {
   int ret = OB_SUCCESS;
   int i = 0;
+
   switch(node->type_) {
     case T_STAR:
       if (OB_FAIL(get_expr_by_type(expr, OB_PROXY_EXPR_TYPE_STAR))) {
@@ -1514,7 +1711,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
       //varchar has varchar child, if child is 0 not have child
       if (node->num_child_ == 0) {
         if (OB_FAIL(get_const_expr(node, expr))) {
-          LOG_WDIAG("fail to get sharding const expr succ", K(ret));
+          LOG_WDIAG("fail to get sharding const expr", K(ret));
         }
       } else {
         for (i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
@@ -1524,7 +1721,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
             ret = OB_ERR_UNEXPECTED;
             LOG_WDIAG("expr should null", K(ret), K(i), K(node->str_value_), K(sql_string_));
           } else  if (OB_FAIL(get_const_expr(node->children_[i], expr))) {
-            LOG_WDIAG("fail to get sharding const expr succ", K(ret));
+            LOG_WDIAG("fail to get sharding const expr", K(ret));
           }
         }
       }
@@ -1539,7 +1736,7 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
     case T_FUN_MIN:
     case T_FUN_AVG:
       if (OB_FAIL(func_node_to_expr(node, expr))) {
-        LOG_WDIAG("fail to add func node expr succ", K(ret));
+        LOG_WDIAG("fail to add func node expr", K(ret));
       }
       break;
     default:
@@ -1553,8 +1750,10 @@ int ObProxyDMLStmt::string_node_to_expr(ParseNode* node, ObProxyExpr* &expr,  Pa
         LOG_WDIAG("get_sharding_const_expr failed", K(ret));
       }
   }
+
   return ret;
 }
+
 int ObProxyDMLStmt::project_string_to_expr(ParseNode* node, ObProxyExpr* &expr)
 {
   int ret = OB_SUCCESS;
@@ -1610,7 +1809,12 @@ int ObProxyDMLStmt::handle_sort_key_node(ParseNode* node, ObProxyExpr* &expr, co
       }
     }
   }
-  if (OB_SUCC(ret)) {
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_ISNULL(tmp_expr)) {
+    LOG_DEBUG("unsupported sort key, may be is sub select, ignore it", "node_type", get_type_name(node->type_), K(node->str_value_));
+  } else {
     ObProxyGroupItem* group_item_expr = NULL;
     ObProxyExprType expr_type;
     if (sort_list_type == SORT_LSIT_IN_ORDER_BY) {
@@ -1649,43 +1853,51 @@ int ObProxyDMLStmt::handle_sort_list_node(ParseNode* node, const SortListType& s
   ObProxyExpr* expr = NULL;
   ObProxyGroupItem* group_item_expr = NULL;
   ObProxyOrderItem* order_item_expr = NULL;
-  for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
-    tmp_node = node->children_[i];
-    expr = NULL;
-    if (NULL == tmp_node) {
-      //do nothing
-    } else {
-      switch(tmp_node->type_) {
-        case T_SORT_KEY:
-          if (OB_FAIL(handle_sort_key_node(tmp_node, expr, sort_list_type))) {
-            LOG_WDIAG("handle_sort_key_node", K(sql_string_), K(ret));
-          } else {
-            switch(sort_list_type) {
-              case SORT_LIST_IN_GROUP_BY:
-                if (OB_ISNULL(group_item_expr = dynamic_cast<ObProxyGroupItem*>(expr))) {
-                  ret = OB_ERR_UNEXPECTED;
-                  LOG_WDIAG("dynamic_cast to ObProxyGroupItem failed", K(ret));
-                } else if (OB_FAIL(group_by_exprs_.push_back(group_item_expr))) {
-                  LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
-                }
-                break;
-              case SORT_LSIT_IN_ORDER_BY:
-                if (OB_ISNULL(order_item_expr = dynamic_cast<ObProxyOrderItem*>(expr))) {
-                  ret = OB_ERR_UNEXPECTED;
-                  LOG_WDIAG("dynamic_cast to ObProxyOrderItem failed", K(ret));
-                } else if (OB_FAIL(order_by_exprs_.push_back(order_item_expr))) {
-                  LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
-                }
-                break;
-              default:
-                has_unsupport_expr_type_ = true;
-                LOG_DEBUG("invalid sort_list_type", K(sort_list_type), K(sql_string_), K(ret));
+
+  if (sub_select_level_ > 0) {
+    // nothing
+  } else {
+    for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
+      tmp_node = node->children_[i];
+      expr = NULL;
+      if (NULL == tmp_node) {
+        //do nothing
+      } else {
+        switch(tmp_node->type_) {
+          case T_SORT_KEY:
+            if (OB_FAIL(handle_sort_key_node(tmp_node, expr, sort_list_type))) {
+              LOG_WDIAG("handle_sort_key_node", K(sql_string_), K(ret));
+            } else if (OB_ISNULL(expr)) {
+              //maybe unsupport sort key type
+              LOG_DEBUG("ignore it", "node_type", get_type_name(tmp_node->type_), K(tmp_node->str_value_));
+            } else {
+              switch(sort_list_type) {
+                case SORT_LIST_IN_GROUP_BY:
+                  if (OB_ISNULL(group_item_expr = dynamic_cast<ObProxyGroupItem*>(expr))) {
+                    ret = OB_ERR_UNEXPECTED;
+                    LOG_WDIAG("dynamic_cast to ObProxyGroupItem failed", K(ret));
+                  } else if (OB_FAIL(group_by_exprs_.push_back(group_item_expr))) {
+                    LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
+                  }
+                  break;
+                case SORT_LSIT_IN_ORDER_BY:
+                  if (OB_ISNULL(order_item_expr = dynamic_cast<ObProxyOrderItem*>(expr))) {
+                    ret = OB_ERR_UNEXPECTED;
+                    LOG_WDIAG("dynamic_cast to ObProxyOrderItem failed", K(ret));
+                  } else if (OB_FAIL(order_by_exprs_.push_back(order_item_expr))) {
+                    LOG_WDIAG("push_back failed", K(sql_string_), K(ret));
+                  }
+                  break;
+                default:
+                  has_unsupport_expr_type_ = true;
+                  LOG_DEBUG("invalid sort_list_type", K(sort_list_type), K(sql_string_), K(ret));
+              }
             }
-          }
-          break;
-        default:
-          has_unsupport_expr_type_ = true;
-          LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
+            break;
+          default:
+            has_unsupport_expr_type_ = true;
+            LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_), K(ret));
+        }
       }
     }
   }
@@ -1710,7 +1922,7 @@ int ObProxyDMLStmt::handle_with_rollup_in_groupby(ParseNode* node)
         break;
       case T_SORT_LIST:
         if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LIST_IN_GROUP_BY))) {
-          LOG_WDIAG("handle_sort_list_node failed", K(ret), K(sql_string_));
+          LOG_WDIAG("handle sort list node failed", K(ret), K(sql_string_));
         }
         break;
       default:
@@ -1734,7 +1946,7 @@ int ObProxyDMLStmt::handle_groupby_clause(ParseNode* node)
       has_unsupport_expr_type_ = true;
       LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_with_rollup_in_groupby(tmp_node))) {
-      LOG_WDIAG("handle_with_rollup_in_groupby failed", K(ret), K(i), K(sql_string_));
+      LOG_WDIAG("handle with rollup in groupby failed", K(ret), K(i), K(sql_string_));
     }
   }
 
@@ -1753,7 +1965,7 @@ int ObProxyDMLStmt::handle_orderby_clause(ParseNode* node)
       has_unsupport_expr_type_ = true;
       LOG_DEBUG("unsupport expr type", "node_type", get_type_name(tmp_node->type_), K(sql_string_));
     } else if (OB_FAIL(handle_sort_list_node(tmp_node, SORT_LSIT_IN_ORDER_BY))) {
-      LOG_WDIAG("handle_sort_list_node", K(ret), K(i), K(sql_string_));
+      LOG_WDIAG("handle sort list node", K(ret), K(i), K(sql_string_));
     }
   }
 
@@ -1767,12 +1979,10 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
   ParseNode* node = NULL;
   if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
-  } else if (OB_FAIL(handle_all_table_node(node))) {
-    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else if (OB_FAIL(do_handle_parse_result(node))) {
     LOG_WDIAG("fail to do handle parse result", K(sql_string_), "node_type", get_type_name(node->type_), K(ret));
   } else if (OB_FAIL(handle_comment_list(parse_result))) {
-    LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+    LOG_WDIAG("handle comment list failed", K(ret), K(sql_string_));
   }
 
   return ret;
@@ -1781,12 +1991,16 @@ int ObProxySelectStmt::handle_parse_result(const ParseResult &parse_result)
 int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
+  int tmp_ret = OB_SUCCESS;
 
   ParseNode* node = NULL;
-  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+  bool need_recycle_ctx = true;
+
+  if (OB_FAIL(table_and_alias_ctx_.inc_ctx_level())) {
+    need_recycle_ctx = false;
+    LOG_WDIAG("fail to inc ctx level", K(ret));
+  } else if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
-  } else if (OB_FAIL(handle_all_table_node(node))) {
-    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
@@ -1819,8 +2033,14 @@ int ObProxyInsertStmt::handle_parse_result(const ParseResult &parse_result)
 
   if(OB_SUCC(ret)) {
     if (OB_FAIL(handle_comment_list(parse_result))) {
-      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+      LOG_WDIAG("handle comment list failed", K(ret), K(sql_string_));
     }
+  }
+
+  if (need_recycle_ctx
+      && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = table_and_alias_ctx_.dec_ctx_level()))) {
+    LOG_WDIAG("fail to dec ctx level", K(tmp_ret), K(ret));
+    ret = tmp_ret;
   }
 
   return ret;
@@ -2021,12 +2241,15 @@ int ObProxyInsertStmt::handle_value_vector(ParseNode *node)
 int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
+  int tmp_ret = OB_SUCCESS;
 
   ParseNode* node = NULL;
-  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+  bool need_recycle_ctx = true;
+  if (OB_FAIL(table_and_alias_ctx_.inc_ctx_level())) {
+    need_recycle_ctx = false;
+    LOG_WDIAG("fail to inc ctx level", K(ret));
+  } else if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
-  } else if (OB_FAIL(handle_all_table_node(node))) {
-    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     if (node->type_ == T_DELETE) {
       stmt_type_ = OBPROXY_T_DELETE;
@@ -2065,8 +2288,14 @@ int ObProxyDeleteStmt::handle_parse_result(const ParseResult &parse_result)
 
   if(OB_SUCC(ret)) {
     if (OB_FAIL(handle_comment_list(parse_result))) {
-      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+      LOG_WDIAG("handle comment list failed", K(ret), K(sql_string_));
     }
+  }
+
+  if (need_recycle_ctx
+      && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = table_and_alias_ctx_.dec_ctx_level()))) {
+    LOG_WDIAG("fail to dec ctx level", K(tmp_ret), K(ret));
+    ret = tmp_ret;
   }
 
   return ret;
@@ -2098,12 +2327,16 @@ int ObProxyDeleteStmt::handle_delete_table_node(ParseNode *node)
 int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
 {
   int ret = OB_SUCCESS;
+  int tmp_ret = OB_SUCCESS;
 
   ParseNode* node = NULL;
-  if (OB_FAIL(handle_explain_node(parse_result, node))) {
+  bool need_recycle_ctx = true;
+
+  if (OB_FAIL(table_and_alias_ctx_.inc_ctx_level())) {
+    need_recycle_ctx = false;
+    LOG_WDIAG("fail to inc ctx level", K(ret));
+  } else if (OB_FAIL(handle_explain_node(parse_result, node))) {
     LOG_WDIAG("fail to handle explain node", K(ret));
-  } else if (OB_FAIL(handle_all_table_node(node))) {
-    LOG_WDIAG("fail to handle_all_table_node", K(ret));
   } else {
     for (int i = 0; OB_SUCC(ret) && i < node->num_child_; i++) {
       ParseNode* tmp_node = node->children_[i];
@@ -2140,8 +2373,14 @@ int ObProxyUpdateStmt::handle_parse_result(const ParseResult &parse_result)
 
   if(OB_SUCC(ret)) {
     if (OB_FAIL(handle_comment_list(parse_result))) {
-      LOG_WDIAG("handle_comment_list failed", K(ret), K(sql_string_));
+      LOG_WDIAG("handle comment list failed", K(ret), K(sql_string_));
     }
+  }
+
+  if (need_recycle_ctx
+      && OB_UNLIKELY(OB_SUCCESS != (tmp_ret = table_and_alias_ctx_.dec_ctx_level()))) {
+    LOG_WDIAG("fail to dec ctx level", K(tmp_ret), K(ret));
+    ret = tmp_ret;
   }
 
   return ret;

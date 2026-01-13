@@ -209,6 +209,7 @@ public:
   {
     return ht_.deserialization(archive, &allocer_);
   };
+  DEFINE_TO_STRING(BUF_PRINTO(ht_));
 private:
   preproc preproc_;
   _allocer allocer_;

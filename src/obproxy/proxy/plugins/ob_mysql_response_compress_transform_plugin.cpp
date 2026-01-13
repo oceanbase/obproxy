@@ -67,6 +67,13 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
     local_reader_ = reader->clone();
   }
 
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_read_ += reader->read_avail();
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_decompress read compressed response",
+      "plugin_decompress_read",
+      sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_read_);
+  }
+
   const obmysql::ObMySQLCmd cmd = sm_->trans_state_.trans_info_.client_request_.get_packet_meta().cmd_;
   const ObMysqlProtocolMode protocol_mode = sm_->client_session_->get_session_info().is_oracle_mode() ?
                                             OCEANBASE_ORACLE_PROTOCOL_MODE : OCEANBASE_MYSQL_PROTOCOL_MODE;
@@ -123,6 +130,20 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
         PROXY_API_LOG(WDIAG, "fail to trim last ok packet", K(ret));
       } else {
         resp_result.set_is_last_ok_handled(true);
+        if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+          if (resp_result.get_ok_packet_action_type() == OK_PACKET_ACTION_CONSUME) {
+            sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_DECOMPRESS_TRIM_EXTRA_OK);
+            sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_trim_ok_ = resp_result.get_last_ok_pkt_len();
+            PROTOCOL_FORWARD_LOG(TRACE, "plugin trim response extra ok",
+              "plugin_trim_ok", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_trim_ok_);
+          } else if (resp_result.get_ok_packet_action_type() == OK_PACKET_ACTION_REWRITE) {
+            sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_DECOMPRESS_REWRITE_LAST_OK);
+            sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_rewrite_ok_delta_ =
+              (resp_result.get_rewritten_last_ok_pkt_len() - resp_result.get_last_ok_pkt_len());
+            PROTOCOL_FORWARD_LOG(TRACE, "plugin rewrite response last ok",
+              "plugin_rewrite_last_ok_delta", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_rewrite_ok_delta_);
+          }
+        }
       }
       sm_->print_mysql_complete_log(NULL);
     }
@@ -187,6 +208,17 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
                         "actual size", produce_size, K(ret));
         } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
           PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
+        } else {
+          if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+            sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_write_ += consume_size;
+            sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_decrease_ += (
+              sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_read_ -
+              sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_write_
+            );
+            PROTOCOL_FORWARD_LOG(TRACE, "plugin_decompress write mysql response",
+              "plugin_decompress_write", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_decompress_write_,
+              "write_delta", consume_size);
+          }
         }
       }
     }
@@ -204,6 +236,12 @@ int ObMysqlResponseCompressTransformPlugin::consume(event::ObIOBufferReader *rea
 void ObMysqlResponseCompressTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCompressTransformPlugin::handle_input_complete happen");
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_DECOMPRESS_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_decompress process response finish");
+  }
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;

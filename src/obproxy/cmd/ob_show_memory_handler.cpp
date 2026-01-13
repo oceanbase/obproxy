@@ -216,6 +216,12 @@ int ObShowMemoryHandler::handle_show_memory(int event, void *data)
   }
 
   if (OB_SUCC(ret)) {
+    if (OB_FAIL(dump_mod_memory("TOTAL", "user", get_memory_hold(), get_memory_used(), 0))) {
+      LOG_WDIAG("fail to TOTAL memory info", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
     if (OB_FAIL(encode_eof_packet())) {
       WDIAG_ICMD("fail to encode eof packet", K(ret));
     } else {

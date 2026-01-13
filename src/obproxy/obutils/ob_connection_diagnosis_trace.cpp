@@ -205,6 +205,7 @@ void ObConnectionDiagnosisTrace::reset()
   is_first_packet_received_ = false;
   is_detect_request_ = false;
   is_com_quit_ = false;
+  is_proxysys_ = false;
   is_detect_user_ = false;
 }
 
@@ -296,7 +297,9 @@ bool ObConnectionDiagnosisTrace::need_record_diagnosis_log() const
   bool bret = true;
   if (!is_user_client_
       || is_detect_request_
-      || is_com_quit_
+      || (is_com_quit_
+          && (is_proxysys_
+             || !is_enable_record_login_logout()))
       || is_detect_user_) {
     bret = false;
   }
@@ -310,6 +313,8 @@ void ObConnectionDiagnosisTrace::log_diagnosis_info() const
     if (obmysql::ObMySQLCmd::OB_MYSQL_COM_LOGIN == diagnosis_info_->request_cmd_) {
       OBPROXY_DIAGNOSIS_LOG(INFO, "[LOGIN]", K(trace_type),
                             "connection_diagnosis", *diagnosis_info_);
+    } else if (obmysql::ObMySQLCmd::OB_MYSQL_COM_QUIT == diagnosis_info_->request_cmd_) {
+      OBPROXY_DIAGNOSIS_LOG(INFO, "[LOGOUT]", K(trace_type),"connection_diagnosis", *diagnosis_info_);
     } else {
       if (OB_NOT_NULL(protocol_diagnosis_)) {
         OBPROXY_DIAGNOSIS_LOG(INFO, "[CONNECTION]", K(trace_type),

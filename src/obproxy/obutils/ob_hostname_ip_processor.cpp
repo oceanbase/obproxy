@@ -158,6 +158,8 @@ int ObHostnameIpRefreshProcessor::async_refresh_ip_by_hostname(const ObString& t
   } else if (OB_ISNULL(refresh_cont = op_alloc_args(ObHostnameIpRefreshCont, mutex, cb_cont, this_ethread(), *this))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("fail to alloc ObHostnameIpRefreshCont", K(ret));
+  // mutex的所有权转移给 refresh_cont，在 destroy中会 free
+  } else if (OB_FALSE_IT(mutex = NULL)) {
   } else if (OB_FAIL(refresh_cont->init(target_hostname))) {
     LOG_WDIAG("fail to init ObHostnameIpRefreshCont", K(ret));
   } else if (OB_ISNULL(g_event_processor.schedule_imm(refresh_cont, ET_BLOCKING))) {

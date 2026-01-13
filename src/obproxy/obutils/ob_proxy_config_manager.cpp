@@ -33,9 +33,9 @@ namespace obutils
 {
 
 const char *ObProxyConfigManager::GET_PROXY_CONFIG_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ app_name, name, value FROM %s where app_name = 'all_proxy' "
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ app_name, name, value FROM %s where app_name = 'all_proxy' "
     "UNION ALL "
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ app_name, name, value FROM %s where app_name = '%s' "
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ app_name, name, value FROM %s where app_name = '%s' "
     "LIMIT %ld";
 
 ObProxyConfigManager::ObProxyConfigManager()

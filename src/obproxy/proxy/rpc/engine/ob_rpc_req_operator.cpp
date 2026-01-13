@@ -45,7 +45,7 @@ ObProxyRpcReqOperator::ObProxyRpcReqOperator(proxy::ObRpcReq *input, common::ObI
     const ObRpcReqTraceId &trace_id = input->get_trace_id();
     trace_id.get_rpc_trace_id(id, ipport);
     rpc_trace_id_.set_rpc_trace_id(id, ipport);
-    rpc_trace_id_.set_rpc_sub_index_id(trace_id.get_rpc_sub_index_id(), input->get_obkv_info().inner_req_retries_);
+    rpc_trace_id_.set_rpc_sub_index_id(trace_id.get_rpc_sub_index_id(), input->get_obkv_info().retry_info_.retry_status_.inner_req_retries_);
   }
 }
 

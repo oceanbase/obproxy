@@ -242,6 +242,7 @@ public:
 
 private:
   inline int calc_request_need_send(ObRpcReqList &retry_list);
+  inline int get_rpc_req_by_channel_id_from_sending_req_list(int32_t channel_id, ObRpcReq *&rpc_req);
   int save_rpc_response(ObRpcReq *rpc_req);
   DISALLOW_COPY_AND_ASSIGN(ObRpcServerNetHandler);
 };

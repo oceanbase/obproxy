@@ -31,11 +31,11 @@ public:
 
   static ObProxyMain *get_instance();
 
-  static int do_detect_sig();
   static int do_monitor_mem();
   static int do_detect_sqlaudit();
 
   static void print_memory_usage();
+  static void cancel_mem_limit();
 
   //parse argv, and start obproxy
   int start(const int argc, char *const argv[]);
@@ -43,7 +43,6 @@ public:
   void destroy();
   int schedule_detect_task();
   int64_t get_startup_time() { return startup_time_us_; }
-  int init_crash_error_signal();
   ObProxy &get_proxy() { return obproxy_; }
 private:
   //singleton mode
@@ -53,15 +52,8 @@ private:
     memset(history_mem_size_, 0, sizeof(history_mem_size_));
   }
 
-  static void sig_direct_handler(int sig, siginfo_t *si, void *contextg);
-  static void coredump_cb(volatile int sig, volatile int sig_code, void* volatile sig_addr, void *context);
-  static void sig_async_handler(const int sig);
   static void freeze_mem_alloc();
   static void unfreeze_mem_alloc();
-  static int add_sig_ignore_catched(struct sigaction &action, const int sig);
-  static int add_sig_default_catched(struct sigaction &action, const int sig);
-  static int add_sig_direct_catched(struct sigaction &action, const int sig, const int flag = 0);
-  static int add_sig_async_catched(struct sigaction &action, const int sig, const int flag = 0);
 
   int do_start_work(ObProxyOptions &opts);
 
@@ -72,14 +64,9 @@ private:
   static void print_sqlaudit_memory_usage();
   static void print_memory_usage(const int64_t hold, const int64_t used,
                                  const int64_t count, const char *name);
-  static int64_t get_memory_used();
   void print_version() const;
   void print_releaseid() const;
   int print_args(const int argc, char *const argv[]) const;
-
-  void print_limit(const char *name, const int resource);
-  void print_all_limits();
-
   int get_opts_setting(struct option long_opts[], const int64_t long_opts_cnt,
                        char short_opts[], const int64_t short_opts_cnt) const;
   int parse_short_opt(const int32_t c, const char *value, ObProxyOptions &opts) const;
@@ -93,7 +80,6 @@ private:
   void dump_config_to_yaml() const;
   void dump_version_to_file() const;
   int init_log();
-  int init_signal();
   int close_all_fd(const int32_t listen_ipv4_fd, const int32_t listen_ipv6_fd, const int32_t rpc_listen_ipv4_fd = 0, const int32_t rpc_listen_ipv6_fd = 0);
   int init_data_type();
 

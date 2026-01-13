@@ -255,6 +255,9 @@ const char* get_print_stmt_name(const ObProxyBasicStmtType type)
     case OBRPC_OBKV_TABLE_API_META_INFO_EXECUTE:
       str_ret = "OB_TABLE_API_META_INFO_EXECUTE";
       break;
+    case OBRPC_OBKV_HBASE_EXECUTE:
+      str_ret = "OB_HBASE_EXECUTE";
+      break;
     // end rpc
 
     case OBPROXY_T_INVALID:

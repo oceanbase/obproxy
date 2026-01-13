@@ -54,6 +54,13 @@ int ObMysqlRequestExecuteTransformPlugin::consume(event::ObIOBufferReader *reade
   } else {
     int64_t read_avail = 0;
 
+    if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_execute_read_ += reader->read_avail();
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_execute read com_stmt_exec",
+        "plugin_execute_read",
+        sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_execute_read_);
+    }
+
     if (NULL == local_reader_) {
       local_reader_ = reader->clone();
       ObClientSessionInfo &session_info = sm_->get_client_session()->get_session_info();
@@ -307,6 +314,13 @@ int ObMysqlRequestExecuteTransformPlugin::produce_data(event::ObIOBufferReader *
                   "actual size", produce_length, K(ret));
   } else if (OB_FAIL(reader->consume(produce_size))) {
     PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(produce_size), K(ret));
+  } else {
+    if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_prepare_write_ += produce_size;
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_execute write com_stmt_prepare request",
+        "plugin_prepare_write",
+        sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_prepare_write_);
+    }
   }
 
   return ret;
@@ -315,6 +329,12 @@ int ObMysqlRequestExecuteTransformPlugin::produce_data(event::ObIOBufferReader *
 void ObMysqlRequestExecuteTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlRequestExecuteTransformPlugin::handle_input_complete happen");
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_EXECUTE_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_execute process request finish");
+  }
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;

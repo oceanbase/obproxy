@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "ob_table_rpc_response.h"
+#include "ob_table.h"
 #include "lib/oblog/ob_log.h"
 
 using namespace oceanbase::obproxy::obkv;
@@ -290,20 +291,19 @@ int ObRpcTableBatchOperationResponse::encode(char *buf, int64_t &buf_len, int64_
 
   return ret;
 }
+// int ObRpcTableQueryResponse::deep_copy(common::ObIAllocator &allocator, const ObRpcTableQueryResponse &other)
+// {
+//   int ret = OB_SUCCESS;
+//   set_packet_meta(other.rpc_packet_meta_);
+//   set_result_code(other.rpc_result_code_);
+
+//   if (OB_FAIL(query_res_.deep_copy(allocator, other.query_res_))) {
+//     LOG_WDIAG("fail to call deep_copy for ObTableQueryResult", K(ret));
+//   }
+
+//   return ret;
+// }
 /*
-int ObRpcTableQueryResponse::deep_copy(common::ObIAllocator &allocator, const ObRpcTableQueryResponse &other)
-{
-  int ret = OB_SUCCESS;
-  rpc_packet_meta_ = other.rpc_packet_meta_;
-  rpc_result_code_ = other.rpc_result_code_;
-
-  if (OB_FAIL(query_res_.deep_copy(allocator, other.query_res_))) {
-    LOG_WDIAG("fail to call deep_copy for ObTableQueryResult", K(ret));
-  }
-
-  return ret;
-}
-
 int ObRpcTableQueryResponse::deep_copy(common::ObIAllocator &allocator, ObRpcResponse *other)
 {
   int ret = OB_SUCCESS;
@@ -379,6 +379,19 @@ int ObRpcTableQueryResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
 
   return ret;
 }
+
+// int ObRpcTableBatchOperationResponse::deep_copy(common::ObIAllocator &allocator, const ObRpcTableBatchOperationResponse &other)
+// {
+//   int ret = OB_SUCCESS;
+//   set_packet_meta(other.rpc_packet_meta_);
+//   set_result_code(other.rpc_result_code_);
+
+//   if (OB_FAIL(batch_res_.deep_copy(allocator, other.batch_res_))) {
+//     LOG_WDIAG("fail to call deep_copy for ObTableBatchOperationResult", K(ret));
+//   }
+
+//   return ret;
+// }
 
 int ObRpcTableQueryAndMutateResponse::analyze_response(const char *buf, const int64_t buf_len, int64_t &pos)
 {
@@ -724,6 +737,20 @@ int ObRpcTableLSOperationResponse::encode(char *buf, int64_t &buf_len, int64_t &
   return ret;
 }
 
+// int ObRpcTableLSOperationResponse::deep_copy(common::ObIAllocator &allocator, const ObRpcTableLSOperationResponse &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   set_packet_meta(other.rpc_packet_meta_);
+//   set_result_code(other.rpc_result_code_);
+
+//   if (OB_FAIL(ls_res_.deep_copy(allocator, other.ls_res_))) {
+//     LOG_WDIAG("fail to deep copy ls result", K(ret));
+//   }
+
+//   return ret;
+// }
+
 int ObRpcTableGetRouteResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
 {
   int ret = OB_SUCCESS;
@@ -845,6 +872,69 @@ int ObRpcTableMetaResponse::analyze_response(const char *buf, const int64_t buf_
 
   if (OB_FAIL(meta_res_.deserialize(buf, buf_len, pos))) {
     LOG_WDIAG("deserialize login response wrong", K(buf), K(buf_len), K(ret));
+  }
+
+  return ret;
+}
+
+int ObRpcHbaseOperationResponse::encode(char *buf, int64_t &buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+  int64_t meta_size = rpc_packet_meta_.get_serialize_size();
+  int64_t origin_pos = pos;
+  int64_t check_sum_pos;
+
+  pos += meta_size;      // 将pos设置为meta之后
+  check_sum_pos = pos;   // 后续做checksum需要从这个pos开始
+
+  if (pos > buf_len) {
+    ret = OB_SIZE_OVERFLOW;
+    LOG_WDIAG("fail to encode ObRpcTableMetaResponse", K(ret), KP(buf), K(buf_len), K(pos), K(meta_size));
+  } else {
+    // 序列化result_code
+    OB_UNIS_ENCODE(rpc_result_code_)
+    // 序列化login_result
+    OB_UNIS_ENCODE(hbase_res_);
+
+    if (OB_SUCC(ret)) {
+      // 首先计算checksum
+      int64_t response_size = pos - check_sum_pos;
+      uint64_t check_sum = ob_crc64(static_cast<void *>(buf + check_sum_pos), response_size);
+      int64_t ez_payload_size = rpc_packet_meta_.rpc_header_.get_encoded_size() + response_size;
+
+      rpc_packet_meta_.ez_header_.ez_payload_size_ = static_cast<uint32_t>(ez_payload_size);
+      rpc_packet_meta_.rpc_header_.checksum_ = check_sum;
+
+      // 这里传入原始的pos, 序列化meta信息
+      if (OB_FAIL(rpc_packet_meta_.serialize(buf, buf_len, origin_pos))) {
+        LOG_WDIAG("fail to encode meta", K_(rpc_packet_meta), K(ret));
+      } else if (origin_pos != check_sum_pos) {
+        // double check
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("origin pos is not equal to check sum pos, unexpected", K(ret), K(origin_pos), K(check_sum_pos));
+      } else {
+        // success
+      }
+    }
+  }
+
+  return ret;
+}
+
+int64_t ObRpcHbaseOperationResponse::get_encode_size() const
+{
+  int64_t len = 0;
+  len += this->ObRpcResponse::get_encode_size();
+  len += hbase_res_.get_serialize_size();
+  return len;
+}
+
+int ObRpcHbaseOperationResponse::analyze_response(const char *buf, const int64_t buf_len, int64_t &pos)
+{
+  int ret = OB_SUCCESS;
+
+  if (OB_FAIL(hbase_res_.deserialize(buf, buf_len, pos))) {
+    LOG_WDIAG("deserialize hbase response wrong", K(buf), K(buf_len), K(ret));
   }
 
   return ret;

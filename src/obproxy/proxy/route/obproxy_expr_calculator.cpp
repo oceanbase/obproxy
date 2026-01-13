@@ -875,13 +875,23 @@ int ObRpcExprCalcTool::do_eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
       }
     }
   } else if (src_key_idx < 0){
+    int64_t idx_in_rowid = 0;
     // 依赖observer返回的idx_in_rowid
     for (int j = 0; OB_SUCC(ret) && j < part_info.key_num_; ++j) {
       if (part_info.part_keys_[j].level_ == level) {
         part_key_name.assign(part_info.part_keys_[j].name_.str_, part_info.part_keys_[j].name_.str_len_);
         compare_ret = part_key_name.case_compare(src_name);
         if (0 == compare_ret) {
-          rowkey_index.push_back(part_info.part_keys_[j].idx_in_rowid_);
+          // 1. generated key, will not come here
+          // 2. virtual table, will not come here
+          // 3. single part table or heap table
+          if (OB_UNLIKELY(part_info.part_keys_[j].idx_in_rowid_ < 0)) {
+            // TODO: need to check if the table is single part table
+            rowkey_index.push_back(idx_in_rowid);
+            idx_in_rowid++;
+          } else {
+            rowkey_index.push_back(part_info.part_keys_[j].idx_in_rowid_);
+          }
           break;
         }
       }

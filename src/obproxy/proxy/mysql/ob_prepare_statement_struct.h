@@ -241,7 +241,7 @@ int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
   int64_t sql_len = ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size += sizeof(T) + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(alloc_size, ObModIds::OB_PROXY_GLOBAL_PS)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_SM_LOG(WDIAG, "fail to alloc mem for ps entry", K(alloc_size), K(ret));
   } else {
@@ -257,7 +257,7 @@ int ObPsEntry::alloc_and_init_ps_entry(const ObString &ps_sql,
   }
 
   if (OB_FAIL(ret) && NULL != buf) {
-    op_fixed_mem_free(buf, alloc_size);
+    ob_free(buf);
     entry = NULL;
     alloc_size = 0;
   }
@@ -355,7 +355,7 @@ int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
   int64_t sql_len = text_ps_sql.length() + PARSE_EXTRA_CHAR_NUM;
 
   alloc_size = obj_size + sql_len;
-  if (OB_ISNULL(buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size)))) {
+  if (OB_ISNULL(buf = static_cast<char *>(ob_malloc(alloc_size, ObModIds::OB_PROXY_GLOBAL_PS)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
     PROXY_SM_LOG(WDIAG, "fail to alloc mem for text ps entry", K(alloc_size), K(ret));
   } else {
@@ -370,7 +370,7 @@ int ObTextPsEntry::alloc_and_init_ps_entry(const ObString &text_ps_sql,
   }
 
   if (OB_FAIL(ret) && NULL != buf) {
-    op_fixed_mem_free(buf, alloc_size);
+    ob_free(buf);
     entry = NULL;
     alloc_size = 0;
   }

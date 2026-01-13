@@ -223,7 +223,8 @@ ObClientSessionInfo::ObClientSessionInfo()
       is_allow_use_last_session_(true),
       consistency_level_prop_(INVALID_CONSISTENCY),
       recv_client_ps_id_(0), ps_id_(0), ps_entry_(NULL), ps_id_entry_(NULL), ps_id_entry_map_(),
-      text_ps_name_entry_(NULL), text_ps_name_entry_map_(), cursor_id_(0), cursor_id_addr_map_(),
+      text_ps_name_entry_(NULL), text_ps_name_entry_map_(), digest_sql_buf_(NULL),
+      digest_sql_len_(0),cursor_id_(0), cursor_id_addr_map_(),
       service_name_session_info_(NULL), ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
       last_server_sess_id_(0), sync_conf_sys_var_(false),
@@ -233,7 +234,11 @@ ObClientSessionInfo::ObClientSessionInfo()
   MEMSET(idc_name_buf_, 0, sizeof(idc_name_buf_));
   MEMSET(client_host_buf_, 0, sizeof(client_host_buf_));
   MEMSET(username_buf_, 0, sizeof(username_buf_));
-
+  digest_sql_len_ = get_global_proxy_config().digest_sql_length;
+  if (OB_ISNULL(digest_sql_buf_ = static_cast<char *>(op_fixed_mem_alloc(digest_sql_len_)))) {
+    LOG_WDIAG("fail to alloc memory for digest_sql_buf", K(digest_sql_len_));
+    digest_sql_len_ = 0;
+  }
   ob20_request_.reset();
 }
 
@@ -1423,6 +1428,11 @@ void ObClientSessionInfo::destroy()
   }
   reset_start_trans_sql();
   DEC_SHARED_REF(login_config_);
+  if (OB_NOT_NULL(digest_sql_buf_) && digest_sql_len_ > 0) {
+    op_fixed_mem_free(digest_sql_buf_, digest_sql_len_);
+    digest_sql_buf_ = NULL;
+    digest_sql_len_ = 0;
+  }
   set_has_send_init_sql(false);
 
   destroy_ps_id_entry_map();

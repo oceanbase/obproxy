@@ -29,6 +29,53 @@ namespace proxy
 #define MYSQL_TUNNEL_EVENT_CMD_COMPLETE     (MYSQL_TUNNEL_EVENTS_START + 4)
 
 #define MYSQL_TUNNEL_STATIC_PRODUCER  (ObVConnection*)!0
+enum ObMysqlTunnelProducerType
+{
+  PRODUCER_TRANSFORM_REQUEST_READ,
+  PRODUCER_TRANSFORM_RESPONSE_READ,
+  PRODUCER_CLIENT_REQUEST_READ,
+  PRODUCER_OBSERVER_RESPONSE_READ,
+  PRODUCER_INTERNAL_MSG,
+  PRODUCER_UNKONWN,
+};
+
+inline const char* get_producer_type_name(ObMysqlTunnelProducerType type)
+{
+  static const char* names[] = {
+    "transform_request_read",
+    "transform_response_read",
+    "client_request_read",
+    "observer_response_read",
+    "internal_msg"
+  };
+  return (type >= PRODUCER_TRANSFORM_REQUEST_READ && type <= PRODUCER_INTERNAL_MSG)
+         ? names[type]
+         : "unknown_producer_type";
+}
+
+enum ObMysqlTunnelConsumerType
+{
+  CONSUMER_TRANSFORM_RESPONSE_WRITE,
+  CONSUMER_CLIENT_RESPONSE_WRITE,
+  CONSUMER_OBSERVER_REQUEST_WRITE,
+  CONSUMER_TRANSFORM_REQUEST_WRITE,
+  CONSUMER_PLUGIN_CLIENT,
+  CONSUMER_UNKONWN,
+};
+
+inline const char* get_consumer_type_name(ObMysqlTunnelConsumerType type)
+{
+  static const char* names[] = {
+    "transform_response_write",
+    "client_response_write",
+    "observer_request_write",
+    "transform_request_write",
+    "plugin_client"
+  };
+  return (type >= CONSUMER_TRANSFORM_RESPONSE_WRITE && type <= CONSUMER_PLUGIN_CLIENT)
+         ? names[type]
+         : "unknown_consumer_type";
+}
 
 struct ObMysqlTunnelProducer;
 class ObMysqlSM;
@@ -79,7 +126,6 @@ struct ObPacketAnalyzer
   int last_server_event_;
   int64_t skip_bytes_;
   ObProtocolDiagnosis *protocol_diagnosis_;
-
 private:
   DISALLOW_COPY_AND_ASSIGN(ObPacketAnalyzer);
 };
@@ -111,7 +157,7 @@ struct ObMysqlTunnelConsumer
   bool write_success_;
 
   int64_t cost_time_;
-  const char *name_;
+  ObMysqlTunnelConsumerType type_;
 };
 
 struct ObMysqlTunnelProducer
@@ -151,7 +197,7 @@ struct ObMysqlTunnelProducer
   void set_throttle_src(ObMysqlTunnelProducer *srcp); //Source producer of flow.
 
   int set_request_packet_analyzer(ObMysqlPacketType packet_type,
-                                  ObMysqlRequestAnalyzer *analyzer,
+    ObMysqlRequestAnalyzer *analyzer,
                                   ObProtocolDiagnosis *protocol_diagnosis);
   int set_response_packet_analyzer(const int64_t skip_bytes,
                                    ObMysqlPacketType packet_type,
@@ -192,7 +238,7 @@ struct ObMysqlTunnelProducer
   // If this is set, it points at the source producer that is under flow control.
   // If NULL then data flow is not being throttled.
   ObMysqlTunnelProducer *flow_control_source_;
-  const char *name_;
+  ObMysqlTunnelProducerType type_;
 };
 
 class ObMysqlTunnel : public event::ObContinuation
@@ -220,14 +266,14 @@ public:
                                       event::ObIOBufferReader *reader_start,
                                       MysqlProducerHandler sm_handler,
                                       ObMysqlTunnelType vc_type,
-                                      const char *name,
+                                      ObMysqlTunnelProducerType type,
                                       const bool own_iobuffer = true);
 
   ObMysqlTunnelConsumer *add_consumer(event::ObVConnection *vc,
                                       event::ObVConnection *producer,
                                       MysqlConsumerHandler sm_handler,
                                       ObMysqlTunnelType vc_type,
-                                      const char *name,
+                                      ObMysqlTunnelConsumerType type,
                                       const int64_t skip_bytes = 0);
 
   void deallocate_buffers();
@@ -296,7 +342,7 @@ inline int ObMysqlTunnel::local_finish_all(ObMysqlTunnelProducer &p)
 inline int ObMysqlTunnel::chain_finish_all(ObMysqlTunnelProducer &p)
 {
   return finish_all_internal(p, true);
-}
+  }
 
 inline bool ObMysqlTunnel::is_tunnel_alive() const
 {
@@ -332,7 +378,6 @@ inline ObMysqlTunnelProducer *ObMysqlTunnel::get_producer(event::ObVConnection *
         ret = producers_ + i;
       }
     }
-
   }
   return ret;
 }

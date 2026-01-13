@@ -275,6 +275,8 @@ lib/utility/ob_2_0_sess_veri.h\
 lib/utility/ob_2_0_sess_veri.cpp\
 lib/utility/ob_fast_convert.h\
 lib/utility/ob_fast_convert.cpp\
+lib/utility/ob_hook.h\
+lib/utility/ob_hook.cpp\
 lib/utility/ob_tracepoint.h\
 lib/utility/ob_tablet_id.h\
 lib/utility/ob_tablet_id.cpp\
@@ -317,6 +319,7 @@ lib/ob_worker.cpp\
 lib/ob_proxy_worker.h\
 lib/alloc/abit_set.h \
 lib/alloc/alloc_struct.h\
+lib/alloc/alloc_struct.cpp\
 lib/alloc/block_set.h\
 lib/alloc/block_set.cpp\
 lib/alloc/achunk_mgr.h\
@@ -354,6 +357,8 @@ lib/signal/ob_libunwind.h\
 lib/signal/ob_libunwind.c\
 lib/signal/ob_signal_utils.cpp\
 lib/signal/ob_signal_utils.h\
+lib/signal/ob_signal_handler.cpp\
+lib/signal/ob_signal_handler.h\
 lib/wide_integer/ob_wide_integer_cmp_funcs.cpp\
 lib/wide_integer/ob_wide_integer_cmp_funcs.h\
 lib/wide_integer/ob_wide_integer_str_funcs.cpp\

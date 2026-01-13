@@ -8,6 +8,30 @@ OceanBase Database Proxy（简称 ODP）是 OceanBase 数据库专用的代理�
 
 请查看快速使用指南[link TODO]开始试用 ODP。
 
+### build.sh 快速编译指南
+
+`build.sh` 是 ODP 项目的主要构建脚本，支持多种编译模式和平台。以下是常用的编译命令：
+
+#### 基本用法
+
+```bash
+# 清理之前的编译文件
+./build.sh clean
+# 初始化依赖（首次编译）
+./build.sh init
+# 初始化依赖（非首次编译）
+./build.sh qinit
+# 配置为调试版本编译（debug可换为release或其他选项）
+./build.sh config debug
+# 执行编译
+./build.sh make
+# 编译产物：二进制可执行文件位于 `src/obproxy/obproxy`
+
+# 其他操作
+# 生成 RPM 包（注意：在435及之前分支调用./build.sh rpm打包出现"cp: No such file or directory"的报错，可通过调用./build.sh rpm obproxy-ce来解决）
+./build.sh rpm
+```
+
 ## 文档
 
 - 简体中文 [link TODO]

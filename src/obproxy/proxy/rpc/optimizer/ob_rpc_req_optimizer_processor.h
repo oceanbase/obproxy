@@ -38,10 +38,10 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObProxyRpcReqOptimizerProcessor);
 };
 
-extern ObProxyRpcReqOptimizerProcessor g_ob_proxy_rpc_req_optimizer_processor;
-inline ObProxyRpcReqOptimizerProcessor &get_global_optimizer_rpc_req_processor()
+static inline ObProxyRpcReqOptimizerProcessor &get_global_optimizer_rpc_req_processor()
 {
-  return g_ob_proxy_rpc_req_optimizer_processor;
+  static ObProxyRpcReqOptimizerProcessor instance;
+  return instance;
 }
 
 } // end of namespace optimizer

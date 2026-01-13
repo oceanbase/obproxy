@@ -29,6 +29,8 @@ namespace obkv
 #define OB_TABLE_OPTION_RETURNING_ROWKEY (INT64_C(1) << 0)
 #define OB_TABLE_OPTION_USE_PUT (INT64_C(1) << 1)
 #define OB_TABLE_OPTION_RETURN_ONE_RES (INT64_C(1) << 2)
+#define OB_TABLE_OPTION_SERVER_CAN_RETRY (INT64_C(1) << 3)
+#define OB_TABLE_OPTION_DIS_NEED_TABLET_ID (INT64_C(1) << 4)
 
 /// @see PCODE_DEF(OB_TABLE_API_LOGIN, 0x1101)
 class ObTableLoginRequest final
@@ -49,11 +51,14 @@ public:
   ObString pass_scramble_;  // 20 bytes random string
   ObString database_name_;
   int64_t ttl_us_;  // 0 means no TTL
+  ObString client_info_;
+  uint8_t allow_distribute_capability_;
+
 public:
   ObTableLoginRequest() : auth_method_(0), client_type_(1),client_version_(1),
                           reserved1_(0), client_capabilities_(0), max_packet_size_(0),
                           reserved2_(0), reserved3_(0), tenant_name_(), user_name_(),
-                          pass_secret_(), pass_scramble_(), database_name_(), ttl_us_(0)
+                          pass_secret_(), pass_scramble_(), database_name_(), ttl_us_(0),client_info_(),allow_distribute_capability_(0)
   {}
   ObTableLoginRequest(const ObTableLoginRequest &request) {
     auth_method_ = request.auth_method_;
@@ -70,6 +75,8 @@ public:
     pass_scramble_ = request.pass_scramble_;
     database_name_ = request.database_name_;
     ttl_us_ = request.ttl_us_;
+    client_info_ = request.client_info_;
+    allow_distribute_capability_ = request.allow_distribute_capability_;
   }
 
   TO_STRING_KV(K_(auth_method),
@@ -83,7 +90,9 @@ public:
                K_(tenant_name),
                K_(user_name),
                K_(database_name),
-               K_(ttl_us));
+               K_(ttl_us),
+               K_(client_info),
+               K_(allow_distribute_capability));
 };
 
 class ObTableLoginResult final
@@ -246,7 +255,9 @@ public:
       :table_id_(common::OB_INVALID_ID),
        partition_id_(common::OB_INVALID_ID),
        entity_type_(ObTableEntityType::ET_DYNAMIC),
-       consistency_level_(ObTableConsistencyLevel::STRONG)
+       consistency_level_(ObTableConsistencyLevel::STRONG),
+       option_flag_(OB_TABLE_OPTION_DEFAULT),
+       is_need_option_flag_(false)
   {}
 
   TO_STRING_KV(K_(credential),
@@ -255,7 +266,11 @@ public:
                K_(partition_id),
                K_(entity_type),
                K_(consistency_level),
-               K_(query));
+               K_(query),
+               K_(option_flag),
+               K_(is_need_option_flag));
+
+  OB_INLINE bool is_distribute_need_tablet_id() const { return option_flag_ & OB_TABLE_OPTION_DIS_NEED_TABLET_ID; }
 
   // FOR v4
   int serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const;
@@ -281,6 +296,8 @@ public:
   // only support STRONG
   ObTableConsistencyLevel consistency_level_;
   OB_IGNORE_TABLE_QUERY query_;
+  uint8_t option_flag_;
+  bool is_need_option_flag_;
 };
 
 class ObTableQueryResultIterator
@@ -299,7 +316,9 @@ public:
   ObTableQueryAndMutateRequest()
       :table_id_(common::OB_INVALID_ID),
       partition_id_(common::OB_INVALID_ID),
-      binlog_row_image_type_(ObBinlogRowImageType::FULL)
+      binlog_row_image_type_(ObBinlogRowImageType::FULL),
+      option_flag_(OB_TABLE_OPTION_DEFAULT),
+      is_need_option_flag_(false)
   {}
 
   TO_STRING_KV(K_(credential),
@@ -307,7 +326,11 @@ public:
                K_(table_id),
                K_(partition_id),
                K_(entity_type),
-               K_(query_and_mutate));
+               K_(query_and_mutate),
+               K_(option_flag),
+               K_(is_need_option_flag));
+
+  OB_INLINE bool is_distribute_need_tablet_id() const { return option_flag_ & OB_TABLE_OPTION_DIS_NEED_TABLET_ID; }
 
   int serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const;
   int serialize_v4_(char *buf, const int64_t buf_len, int64_t &pos) const;
@@ -331,6 +354,8 @@ public:
   ObTableEntityType entity_type_;  // for optimize purpose
   OB_IGNORE_TABLE_QUERY_AND_MUTATE query_and_mutate_;
   ObBinlogRowImageType binlog_row_image_type_;
+  uint8_t option_flag_;
+  bool is_need_option_flag_;
 };
 
 class ObTableQuerySyncRequest : public ObTableQueryRequest
@@ -515,6 +540,40 @@ public:
   ObString credential_;
   ObTableRpcMetaType meta_type_;
   ObString data_;
+};
+
+class ObHbaseOperationRequest final
+{
+  OB_UNIS_VERSION(1);
+public:
+  ObHbaseOperationRequest() : credential_(), table_name_(), op_type_(ObTableOperationType::INVALID),
+                              keys_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObObj)),
+                              same_cf_rows_(common::ObModIds::OB_RPC_HBASE_OPERATION, 4 * sizeof(ObHbaseCfRow)) {}
+  ~ObHbaseOperationRequest() = default;
+  OB_INLINE bool is_valid() const { return op_type_ == ObTableOperationType::INSERT_OR_UPDATE; } // only support hbase put now
+  OB_INLINE int64_t get_key_index() const { return same_cf_rows_.at(0).key_indexs_.at(0);}
+  OB_INLINE ObString get_table_name() const { return same_cf_rows_.at(0).column_family_;}
+  OB_INLINE int get_column_Q_value(ObObj &obj) const { return same_cf_rows_.at(0).cells_.at(0).get_column_Q_value(obj);}
+  OB_INLINE int get_column_T_value(ObObj &obj) const { return same_cf_rows_.at(0).cells_.at(0).get_column_T_value(obj);}
+  int get_column_K_value(ObObj &obj) const;
+  TO_STRING_KV(K_(credential),
+               K_(table_name),
+               K_(op_type),
+               K_(keys),
+               K_(same_cf_rows));
+public:
+  ObString credential_;
+  ObString table_name_;
+  union
+  {
+    uint64_t option_flag_;
+    struct {
+      uint64_t reserved:64;
+    };
+  };
+  ObTableOperationType::Type op_type_;
+  ObSEArray<ObObj, 4> keys_;
+  ObSEArray<ObHbaseCfRow, 4> same_cf_rows_;
 };
 
 } // end namespace obkv

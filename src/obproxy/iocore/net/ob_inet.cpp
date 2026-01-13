@@ -412,16 +412,18 @@ int get_local_addr_list_by_nic(ObIpAddr *ipaddr, const int64_t total_cnt, const 
   } else {
     struct ifaddrs *if_addr_struct = if_addr;
     while ((NULL != if_addr_struct) && (valid_cnt < total_cnt)) {
-      if (AF_INET == if_addr_struct->ifa_addr->sa_family) { // check it is IP4
-        // is a valid IP4 Address
-        addr = &((reinterpret_cast<struct sockaddr_in *>(if_addr_struct->ifa_addr))->sin_addr);
-        if ((NULL != addr) && (need_all || (addr->s_addr != htonl(INADDR_LOOPBACK) && addr->s_addr != htonl(INADDR_ANY)))) {
-          ipaddr[valid_cnt] = addr->s_addr;
-          ++valid_cnt;
+      if (NULL != if_addr_struct->ifa_addr) {
+        if (AF_INET == if_addr_struct->ifa_addr->sa_family) { // check it is IP4
+          // is a valid IP4 Address
+          addr = &((reinterpret_cast<struct sockaddr_in *>(if_addr_struct->ifa_addr))->sin_addr);
+          if ((NULL != addr) && (need_all || (addr->s_addr != htonl(INADDR_LOOPBACK) && addr->s_addr != htonl(INADDR_ANY)))) {
+            ipaddr[valid_cnt] = addr->s_addr;
+            ++valid_cnt;
+          }
+        } else if (AF_INET6 == if_addr_struct->ifa_addr->sa_family) { // check it is IP6
+          // is a valid IP6 Address
+          // add later
         }
-      } else if (AF_INET6 == if_addr_struct->ifa_addr->sa_family) { // check it is IP6
-        // is a valid IP6 Address
-        // add later
       }
       if_addr_struct = if_addr_struct->ifa_next;
     }

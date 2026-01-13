@@ -60,6 +60,13 @@ int ObMysqlRequestPrepareTransformPlugin::consume(event::ObIOBufferReader *reade
     int64_t produce_size = 0;
     int64_t local_read_avail = 0;
 
+    if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_prepare_read_ += reader->read_avail();;
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare read com_stmt_prepare request",
+        "plugin_prepare_read",
+        sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_prepare_read_);
+    }
+
     if (NULL == local_reader_) {
       local_reader_ = reader->clone();
       if (NULL != ps_or_text_ps_sql_buf_) {
@@ -100,6 +107,13 @@ int ObMysqlRequestPrepareTransformPlugin::consume(event::ObIOBufferReader *reade
                 "actual size", produce_size, K(ret));
           } else if (OB_FAIL(local_reader_->consume(local_read_avail))) {
             PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(local_read_avail), K(ret));
+          } else {
+            if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+              sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_execute_write_ += local_read_avail;
+              PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare write com_stmt_exec request",
+                "plugin_execute_write",
+                sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_execute_write_);
+            }
           }
         }
       }
@@ -155,6 +169,12 @@ int ObMysqlRequestPrepareTransformPlugin::handle_text_ps_prepare()
 void ObMysqlRequestPrepareTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlRequestPrepareTransformPlugin::handle_input_complete happen");
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_PREPARE_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare process request finish");
+  }
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;

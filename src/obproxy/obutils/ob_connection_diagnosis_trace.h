@@ -85,7 +85,8 @@ using namespace common;
 
 enum ObConenctionDiagnosisOption {
   OB_ENABLE_CONNECTION_DIAGNOSIS_LOG = 0,
-  OB_ENABLE_KEEP_CONNECTION
+  OB_ENABLE_KEEP_CONNECTION,
+  OB_ENABLE_RECORD_LOGIN_LOGOUT,
 };
 
 enum ObConnectionDiagnosisTraceType
@@ -137,6 +138,7 @@ public:
         is_first_packet_received_(false),
         is_detect_request_(false),
         is_com_quit_(false),
+        is_proxysys_(false),
         is_detect_user_(false),
         protocol_diagnosis_(NULL) {}
   ~ObConnectionDiagnosisTrace() { destroy(); }
@@ -167,6 +169,7 @@ public:
   void set_is_detect_user(const bool is_detect_user) { is_detect_user_ = is_detect_user; }
   bool need_record_diagnosis_log() const;
   void set_is_com_quit(const bool is_com_quit) { is_com_quit_ = is_com_quit; }
+  void set_is_proxysys(const bool is_proxysys) { is_proxysys_ = is_proxysys; }
   virtual void free();
   static bool is_enable_diagnosis_log(int64_t connection_diagnosis_control)
   {
@@ -175,15 +178,20 @@ public:
   static bool is_enable_keep_connection(int64_t connection_diagnosis_control) {
     return ((connection_diagnosis_control) & (1 << OB_ENABLE_KEEP_CONNECTION)) == (1 << OB_ENABLE_KEEP_CONNECTION);
   }
+  static bool is_enable_record_login_logout() {
+    int64_t connection_diagnosis_option = get_global_proxy_config().connection_diagnosis_option;
+    return ((connection_diagnosis_option) & (1 << OB_ENABLE_RECORD_LOGIN_LOGOUT)) == (1 << OB_ENABLE_RECORD_LOGIN_LOGOUT);
+  }
 
 public:
   ObConnectionDiagnosisTraceType trace_type_;
   ObConnectionDiagnosisInfo *diagnosis_info_;
-  bool is_user_client_;
+  bool is_user_client_;   // mark detect request from outer user(eg. LB)
   bool is_first_packet_received_;
   bool is_detect_request_;
   bool is_com_quit_;
-  bool is_detect_user_;
+  bool is_proxysys_;
+  bool is_detect_user_;   // mark detect user from odp inner client
   proxy::ObProtocolDiagnosis *protocol_diagnosis_;
 };
 

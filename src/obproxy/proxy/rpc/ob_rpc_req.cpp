@@ -20,7 +20,6 @@
 #include "iocore/net/ob_net_vconnection.h"
 #include "proxy/route/ob_table_entry.h"
 #include "proxy/route/ob_index_entry.h"
-#include "proxy/rpc/optimizer/ob_rpc_req_sharding_plan.h"
 #include "proxy/rpc/optimizer/ob_rpc_req_optimizer_processor.h"
 #include "proxy/rpc/rpclib/ob_table_query_async_entry.h"
 #include "proxy/rpc/rpclib/ob_tablegroup_entry.h"
@@ -30,6 +29,7 @@
 #include "proxy/rpc/net/ob_rpc_server_net_handler.h"
 #include "obkv/table/ob_table_rpc_request.h"
 #include "obkv/table/ob_table_rpc_response.h"
+#include "proxy/rpc/engine/ob_proxy_rpc_req_split_cont.h"
 #include "stat/ob_rpc_req_stats.h"
 #include "obkv/redis/ob_redis_rpc_request.h"
 #include "obkv/redis/ob_redis_rpc_response.h"
@@ -71,21 +71,22 @@ void ObRpcReq::instantiate_func(ObRpcReq &prototype, ObRpcReq &new_instance)
 }
 
 ObRpcReq::ObRpcReq() :
-               magic_(RPC_REQ_MAGIC_ALIVE), sm_(NULL), cnet_sm_(NULL), snet_sm_(NULL), execute_plan_(NULL),
+               magic_(RPC_REQ_MAGIC_ALIVE), sm_(NULL), cnet_sm_(NULL), snet_sm_(NULL), split_cont_(NULL),
                client_timestamp_(), server_timestamp_(), server_entry_send_retry_times_(0),
-               cs_id_(0), ss_id_(0), congest_status_(STATE_COMMON), request_buf_(NULL), request_inner_buf_(NULL), response_buf_(NULL), response_inner_buf_(NULL),
-               request_buf_len_(0), request_inner_buf_len_(0), response_buf_len_(0), response_inner_buf_len_(0), req_buf_repeat_times_(0),
+               cs_id_(0), ss_id_(0), congest_status_(STATE_COMMON), shared_request_buf_(NULL), request_buf_for_serialize_(NULL), request_inner_buf_(NULL), response_buf_(NULL), response_inner_buf_(NULL),
+               request_buf_for_serialize_len_(0), request_inner_buf_len_(0), response_buf_len_(0), response_inner_buf_len_(0), req_buf_repeat_times_(0),
                request_len_(0), response_len_(0), origin_channel_id_(0), c_channel_id_(0), s_channel_id_(0),
                retry_times_(0), inner_req_retry_times_(0), cont_index_(0), cluster_version_(0), is_need_terminal_client_net_(false),
                is_response_(false), is_canceled_(false), is_finish_(false), is_server_addr_set_(false),
-               is_use_request_inner_buf_(false), is_use_response_inner_buf_(false), is_server_failed_(false), is_in_congestion_retry_(false),
+               is_use_request_inner_buf_(false), is_use_response_inner_buf_(false), is_use_request_buf_for_serialize_(false),
                rpc_type_(obkv::OBPROXY_RPC_OBRPC), server_add_(), created_thread_(NULL),
                cnet_state_(RPC_REQ_CLIENT_INIT), snet_state_(RPC_REQ_SERVER_INIT), sm_state_(RPC_REQ_SM_INIT), rpc_req_clean_module_(RPC_REQ_CLEAN_MODULE_MAX),
                inner_request_allocator_(NULL), inner_request_allocator_len_(0), rpc_request_(NULL),
                rpc_response_(NULL), rpc_request_len_(0), rpc_response_len_(0), 
-               client_net_timeout_us_(0), server_net_timeout_us_(0),
-               root_rpc_req_(NULL), sub_rpc_req_array_(NULL), sub_rpc_req_array_size_(0),
-               current_sub_rpc_req_count_(0), obkv_info_(), config_info_(), is_sub_req_inited_(false), request_info_(NULL)
+               client_net_timeout_us_(0), server_net_timeout_us_(0), inner_request_timeout_us_(0),
+               root_rpc_req_(NULL),
+               current_sub_rpc_req_count_(0), obkv_info_(), config_info_(), is_sub_req_inited_(false), is_sub_req_callback_(false), is_split_cont_canceled_(false), is_received_cancel_from_split_cont_(false),
+               request_info_(NULL), login_info_(NULL)
 {
   static bool scatter_inited = false;
 
@@ -99,7 +100,7 @@ DEF_TO_STRING(ObRpcReq)
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(KP(this), KP_(request_buf), K_(request_buf_len), K_(request_len), KP_(response_buf), K_(response_buf_len), K_(response_len),
+  J_KV(KP(this), "request_buf", get_request_buf(), "request_buf_len", get_request_buf_len(), K_(request_len), KP_(response_buf), K_(response_buf_len), K_(response_len),
     K_(origin_channel_id), K_(c_channel_id), K_(s_channel_id), K_(retry_times), K_(cluster_version), K_(is_need_terminal_client_net),
     K_(is_response), K_(is_canceled), K_(is_finish), "rpc_type", static_cast<int>(rpc_type_), KP_(rpc_request), KP_(rpc_response),
     K_(client_net_timeout_us), K_(server_net_timeout_us), K_(is_sub_req_inited), KP_(cnet_sm), KP_(snet_sm), "server_addr", server_add_.addr_);
@@ -148,9 +149,10 @@ int ObRpcReq::init(obkv::ObProxyRpcType rpc_type, ObRpcRequestSM *sm, ObRpcClien
   return ret;
 }
 
-int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpcRequest *rpc_request, int64_t rpc_request_len,
-                               int64_t cont_index, int64_t partition_id, int64_t ls_id)
-{
+int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm,
+                               ObRpcRequest *rpc_request,
+                               int64_t rpc_request_len, int64_t cont_index,
+                               int64_t partition_id, common::ObIAllocator *allocator, int64_t ls_id) {
   int ret = OB_SUCCESS;
   ObRpcReqCtx *root_rpc_ctx = NULL;
 
@@ -159,12 +161,14 @@ int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpc
       || 0 == rpc_request_len || 0 == cont_index) {
     ret = OB_INVALID_ARGUMENT;
     PROXY_LOG(WDIAG, "sub_rpc_req_init get invalid argument", KPC(root_rpc_req), KP(sm), KP(rpc_request), K(rpc_request_len), K(cont_index));
+  } else if (OB_FAIL(root_rpc_req->share_request_buf_with(this))) {
+    PROXY_LOG(WDIAG, "fail to share request buf with child", K(ret));
   } else {
     ObRpcOBKVInfo &root_obkv_info = root_rpc_req->get_obkv_info();
 
     // handle obkv info
     obkv_info_.rpc_trace_id_ = root_obkv_info.rpc_trace_id_;
-    obkv_info_.rpc_trace_id_.set_rpc_sub_index_id(cont_index, root_obkv_info.inner_req_retries_);
+    obkv_info_.rpc_trace_id_.set_rpc_sub_index_id(cont_index, root_obkv_info.retry_info_.retry_status_.inner_req_retries_);
     obkv_info_.set_definitely_single(true);
     obkv_info_.set_partition_id(partition_id);
     obkv_info_.set_ls_id(ls_id);
@@ -199,7 +203,7 @@ int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpc
     obkv_info_.index_name_ = root_obkv_info.index_name_;
     obkv_info_.index_table_name_ = root_obkv_info.index_table_name_;
     obkv_info_.index_entry_ = root_obkv_info.index_entry_;
-    obkv_info_.inner_req_retries_ = root_obkv_info.inner_req_retries_;
+    obkv_info_.retry_info_.retry_status_.inner_req_retries_ = root_obkv_info.retry_info_.retry_status_.inner_req_retries_;
 
     if (root_obkv_info.is_table_group_request()) {
       ObString &root_new_table_name = root_obkv_info.tablegroup_new_table_name_;
@@ -216,7 +220,7 @@ int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpc
 
     if (root_obkv_info.is_inner_req_retrying()) {
       PROXY_LOG(INFO, "sub lsop request is retrying and generate new sub request", "new_req", this, "root_req",
-                root_rpc_req, "sub_req_retry_times", root_obkv_info.inner_req_retries_, "root_req_trace_id",
+                root_rpc_req, "sub_req_retry_times", root_obkv_info.retry_info_.retry_status_.inner_req_retries_, "root_req_trace_id",
                 root_obkv_info.rpc_trace_id_, "new_req_trace_id", obkv_info_.rpc_trace_id_);
     }
     // handle rpc req
@@ -228,65 +232,62 @@ int ObRpcReq::sub_rpc_req_init(ObRpcReq *root_rpc_req, ObRpcRequestSM *sm, ObRpc
     set_cluster_version(root_rpc_req->get_cluster_version());
     set_root_rpc_req(root_rpc_req);
     set_server_net_timeout_us(root_rpc_req->get_server_net_timeout_us());
-    // get rpc trace id
-    ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
+    set_inner_request_timeout_us(root_rpc_req->get_inner_request_timeout_us());
     // 需要设置client net状态防止被server net清理
     set_cnet_state(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_INNER_REQUEST);
 
-    if (OB_FAIL(alloc_inner_request_allocator())) {
-      PROXY_LOG(WDIAG, "fail to alloc_inner_request_allocator", K(rpc_trace_id), K(ret));
-    } else {
-      // success
-      PROXY_LOG(DEBUG, "succ to init sub rpc req", "sub_rpc_req", *this);
-      RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
-    }
+    inner_request_allocator_ = allocator;
+    inner_request_allocator_len_ = allocator->total();
+
+    PROXY_LOG(DEBUG, "succ to init sub rpc req", "sub_rpc_req", *this);
+    RPC_REQ_INCREMENT_DYN_STAT(event::this_ethread(), CURRENTLY_HANDLING_SHARD_RPC_REQ);
   }
 
   return ret;
 }
 
-int ObRpcReq::clean_sub_rpc_req()
+int ObRpcReq::free_inner_request_allocator()
 {
-  int ret = OB_SUCCESS;
+  int ret = common::OB_SUCCESS;
 
-  if (OB_ISNULL(sub_rpc_req_array_) || sub_rpc_req_array_size_ != current_sub_rpc_req_count_) {
-    ret = OB_ERR_UNEXPECTED;
-    PROXY_LOG(WDIAG, "sub_rpc_req_array_size_ must equal to current_sub_rpc_req_count_", K_(sub_rpc_req_array_size), K_(current_sub_rpc_req_count));
-  } else {
-    uint32_t not_inited_req = 0;
-    for (int i = 0; i < sub_rpc_req_array_size_; ++i) {
-      ObRpcReq *sub_rpc_req = sub_rpc_req_array_[i];
-      PROXY_LOG(DEBUG, "ObRpcReq::clean_sub_rpc_req will clean", K(sub_rpc_req));
-      if (sub_rpc_req->is_sub_req_inited()) {
-        ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ClientNetState::RPC_REQ_CLIENT_INNER_REQUEST_DONE);
-        sub_rpc_req->cleanup(cleanup_params);
-      } else {
-        PROXY_LOG(INFO, "ObRpcReq sub req is not inited, destroy it directly", K(sub_rpc_req));
-        sub_rpc_req->inner_request_cleanup();
-        not_inited_req ++;
-        ObRpcRequestSM *sub_sm = sub_rpc_req->get_request_sm();
-        if (OB_NOT_NULL(sub_sm) && OB_NOT_NULL(sub_sm->handler_)) {
-          sub_sm->set_sm_terminate();
-          sub_sm->handle_event(RPC_REQUEST_SM_DONE);
-          sub_rpc_req->sm_ = NULL;
-        }
-        sub_rpc_req->destroy();
-      }
-    }
-
-    current_sub_rpc_req_count_ -= not_inited_req;
-    if (current_sub_rpc_req_count_ == 0) {
-      PROXY_LOG(DEBUG, "clean_sub_rpc_req done, all sub req cleaned", K(current_sub_rpc_req_count_), K(sub_rpc_req_array_size_), K(this));
-      ObRpcReq::ObRpcReqCleanupParams cleanup_params(ObRpcReq::ServerNetState::RPC_REQ_SERVER_SHARDING_REQUEST_DONE);
-      cleanup(cleanup_params);
-    }
-
-    if OB_FAIL(free_sub_rpc_req_array()) {
-      PROXY_LOG(WDIAG, "fail to call free_sub_rpc_req_array", K(ret));
+  if (OB_NOT_NULL(inner_request_allocator_)) {
+    if (is_sub_req_callback_ && !is_received_cancel_from_split_cont_) {
+      // do nothing
+    } else {
+      inner_request_allocator_->reset();
+      optimizer::get_global_optimizer_rpc_req_processor().free_allocator(inner_request_allocator_);
+      inner_request_allocator_ = NULL;
+      inner_request_allocator_len_ = 0;
     }
   }
-
   return ret;
+}
+
+void ObRpcReq::free_split_cont()
+{
+  if (OB_NOT_NULL(split_cont_)) {
+    split_cont_->detach();
+    split_cont_ = NULL;
+  }
+}
+
+void ObRpcReq::client_net_cancel_request()
+{
+  if (cnet_state_ < RPC_REQ_CLIENT_CANCLED) {
+    // If it is a sub-request, the state will not be changed to prevent it from being cleaned up in advance. The subsequent cleanup will lock the state before changing the state.
+    if (!is_inner_request()) {
+      cnet_state_ = RPC_REQ_CLIENT_CANCLED;
+    }
+  }
+  cnet_sm_ = NULL; //not to schedule client_net_handler any more
+  cancel_request();
+
+  if (OB_ISNULL(split_cont_)) {
+    PROXY_CS_LOG(DEBUG, "split cont is NULL, maybe not split request", K_(cs_id), KPC(this));
+  } else {
+    PROXY_CS_LOG(DEBUG, "found split cont, call cancel_recursively", K_(cs_id), KPC(this));
+    split_cont_->cancel_recursively();
+  }
 }
 
 void ObRpcReq::destroy()
@@ -294,13 +295,6 @@ void ObRpcReq::destroy()
   if (RPC_REQ_MAGIC_ALIVE == magic_) {
     PROXY_LOG(DEBUG, "ObRpcReq::destroy", "rpc_req", *this, KP(this));
 
-    // first , clean sub request
-    if (OB_NOT_NULL(execute_plan_)) {
-      optimizer::ObProxyShardRpcReqRequestPlan *plan = reinterpret_cast<optimizer::ObProxyShardRpcReqRequestPlan *>(execute_plan_);
-      plan->~ObProxyShardRpcReqRequestPlan();
-      get_global_optimizer_rpc_req_processor().free_allocator(plan->get_allocator());
-      execute_plan_ = NULL;
-    }
     if (obkv_info_.is_rpc_req_stat_recorded_) {
       ObRpcReqThreadQpsStat::dec_rpc_req_stat(obkv_info_.is_shard());
     }
@@ -312,12 +306,14 @@ void ObRpcReq::destroy()
     free_rpc_request();
     free_rpc_response();
     free_request_buf(); // free request buffer
+    free_request_buf_for_serialize(); // free request buffer for serialize
     free_response_buf(); // free response buffer
     free_request_inner_buf(); // free inner buffer
     free_inner_request_allocator(); // free inner request allocator
     free_response_inner_buf();
-    free_sub_rpc_req_array();
     free_rpc_redis_info();
+    free_login_info();
+    free_split_cont();
     obkv_info_.reset();
 
     magic_ = RPC_REQ_SM_MAGIC_DEAD;
@@ -334,13 +330,6 @@ void ObRpcReq::reset()
   if (RPC_REQ_MAGIC_ALIVE == magic_) {
     PROXY_LOG(DEBUG, "ObRpcReq::reset", "rpc_req", *this, KP(this));
 
-    // first , clean sub request, redis not use
-    if (OB_NOT_NULL(execute_plan_)) {
-      optimizer::ObProxyShardRpcReqRequestPlan *plan = reinterpret_cast<optimizer::ObProxyShardRpcReqRequestPlan *>(execute_plan_);
-      plan->~ObProxyShardRpcReqRequestPlan();
-      get_global_optimizer_rpc_req_processor().free_allocator(plan->get_allocator());
-      execute_plan_ = NULL;
-    }
     if (obkv_info_.is_rpc_req_stat_recorded_) {
       ObRpcReqThreadQpsStat::dec_rpc_req_stat(obkv_info_.is_shard());
     }
@@ -354,8 +343,7 @@ void ObRpcReq::reset()
     free_request_inner_buf(); // free inner buffer
     free_inner_request_allocator(); // redis not use
     free_response_inner_buf();
-    free_sub_rpc_req_array();// redis not use
-
+    free_login_info();
     if (OB_NOT_NULL(redis_info = get_redis_info())) {
       redis_info->reuse();
     }
@@ -382,6 +370,7 @@ void ObRpcReq::reset()
     inner_req_retry_times_ = 0;
     server_net_timeout_us_ = 0;
     client_net_timeout_us_ = 0;
+    inner_request_timeout_us_ = 0;
 
     is_canceled_ = false;
     is_response_ = false;
@@ -389,8 +378,7 @@ void ObRpcReq::reset()
     is_server_addr_set_ = false;
     is_use_request_inner_buf_ = false;
     is_use_response_inner_buf_ = false;
-    is_server_failed_ = false;
-    is_in_congestion_retry_ = false;
+    is_use_request_buf_for_serialize_ = false;
     is_need_terminal_client_net_ = false;
     is_sub_req_inited_ = false;
   } else {
@@ -411,7 +399,7 @@ void ObRpcReq::cleanup(const ObRpcReqCleanupParams &params)
         "rpc_req id", get_origin_channel_id(), "request_sm id", request_sm->get_rpc_req_origin_channel_id());
     } else {
       if (is_inner_request()) {
-        // 子任务，需要获取锁
+        // 子任务，需要获取锁，目前只由splitcont调用到此
         MUTEX_LOCK(lock, request_sm->inner_request_cleanup_mutex_, this_ethread());
         set_clean_module(params.rpc_req_clean_module_);
         if (params.rpc_req_clean_module_ == RPC_REQ_CLEAN_MODULE_CLIENT_NET) {
@@ -593,10 +581,15 @@ int ObRpcReq::alloc_rpc_request()
         rpc_request_ = new (buf) ObRpcTableLSOperationRequest;
         break;
       }
-      case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+      case obrpc::OB_TABLE_API_META_INFO_EXECUTE: {
         rpc_request_ = new (buf) ObRpcTableMetaRequest;
         obkv_info_.set_meta(true);
         break;
+      }
+      case obrpc::OB_HBASE_EXECUTE: {
+        rpc_request_ = new (buf) ObRpcHbaseOperationRequest;
+        break;
+      }
       default:
         rpc_request_ = NULL;
         LOG_WDIAG("invalid rpc pcode", "pcode", obkv_info_.pcode_, K(ret), K(rpc_trace_id));
@@ -692,6 +685,10 @@ int ObRpcReq::alloc_rpc_response()
         rpc_response_ = new (buf) ObRpcTableGetRouteResponse();
         break;
       }
+      case obrpc::OB_HBASE_EXECUTE: {
+        rpc_response_ = new (buf) ObRpcHbaseOperationResponse;
+        break;
+      }
       default:
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("invalid rpc pcode", "pcode", obkv_info_.pcode_, K(ret), K(rpc_trace_id));
@@ -720,7 +717,7 @@ int ObRpcReq::alloc_rpc_response()
 void ObRpcReq::inner_request_cleanup()
 {
   PROXY_LOG(DEBUG, "ObRpcReq::inner_request_cleanup", "rpc_req", *this, K(this));
-  free_request_buf(); // free request buffer
+  // free_request_buf(); // free request buffer
   free_request_inner_buf(); // free inner buffer
   free_response_inner_buf(); // free inner buffer
 
@@ -731,26 +728,21 @@ void ObRpcReq::inner_request_cleanup()
   }
 }
 
-void ObRpcReq::clean_server_handing_for_request()
+void ObRpcReq::inform_server_net_cleanup_timeout_request()
 {
   int ret = OB_SUCCESS;
   ObRpcReqTraceId &rpc_trace_id = obkv_info_.rpc_trace_id_;
   ObRpcServerNetHandler *snet = NULL;
   // only cleanup the request which has in server handing stage
   if (OB_ISNULL(snet = get_snet_sm())) {
-    PROXY_LOG(WDIAG, "invalid to execute clean_server_handing_for_request, NULL snet sm",
+    PROXY_LOG(WDIAG, "invalid to execute inform_server_net_cleanup_timeout_request, NULL snet sm",
               "snet_sm", get_snet_sm(), K(rpc_trace_id));
-  } else if (get_snet_state() != RPC_REQ_SERVER_REQUST_SENDED) {
-    //skip to schedule cleanup directly
-    PROXY_LOG(DEBUG, "couldn't to execute clean_server_handing_for_request",
-              "snet_sm", get_snet_sm(), "snet_state", get_snet_state(),
-              K(rpc_trace_id));
   } else if (OB_FAIL(snet->cleanup_request_in_server_handing(this))) {
     PROXY_LOG(WDIAG, "failed to execute cleanup_request_in_server_handing", K(ret), K(snet),
               K(rpc_trace_id));
     //do nothing
   } else {
-    PROXY_LOG(DEBUG,"succ to execute clean_server_handing_for_request", K(rpc_trace_id));
+    PROXY_LOG(DEBUG,"succ to execute inform_server_net_cleanup_timeout_request", K(rpc_trace_id));
   }
 }
 
@@ -780,7 +772,6 @@ void ObRpcOBKVInfo::reset()
 
   pcode_ = OB_INVALID_RPC_CODE;
   flags_ = 0;
-  rpc_origin_error_code_ = 0;
   is_set_rpc_trace_id_ = false;
   is_inner_request_ = false;
   is_table_group_request_ = false;
@@ -816,9 +807,7 @@ void ObRpcOBKVInfo::reset()
   dummy_ldc_.reset();
 
   rpc_trace_id_.reset();
-  rpc_request_retry_last_begin_ = 0;
-  rpc_request_retry_times_ = 0;
-  rpc_request_reroute_moved_times_ = 0;
+  retry_info_.reset();
 }
 
 int ObRpcOBKVInfo::generate_index_table_name()

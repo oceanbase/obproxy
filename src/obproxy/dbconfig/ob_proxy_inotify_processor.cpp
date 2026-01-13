@@ -248,6 +248,7 @@ int ObInotifyProcessor::do_inotify_watch()
 int ObInotifyProcessor::handle_epoll_event(int64_t count)
 {
   int ret = OB_SUCCESS;
+  LOG_INFO("succ to get epoll event", K(count));
   if (OB_UNLIKELY(count > EPOLL_MAX_EVENTS)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(count), K(ret));
@@ -289,6 +290,7 @@ int ObInotifyProcessor::handle_epoll_event(int64_t count)
 int ObInotifyProcessor::handle_inotify_event(ObWatchFile &wf, struct inotify_event &event)
 {
   int ret = OB_SUCCESS;
+  LOG_INFO("start handle inotify event", K(wf), K(event.mask));
   switch(wf.type_) {
     case DIR_ROOT: {
       if (event.mask & IN_CREATE && event.mask & IN_ISDIR) {

@@ -240,6 +240,7 @@ bool BlockSet::add_chunk(const ObMemAttr &attr)
     block->nblocks_ = BLOCKS_PER_CHUNK;
     add_free_block(block);
   }
+  total_hold_ += ACHUNK_SIZE;
   return NULL != chunk;
 }
 
@@ -270,6 +271,7 @@ void BlockSet::free_chunk(const AChunk *const chunk)
     if (OB_FAIL(tallocator_->update_hold(-chunk_aligned_size, attr))) {
       // do nothing
     }
+    total_hold_ -= chunk_aligned_size;
   }
   CHUNK_MGR.free_chunk(chunk);
 }

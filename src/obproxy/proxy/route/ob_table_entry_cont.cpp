@@ -170,6 +170,21 @@ int ObTableEntryCont::init(ObTableCache &table_cache, ObTableRouteParam &table_p
   return ret;
 }
 
+int ObTableEntryCont::destroy_mysql_client()
+{
+  int ret = OB_SUCCESS;
+  if (OB_LIKELY(NULL != mysql_client_)) {
+    if (OB_ISNULL(self_ethread().schedule_imm(mysql_client_, CLIENT_DESTROY_SELF_EVENT))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("fail to schedule destroy mysql client event, memory will leak", K(ret));
+    } else {
+      LOG_DEBUG("schedule to destory mysql client imm", K(mysql_client_), K(this_ethread()));
+      mysql_client_ = NULL;
+    }
+  }
+  return ret;
+}
+
 void ObTableEntryCont::kill_this()
 {
   LOG_DEBUG("ObTableEntryCont will be free", K_(table_param_.name), K(this));
@@ -204,13 +219,8 @@ void ObTableEntryCont::kill_this()
     newest_table_entry_ = NULL;
   }
 
-  if (OB_LIKELY(NULL != mysql_client_)) {
-    if (OB_ISNULL(self_ethread().schedule_imm(mysql_client_, CLIENT_DESTROY_SELF_EVENT))) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_EDIAG("fail to schedule destroy mysql client event, memory will leak", K(ret));
-    } else {
-      LOG_DEBUG("schedule to destory mysql client imm", K(mysql_client_), K(this_ethread()));
-    }
+  if (OB_FAIL(destroy_mysql_client())) {
+    LOG_EDIAG("fail to destroy mysql client", K(ret));
   }
   table_cache_ = NULL;
   action_.set_continuation(NULL);
@@ -595,6 +605,17 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
     // no resp, maybe client_vc disconnect
     PROCESSOR_INCREMENT_DYN_STAT(GET_PL_FROM_REMOTE_FAIL);
     ROUTE_PROMETHEUS_STAT(table_param_.name_, PROMETHEUS_ENTRY_LOOKUP_COUNT, TBALE_ENTRY, false, false);
+    // MysqlProxyCont timeout会直接回调，此时不走ObMysqlClient的handle_request_complete处理资源
+    // 对这种情况，直接销毁mysql client，避免成员状态不一致，引发各种问题
+    if (NULL != mysql_client_ && mysql_client_->mutex_.ptr_ != mysql_client_->get_common_mutex()) {
+      LOG_INFO("mutex not equal common_mutex of mysql_client, will rebuild client",
+               "mutex", mysql_client_->mutex_.ptr_, "common_mutex", mysql_client_->get_common_mutex());
+      if (OB_FAIL(destroy_mysql_client())) {
+        LOG_EDIAG("fail to destroy mysql client", K(ret));
+      } else {
+        need_prepare_binlog_entry_param_ = true;
+      }
+    }
     ret = OB_ERR_UNEXPECTED; // use to free newest_table_entry_
     LOG_WDIAG("fail to get table entry from remote", "name", table_param_.name_, K(ret));
   }
@@ -1145,9 +1166,9 @@ int ObTableEntryCont::do_lookup_binlog_entry_remote(bool need_use_next_hostname_
 
   ObMysqlProxy *mysql_proxy = table_param_.mysql_proxy_;
   if (need_prepare_binlog_entry_param_) {
-    if (OB_FAIL(obproxy::split_string_by_char(binlog_service_ip_, binlog_service_hostname_ip_list_, ';'))) {
+    if (0 == binlog_service_hostname_ip_list_.count() && OB_FAIL(obproxy::split_string_by_char(binlog_service_ip_, binlog_service_hostname_ip_list_, ';'))) {
       LOG_WDIAG("fail to split binlog_service_ip", K_(binlog_service_ip), K(ret));
-    } else if (OB_ISNULL(binlog_sql_ = static_cast<char *>(op_fixed_mem_alloc(OB_SHORT_SQL_LENGTH)))) {
+    } else if (OB_ISNULL(binlog_sql_) && OB_ISNULL(binlog_sql_ = static_cast<char *>(op_fixed_mem_alloc(OB_SHORT_SQL_LENGTH)))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("fail to alloc mem", K(ret));
     } else if (OB_FAIL(ObRouteUtils::get_binlog_entry_sql(binlog_sql_, OB_SHORT_SQL_LENGTH,
@@ -1260,6 +1281,8 @@ int ObTableEntryCont::do_lookup_binlog_entry_remote(bool need_use_next_hostname_
   } else if (OB_SUCC(ret)) {
     state_ = LOOKUP_BINLOG_ENTRY_STATE;
     request_param_.set_target_addr(addr);
+    LOG_DEBUG("do_binlog async_read start", "mutex", mysql_client_->mutex_.ptr_,
+              "common_mutex", mysql_client_->get_common_mutex());
     if (OB_FAIL(mysql_proxy->async_read(this, request_param_, pending_action_))) {
       LOG_WDIAG("fail to async read", K_(binlog_sql), K(addr), K(ret));
     }

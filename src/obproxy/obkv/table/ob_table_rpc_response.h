@@ -138,7 +138,7 @@ public:
   // rewrite this func to analyze batch operation response
   virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
 
-  //int deep_copy(common::ObIAllocator &allocator, const ObRpcTableBatchOperationResponse &other);
+  // int deep_copy(common::ObIAllocator &allocator, const ObRpcTableBatchOperationResponse &other);
   //virtual int deep_copy(common::ObIAllocator &allocator,  ObRpcResponse *other);
 
 private:
@@ -156,7 +156,7 @@ public:
   ObTableQueryResult &get_query_result() {return query_res_;}
 
   // TO_STRING_KV(K_(rpc_packet_meta), K_(res_buf_len), K_(query_res));
-  //int deep_copy(common::ObIAllocator &allocator, const ObRpcTableQueryResponse &other);
+  // int deep_copy(common::ObIAllocator &allocator, const ObRpcTableQueryResponse &other);
   //virtual int deep_copy(common::ObIAllocator &allocator, ObRpcResponse *other);
 
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
@@ -262,6 +262,7 @@ public:
   virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
   virtual int64_t get_encode_size() const;
   virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
+  // int deep_copy(common::ObIAllocator &allocator, const ObRpcTableLSOperationResponse &other);
   //common::ObArenaAllocator &get_allocator() { return allocator_; }
   
 private:
@@ -308,6 +309,23 @@ private:
   ObTableMetaResponse meta_res_;
 };
 
+class ObRpcHbaseOperationResponse : public ObRpcResponse
+{
+public:
+  ObRpcHbaseOperationResponse() : hbase_res_() {}
+  ~ObRpcHbaseOperationResponse() {}
+
+  const ObHbaseOperationResponse &get_hbase_result() const {return hbase_res_;}
+  ObHbaseOperationResponse &get_hbase_result() {return hbase_res_;}
+
+  TO_STRING_KV(K_(hbase_res));
+
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const override;
+  virtual int analyze_response(const char *buf, const int64_t buf_len, int64_t &pos) override;
+private:
+  ObHbaseOperationResponse hbase_res_;
+};
 
 } // end namespace obkv
 } // end namespace obproxy

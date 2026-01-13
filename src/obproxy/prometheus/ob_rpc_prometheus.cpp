@@ -88,7 +88,7 @@ int ObRPCPrometheus::handle_net_prometheus(const net::ObIpEndpoint &ip,
 
   char svr_buf[1 << 7] { 0 };
   ip.to_plain_string(svr_buf, 1 << 7);
-  vip_addr_name.assign(svr_buf, 1 << 7);
+  vip_addr_name.assign(svr_buf, static_cast<int32_t>(strlen(svr_buf)));
 
   va_list args;
   va_start(args, metric);

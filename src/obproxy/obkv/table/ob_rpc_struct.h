@@ -47,7 +47,7 @@ using namespace oceanbase::obrpc;
 using namespace oceanbase::obproxy::proxy;
 
 static const int64_t SUB_REQ_COUNT = 2;
-static const int64_t ROWKEY_COLUMNS_COUNT = 2;
+static const int64_t ROWKEY_COLUMNS_COUNT = 3;
 static const int64_t DEFAULT_TABLET_OP_COUNT = 1;
 
 typedef common::ObIArray<common::ObObj> ROWKEY_VALUE_PARAM;
@@ -69,6 +69,16 @@ typedef common::ObSEArray<RANGE_VALUE, SUB_REQ_COUNT> SUB_REQUEST_RANGE_ARR;
 #define RANGE_VALUE_OBJ(range_value) \
     RANGE_VALUE range_value(common::ObModIds::OB_RPC_TABLE_TABLE_OPERATION, ROWKEY_COLUMNS_COUNT * sizeof(common::ObObj))
 
+
+inline static const ObSEArray<ObString, ROWKEY_COLUMNS_COUNT>  & get_hbase_rowkey_columns() {
+  static ObSEArray<ObString, ROWKEY_COLUMNS_COUNT> hbase_rowkey_columns;
+  if (hbase_rowkey_columns.empty()) {
+    hbase_rowkey_columns.push_back(ObString::make_string("K"));
+    hbase_rowkey_columns.push_back(ObString::make_string("Q"));
+    hbase_rowkey_columns.push_back(ObString::make_string("T"));
+  }
+  return hbase_rowkey_columns;
+}
 
 class ObRpcSubReqBuf
 {

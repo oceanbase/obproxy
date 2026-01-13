@@ -11,6 +11,9 @@
  */
 
 #include "alloc_func.h"
+
+#include <malloc.h>
+
 #include "lib/alloc/achunk_mgr.h"
 #include "lib/alloc/ob_malloc_allocator.h"
 
@@ -32,6 +35,46 @@ int64_t get_memory_limit()
 int64_t get_memory_hold()
 {
   return CHUNK_MGR.get_hold();
+}
+
+int64_t get_memory_used()
+{
+  int64_t total = 0;
+  ObMallocAllocator *allocator = ObMallocAllocator::get_instance();
+  if (OB_NOT_NULL(allocator)) {
+    ObTenantAllocator *tenant_allocator = allocator->get_tenant_allocator(common::OB_SERVER_TENANT_ID);
+    if (OB_NOT_NULL(tenant_allocator)) {
+      total += tenant_allocator->get_used();
+    }
+  }
+
+  int64_t glibc_used = get_glibc_memory_used();
+
+  return total + glibc_used;
+}
+
+int64_t get_glibc_memory_hold()
+{
+#ifdef EL9_PLATFORM
+  struct mallinfo2 mi = mallinfo2();
+#else
+  struct mallinfo mi = mallinfo();
+#endif
+  int64_t hold = mi.arena + mi.hblkhd;
+
+  return hold;
+}
+
+int64_t get_glibc_memory_used()
+{
+#ifdef EL9_PLATFORM
+  struct mallinfo2 mi = mallinfo2();
+#else
+  struct mallinfo mi = mallinfo();
+#endif
+  int64_t hold = mi.arena + mi.hblkhd;
+  int64_t used = hold - mi.fordblks;
+  return used;
 }
 
 int64_t get_memory_avail()

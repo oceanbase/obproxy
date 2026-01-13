@@ -28,7 +28,7 @@ export TOOLS_DIR;
 export RUNTIME_DIR;
 
 ALL_ARGS=("$@")
-PACKAGE=${2:-obproxy}
+ PACKAGE=${2:-obproxy-ce}
 OBPROXY_VERSION=${3:-`cat rpm/${PACKAGE}-VER.txt`}
 RELEASE=${4:-1}
 PREFIX=/home/admin/obproxy

@@ -62,6 +62,13 @@ int ObMysqlRequestCompressTransformPlugin::consume(event::ObIOBufferReader *read
     ret = OB_INVALID_ARGUMENT;
     PROXY_API_LOG(WDIAG, "invalid argument", K(reader), K(ret));
   } else {
+    if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+      sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_read_ += reader->read_avail();
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_compress read mysql request",
+        "plugin_compress_read",
+        sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_read_);
+    }
+
     if (NULL == local_reader_) {
       local_reader_ = reader->clone();
       next_compressed_seq_ = 0;
@@ -145,19 +152,32 @@ int ObMysqlRequestCompressTransformPlugin::consume_normal_compress_packet(event:
              && (is_last_segment
                  || remain_read_avail >= ObProto20Utils::OB_20_PROTOCOL_MAX_PAYLOAD_LEN));
 
-    int64_t plugin_compress_request_end = sm_->get_based_hrtime();
-    sm_->cmd_time_stats_.plugin_compress_request_time_ +=
-      milestone_diff(plugin_compress_request_begin, plugin_compress_request_end);
-    int64_t consume_size = local_transfer_reader_->read_avail();
-    int64_t produce_size = 0;
-    // send the compressed packet in local_transfer_reader_
-    if (consume_size > 0) {
-      if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
-        ret = OB_ERR_UNEXPECTED;
-        PROXY_API_LOG(WDIAG, "fail to produce", "expected size", consume_size,
-                      "actual size", produce_size, K(ret));
-      } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
-        PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
+    if (OB_SUCC(ret)) {
+      int64_t plugin_compress_request_end = sm_->get_based_hrtime();
+      sm_->cmd_time_stats_.plugin_compress_request_time_ +=
+        milestone_diff(plugin_compress_request_begin, plugin_compress_request_end);
+      int64_t consume_size = local_transfer_reader_->read_avail();
+      int64_t produce_size = 0;
+      // send the compressed packet in local_transfer_reader_
+      if (consume_size > 0) {
+        if (consume_size != (produce_size = produce(local_transfer_reader_, consume_size))) {
+          ret = OB_ERR_UNEXPECTED;
+          PROXY_API_LOG(WDIAG, "fail to produce", "expected size", consume_size,
+                        "actual size", produce_size, K(ret));
+        } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
+          PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
+        }
+      } else {
+        if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+          sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_write_ += consume_size;
+          sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_increase_ += (
+            sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_write_ -
+            sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_read_
+          );
+          PROTOCOL_FORWARD_LOG(TRACE, "plugin_compress wwrite compressed request",
+            "plugin_compress_write",
+            sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_write_);
+        }
       }
     }
   } else {
@@ -291,6 +311,12 @@ int ObMysqlRequestCompressTransformPlugin::consume_content_of_file_compress_pack
           } else if (OB_FAIL(local_transfer_reader_->consume(consume_size))) {
             PROXY_API_LOG(WDIAG, "fail to consume local transfer reader", K(consume_size), K(ret));
           } else {
+            if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+              sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_write_ += consume_size;
+              PROTOCOL_FORWARD_LOG(TRACE, "plugin_compress write compressed request",
+                "plugin_compress_write",
+                sm_->protocol_diagnosis_->req_forward_data_flow_.plugin_compress_write_);
+            }
             PROXY_API_LOG(DEBUG, "succ to consume local transfer reader", K(consume_size));
           }
         }
@@ -408,6 +434,12 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
 void ObMysqlRequestCompressTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlRequestCompressTransformPlugin::handle_input_complete happen");
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_COMPRESS_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_compress process request finish");
+  }
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;

@@ -81,7 +81,7 @@ public:
   bool is_location_entry() const { return (!is_dummy_entry_ && 1 == part_num_ && !is_single_partition_table_) || is_binlog_entry_; }
   bool is_part_info_entry() const { return !is_dummy_entry_ && (part_num_ > 1 || (1 == part_num_ && is_single_partition_table_)); }
   bool is_non_partition_table() const { return (1 == get_part_num() && !is_single_partition_table_); }
-  bool is_partition_table() const { return (get_part_num() > 1 || is_single_partition_table_); }
+  bool is_partition_table() const { return (get_part_num() > 1 || (is_single_partition_table_ && 1 == get_part_num())); }
   bool is_single_partition_table() const { return is_single_partition_table_; }
   bool is_need_rebuild_as_single_partition_table() const { return need_rebuild_as_single_partition_table_; }
   bool is_entry_from_rslist() const { return is_entry_from_rslist_; }

@@ -99,14 +99,14 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
           } else if (0 != result_code.rcode_ || obkv_info.is_bad_routing()) {
             // 记录错误，是否需要重传
             obkv_info.set_error_resp(true);
-            obkv_info.rpc_origin_error_code_ = result_code.rcode_;
+            obkv_info.retry_info_.rpc_origin_error_code_ = result_code.rcode_;
             LOG_INFO("rpc response is error", "pcode", obkv_info.pcode_,
                       "error_code", result_code.rcode_, "rpc_trace_id", obkv_info.rpc_trace_id_,
                       "need_reroute", obkv_info.is_bad_routing(), "error_msg", result_code.msg_,
                       "cur_serve_ip", obkv_info.server_info_.addr_);
           } else {
             // reset error code
-            obkv_info.rpc_origin_error_code_ = 0;
+            obkv_info.retry_info_.rpc_origin_error_code_ = 0;
           }
 
           /**
@@ -114,11 +114,13 @@ int ObProxyRpcReqAnalyzer::analyze_rpc_packet_meta(ObProxyRpcReqAnalyzeCtx &ctx,
           *   1. need_parse_response_fully
           *     1.1. not error
           *     1.2. shard request
-          *     1.3. async query request
           *   2. OB_TABLE_API_MOVE
           *   3. OB_REDIS_EXECUTE
+          *   4. need_parse_response_fully_for_async_query
+          *     4.1. async query request
+          *     4.2. (error code is 0 && is_server_support_distributed_execute_ is true) or not error
           */
-          if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_) || (OB_REDIS_EXECUTE == obkv_info.pcode_ && obkv_info.rpc_origin_error_code_ == 0))) {
+          if (OB_SUCC(ret) && (obkv_info.need_parse_response_fully() || (OB_TABLE_API_MOVE == obkv_info.pcode_) || (OB_REDIS_EXECUTE == obkv_info.pcode_ && obkv_info.get_error_code() == 0))) {
             // alloc response and full parse
             if (OB_FAIL(ob_rpc_req.alloc_rpc_response())) {
               LOG_WDIAG("fail to call alloc_rpc_response", K(ob_rpc_req), K(ret), K(rpc_trace_id));
@@ -288,28 +290,30 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
   }
   #endif
   if (obkv_info.is_error() && obkv_info.is_resp()) {
-    LOG_DEBUG("ObRpcRequestSM::handle_server_failed", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+    LOG_DEBUG("ObRpcRequestSM::handle_server_failed", "error_code", obkv_info.get_error_code(), K(rpc_trace_id));
 
+    // 1. 旁路导入请求不处理错误，直接返回
     if (obkv_info.pcode_ == obrpc::OB_TABLE_API_DIRECT_LOAD) {
       LOG_INFO("ObRpcRequestSM::handle_server_failed direct load request receive server failed", "error_code",
-                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+                obkv_info.get_error_code(), K(rpc_trace_id));
       //don't do any retry for OB_TABLE_API_DIRECT_LOAD request
       obkv_info.set_resp_reroute_info(false);
       obkv_info.set_need_retry(false);
       obkv_info.set_need_retry_with_global_index(false);
     }
+    // 2.全局索引需要server反馈错误，特殊处理错误码 OB_ERR_KV_GLOBAL_INDEX_ROUTE
     // For the -10500 error, there are two main situations:
     //  1. Use the main table routing to report error -10500, splice it into a global index table, and try again.
     //  2. Using global index table routing, error -10500 is reported. This situation is usually caused by using the old cache. In this case, normal retry logic is used, and the main table routing is used.
-    else if (OB_ERR_KV_GLOBAL_INDEX_ROUTE == obkv_info.rpc_origin_error_code_) {
+    else if (OB_ERR_KV_GLOBAL_INDEX_ROUTE == obkv_info.get_error_code()) {
       if (!ob_rpc_req.get_rpc_request_config_info().rpc_enable_global_index_) {
         ret = OB_ERR_KV_GLOBAL_INDEX_ROUTE;
-        LOG_WDIAG("Currently a global index error is returned but ODP disables global indexing", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+        LOG_WDIAG("Currently a global index error is returned but ODP disables global indexing", "error_code", obkv_info.get_error_code(), K(rpc_trace_id));
       } else if (!obkv_info.is_query_with_index()) {
         ret = OB_NOT_SUPPORTED;
-        LOG_WDIAG("Currently it is not an index query request but a related error is returned", "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+        LOG_WDIAG("Currently it is not an index query request but a related error is returned", "error_code", obkv_info.get_error_code(), K(rpc_trace_id));
       } else {
-        LOG_INFO("ObRpcRequestSM::handle_server_failed get global index error", "error_code", obkv_info.rpc_origin_error_code_,
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get global index error", "error_code", obkv_info.get_error_code(),
                   "data_table_id", obkv_info.data_table_id_, "table_id", obkv_info.table_id_, "idx_name", obkv_info.index_name_,
                   "is_global_index_route", obkv_info.is_global_index_route(), K(rpc_trace_id));
         if (obkv_info.is_global_index_route()) {
@@ -330,51 +334,71 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
           obkv_info.set_need_retry_with_global_index(true);
         }
       }
-    // TODO: There may be many different errors in the future. The reroute flag is not set, but you need to update the routing information and try again.
-    //  1. table level.  2. partition level.
-    } else if (OB_SCHEMA_ERROR == obkv_info.rpc_origin_error_code_
-                || OB_TABLE_NOT_EXIST == obkv_info.rpc_origin_error_code_
-                || OB_TABLET_NOT_EXIST == obkv_info.rpc_origin_error_code_
-                || OB_LS_NOT_EXIST == obkv_info.rpc_origin_error_code_
-                || (obrpc::OB_TABLE_API_LS_EXECUTE == obkv_info.pcode_
-                    && OB_NOT_MASTER == obkv_info.rpc_origin_error_code_)) {
+    }
+    // 3.分布式执行且未返回报错，则只刷新不重试
+    else if (0 == obkv_info.get_error_code()) {
+      // maybe server support distributed execute, only need to refresh entry
+      if (obkv_info.is_bad_routing()) {
+        if (obkv_info.is_need_refresh_table_entry()) {
+          ctx.dirty_table_entry_ = true;
+        }
+        obkv_info.set_route_entry_dirty();
+        ctx.dirty_partition_entry_ = true;
+        LOG_INFO("ObRpcRequestSM::handle_server_failed but server support distributed execute", "error_code", obkv_info.get_error_code(),
+                "is_inner_request", obkv_info.is_inner_request_,
+                "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_,
+                "need_retry", obkv_info.is_need_retry(), K(rpc_trace_id));
+      }
+    }
+    // 4.需要刷新table entry,不论server是否返回require rerouting flag
+    // 4.1 OB_SCHEMA_ERROR需要特殊处理
+    // 4.2 LSOP + OB_NOT_MASTER 是否需要刷新table entry待验证，历史原因
+    else if (obkv_info.is_need_refresh_table_entry_error()) {
+                // || (obrpc::OB_TABLE_API_LS_EXECUTE == obkv_info.pcode_
+                //     && OB_NOT_MASTER == obkv_info.rpc_origin_error_code_)) {
       if (obkv_info.is_rpc_request_with_partition_id_) {
         ret = OB_ERR_KV_ROUTE_ENTRY_EXPIRE;
         LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST "
                   "with set partition id, return OB_ERR_KV_ROUTE_ENTRY_EXPIRE", "error_code",
-                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
-      } else if (OB_SCHEMA_ERROR == obkv_info.rpc_origin_error_code_ && obkv_info.is_non_partition_table()) {
+                obkv_info.get_error_code(), K(rpc_trace_id));
+      } else if (OB_SCHEMA_ERROR == obkv_info.get_error_code() && obkv_info.is_non_partition_table()) {
         LOG_INFO("ObRpcRequestSM::handle_server_failed process non partition table meet OB_SCHEMA_ERROR, maybe it is single partition table",
-                 "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+                 "error_code", obkv_info.get_error_code(), K(rpc_trace_id));
         obkv_info.set_need_retry(true);
         obkv_info.set_route_entry_dirty();
         // obkv_info.set_non_partition_table(false);
         obkv_info.is_single_partition_table_ = true;
-        ctx.dirty_table_entry_ = true;
+        // ctx.dirty_table_entry_ = true;
       } else {
-        LOG_INFO("ObRpcRequestSM::handle_server_failed get OB_SCHEMA_ERROR/OB_TABLE_NOT_EXIST", "error_code",
-                obkv_info.rpc_origin_error_code_, K(rpc_trace_id));
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get need refresh table entry error", "error_code",
+                obkv_info.get_error_code(), K(rpc_trace_id));
         obkv_info.set_need_retry(true);
         obkv_info.set_route_entry_dirty();
       }
 
       ctx.dirty_table_entry_ = true;
       ctx.dirty_partition_entry_ = true; //should set parition_entry to DIRTY as SAME(to set it invalid)
-    } else if (obkv_info.is_bad_routing()) {
+    }
+    // 5.server返回require rerouting flag, 根据server反馈刷新table entry
+    // 5.1 OB_TENANT_NOT_IN_SERVER(-5150) 客户端不会刷新表meta信息，改为重连
+    else if (obkv_info.is_bad_routing()) {
       obkv_info.set_need_retry(true);
       obkv_info.set_route_entry_dirty();
-      LOG_INFO("ObRpcRequestSM::handle_server_failed ", "error_code", obkv_info.rpc_origin_error_code_,
+      LOG_INFO("ObRpcRequestSM::handle_server_failed get require rerouting flag", "error_code", obkv_info.get_error_code(),
                 "is_inner_request", obkv_info.is_inner_request_,
-                "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+                "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
       // if received not master error, it means the partition locations of
       // the certain table entry has expired, so we need delay to update it;
-      if (OB_MAPPING_BETWEEN_TABLET_AND_LS_NOT_EXIST == obkv_info.rpc_origin_error_code_
-         || OB_TENANT_NOT_IN_SERVER == obkv_info.rpc_origin_error_code_) {
+      if (OB_TENANT_NOT_IN_SERVER == obkv_info.get_error_code()
+         || obkv_info.is_need_refresh_table_entry()) {
         ctx.dirty_table_entry_ = true;
       }
       ctx.dirty_partition_entry_ = true;
-    } else {
-      switch (obkv_info.rpc_origin_error_code_)
+    }
+    // 6.server由于历史原因未设置require rerouting flag, 这里兜底根据错误码刷新table entry
+    // 6.1 observer >= 4.3.5 不会走到这里
+    else {
+      switch (obkv_info.get_error_code())
       {
       case OB_LOCATION_LEADER_NOT_EXIST:
       case OB_NOT_MASTER:
@@ -393,9 +417,9 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
       case OB_TRANS_RPC_TIMEOUT:
         obkv_info.set_need_retry(true);
         obkv_info.set_route_entry_dirty();
-        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.rpc_origin_error_code_,
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.get_error_code(),
                   "is_inner_request", obkv_info.is_inner_request_,
-                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+                  "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
         // if received not master error, it means the partition locations of
         // the certain table entry has expired, so we need delay to update it;
         ctx.dirty_partition_entry_ = true;
@@ -404,9 +428,9 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
         //need update table entry to rebuild
         obkv_info.set_need_retry(true);
         obkv_info.set_route_entry_dirty();
-        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.rpc_origin_error_code_,
+        LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code", "error_code", obkv_info.get_error_code(),
                   "is_inner_request", obkv_info.is_inner_request_,
-                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+                  "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
         // if received not master error, it means the partition locations of
         // the certain table entry has expired, so we need delay to update it;
         ctx.dirty_table_entry_ = true;
@@ -415,16 +439,16 @@ int ObProxyRpcReqAnalyzer::handle_server_failed(ObProxyRpcReqAnalyzeCtx &ctx, Ob
         ctx.dirty_table_entry_ = true;
         ctx.dirty_partition_entry_ = true;
         LOG_INFO("ObRpcRequestSM::handle_server_failed get route error_code, just dirty table entry not retry",
-                  "error_code", obkv_info.rpc_origin_error_code_,
+                  "error_code", obkv_info.get_error_code(),
                   "is_inner_request", obkv_info.is_inner_request_,
-                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+                  "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
         break;
       default:
         //do nothing
         LOG_DEBUG("ObRpcRequestSM::handle_server_failed get route error_code, do nothing",
-                  "error_code", obkv_info.rpc_origin_error_code_,
+                  "error_code", obkv_info.get_error_code(),
                   "is_inner_request", obkv_info.is_inner_request_,
-                  "retry_count", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+                  "retry_count", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
         break;
       }
     }
@@ -586,7 +610,7 @@ int ObProxyRpcReqAnalyzer::handle_query_async_response(ObProxyRpcReqAnalyzeCtx &
 int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, ObRpcReq &ob_rpc_req)
 {
   int ret = OB_SUCCESS;
-  UNUSED(ctx);
+
 
   ObRpcReqCtx *rpc_ctx = NULL;
   ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
@@ -641,6 +665,15 @@ int ObProxyRpcReqAnalyzer::handle_login_response(ObProxyRpcReqAnalyzeCtx &ctx, O
               redis_info->set_redis_new_protocol(login_response->is_redis_new_protocol());
             }
           }
+        } else {
+          ctx.need_rewrite_ = true; //only use for rewrite obproxy version
+          ObString server_version = login_response->get_server_version();
+          if (OB_FAIL(ob_rpc_req.rewrite_login_info(server_version))) {
+            LOG_WDIAG("fail to rewrite login info", K(ret), K(rpc_trace_id));
+          } else {
+            login_response->set_server_version(ObString::make_string(ob_rpc_req.get_login_info()));
+            LOG_DEBUG("rewrite obproxy version", K(login_response->get_server_version()));
+          }
         }
       }
     }
@@ -673,7 +706,7 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
         }
       } else if (obrpc::OB_TABLE_API_LOGIN == obkv_info.pcode_) {
         LOG_DEBUG("handle_obkv_response for OB_TABLE_API_LOGIN", K(rpc_trace_id));
-        if (OB_UNLIKELY(obkv_info.rpc_origin_error_code_ != 0) && ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) {
+        if (OB_UNLIKELY(obkv_info.get_error_code() != 0) && ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) {
           ObString err_content;
           bool is_error_from_server = true;
           if (OB_FAIL(ObRpcRedisAnalyzer::build_err_msg(ob_rpc_req, err_content, is_error_from_server))) {
@@ -684,8 +717,8 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
             LOG_WDIAG("invalid to serialize redis server error response", K(ret), K(ob_rpc_req));
           }
           LOG_DEBUG("get an error response from server, maybe need retry or directly to return error",
-                    "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id), "can_retry", obkv_info.is_rpc_req_can_retry());
-        } else if (OB_FAIL(ObProxyRpcReqAnalyzer::handle_login_response(ctx, ob_rpc_req))) {
+                    "error_code", obkv_info.get_error_code(), K(rpc_trace_id), "can_retry", obkv_info.is_rpc_req_can_retry());
+        } else if (!obkv_info.is_error() && OB_FAIL(ObProxyRpcReqAnalyzer::handle_login_response(ctx, ob_rpc_req))) {
           LOG_WDIAG("fail to call handle_login_response", K(ret), K(rpc_trace_id));
         }  else if (ob_rpc_req.get_rpc_type() == OBPROXY_RPC_REDIS) { //TODO
           LOG_DEBUG("handle_obkv_response for OBPROXY_RPC_REDIS", K(rpc_trace_id));
@@ -702,7 +735,7 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
         ctx.need_retry_ = false;
         obkv_info.set_need_retry(false); //not do any retry for direct_load request(it will be errored if retry)
       } else if (obrpc::OB_REDIS_EXECUTE == obkv_info.pcode_ || obrpc::OB_REDIS_EXECUTE_V2 == obkv_info.pcode_) {
-        if (OB_UNLIKELY(obkv_info.rpc_origin_error_code_ != 0)) {
+        if (OB_UNLIKELY(obkv_info.get_error_code() != 0)) {
           ObString err_content;
           bool is_error_from_server = true;
           if (OB_FAIL(ObRpcRedisAnalyzer::build_err_msg(ob_rpc_req, err_content, is_error_from_server))) {
@@ -713,7 +746,7 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
             LOG_WDIAG("invalid to serialize redis server error response", K(ret), K(ob_rpc_req));
           }
           LOG_DEBUG("get an error response from server, maybe need retry or directly to return error",
-                    "error_code", obkv_info.rpc_origin_error_code_, K(rpc_trace_id), "can_retry", obkv_info.is_rpc_req_can_retry());
+                    "error_code", obkv_info.get_error_code(), K(rpc_trace_id), "can_retry", obkv_info.is_rpc_req_can_retry());
         } else {
           //it is redis request has handled
           ObRpcRedisInfo *redis_info = ob_rpc_req.get_redis_info();
@@ -739,10 +772,10 @@ int ObProxyRpcReqAnalyzer::handle_rpc_response(ObProxyRpcReqAnalyzeCtx &ctx, ObR
       // need retry in handle_server_failed or index or async query
       ctx.need_retry_ = true;
       LOG_DEBUG("[ObProxyRpcReqAnalyzer::handle_rpc_response] need retry rpc req",
-          "error_code", obkv_info.rpc_origin_error_code_,
+          "error_code", obkv_info.get_error_code(),
           "global index retry", obkv_info.is_need_retry_with_global_index(),
           "async retry", obkv_info.is_need_retry_with_query_async(),
-          "retry_times", obkv_info.rpc_request_retry_times_, K(rpc_trace_id));
+          "retry_times", obkv_info.retry_info_.retry_status_.rpc_request_retry_times_, K(rpc_trace_id));
     } else if (ctx.need_rewrite_) {
       // rewrite response and return to client
       if (OBPROXY_RPC_REDIS == ob_rpc_req.get_rpc_type()) { //TODO rpc_type_ and ctx.need_rewrite_
@@ -962,8 +995,9 @@ int ObProxyRpcReqAnalyzer::handle_obkv_serialize_request(ObRpcReq &ob_rpc_req)
       if (OB_FAIL(ob_rpc_req.realloc_request_buf(request_len + ObProxyRpcReqAnalyzer::OB_RPC_ANALYZE_MORE_BUFF_LEN))) {
         LOG_WDIAG("fail to allocate rpc request buf", K(ret), K(rpc_trace_id));
       } else {
-        buf = ob_rpc_req.get_request_buf();
-        buf_len = ob_rpc_req.get_request_buf_len();
+        buf = ob_rpc_req.get_request_buf_for_serialize();
+        buf_len = ob_rpc_req.get_request_buf_for_serialize_len();
+        ob_rpc_req.set_use_request_buf_for_serialize(true);
       }
     } else {
       //need use ob_rpc_req.request_inner_buf_
@@ -1084,6 +1118,7 @@ int ObProxyRpcReqAnalyzer::handle_obkv_request_rewrite(ObRpcReq &ob_rpc_req)
             break;
           case obrpc::OB_TABLE_API_DIRECT_LOAD:
           case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
+          case obrpc::OB_HBASE_EXECUTE:
             //do nothing
             break;
           default:
@@ -1105,9 +1140,9 @@ int ObProxyRpcReqAnalyzer::handle_obkv_response_rewrite(ObRpcReq &ob_rpc_req)
     ObRpcOBKVInfo &obkv_info = ob_rpc_req.get_obkv_info();
     obrpc::ObRpcPacketCode pcode = obkv_info.pcode_;
     LOG_DEBUG("ObProxyRpcReqAnalyzer::handle_obkv_response_rewrite", K(ob_rpc_req), K(obkv_info), "rpc_response",
-              ob_rpc_req.get_rpc_response(), K(pcode), "is_proxy_rpc", obkv_info.is_inner_request_);
+              ob_rpc_req.get_rpc_response(), K(pcode), "is_inner_request", obkv_info.is_inner_request_);
     
-    if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC != pcode) {
+    if (obrpc::OB_TABLE_API_EXECUTE_QUERY_SYNC != pcode && obrpc::OB_TABLE_API_LOGIN != pcode) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("response not support to rewrite", K(pcode));
     } else {
@@ -1280,6 +1315,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_request_size(const ObRpcPacketCode pcode, int
   case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
     size = sizeof(ObRpcTableMetaRequest);
     break;
+  case obrpc::OB_HBASE_EXECUTE:
+    size = sizeof(ObRpcHbaseOperationRequest);
+    break;
   default:
     size = 0;
     ret = OB_NOT_SUPPORTED;
@@ -1332,6 +1370,9 @@ int ObProxyRpcReqAnalyzer::get_rpc_response_size(const ObRpcPacketCode pcode, in
     break;
   case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
     size = sizeof(ObRpcTableMetaResponse);
+    break;
+  case obrpc::OB_HBASE_EXECUTE:
+    size = sizeof(ObRpcHbaseOperationResponse);
     break;
   default:
     size = 0;

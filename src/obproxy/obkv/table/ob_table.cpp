@@ -1070,6 +1070,56 @@ ObTableOperationResult::ObTableOperationResult()
     :operation_type_(ObTableOperationType::GET),
      affected_rows_(0)
 {}
+
+// int ObTableOperationResult::deep_copy(common::ObIAllocator &allocator, const ObTableOperationResult &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   reset();
+
+//   // deep copy ObTableResult
+//   errno_ = other.errno_;
+//   MEMCPY(sqlstate_, other.sqlstate_, sizeof(sqlstate_));
+//   MEMCPY(msg_, other.msg_, sizeof(msg_));
+
+//   // deep copy other
+//   operation_type_ = other.operation_type_;
+//   affected_rows_ = other.affected_rows_;
+
+//   // deep copy entity_
+//   if (other.entity_.buf_len_ > 0 && OB_NOT_NULL(other.entity_.buf_)) {
+//     char *new_buf = static_cast<char*>(allocator.alloc(other.entity_.buf_len_));
+//     if (OB_ISNULL(new_buf)) {
+//       ret = OB_ALLOCATE_MEMORY_FAILED;
+//       LOG_WDIAG("failed to allocate memory for entity buf", K(ret), K(other.entity_.buf_len_));
+//     } else {
+//       MEMCPY(new_buf, other.entity_.buf_, other.entity_.buf_len_);
+//       entity_.buf_ = new_buf;
+//       entity_.buf_len_ = other.entity_.buf_len_;
+//     }
+//   }
+
+//   return ret;
+// }
+
+void ObTableOperationResult::reset()
+{
+  // reset ObTableResult
+  errno_ = common::OB_ERR_UNEXPECTED;
+  sqlstate_[0] = '\0';
+  msg_[0] = '\0';
+
+  // reset this
+  operation_type_ = ObTableOperationType::INVALID;
+  affected_rows_ = 0;
+
+  // no need to free entity_.buf_
+  entity_.buf_ = NULL;
+  entity_.buf_len_ = 0;
+}
+
+////////////////////////////////////////////////////////////////
+
 /*
 int ObTableOperationResult::get_entity(const ObITableEntity *&entity) const
 {
@@ -1172,6 +1222,27 @@ int ObTableOperationResult::deep_copy(common::ObIAllocator &allocator,
 
   return ret;
 }*/
+
+// int ObTableBatchOperationResult::deep_copy(common::ObIAllocator &allocator, const ObTableBatchOperationResult &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   reset();
+
+//   // deep copy table_operations_result_
+//   if (OB_FAIL(table_operations_result_.prepare_allocate(other.table_operations_result_.count()))) {
+//     LOG_WDIAG("fail to prepare allocate for table operations result", K(ret));
+//   }
+//   for (int64_t i = 0; OB_SUCC(ret) && i < other.table_operations_result_.count(); ++i) {
+//     const ObTableOperationResult &other_result = other.table_operations_result_.at(i);
+//     if (OB_FAIL(table_operations_result_.at(i).deep_copy(allocator, other_result))) {
+//       LOG_WDIAG("fail to deep copy table operation result", K(ret), K(i));
+//       break;
+//     }
+//   }
+
+//   return ret;
+// }
 
 void ObTableBatchOperationResult::reset()
 {
@@ -1954,7 +2025,7 @@ int ObTableQueryResult::get_empty_obobj(ObObj *&obobj, int64_t count)
   return ret;
 }
 
-int ObTableQueryResult::alloc_buf_if_need(const int64_t need_size)
+int ObTableQueryResult::alloc_buf_if_need(common::ObIAllocator &allocator, const int64_t need_size)
 {
   int ret = OB_SUCCESS;
   if (need_size <= 0 || need_size > MAX_BUF_BLOCK_SIZE) {
@@ -1967,7 +2038,7 @@ int ObTableQueryResult::alloc_buf_if_need(const int64_t need_size)
     } else {
       actual_size = need_size;
     }
-    char *tmp_buf = static_cast<char*>(allocator_.alloc(actual_size));
+    char *tmp_buf = static_cast<char*>(allocator.alloc(actual_size));
     if (NULL == tmp_buf) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
       LOG_WDIAG("no memory", K(ret), K(actual_size));
@@ -1981,7 +2052,7 @@ int ObTableQueryResult::alloc_buf_if_need(const int64_t need_size)
     } else {
       int64_t actual_size = MAX(need_size + buf_.get_position(), 2 * buf_.get_capacity());
       actual_size = MIN(actual_size, MAX_BUF_BLOCK_SIZE);
-      char *tmp_buf = static_cast<char*>(allocator_.alloc(actual_size));
+      char *tmp_buf = static_cast<char*>(allocator.alloc(actual_size));
       if (NULL == tmp_buf) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
         LOG_WDIAG("no memory", K(ret), K(actual_size));
@@ -2034,43 +2105,96 @@ int ObTableQueryResult::add_all_property_shallow_copy(const ObTableQueryResult &
   return ret;
 }
 
-/*int ObTableQueryResult::add_all_property_deep_copy(const ObTableQueryResult &other)
-{
-  int ret = OB_SUCCESS;
-  int64_t count = 0;
-  if (0 != (count = properties_names_.count())) {
-    ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("invalid properties which has been initialized", K(ret), K(count));
-  } else {  //if (OB_FAIL(append(properties_names_, other.properties_names_))) {
-    count = other.get_property_count();
-    for (int64_t i = 0; i < count; i++) {
-      ObString name;
-      ob_write_string(allocator_, other.properties_names_.at(i), name);
-      properties_names_.push_back(name);
-    }
-    LOG_DEBUG("to append property by deep copy method", K(ret), K(count));
-  }
-  return ret;
-}
+// int ObTableQueryResult::deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other)
+// {
+//   int ret = OB_SUCCESS;
 
-int ObTableQueryResult::add_all_row_deep_copy(const ObTableQueryResult &other)
-{
-  int ret = OB_SUCCESS;
-  // const common::ObDataBuffer &buf = other.get_buf();
-  if (other.get_buf().get_capacity() > 0 && OB_FAIL(alloc_buf_if_need(other.get_buf().get_capacity()))) {
-    LOG_WDIAG("failed to alloc memory", K(ret));
-  } else if (buf_.get_remain() < other.get_buf().get_capacity()) {
-    ret = OB_BUF_NOT_ENOUGH;
-  } else {
-    LOG_DEBUG("ObProxyRpcQueryOp::handle_response_result before", K_(buf), K(other.get_buf()));
-    MEMCPY(buf_.get_cur_pos(), other.get_buf().get_data(), other.get_buf().get_capacity());
-    buf_.get_position() += other.get_buf().get_capacity();
-    row_count_ += other.row_count_;
-    LOG_DEBUG("ObProxyRpcQueryOp::handle_response_result after", K_(buf), K(other.get_buf()));
-  }
-  return ret;
-}
-*/
+//   reset();
+
+//   if (OB_FAIL(add_all_property_deep_copy(allocator, other))) {
+//     LOG_WDIAG("fail to deep copy properties", K(ret));
+//   } else if (OB_FAIL(add_all_row_deep_copy(allocator, other))) {
+//     LOG_WDIAG("fail to deep copy rows", K(ret));
+//   } else {
+//     // deep copy proxy_agg_data_buf_
+//     if (OB_FAIL(proxy_agg_data_buf_.prepare_allocate(other.proxy_agg_data_buf_.count()))) {
+//       LOG_WDIAG("fail to prepare allocate for proxy_agg_data_buf", K(ret));
+//     }
+//     for (int64_t i = 0; OB_SUCC(ret) && i < other.proxy_agg_data_buf_.count(); ++i) {
+//       const ObDataBuffer &other_buf = other.proxy_agg_data_buf_.at(i);
+//       if (OB_FAIL(deep_copy_data_buffer(allocator, other_buf, proxy_agg_data_buf_.at(i)))) {
+//         LOG_WDIAG("failed to deep copy data buffer", K(ret));
+//         break;
+//       }
+//     }
+
+//     fixed_result_size_ = other.fixed_result_size_;
+//     curr_idx_ = other.curr_idx_;
+//   }
+
+//   return ret;
+// }
+
+// int ObTableQueryResult::deep_copy_data_buffer(common::ObIAllocator &allocator, const ObDataBuffer &other_buf, ObDataBuffer &new_buf)
+// {
+//   int ret = OB_SUCCESS;
+
+//   if (other_buf.get_capacity() > 0) {
+//     char *new_buf_data = static_cast<char*>(allocator.alloc(other_buf.get_capacity()));
+//     if (OB_ISNULL(new_buf_data)) {
+//       ret = OB_ALLOCATE_MEMORY_FAILED;
+//       LOG_WDIAG("failed to allocate memory for data buffer", K(ret));
+//     } else {
+//       new_buf.set_data(new_buf_data, other_buf.get_capacity());
+//       MEMCPY(new_buf.get_data(), other_buf.get_data(), other_buf.get_capacity());
+//       new_buf.get_position() = other_buf.get_position();
+//       new_buf.get_limit() = other_buf.get_limit();
+//     }
+//   } else {
+//     LOG_DEBUG("other_buf.get_capacity() is 0", K(other_buf.get_capacity()));
+//     new_buf.reset();
+//   }
+
+//   return ret;
+// }
+
+// int ObTableQueryResult::add_all_property_deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other)
+// {
+//   int ret = OB_SUCCESS;
+//   int64_t count = 0;
+//   if (0 != (count = properties_names_.count())) {
+//     ret = OB_INVALID_ARGUMENT;
+//     LOG_WDIAG("invalid properties which has been initialized", K(ret), K(count));
+//   } else {  //if (OB_FAIL(append(properties_names_, other.properties_names_))) {
+//     if (OB_FAIL(properties_names_.prepare_allocate(other.properties_names_.count()))) {
+//       LOG_WDIAG("fail to prepare allocate for properties names", K(ret));
+//     }
+//     for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+//       ob_write_string(allocator, other.properties_names_.at(i), properties_names_.at(i));
+//     }
+//     LOG_DEBUG("to append property by deep copy method", K(ret), K(count));
+//   }
+//   return ret;
+// }
+
+// int ObTableQueryResult::add_all_row_deep_copy(common::ObIAllocator &allocator, const ObTableQueryResult &other)
+// {
+//   int ret = OB_SUCCESS;
+//   // const common::ObDataBuffer &buf = other.get_buf();
+//   if (other.get_buf().get_capacity() > 0 && OB_FAIL(alloc_buf_if_need(allocator, other.get_buf().get_capacity()))) {
+//     LOG_WDIAG("failed to alloc memory", K(ret));
+//   } else if (buf_.get_remain() < other.get_buf().get_capacity()) {
+//     ret = OB_BUF_NOT_ENOUGH;
+//   } else {
+//     LOG_DEBUG("ObProxyRpcQueryOp::handle_response_result before", K_(buf), K(other.get_buf()));
+//     MEMCPY(buf_.get_cur_pos(), other.get_buf().get_data(), other.get_buf().get_capacity());
+//     buf_.get_position() += other.get_buf().get_capacity();
+//     row_count_ += other.row_count_;
+//     LOG_DEBUG("ObProxyRpcQueryOp::handle_response_result after", K_(buf), K(other.get_buf()));
+//   }
+//   return ret;
+// }
+
 int ObTableQueryResult::add_all_row_shallow_copy(const ObTableQueryResult &other)
 {
   int ret = OB_SUCCESS;
@@ -3070,6 +3194,7 @@ DEF_TO_STRING(ObTableBitMap)
   return pos;
 }
 
+////////////////////////////////////////////////////////////////
 
 OB_DEF_SERIALIZE(ObTableLSOpResult) {
   int ret = OB_SUCCESS;
@@ -3110,6 +3235,64 @@ OB_DEF_DESERIALIZE(ObTableLSOpResult, )
   return ret;
 }
 
+void ObTableLSOpResult::reset()
+{
+  tablet_op_result_.reset();
+  rowkey_names_.reset();
+  properties_names_.reset();
+}
+
+// int ObTableLSOpResult::deep_copy(common::ObIAllocator &allocator, const ObTableLSOpResult &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   reset();
+
+//   // deep copy rowkey_names_
+//   if (OB_SUCC(ret)) {
+//     if (OB_FAIL(rowkey_names_.prepare_allocate(other.rowkey_names_.count()))) {
+//       LOG_WDIAG("fail to prepare allocate for rowkey names", K(ret));
+//     }
+//     for (int64_t i = 0; OB_SUCC(ret) && i < other.rowkey_names_.count(); ++i) {
+//       if (OB_FAIL(ob_write_string(allocator, other.rowkey_names_.at(i), rowkey_names_.at(i)))) {
+//         LOG_WDIAG("fail to call ob_write_string", K(ret));
+//       }
+//     }
+//   }
+
+//   // deep copy properties_names_
+//   if (OB_SUCC(ret)) {
+//     if (OB_FAIL(properties_names_.prepare_allocate(other.properties_names_.count()))) {
+//       LOG_WDIAG("fail to prepare allocate for properties names", K(ret));
+//     }
+//     for (int64_t i = 0; OB_SUCC(ret) && i < other.properties_names_.count(); ++i) {
+//       if (OB_FAIL(ob_write_string(allocator, other.properties_names_.at(i), properties_names_.at(i)))) {
+//         LOG_WDIAG("fail to call ob_write_string", K(ret));
+//       }
+//     }
+//   }
+
+//   // deep copy tablet_op_result_
+//   if (OB_SUCC(ret)) {
+//     if (OB_FAIL(tablet_op_result_.prepare_allocate(other.tablet_op_result_.count()))) {
+//       LOG_WDIAG("fail to prepare allocate for tablet op result", K(ret));
+//     }
+//     for (int64_t i = 0; OB_SUCC(ret) && i < other.tablet_op_result_.count(); ++i) {
+//       ObTableTabletOpResult& tablet_result = tablet_op_result_.at(i);
+//       if (OB_FAIL(tablet_result.deep_copy(allocator, other.tablet_op_result_.at(i)))) {
+//         LOG_WDIAG("fail to deep copy tablet result", K(ret), K(i));
+//       } else {
+//         tablet_result.set_all_properties_names(&properties_names_);
+//         tablet_result.set_all_rowkey_names(&rowkey_names_);
+//       }
+//     }
+//   }
+
+//   return ret;
+// }
+
+////////////////////////////////////////////////////////////////
+
 OB_DEF_SERIALIZE(ObTableTabletOpResult)
 {
   int ret = OB_SUCCESS;
@@ -3145,6 +3328,31 @@ OB_DEF_DESERIALIZE(ObTableTabletOpResult,)
   return ret;
 }
 
+// int ObTableTabletOpResult::deep_copy(common::ObIAllocator &allocator, const ObTableTabletOpResult &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   single_op_result_.reset();
+
+//   // deep copy single_op_result_
+//   if (OB_FAIL(single_op_result_.prepare_allocate(other.single_op_result_.count()))) {
+//     LOG_WDIAG("fail to prepare allocate for single op result", K(ret));
+//   }
+//   for (int64_t i = 0; OB_SUCC(ret) && i < other.single_op_result_.count(); ++i) {
+//     if (OB_FAIL(single_op_result_.at(i).deep_copy(allocator, other.single_op_result_.at(i)))) {
+//       LOG_WDIAG("fail to deep copy single op result", K(ret), K(i));
+//     }
+//   }
+
+//   // deep copy in ObTableLSOpResult::deep_copy
+//   // all_properties_names_ = nullptr;
+//   // all_rowkey_names_ = nullptr;
+
+//   return ret;
+// }
+
+////////////////////////////////////////////////////////////////
+
 OB_SERIALIZE_MEMBER(ObTableApiCredential,
                     cluster_id_,
                     tenant_id_,
@@ -3165,6 +3373,8 @@ ObTableApiCredential::ObTableApiCredential()
 ObTableApiCredential::~ObTableApiCredential()
 {}
 
+////////////////////////////////////////////////////////////////
+
 OB_DEF_DESERIALIZE(ObTableSingleOpResult,)
 {
   int ret = OB_SUCCESS;
@@ -3174,6 +3384,74 @@ OB_DEF_DESERIALIZE(ObTableSingleOpResult,)
 
 OB_UNIS_DEF_SERIALIZE(ObTableSingleOpResult, table_result_, operation_type_, single_entity_, affected_rows_);
 OB_UNIS_DEF_SERIALIZE_SIZE(ObTableSingleOpResult, table_result_, operation_type_, single_entity_, affected_rows_);
+
+int ObTableSingleOpResult::deep_copy_buffers(common::ObIAllocator &allocator)
+{
+  int ret = OB_SUCCESS;
+  // table_result_
+  if (OB_NOT_NULL(table_result_.buf_) && table_result_.buf_len_ > 0) {
+    char *new_buf = static_cast<char*>(allocator.alloc(table_result_.buf_len_));
+    if (OB_ISNULL(new_buf)) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("failed to allocate memory for table result buf", K(ret), K(table_result_.buf_len_));
+    } else {
+      MEMCPY(new_buf, table_result_.buf_, table_result_.buf_len_);
+      table_result_.buf_ = new_buf;
+    }
+  }
+
+  // single_entity_
+  if (OB_FAIL(ret)) {
+    // do nothing
+  } else if (OB_NOT_NULL(single_entity_.buf_) && single_entity_.buf_len_ > 0) {
+    char *new_buf = static_cast<char*>(allocator.alloc(single_entity_.buf_len_));
+    if (OB_ISNULL(new_buf)) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("failed to allocate memory for single entity buf", K(ret), K(single_entity_.buf_len_));
+    } else {
+      MEMCPY(new_buf, single_entity_.buf_, single_entity_.buf_len_);
+      single_entity_.buf_ = new_buf;
+    }
+  }
+  return ret;
+}
+// int ObTableSingleOpResult::deep_copy(common::ObIAllocator &allocator, const ObTableSingleOpResult &other)
+// {
+//   int ret = OB_SUCCESS;
+
+//   operation_type_ = other.operation_type_;
+//   affected_rows_ = other.affected_rows_;
+
+//   // deep copy table_result_
+//   if (other.table_result_.buf_len_ > 0 && OB_NOT_NULL(other.table_result_.buf_)) {
+//     char *new_buf = static_cast<char*>(allocator.alloc(other.table_result_.buf_len_));
+//     if (OB_ISNULL(new_buf)) {
+//       ret = OB_ALLOCATE_MEMORY_FAILED;
+//       LOG_WDIAG("failed to allocate memory for table result buf", K(ret), K(other.table_result_.buf_len_));
+//     } else {
+//       MEMCPY(new_buf, other.table_result_.buf_, other.table_result_.buf_len_);
+//       table_result_.buf_ = new_buf;
+//       table_result_.buf_len_ = other.table_result_.buf_len_;
+//     }
+//   }
+
+//   // deep copy single_entity_
+//   if (OB_SUCC(ret) && other.single_entity_.buf_len_ > 0 && OB_NOT_NULL(other.single_entity_.buf_)) {
+//     char *new_buf = static_cast<char*>(allocator.alloc(other.single_entity_.buf_len_));
+//     if (OB_ISNULL(new_buf)) {
+//       ret = OB_ALLOCATE_MEMORY_FAILED;
+//       LOG_WDIAG("failed to allocate memory for single entity buf", K(ret), K(other.single_entity_.buf_len_));
+//     } else {
+//       MEMCPY(new_buf, other.single_entity_.buf_, other.single_entity_.buf_len_);
+//       single_entity_.buf_ = new_buf;
+//       single_entity_.buf_len_ = other.single_entity_.buf_len_;
+//     }
+//   }
+
+//   return ret;
+// }
+
+////////////////////////////////////////////////////////////////
 
 OB_SERIALIZE_MEMBER(ObObkvPartKey,
                     part_key_level_,
@@ -3214,3 +3492,193 @@ OB_SERIALIZE_MEMBER(ObObkvRouteResult,
                     sub_parts_);
 
 OB_SERIALIZE_MEMBER((ObTableMetaResponse, ObTableResult), data_);
+
+OB_DEF_SERIALIZE(ObHbaseCell, ) {
+  int ret = OB_SUCCESS;
+  const int64_t properties_size = get_properties_count();
+  OB_UNIS_ENCODE(properties_size);
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < properties_size; ++i) {
+    const ObObj &obj = properties_.at(i);
+    if (OB_FAIL(ObTableSerialUtil::serialize(buf, buf_len, pos, obj))) {
+      LOG_WDIAG("fail to serialize table object", K(ret), K(buf), K(buf_len), K(pos));
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObHbaseCell, ) {
+  int64_t len = 0;
+  int ret = OB_SUCCESS;
+  const int64_t properties_size = get_properties_count();
+  OB_UNIS_ADD_LEN(properties_size);
+  for (int64_t i = 0; OB_SUCC(ret) && i < properties_size; ++i) {
+    const ObObj &obj = properties_.at(i);
+    len += ObTableSerialUtil::get_serialize_size(obj);
+  }
+  return len;
+}
+
+OB_DEF_DESERIALIZE(ObHbaseCell, ) {
+  int ret = OB_SUCCESS;
+  if (OB_SUCC(ret)) {
+    // decode properties size
+    int64_t properties_size = 0;
+    OB_UNIS_DECODE(properties_size);
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(properties_.prepare_allocate(properties_size))) {
+        LOG_WDIAG("failed to prepare allocate ObHbaseCell properties size", K(ret), K(properties_size));
+      }
+      for (int64_t i = 0; OB_SUCC(ret) && i < properties_size; ++i) {
+        if (OB_FAIL(ObTableSerialUtil::deserialize(buf, data_len, pos, properties_.at(i)))) {
+          LOG_WDIAG("fail to deserialize ObHbaseCell propertie", K(ret));
+        }
+      }
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObHbaseCfRow, ) {
+  int ret = OB_SUCCESS;
+  OB_UNIS_ENCODE(column_family_);
+  // encode key indexs
+  int64_t count = key_indexs_.count();
+  if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, count))) {
+    LOG_WDIAG("fail to encode key ranges count", K(ret));
+  }
+  for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+    if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, key_indexs_.at(i)))) {
+      LOG_WDIAG("fail to encode key index", K(ret));
+    }
+  }
+  // encode cell nums
+  count = cell_nums_.count();
+  if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, count))) {
+    LOG_WDIAG("fail to encode cell nums count", K(ret));
+  }
+  for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+      if (OB_FAIL(serialization::encode_vi64(buf, buf_len, pos, cell_nums_.at(i)))) {
+        LOG_WDIAG("fail to encode cell num", K(ret));
+      }
+  }
+
+  for (int64_t i = 0; OB_SUCC(ret) && i < count; ++i) {
+    if (OB_FAIL(cells_.at(i).serialize(buf, buf_len, pos))) {
+      LOG_WDIAG("fail to serialize cell", K(ret));
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObHbaseCfRow, ) {
+  int64_t len = 0;
+  OB_UNIS_ADD_LEN(column_family_);
+
+  int64_t key_indexs_count = key_indexs_.count();
+  OB_UNIS_ADD_LEN(key_indexs_count);
+  for (int64_t i = 0; i < key_indexs_count; ++i) {
+    OB_UNIS_ADD_LEN(key_indexs_.at(i));
+  }
+
+  int64_t cell_nums_count = cell_nums_.count();
+  OB_UNIS_ADD_LEN(cell_nums_count);
+  for (int64_t i = 0; i < cell_nums_count; ++i) {
+    OB_UNIS_ADD_LEN(cell_nums_.at(i));
+  }
+
+  for (int64_t i = 0; i < cells_.count(); ++i) {
+    len += cells_.at(i).get_serialize_size();
+  }
+  return len;
+}
+
+OB_DEF_DESERIALIZE(ObHbaseCfRow, ) {
+  int ret = OB_SUCCESS;
+  OB_UNIS_DECODE(column_family_);
+  int64_t key_indexs_count = 0;
+  OB_UNIS_DECODE(key_indexs_count);
+  if (OB_SUCC(ret) && pos < data_len) {
+    if (OB_FAIL(key_indexs_.prepare_allocate(key_indexs_count))) {
+      LOG_WDIAG("fail to prepare allocate key indexs", K(ret), K(key_indexs_count));
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < key_indexs_count; ++i) {
+      if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &key_indexs_.at(i)))) {
+        LOG_WDIAG("fail to encode cell num", K(ret));
+      }
+    }
+  }
+
+  int64_t cell_nums_count = 0;
+  int64_t cells_count = 0;
+  OB_UNIS_DECODE(cell_nums_count);
+  if (OB_SUCC(ret) && pos < data_len) {
+    if (OB_FAIL(cell_nums_.prepare_allocate(cell_nums_count))) {
+      LOG_WDIAG("fail to prepare allocate cell nums", K(ret), K(cell_nums_count));
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < cell_nums_count; ++i) {
+      if (OB_FAIL(serialization::decode_vi64(buf, data_len, pos, &cell_nums_.at(i)))) {
+        LOG_WDIAG("fail to encode cell num", K(ret));
+      } else {
+        cells_count += cell_nums_.at(i);
+      }
+    }
+  }
+
+  if (OB_SUCC(ret) && pos < data_len && cells_count > 0) {
+    if (OB_FAIL(cells_.prepare_allocate(cells_count))) {
+      LOG_WDIAG("fail to prepare allocate cells", K(ret), K(cells_count));
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < cells_count; ++i) {
+      if (OB_FAIL(cells_.at(i).deserialize(buf, data_len, pos))) {
+        LOG_WDIAG("fail to deserialize cell", K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+OB_DEF_DESERIALIZE(ObHbaseCellResult, ) {
+  int ret = OB_SUCCESS;
+  OB_UNIS_DECODE(key_index_);
+  int64_t cell_result_size = 0;
+  OB_UNIS_DECODE(cell_result_size);
+  if (OB_SUCC(ret) && pos < data_len) {
+    if (OB_FAIL(cell_result_.prepare_allocate(cell_result_size))) {
+      LOG_WDIAG("fail to prepare allocate cell result", K(ret), K(cell_result_size));
+    }
+    for (int64_t i = 0; OB_SUCC(ret) && i < cell_result_size; ++i) {
+      if (OB_FAIL(cell_result_.at(i).deserialize(buf, data_len, pos))) {
+        LOG_WDIAG("fail to deserialize cell result", K(ret));
+      }
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE(ObHbaseCellResult, ) {
+  int ret = OB_SUCCESS;
+  OB_UNIS_ENCODE(key_index_);
+  int64_t cell_result_size = cell_result_.count();
+  OB_UNIS_ENCODE(cell_result_size);
+  for (int64_t i = 0; OB_SUCC(ret) && i < cell_result_size; ++i) {
+    if (OB_FAIL(cell_result_.at(i).serialize(buf, buf_len, pos))) {
+      LOG_WDIAG("fail to serialize cell result", K(ret));
+    }
+  }
+  return ret;
+}
+
+OB_DEF_SERIALIZE_SIZE(ObHbaseCellResult, ) {
+  int64_t len = 0;
+  OB_UNIS_ADD_LEN(key_index_);
+  int64_t cell_result_size = cell_result_.count();
+  OB_UNIS_ADD_LEN(cell_result_size);
+  for (int64_t i = 0; i < cell_result_size; ++i) {
+    len += cell_result_.at(i).get_serialize_size();
+  }
+  return len;
+}
+
+OB_SERIALIZE_MEMBER((ObHbaseOperationResponse, ObTableResult), op_type_, cell_results_);

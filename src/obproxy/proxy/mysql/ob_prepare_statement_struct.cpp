@@ -300,7 +300,7 @@ void ObPsEntry::destroy()
     get_global_ps_entry_cache().dec_ps_entry_memory_count(total_len);
     buf_start_ = NULL;
     buf_len_ = 0;
-    op_fixed_mem_free(this, total_len);
+    ob_free(this);
   }
 }
 
@@ -357,7 +357,7 @@ void ObTextPsEntry::destroy()
     get_global_ps_entry_cache().dec_ps_entry_memory_count(total_len);
     buf_start_ = NULL;
     buf_len_ = 0;
-    op_fixed_mem_free(this, total_len);
+    ob_free(this);
   }
 }
 

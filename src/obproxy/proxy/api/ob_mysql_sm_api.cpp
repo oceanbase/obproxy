@@ -661,6 +661,16 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
   int ret = OB_SUCCESS;
   ObMysqlTransformInfo *transform = NULL;
 
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    if (c.type_ == CONSUMER_TRANSFORM_REQUEST_WRITE) {
+      sm_->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::CONSUMER_TRANSFORM_WRITE_FINISH);
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer transform write request finish");
+    } else if (c.type_ == CONSUMER_TRANSFORM_RESPONSE_WRITE) {
+      sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::CONSUMER_TRANSFORM_WRITE_FINISH);
+      PROTOCOL_FORWARD_LOG(TRACE, "consumer transform write response finish");
+    }
+  }
+
   // Figure out if this the request or response transform
   // : use request_transform_info_.entry_ because
   // request_transform_info_.vc_ is not set to NULL after the request
@@ -754,6 +764,16 @@ int ObMysqlSMApi::tunnel_handler_transform_write(int event, ObMysqlTunnelConsume
 int ObMysqlSMApi::tunnel_handler_transform_read(int event, ObMysqlTunnelProducer &p)
 {
   STATE_ENTER(ObMysqlSMApi::tunnel_handler_transform_read, event);
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    if (p.type_ == PRODUCER_TRANSFORM_REQUEST_READ) {
+      sm_->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PRODUCER_TRANSFORM_READ_FINISH);
+      PROTOCOL_FORWARD_LOG(TRACE, "producer transform read request finish");
+    } else if (p.type_ == PRODUCER_TRANSFORM_RESPONSE_READ) {
+      sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PRODUCER_TRANSFORM_READ_FINISH);
+      PROTOCOL_FORWARD_LOG(TRACE, "producer transform read response finish");
+    }
+  }
 
   int ret = OB_SUCCESS;
   if (p.vc_ != response_transform_info_.vc_ && p.vc_ != request_transform_info_.vc_) {
@@ -880,7 +900,7 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                        buf_start,
                                                        &ObMysqlSM::tunnel_handler_transform_read,
                                                        MT_TRANSFORM,
-                                                       "transform request read"))) {
+                                                       PRODUCER_TRANSFORM_REQUEST_READ))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("failed to add producer", K_(sm_->sm_id), K(ret));
     } else {
@@ -891,7 +911,7 @@ int ObMysqlSMApi::setup_transform_to_server_transfer()
                                                   request_transform_info_.vc_,
                                                   &ObMysqlSM::tunnel_handler_request_transfer_server,
                                                   MT_MYSQL_SERVER,
-                                                  "observer request transfer"))) {
+                                                  CONSUMER_OBSERVER_REQUEST_WRITE))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("failed to add consumer", K_(sm_->sm_id), K(ret));
       } else {
@@ -933,14 +953,14 @@ int ObMysqlSMApi::setup_server_transfer_to_transform()
                                                      sm_->trans_state_.internal_reader_,
                                                      &ObMysqlSM::tunnel_handler_server,
                                                      MT_MYSQL_SERVER,
-                                                     "observer", false))) {
+                                                     PRODUCER_OBSERVER_RESPONSE_READ, false))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("failed to add producer", K(p), K_(sm_->sm_id), K (ret));
   } else if (OB_ISNULL(c = sm_->tunnel_.add_consumer(response_transform_info_.vc_,
                                                      sm_->server_entry_->vc_,
                                                      &ObMysqlSM::tunnel_handler_transform_write,
                                                      MT_TRANSFORM,
-                                                     "transform response write"))) {
+                                                     CONSUMER_TRANSFORM_RESPONSE_WRITE))) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
   } else {
@@ -1044,7 +1064,7 @@ int ObMysqlSMApi::setup_transfer_from_transform()
                                                        buf_start,
                                                        &ObMysqlSM::tunnel_handler_transform_read,
                                                        MT_TRANSFORM,
-                                                       "transform response read"))) {
+                                                       PRODUCER_TRANSFORM_RESPONSE_READ))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("failed to add producer", K(p), K_(sm_->sm_id), K(ret));
     } else {
@@ -1053,7 +1073,7 @@ int ObMysqlSMApi::setup_transfer_from_transform()
                                                   response_transform_info_.vc_,
                                                   &ObMysqlSM::tunnel_handler_client,
                                                   MT_MYSQL_CLIENT,
-                                                  "client"))) {
+                                                  CONSUMER_CLIENT_RESPONSE_WRITE))) {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("failed to add consumer", K(c), K_(sm_->sm_id), K(ret));
       } else {
@@ -1094,7 +1114,7 @@ inline int ObMysqlSMApi::setup_plugin_clients(ObMysqlTunnelProducer &p)
                                             p.vc_,
                                             &ObMysqlSM::tunnel_handler_plugin_client,
                                             MT_MYSQL_CLIENT,
-                                            "plugin client"))) {
+                                            CONSUMER_PLUGIN_CLIENT))) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("failed to add consumer", K_(sm_->sm_id), K(ret));
     } else {

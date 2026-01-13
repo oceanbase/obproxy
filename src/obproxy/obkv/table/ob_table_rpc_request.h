@@ -219,6 +219,7 @@ public:
   const ObSEArray<int64_t, 1> &get_partition_ids() const { return partition_ids_; }
   ObSEArray<int64_t, 1> &get_partition_ids_noconst() { return partition_ids_; }
   ObString get_index_table_name() { return index_table_name_;}
+  bool is_distribute_need_tablet_id() const { return query_request_.is_distribute_need_tablet_id(); }
 
   void set_credential(const ObString &credential) {query_request_.credential_ = credential;}
   void set_table_name(const ObString &table_name) {query_request_.table_name_ = table_name;}
@@ -292,6 +293,7 @@ public:
   // ObTableConsistencyLevel get_consistency_level() const {return query_request_.consistency_level_;}
   const ObSEArray<int64_t, 1> &get_partition_ids() const { return partition_ids_; }
   ObSEArray<int64_t, 1> &get_partition_ids_noconst() { return partition_ids_; }
+  bool is_distribute_need_tablet_id() const { return query_and_mutate_request_.is_distribute_need_tablet_id(); }
 
   void set_credential(const ObString &credential) {query_and_mutate_request_.credential_ = credential;}
   void set_table_name(const ObString &table_name) {query_and_mutate_request_.table_name_ = table_name;}
@@ -365,6 +367,7 @@ public:
   ObSEArray<int64_t, 1> &get_partition_ids_noconst() { return partition_ids_; }
   uint64_t get_query_session_id() { return query_request_.query_session_id_; }
   ObQueryOperationType &get_query_type() { return query_request_.query_type_; }
+  bool is_distribute_need_tablet_id() const { return query_request_.is_distribute_need_tablet_id(); }
 
   //virtual void set_cluster_version (int64_t cluster_version) override { 
   //  cluster_version_ = cluster_version;
@@ -552,6 +555,36 @@ public:
 
 private:
   ObTableMetaRequest meta_request_;
+};
+
+class ObRpcHbaseOperationRequest : public ObRpcRequest
+{
+public:
+  ObRpcHbaseOperationRequest(): hbase_request_() {}
+  virtual ~ObRpcHbaseOperationRequest() {}
+
+  ObTableEntityType get_entity_type() const override { return ObTableEntityType::ET_HKV;}
+  void set_entity_type(ObTableEntityType type) override { UNUSED(type); }
+  virtual bool is_hbase_request() const override { return true; }
+  virtual int encode(char *buf, int64_t &buf_len, int64_t &pos) override;
+  virtual int64_t get_encode_size() const override;
+  virtual int analyze_request(const char *buf, const int64_t buf_len, int64_t &pos) override;
+
+  bool is_valid() const { return hbase_request_.is_valid(); }
+
+  virtual ObString get_credential() const { return hbase_request_.credential_; }
+  virtual ObString get_table_name() const { return hbase_request_.get_table_name(); }
+
+  int construct_rowkey_info();
+  virtual int calc_partition_id(common::ObArenaAllocator &allocator,
+                                proxy::ObRpcReq &ob_rpc_req,
+                                proxy::ObProxyPartInfo &part_info,
+                                int64_t &partition_id) override;
+
+  INHERIT_TO_STRING_KV("ObRpcRequest", ObRpcRequest, K_(hbase_request));
+
+private:
+  ObHbaseOperationRequest hbase_request_;
 };
 
 } // end namespace obkv

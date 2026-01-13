@@ -422,7 +422,8 @@ int ObMysqlClientSession::new_connection(
                 OBPROXY_DIAGNOSIS_LOG(WDIAG, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
                                       "error_msg", "obproxy disconnect because can not pass white list",
                                       "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
-                                      ct_info_.vip_tenant_.tenant_name_, K(client_addr), K_(cs_id));
+                                      ct_info_.vip_tenant_.tenant_name_, K(client_addr), K_(cs_id),
+                                      "login_result", "failed");
               }
             }
           }
@@ -808,7 +809,8 @@ int ObMysqlClientSession::add_to_list()
                               "error_msg", "obproxy disconnect because the cs_id has been used up", K_(cs_id),
                               "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
                               ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(),
-                              "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES));
+                              "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES),
+                              "login_result", "failed");
         cs_id_ = 0;
       } else {
         PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(MAX_TRY_TIMES));
@@ -1221,6 +1223,11 @@ int ObMysqlClientSession::swap_mutex(void *data)
   } else if (mutex_ != data) {
     ObProxyMutex *mutex = reinterpret_cast<ObProxyMutex *>(data);
     // swap client session mutex
+    if (IS_DEBUG_ENABLED()) {
+      ObHSRResult &hsr = get_session_info().get_login_req().get_hsr_result();
+      LOG_DEBUG("mysql client swap mutex", "old_mutex", mutex_.ptr_,
+                "new_mutex", mutex, K(hsr.full_name_));
+    }
     mutex_ = mutex;
 
     //swap server session mutex

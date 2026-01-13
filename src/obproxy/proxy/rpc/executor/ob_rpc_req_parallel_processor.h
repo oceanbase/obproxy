@@ -27,7 +27,7 @@ class ObProxyRpcParallelParam
 {
 public:
   ObProxyRpcParallelParam() : request_(NULL), partition_id_(-1),
-                              save_session_mode_(false) {}
+                              save_session_mode_(false), need_cancel_(false), need_retry_(false) {}
   ~ObProxyRpcParallelParam() {}
 
   TO_STRING_KV(K_(request), K_(partition_id));
@@ -36,6 +36,8 @@ public:
   proxy::ObRpcReq *request_;
   int64_t partition_id_;
   bool save_session_mode_;
+  bool need_cancel_;
+  bool need_retry_;
 };
 
 class ObProxyRpcReqParallelProcessor

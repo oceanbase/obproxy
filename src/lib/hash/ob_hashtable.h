@@ -1172,6 +1172,7 @@ public:
   {
     return size_;
   }
+  TO_STRING_KV(K_(bucket_num), K_(size), KP(this));
 
 public:
   template<class _archive>

@@ -958,6 +958,7 @@ int ObProxyShardUtils::testload_check_and_rewrite_testload_request(ObSqlParseRes
                                    allocator))) {
     LOG_WDIAG("ob_load_testload_parse_node failed", K(ret));
   } else if (use_hint_table_name && 1 != (all_table_map.size())) {
+    // testload 的 hint_table_name 行为暂时不变
     // There is more than one table in SQL, alias table node will be added in all table name
     ret = OB_ERR_MORE_TABLES_WITH_TABLE_HINT;
     LOG_WDIAG("check_and_rewrite_testload_request failed for more table in testload request with table_name hint",
@@ -2870,45 +2871,44 @@ int ObProxyShardUtils::handle_dml_real_info(ObDbConfigLogicDb &logic_db_info,
   }
 
   if (OB_SUCC(ret)) {
-    ObProxyDMLStmt::ExprMap &table_exprs_map = dml_stmt->get_table_exprs_map();
-    ObProxyDMLStmt::ExprMap::iterator iter = table_exprs_map.begin();
-    ObProxyDMLStmt::ExprMap::iterator end = table_exprs_map.end();
-
-    if (!hint_table.empty() && table_exprs_map.size() > 1) {
-      ret = OB_ERR_MORE_TABLES_WITH_TABLE_HINT;
-      LOG_WDIAG("more table with table_name hint", "table size", table_exprs_map.size(), K(hint_table), K(ret));
-    } else if (OB_FAIL(logic_db_info.get_shard_table_info(table_name, sql_result, shard_conn,
-                                                          real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
-                                                          real_table_name, OB_MAX_TABLE_NAME_LENGTH,
-                                                          group_index, tb_index, es_index,
-                                                          hint_table, testload_type, is_read_stmt, last_es_index))) {
+    // get real database name
+    if (OB_FAIL(logic_db_info.get_shard_table_info(table_name, sql_result, shard_conn,
+                                                   real_database_name, OB_MAX_DATABASE_NAME_LENGTH,
+                                                   real_table_name, OB_MAX_TABLE_NAME_LENGTH,
+                                                   group_index, tb_index, es_index,
+                                                   hint_table, testload_type, is_read_stmt, last_es_index))) {
       LOG_WDIAG("fail to get real info", K(table_name), K(group_index), K(tb_index),
                K(es_index), K(hint_table), K(testload_type), K(is_read_stmt), K(ret));
     } else if (OB_ISNULL(shard_conn) || OB_ISNULL(prev_shard_conn)) {
       ret = OB_EXPR_CALC_ERROR;
       LOG_WDIAG("shard connector info or prev shard connector info is null", KP(shard_conn),
                KP(prev_shard_conn), K(ret));
-    }
-
-    for (; OB_SUCC(ret) && iter != end; iter++) {
-      ObProxyExpr *expr = iter->second;
-      ObProxyExprTable *table_expr = NULL;
-      if (OB_ISNULL(expr)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("expr is null, unexpected", K(ret));
-      } else if (OB_ISNULL(table_expr = dynamic_cast<ObProxyExprTable*>(expr))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("fail to cast to table expr", K(expr), K(ret));
-      } else {
-        ObString &sql_table_name = table_expr->get_table_name();
-        if (OB_FAIL(logic_db_info.get_real_table_name(sql_table_name, sql_result,
-                                                      real_table_name, OB_MAX_TABLE_NAME_LENGTH,
-                                                      tb_index, hint_table, testload_type,
-                                                      need_rewrite_table_name))) {
-          LOG_WDIAG("fail to get real table name", K(sql_table_name), K(tb_index),
-                   K(hint_table), K(testload_type), K(ret));
-        } else if (OB_FAIL(add_table_name_to_map(allocator, table_name_map, sql_table_name, real_table_name))) {
-          LOG_WDIAG("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
+    } else {
+      // get real table name map
+      ObProxyStmtCtx::ExprArray &table_exprs_array = dml_stmt->get_table_exprs_array();
+      for (int64_t index = 0; OB_SUCC(ret) && index < table_exprs_array.count(); index++) {
+        ObProxyExpr *expr = table_exprs_array.at(index).second;
+        ObProxyExprTable *table_expr = NULL;
+        if (OB_ISNULL(expr)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("expr is null, unexpected", K(ret));
+        } else if (OB_ISNULL(table_expr = dynamic_cast<ObProxyExprTable*>(expr))) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("fail to cast to table expr", K(expr), K(ret));
+        } else {
+          ObString &sql_table_name = table_expr->get_table_name();
+          if (OB_FAIL(logic_db_info.get_real_table_name(sql_table_name, sql_result,
+                                                        real_table_name, OB_MAX_TABLE_NAME_LENGTH,
+                                                        tb_index, hint_table, testload_type,
+                                                        need_rewrite_table_name))) {
+            LOG_WDIAG("fail to get real table name", K(sql_table_name), K(tb_index),
+                    K(hint_table), K(testload_type), K(ret));
+          } else if (OB_FAIL(add_table_name_to_map(allocator, table_name_map, sql_table_name, real_table_name))) {
+            LOG_WDIAG("fail to add table name to map", K(sql_table_name), K(real_table_name), K(ret));
+          } else {
+            // table_name int hint only maters for first table_name;
+            hint_table.reset();
+          }
         }
       }
     }

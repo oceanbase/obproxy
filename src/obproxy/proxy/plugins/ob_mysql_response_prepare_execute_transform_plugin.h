@@ -113,10 +113,17 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
-    return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
-            && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
-            && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
+    bool bret = (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
+                 && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
+                 && obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == sm->trans_state_.trans_info_.sql_cmd_
+                 && sm->trans_state_.trans_info_.resp_result_.is_resultset_resp());
+
+    if (bret && OB_NOT_NULL(sm->protocol_diagnosis_)) {
+      sm->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_PREPARE_EXECUTE_WORK);
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare_execute work");
+    }
+
+    return bret;
   }
 
 private:

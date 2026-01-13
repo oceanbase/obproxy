@@ -42,6 +42,8 @@
 #include "obproxy/cmd/ob_show_config_handler.h"
 #include "obproxy/utils/ob_proxy_utils.h"
 #include "lib/alloc/malloc_hook.h"
+#include "obproxy/ob_proxy_main.h"
+#include "lib/signal/ob_signal_handler.h"
 
 static const char *EXECUTE_SQL =
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
@@ -1205,6 +1207,36 @@ int ObProxyConfigTableProcessor::check_multi_level_config_valid(ObProxyConfigIte
     }
   }
   lib::glibc_hook_opt = lib::GHO_NOHOOK;
+
+  if (OB_SUCC(ret)
+      && is_backup
+      && 0 == strcasecmp("enable_crash_error_log", item.config_item_.name())
+      && NULL != item.config_item_.str()
+      && '\0' != *item.config_item_.str()) {
+    ObConfigBoolItem tmp_item;
+    const ObString config_value = item.config_item_.get_value();
+    bool new_value = false;
+    bool valid = false;
+    valid = tmp_item.set(item.config_item_.str());
+    if (OB_UNLIKELY(!valid)) {
+      ret = OB_NOT_SUPPORTED;
+      LOG_WDIAG("unsupport value of config enable_crash_error_log", K(config_value));
+    } else {
+      new_value = tmp_item.get_value();
+    }
+
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (new_value) {
+      if (OB_FAIL(oceanbase::common::catch_crash_error_signal())) {
+        LOG_WDIAG("fail to catch crash error signal");
+      }
+    } else {
+      if (OB_FAIL(oceanbase::common::ignore_crash_error_signal())) {
+        LOG_WDIAG("fail to ignore crash error signal");
+      }
+    }
+  }
 
   // 检查配置设置时的主键信息和 level 是否匹配
   if (OB_SUCC(ret)) {

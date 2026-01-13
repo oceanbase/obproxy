@@ -53,6 +53,8 @@ struct ObProxyRpcReqAnalyzeCtx;
 #define RPC_REQUEST_SM_CLEANUP RPC_REQUEST_SM_EVENT_EVENTS_START + 3
 #define RPC_REQUEST_SM_ANALYZE_DONE RPC_REQUEST_SM_EVENT_EVENTS_START + 4
 #define RPC_REQUEST_SM_RELEASE_CHECK RPC_REQUEST_SM_EVENT_EVENTS_START + 5
+#define RPC_REQUEST_SM_START_INNER_REQUEST_PROCESSING RPC_REQUEST_SM_EVENT_EVENTS_START + 6  // 子请求开始处理事件
+#define RPC_REQUEST_SM_CANCEL_FROM_SPLIT_CONT RPC_REQUEST_SM_EVENT_EVENTS_START + 7 //子请求取消
 
 enum ObRpcRequestSMMagic
 {
@@ -104,6 +106,7 @@ enum ObRpcRequestSMActionType
   RPC_REQ_REQUEST_DONE,
   RPC_REQ_HANDLE_SHARD_REQUEST,
   RPC_REQ_HANDLE_SHARD_REQUEST_DONE,
+  RPC_REQ_REQUEST_CANCEL_FROM_SPLIT_CONT,
   RPC_REQ_REQUEST_RETRY,
   RPC_REQ_REQUEST_ERROR,
   RPC_REQ_REQUEST_TIMEOUT, //later than server
@@ -198,6 +201,7 @@ public:
   void set_need_force_flush(bool is_need_force_flush) { is_need_force_flush_ = is_need_force_flush; }
   bool is_need_force_flush() { return is_need_force_flush_; }
   bool is_remote_readonly() { return route_.is_remote_readonly(); }
+  bool is_avail_state() const { return route_.is_avail_state(); }
 
   int64_t to_string(char *buf, const int64_t buf_len) const
   {
@@ -417,6 +421,7 @@ public:
   int state_rpc_req_done();
   int state_rpc_req_cleanup();
   int state_rpc_req_inner_request_cleanup();
+  int state_cancel_from_split_cont();
   int state_add_to_list(int event, void *data);
   int state_remove_from_list(int event, void *data);
 
@@ -437,6 +442,7 @@ public:
   bool is_valid_rpc_req() const ;
   bool is_valid_redis_req() const ;
   bool is_valid_obkv_req() const ;
+  bool is_could_send_next_node_retry() const;
   ObConsistencyLevel get_trans_consistency_level();
   ObRoutePolicyEnum get_route_policy(const bool need_use_dup_replica);
   void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy) const;
@@ -449,6 +455,7 @@ public:
   void call_next_action();
 
   void set_execute_thread(event::ObEThread *execute_thread) { execute_thread_ = execute_thread; }
+  event::ObEThread *get_execute_thread() { return execute_thread_; }
 
   void set_rpc_req_origin_channel_id(uint32_t id) { rpc_req_origin_channel_id_ = id; }
   uint32_t get_rpc_req_origin_channel_id() { return rpc_req_origin_channel_id_; }
@@ -469,7 +476,7 @@ public:
   // int analyze_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
   int analyze_redis_login_request(ObProxyRpcReqAnalyzeCtx &ctx);
 
-  bool retry_next_avail_server_node(); //found next addr or false
+  bool is_find_next_avail_server_node_to_retry(); //found next addr or false
   void retry_reset();
 
   int dirty_rpc_route_result(ObMysqlRouteResult *result);
@@ -486,8 +493,6 @@ public:
   int schedule_call_next_action(enum ObRpcRequestSMActionType, const ObHRTime t = 0);
   int cancel_call_next_action();
 
-  int cancel_sharding_action();
-
   int cancel_child_callback_action();
 
   //TODO, need check request release not, when canceled and cleanup, just used in QA mode
@@ -501,6 +506,7 @@ public:
   // int handle_tablet_to_ls_lookup_done();
   void handle_timeout();
   void set_inner_cont(event::ObContinuation *cont) { inner_cont_ = cont; }
+  bool is_inner_cont_null() { return NULL == inner_cont_; }
   ObRpcReqCmdTimeStat &get_cmd_time_stat() { return cmd_time_stats_; }
   void update_cmd_stats();
   void update_redis_stats();
@@ -690,6 +696,9 @@ inline ObProxyBasicStmtType ObRpcRequestSM::get_rpc_basic_stmt_type(const obrpc:
     break;
   case obrpc::OB_TABLE_API_META_INFO_EXECUTE:
     stmt_type = OBRPC_OBKV_TABLE_API_META_INFO_EXECUTE;
+    break;
+  case obrpc::OB_HBASE_EXECUTE:
+    stmt_type = OBRPC_OBKV_HBASE_EXECUTE;
     break;
   default:
     //OBRPC_INVALID

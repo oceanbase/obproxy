@@ -127,6 +127,11 @@ public:
       }
     }
 
+    if (bret && OB_NOT_NULL(sm->protocol_diagnosis_)) {
+      sm->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_EXECUTE_WORK);
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_execute work");
+    }
+
     return bret;
   }
 

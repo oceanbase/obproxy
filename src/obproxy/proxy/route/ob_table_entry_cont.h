@@ -160,6 +160,7 @@ private:
   int replace_building_state_entry(bool &is_replaced);
   int handle_chain_notify_caller();
   int notify_caller();
+  int destroy_mysql_client();
 
   bool is_newest_table_entry_valid() const;
 public:

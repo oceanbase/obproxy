@@ -145,6 +145,12 @@ HAVING { return END_WHERE; }
 ROWID  { RETURN_ROW_ID(); }
 
 JOIN      { return JOIN; }
+LEFT      { return LEFT; }
+CROSS     { return CROSS; }
+RIGHT     { return RIGHT; }
+INNER     { return INNER; }
+OUTER     { return OUTER; }
+FULL      { return FULL; }
 ON        { return ON; }
 BETWEEN   { return BETWEEN; }
 AND       { return AND_OP; }

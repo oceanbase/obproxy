@@ -30,8 +30,10 @@ struct ObTenantMemory;
 void set_memory_limit(int64_t bytes);
 int64_t get_memory_limit();
 int64_t get_memory_hold();
+int64_t get_memory_used();
 int64_t get_memory_avail();
-
+int64_t get_glibc_memory_hold();
+int64_t get_glibc_memory_used();
 void set_tenant_memory_limit(uint64_t tenant_id, int64_t bytes);
 int64_t get_tenant_memory_limit(uint64_t tenant_id);
 int64_t get_tenant_memory_hold(uint64_t tenant_id);

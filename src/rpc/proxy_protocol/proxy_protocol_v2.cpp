@@ -15,12 +15,93 @@
 #include "rpc/proxy_protocol/proxy_protocol_v2.h"
 #include "obproxy/utils/ob_proxy_utils.h"
 
+
 using namespace oceanbase::common;
 
 namespace oceanbase
 {
 namespace proxy_protocol_v2
 {
+
+int ProxyProtocolV2::analyze_aws_ppv2(char *buf, uint16_t length)
+{
+  // 0xea 的 type 是 aws 使用的，参考 https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-target-groups.html#proxy-protocol
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(NULL == buf || length <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", K(buf), K(length), K(ret));
+  } else {
+    if (OB_FAIL(vpc_info_.init_and_write(&buf[4], length - 1))) {
+      LOG_WDIAG("vpc info write failed", K(ret));
+    }
+  }
+  LOG_DEBUG("get aws ppv2 info", K(vpc_info_), K(length), K(ret));
+  return ret;
+}
+
+int ProxyProtocolV2::analyze_gcp_ppv2(char *buf, uint16_t length)
+{
+   // 是 GCP(Google Cloud Platform) 使用的，参考 https://cloud.google.com/vpc/docs/about-vpc-hosted-services?hl=zh-cn#proxy-protocol
+  int ret = OB_SUCCESS;
+  int64_t pscConnectionId_big = 0;
+  int64_t pscConnectionId_little = 0;
+  int digit_num = 0;
+  if (OB_UNLIKELY(NULL == buf || length <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", K(buf), K(length), K(ret));
+  } else {
+    char digit_buf[MAX_NUM_LEN] = {0};
+    if (OB_UNLIKELY(8 != length)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexpected private service connect ID length", K(length), K(ret));
+    } else {
+      pscConnectionId_big = *(int64_t*)(&buf[3]);
+      pscConnectionId_little = (int64_t)htonll(pscConnectionId_big);
+      if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%" PRId64, pscConnectionId_little))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to printf pscConnectionId_little", K(digit_num), K(pscConnectionId_little), K(ret));
+      } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
+        LOG_WDIAG("vpc info write failed", K(ret));
+      }
+    }
+  }
+  LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(digit_num), K(ret));
+  return ret;
+}
+
+int ProxyProtocolV2::analyze_azure_ppv2(char *buf, uint16_t length)
+{
+  // 是 Azure 使用的，参考 https://learn.microsoft.com/zh-cn/azure/private-link/private-link-service-overview#getting-connection-information-using-tcp-proxy-v2
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(NULL == buf || length <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", K(buf), K(length), K(ret));
+  } else {
+    char digit_buf[MAX_NUM_LEN] = {0};
+    uint32_t little_linkid = 0;
+    int digit_num = 0;
+    if (OB_UNLIKELY(5 != length)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexpected Azure Private Link length, expected 5, but got", K(length), K(ret));
+    } else if (0x01 != buf[3]) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unexpected Azure Private Link version, expected 0x01, but got", K(buf[3]), K(ret));
+    } else {
+      little_linkid = *(uint32_t*)(&buf[4]);  // 协议约定小端存储
+      if (OB_UNLIKELY(obproxy::net::is_big_endian())) {
+        little_linkid = __bswap_32(little_linkid);
+      }
+      if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%" PRIu32, little_linkid))) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("fail to snprintf little_linkid", K(digit_num), K(little_linkid), K(ret));
+      } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
+        LOG_WDIAG("vpc info write failed", K(ret));
+      }
+    }
+    LOG_DEBUG("get Azure Private LinkId information", K(vpc_info_), K(length), K(little_linkid), K(digit_num), K(ret));
+  }
+  return ret;
+}
 
 int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
 {
@@ -79,45 +160,39 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
         // nothing
       } else {
         end_pos++;
-        while (end_pos < total_len_) {
+        vpc_info_.reset();
+        bool analyze_ppv2_finished = false;
+        while (end_pos < total_len_ && !analyze_ppv2_finished) {
           uint8_t type = *(uint8_t*)(&buf[end_pos]);
           uint16_t length =  ntohs(*(uint16_t*)(&buf[end_pos + 1]));
-          // 0xea 的 type 是 aws 使用的，参考 https://docs.aws.amazon.com/elasticloadbalancing/latest/network/load-balancer-target-groups.html#proxy-protocol
-          if (0xea == type) {
-            vpc_info_.reset();
-            if (OB_FAIL(vpc_info_.init_and_write(&buf[end_pos + 4], length - 1))) {
-              LOG_WDIAG("vpc info write failed", K(ret));
-            }
-            break;
-          } else if (0xe0 == type) {
-            // 0xe0 的 type 表示 private service connect ID
-            // 是 GCP(Google Cloud Platform) 使用的，参考 https://cloud.google.com/vpc/docs/about-vpc-hosted-services?hl=zh-cn#proxy-protocol
-            vpc_info_.reset();
-            int64_t pscConnectionId_big = 0;
-            int64_t pscConnectionId_little = 0;
-            int digit_num = 0;
-            const int MAX_NUM_LEN = 24;
-            char digit_buf[MAX_NUM_LEN];
-            MEMSET(digit_buf, '\0', MAX_NUM_LEN);
-            if (OB_UNLIKELY(8 != length)) {
-              ret = OB_ERR_UNEXPECTED;
-              LOG_WDIAG("unexpected private service connect ID length", K(length), K(ret));
-            } else {
-              pscConnectionId_big = *(int64_t*)(&buf[end_pos + 3]);
-              pscConnectionId_little = (int64_t)htonll(pscConnectionId_big);
-              if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%ld", pscConnectionId_little))) {
-                ret = OB_ERR_UNEXPECTED;
-                LOG_WDIAG("fail to printf pscConnectionId_little", K(digit_num), K(pscConnectionId_little), K(ret));
-              } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
-                LOG_WDIAG("vpc info write failed", K(ret));
+          switch (type) {
+            case 0xea: {
+              if (OB_FAIL(analyze_aws_ppv2(&buf[end_pos], length))) {
+                LOG_WDIAG("analyze aws ppv2 failed", K(ret));
               }
+              analyze_ppv2_finished = true;
+              break;
             }
-            LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(digit_num), K(ret));
-            break;
-          } else {
-            end_pos += 3 + length;
-          }
-        }
+            case 0xe0: {
+              if (OB_FAIL(analyze_gcp_ppv2(&buf[end_pos], length))) {
+                LOG_WDIAG("analyze gcp ppv2 failed", K(ret));
+              }
+              analyze_ppv2_finished = true;
+              break;
+            }
+            case 0xee: {
+              if (OB_FAIL(analyze_azure_ppv2(&buf[end_pos], length))) {
+                LOG_WDIAG("analyze azure ppv2 failed", K(ret));
+              }
+              analyze_ppv2_finished = true;
+              break;
+            }
+            default: {
+              end_pos += 3 + length;
+              break;
+            }
+          }//end of switch (type)
+        }//end of while
       }
 
       is_finished_ = true;

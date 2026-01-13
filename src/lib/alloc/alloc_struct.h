@@ -64,6 +64,8 @@ struct ObMemAttr
         mod_id_(mod_id),
         prio_(prio)
   {}
+
+  bool is_global_mem_mod() const;
 };
 
 struct AChunk {
@@ -157,7 +159,7 @@ static const uint16_t BIG_AOBJECT_MAGIC_CODE      = 0XCED3;
 
 static const uint32_t AOBJECT_HEADER_SIZE         = offsetof(AObject, data_);
 static const uint32_t AOBJECT_META_SIZE           = AOBJECT_HEADER_SIZE + AOBJECT_TAIL_SIZE;
-static const uint32_t INTACT_NORMAL_AOBJECT_SIZE  = NORMAL_AOBJECT_SIZE + AOBJECT_META_SIZE;
+static const uint32_t INTACT_NORMAL_AOBJECT_SIZE  = NORMAL_AOBJECT_SIZE + AOBJECT_META_SIZE; // 8k + 48
 
 static const uint32_t ABLOCK_HEADER_SIZE          = offsetof(ABlock, data_);
 static const uint32_t ABLOCK_SIZE                 = INTACT_NORMAL_AOBJECT_SIZE;

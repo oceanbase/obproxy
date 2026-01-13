@@ -8,6 +8,30 @@ OceanBase Database Proxy (ODP for short) is a dedicated proxy server for OceanBa
 
 Refer to the Get Started guide [link TODO] to try out ODP.
 
+### build.sh Quick Build Guide
+
+`build.sh` is the main build script for the ODP project, supporting multiple build modes and platforms. Here are the commonly used build commands:
+
+#### Basic Usage
+
+```bash
+# Clean previous build files
+./build.sh clean
+# Initialize dependencies (first-time build)
+./build.sh init
+# Initialize dependencies (non-first-time build)
+./build.sh qinit
+# Configure for debug build (debug can be replaced with release or other options)
+./build.sh config debug
+# Execute build
+./build.sh make
+# Build output: binary executable located at `src/obproxy/obproxy`
+
+# Other operations
+# Generate RPM package (Note: In branch 435 and earlier versions, calling ./build.sh rpm may cause "cp: No such file or directory" error, which can be resolved by calling ./build.sh rpm obproxy-ce)
+./build.sh rpm
+```
+
 ## Documentation
 
 - English [link TODO]

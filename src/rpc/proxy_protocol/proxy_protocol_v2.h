@@ -32,6 +32,7 @@ class ProxyProtocolV2
 public:
   static const int64_t PROXY_PROTOCOL_V2_HEADER_LEN = 16;
   static const int64_t PROXY_PROTOCOL_V2_VALIDATE_LEN = 5;
+  static const int64_t MAX_NUM_LEN = 24;
 public:
   ProxyProtocolV2() : ver_cmd_(0), fam_(0), len_(0), src_addr_(), dst_addr_(), total_len_(0),
                 vpc_info_(), is_finished_(false), is_check_alive_pkt_(false), analyze_state_(ANALYZE_HEADER) {}
@@ -45,6 +46,10 @@ public:
   static bool check_proxy_protocol_v2_valid(char header[ProxyProtocolV2::PROXY_PROTOCOL_V2_VALIDATE_LEN]) {
     return header[0] == 0x0d && header[1] == 0x0a && header[2] == 0x0d && header[3] == 0x0a && header[4] == 0x00;
   }
+  // 解析具体某个云厂商的ppv2
+  int analyze_aws_ppv2(char *buf, uint16_t length);
+  int analyze_gcp_ppv2(char *buf, uint16_t length);
+  int analyze_azure_ppv2(char *buf, uint16_t length);
 
 public:
   uint8_t sig_[12];

@@ -782,10 +782,11 @@ int ObRouteUtils::split_part_expr(ObString expr, ObIArray<ObString> &arr)
     }
     tmp.assign_ptr(tmp.ptr() + i, tmp.length() - i);
 
-    if (tmp[0] == '`') {
+    // Remove backticks (`) or double quotes (") from the beginning and end
+    if (tmp[0] == '`' || tmp[0] == '"') {
       tmp.assign_ptr(tmp.ptr() + 1, tmp.length() - 1);
     }
-    if (tmp[tmp.length() - 1] == '`') {
+    if (tmp[tmp.length() - 1] == '`' || tmp[tmp.length() - 1] == '"') {
       tmp.assign_ptr(tmp.ptr(), tmp.length() - 1);
     }
     if (OB_FAIL(arr.push_back(tmp))) {

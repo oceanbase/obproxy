@@ -41,6 +41,7 @@ public:
 
 private:
   ObjectSet sets_[N];
+  ObjectSet global_mem_sets_[N]; // used for object with life-cycle out of statemachine
   common::ObRandom rand_;
 }; // end of class ObjectMgr
 
@@ -50,6 +51,10 @@ ObjectMgr<N>::ObjectMgr(ObTenantAllocator &allocator)
   for (int i = 0; i < N; ++i) {
     sets_[i].set_tenant_allocator(allocator);
   }
+
+  for (int i = 0; i < N; ++i) {
+    global_mem_sets_[i].set_tenant_allocator(allocator);
+  }
 }
 
 template <int N>
@@ -58,21 +63,41 @@ AObject *ObjectMgr<N>::alloc_object(uint64_t size, const ObMemAttr &attr)
   AObject *obj = NULL;
   bool found = false;
   const uint64_t start = common::get_itid();
-  for (uint64_t i = 0; NULL == obj && i < N && !found; i++) {
-    uint64_t idx = (start + i) % N;
-    if (sets_[idx].trylock()) {
+
+  if (OB_UNLIKELY(attr.is_global_mem_mod())) {
+    for (uint64_t i = 0; NULL == obj && i < N && !found; i++) {
+      uint64_t idx = (start + i) % N;
+      if (global_mem_sets_[idx].trylock()) {
+        obj = global_mem_sets_[idx].alloc_object(size, attr);
+        global_mem_sets_[idx].unlock();
+        found = true;
+        break;
+      }
+    }
+    if (!found && NULL == obj) {
+      const uint64_t idx = start % N;
+      global_mem_sets_[idx].lock();
+      obj = global_mem_sets_[idx].alloc_object(size, attr);
+      global_mem_sets_[idx].unlock();
+    }
+  } else {
+    for (uint64_t i = 0; NULL == obj && i < N && !found; i++) {
+      uint64_t idx = (start + i) % N;
+      if (sets_[idx].trylock()) {
+        obj = sets_[idx].alloc_object(size, attr);
+        sets_[idx].unlock();
+        found = true;
+        break;
+      }
+    }
+    if (!found && NULL == obj) {
+      const uint64_t idx = start % N;
+      sets_[idx].lock();
       obj = sets_[idx].alloc_object(size, attr);
       sets_[idx].unlock();
-      found = true;
-      break;
     }
   }
-  if (!found && NULL == obj) {
-    const uint64_t idx = start % N;
-    sets_[idx].lock();
-    obj = sets_[idx].alloc_object(size, attr);
-    sets_[idx].unlock();
-  }
+
   return obj;
 }
 
@@ -135,6 +160,12 @@ void ObjectMgr<N>::reset()
     sets_[i].reset();
     sets_[i].unlock();
   }
+
+  for (int i = 0; i < N; ++i) {
+    global_mem_sets_[i].lock();
+    global_mem_sets_[i].reset();
+    global_mem_sets_[i].unlock();
+  }
 }
 
 template <int N>
@@ -144,6 +175,12 @@ common::ObModItem ObjectMgr<N>::get_mod_usage(int mod_id) const
   common::ObModItem one_item;
   for (int i = 0; i < N; ++i) {
     one_item = sets_[i].get_mod_usage(mod_id);
+    item += one_item;
+    one_item.reset();
+  }
+
+  for (int i = 0; i < N; ++i) {
+    one_item = global_mem_sets_[i].get_mod_usage(mod_id);
     item += one_item;
     one_item.reset();
   }

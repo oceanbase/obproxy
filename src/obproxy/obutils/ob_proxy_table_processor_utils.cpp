@@ -41,7 +41,7 @@ static const char *INADDR_ANY_IP = "0.0.0.0";
 static const char *INADDR_LOOPBACK_IP = "127.0.0.1";
 
 static const char *GET_PROXY_INFO_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ "
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ "
     "current_pid, hot_upgrade_cmd, new_binary_version, %s "
     "FROM %s WHERE proxy_ip = '%s' AND proxy_port = %d LIMIT %ld";
 
@@ -70,7 +70,7 @@ static const char *INSERT_PROXY_KV_TABLE_INFO_SQL =
     "VALUES ('%s', %d, '%.*s', '%s')";
 
 static const char *GET_CONFIG_VERSION_VALUE_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ value FROM  %s WHERE name='%s%.*s' LIMIT %ld";
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ value FROM  %s WHERE name='%s%.*s' LIMIT %ld";
 
 static const char *UPDATE_PROXY_TABLE_CONFIG_INFO_SQL =
     "UPDATE %s SET config_version=%ld, reload_config='%.*s'"
@@ -124,7 +124,7 @@ static const char *UPDATE_PROXY_UPDATE_TIME_SQL =
     "WHERE proxy_ip = '%s' AND proxy_port = %d";
 
 static const char *GET_PROXY_KV_TABLE_INFO_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ name, value "
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ name, value "
     "FROM  %s "
     "WHERE name IN ("
     "'%.*s','%.*s','%.*s','%.*s','%.*s','%.*s',"
@@ -132,7 +132,7 @@ static const char *GET_PROXY_KV_TABLE_INFO_SQL =
     "LIMIT %ld";
 
 static const char *GET_PROXY_ALL_VIP_TENANT_SQL =
-    "SELECT /*+READ_CONSISTENCY(WEAK)*/ vid, vip, vport, tenant_name, cluster_name, info FROM %s LIMIT %ld";
+    "SELECT /*+READ_CONSISTENCY(STRONG)*/ vid, vip, vport, tenant_name, cluster_name, info FROM %s LIMIT %ld";
 
 static const char *JSON_REQUEST_TARGET = "REQUEST_TARGET";
 static const char *JSON_RW_TYPE = "RW_TYPE";

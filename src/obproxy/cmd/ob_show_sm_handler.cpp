@@ -488,7 +488,7 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
         if (NULL != (producer->vc_)) {
           read_vio_avail = (true == producer->alive_ && NULL != producer->read_vio_);
           if (OB_FAIL(sm_info.append_fmt("name:%s; is_alive:%s; ndone:%ld; nbytes:%ld;}\n",
-                                         producer->name_, (producer->alive_ ? "true" : "false"),
+                                         get_producer_type_name(producer->type_), (producer->alive_ ? "true" : "false"),
                                          (read_vio_avail ? producer->read_vio_->ndone_ : producer->bytes_read_),
                                          (read_vio_avail ? producer->read_vio_->nbytes_ : -1)))) {
             WDIAG_ICMD("fail to append producer info", K(i), K(sm_info), K(ret));
@@ -514,7 +514,7 @@ int ObShowSMHandler::dump_tunnel_info(const ObMysqlSM &sm, ObSqlString &sm_info)
           write_vio_avail = (true == consumer->alive_ && NULL != consumer->write_vio_);
           if (NULL != (consumer->vc_)) {
             if (OB_FAIL(sm_info.append_fmt("name:%s; is_alive:%s; ndone:%ld; nbytes:%ld;}\n",
-                                           consumer->name_, (consumer->alive_ ? "true" : "false"),
+                                           get_consumer_type_name(consumer->type_), (consumer->alive_ ? "true" : "false"),
                                            (write_vio_avail ? consumer->write_vio_->ndone_ : consumer->bytes_written_),
                                            (write_vio_avail ? consumer->write_vio_->nbytes_ : -1)))) {
               WDIAG_ICMD("fail to append consumer info", K(i), K(sm_info), K(ret));

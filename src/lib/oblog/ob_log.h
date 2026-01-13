@@ -552,7 +552,6 @@ public:
             int64_t MAX_LOG_SIZE = log_item->get_buf_size();
             int64_t pos = log_item->get_data_len();
             char *data = log_item->get_buf();
-            LOG_PRINT_INFO_BEGIN(info_string);
             fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
             CHECK_LOG_END_AND_ERROR_LOG(log_item);
           }
@@ -568,7 +567,6 @@ public:
             int64_t MAX_LOG_SIZE = log_item->get_buf_size();
             int64_t pos = log_item->get_data_len();
             char *data = log_item->get_buf();
-            LOG_PRINT_INFO_BEGIN(info_string);
             fill_log_buffer(data, MAX_LOG_SIZE, pos, info_string, std::forward<const Args&&>(args)...);
             CHECK_LOG_END_AND_ERROR_LOG(log_item);
           }

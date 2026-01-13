@@ -124,9 +124,16 @@ public:
                   "cmd", sm->trans_state_.trans_info_.sql_cmd_,
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
                   "server_protocol", sm->get_server_protocol());
-    return (ObMysqlTransact::need_use_tunnel(sm->trans_state_)
-            && (sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_OCEANBASE_20
-                || sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL));
+    bool bret = (ObMysqlTransact::need_use_tunnel(sm->trans_state_)
+                 && (sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_OCEANBASE_20
+                     || sm->get_server_protocol() == ObProxyProtocol::PROTOCOL_COMPRESSED_MYSQL));
+    if (OB_NOT_NULL(sm->protocol_diagnosis_)) {
+      if (bret) {
+        sm->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_COMPRESS_WORK);
+        PROTOCOL_FORWARD_LOG(TRACE, "plugin_compress work");
+      }
+    }
+    return bret;
   }
 
 private:

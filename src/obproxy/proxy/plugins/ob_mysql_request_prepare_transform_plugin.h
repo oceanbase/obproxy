@@ -99,10 +99,17 @@ public:
     PROXY_API_LOG(DEBUG, "need_enable_plugin",
                   "request_content_length", sm->trans_state_.trans_info_.request_content_length_,
                   "mysql_cmd", ObProxyParserUtils::get_sql_cmd_name(sm->trans_state_.trans_info_.sql_cmd_));
-    return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
-            && ObMysqlTransact::need_use_tunnel(sm->trans_state_)
-            && (obmysql::OB_MYSQL_COM_STMT_PREPARE == sm->trans_state_.trans_info_.sql_cmd_
-              || sm->trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt()));
+    bool bret = (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
+                 && ObMysqlTransact::need_use_tunnel(sm->trans_state_)
+                 && (obmysql::OB_MYSQL_COM_STMT_PREPARE == sm->trans_state_.trans_info_.sql_cmd_
+                     || sm->trans_state_.trans_info_.client_request_.get_parse_result().is_text_ps_prepare_stmt()));
+
+    if (bret && OB_NOT_NULL(sm->protocol_diagnosis_)) {
+      sm->protocol_diagnosis_->record_req_forward_ctrl_flow(ObReqForwardCtrlFlow::PLUGIN_PREPARE_WORK);
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare work");
+    }
+
+    return bret;
   }
 
 private:

@@ -12,4 +12,6 @@ obproxy/proxy/rpc/engine/ob_rpc_req_operator_ls.h\
 obproxy/proxy/rpc/engine/ob_rpc_req_operator_query.cpp\
 obproxy/proxy/rpc/engine/ob_rpc_req_operator_query.h\
 obproxy/proxy/rpc/engine/ob_rpc_req_operator_table_scan.cpp\
-obproxy/proxy/rpc/engine/ob_rpc_req_operator_table_scan.h
+obproxy/proxy/rpc/engine/ob_rpc_req_operator_table_scan.h\
+obproxy/proxy/rpc/engine/ob_proxy_rpc_req_split_cont.cpp\
+obproxy/proxy/rpc/engine/ob_proxy_rpc_req_split_cont.h

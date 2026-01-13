@@ -403,7 +403,8 @@ static inline ObProxyTokenNode* calc_unary_operator(ObProxyTokenNode *node, ObEx
  /* dummy node */
 %token DUMMY_SELECT_CLAUSE DUMMY_INSERT_CLAUSE
  /* reserved keyword */
-%token WHERE AS VALUES SET END_WHERE JOIN BOTH LEADING TRAILING FROM
+%token WHERE AS VALUES SET END_WHERE JOIN INNER CROSS FULL LEFT RIGHT OUTER
+%token BOTH LEADING TRAILING FROM
 %token AND_OP OR_OP IN ON BETWEEN IS NULL_VAL NOT
 %token COMP_EQ COMP_NSEQ COMP_GE COMP_GT COMP_LE COMP_LT COMP_NE
 %token PLACE_HOLDER
@@ -445,12 +446,24 @@ join_expr_list: join_on_expr
 
 join_on_expr: join_expr ON cond_expr
 
-join_expr: JOIN NAME_OB
-         | JOIN NAME_OB '.' NAME_OB
-         | JOIN NAME_OB NAME_OB
-         | JOIN NAME_OB AS NAME_OB
-         | JOIN NAME_OB '.' NAME_OB NAME_OB
-         | JOIN NAME_OB '.' NAME_OB AS NAME_OB
+join_expr: join_type NAME_OB
+         | join_type NAME_OB '.' NAME_OB
+         | join_type NAME_OB NAME_OB
+         | join_type NAME_OB AS NAME_OB
+         | join_type NAME_OB '.' NAME_OB NAME_OB
+         | join_type NAME_OB '.' NAME_OB AS NAME_OB
+
+join_type: ','
+         | JOIN
+         | INNER JOIN
+         | CROSS JOIN
+         | FULL opt_outer JOIN
+         | LEFT opt_outer JOIN
+         | RIGHT opt_outer JOIN
+
+
+opt_outer: OUTER
+         | /* EMPTY */
 
 cond_expr: bool_pri
          | cond_expr AND_OP cond_expr

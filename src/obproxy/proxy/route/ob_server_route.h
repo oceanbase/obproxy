@@ -164,6 +164,7 @@ public:
   void set_table_entry_expire_for_rpc();
   bool is_table_entry_enough_old_cache() const;
   void set_need_rebuild_as_single_partition_table();
+  bool is_avail_state() const;
 
 private:
   const ObProxyReplicaLocation *get_leader_replica() const;
@@ -872,6 +873,11 @@ inline bool ObServerRoute::is_table_entry_enough_old_cache() const
     PROXY_LOG(DEBUG, "this table entry got from cache and cached time more than delay_update_entry_interval", KPC_(table_entry));
   }
   return bret;
+}
+
+inline bool ObServerRoute::is_avail_state() const
+{
+  return (NULL != table_entry_) && table_entry_->is_avail_state();
 }
 
 } // end of namespace proxy

@@ -52,6 +52,13 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
   int64_t write_size = 0;
   ObMysqlAnalyzeResult result;
 
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_) && reader != NULL) {
+    sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_prepare_read_ += reader->read_avail();
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare read response",
+      "plugin_prepare_read", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_prepare_read_,
+      "read_delta", reader->read_avail());
+  }
+
   // 这里为什么要 clone 两个 reader，是因为:
   // local_analyze_reader 用于分析, 当分析完一个 mysql 包，就要往前移动到下一个 mysql 包;
   // local_reader 用于把数据输出给tunnel，这里需要从开始的位置输出;
@@ -122,6 +129,13 @@ int ObMysqlResponsePrepareTransformPlugin::consume(event::ObIOBufferReader *read
       PROXY_API_LOG(WDIAG, "fail to consume all local analyze reader", K(ret));
     } else if (OB_FAIL(local_reader_->consume(write_size))) {
       PROXY_API_LOG(WDIAG, "fail to consume local reader", K(write_size), K(ret));
+    } else {
+      if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+        sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_prepare_write_ += write_size;
+        PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare write response",
+          "plugin_prepare_write", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_prepare_write_,
+          "write_delta", write_size);
+      }
     }
   }
 
@@ -225,6 +239,12 @@ int ObMysqlResponsePrepareTransformPlugin::handle_prepare_ok(event::ObIOBufferRe
 void ObMysqlResponsePrepareTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponsePrepareTransformPlugin::handle_input_complete happen");
+
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_PREPARE_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare process response finish");
+  }
+
   if (NULL != local_reader_) {
     local_reader_->dealloc();
     local_reader_ = NULL;

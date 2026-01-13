@@ -107,10 +107,16 @@ public:
     PROXY_API_LOG(DEBUG, "need_enable_plugin",
                   "send action", sm->trans_state_.current_.send_action_,
                   "mysql_cmd", ObProxyParserUtils::get_sql_cmd_name(sm->trans_state_.trans_info_.sql_cmd_));
+    bool bret = (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
+                 && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
+                 && obmysql::OB_MYSQL_COM_STMT_PREPARE == sm->trans_state_.trans_info_.sql_cmd_);
 
-    return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
-            && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
-            && obmysql::OB_MYSQL_COM_STMT_PREPARE == sm->trans_state_.trans_info_.sql_cmd_);
+    if (bret && OB_NOT_NULL(sm->protocol_diagnosis_)) {
+      sm->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_PREPARE_WORK);
+      PROTOCOL_FORWARD_LOG(TRACE, "plugin_prepare work");
+    }
+
+    return bret;
   }
 
 private:

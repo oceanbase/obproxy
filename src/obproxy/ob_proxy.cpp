@@ -224,9 +224,6 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init resource pool", K(ret));
     } else if (OB_FAIL(g_stat_processor.init(meta_client_proxy_))) {
       LOG_EDIAG("fail to init stat processor", K(ret));
-    } else if (OB_FAIL(ObProxyMain::get_instance()->init_crash_error_signal())) {
-      // init_crash_error_signal must afer init_config()
-      LOG_EDIAG("fail to init crash error signal", K(ret));
     }
 
     if (OB_SUCC(ret)) {

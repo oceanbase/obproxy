@@ -96,6 +96,13 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
   int ret = OB_SUCCESS;
   event::ObIOBufferReader *produce_reader = NULL;
 
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_) && reader != NULL) {
+    sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_cursor_read_ += reader->read_avail();
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_cursor read response",
+      "plugin_cursor_read", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_cursor_read_,
+      "read_delta", reader->read_avail());
+  }
+
   if (local_analyze_reader_ == NULL || local_buffer_ == NULL) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_API_LOG(EDIAG, "unexpected null ptr", KP(local_analyze_reader_), KP(local_buffer_), K(ret));
@@ -193,6 +200,12 @@ int ObMysqlResponseCursorTransformPlugin::consume(event::ObIOBufferReader *reade
           ret = OB_ERR_UNEXPECTED;
           PROXY_API_LOG(EDIAG, "fail to consume data from local_produce_reader", K(ret), K(forward_len));
         }
+      }
+      if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+        sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_cursor_write_ += forward_len;
+        PROTOCOL_FORWARD_LOG(TRACE, "plugin_cursor write response",
+          "plugin_cursor_write", sm_->protocol_diagnosis_->resp_forward_data_flow_.plugin_cursor_write_,
+          "write_delta", forward_len);
       }
     }
   }
@@ -488,6 +501,11 @@ int ObMysqlResponseCursorTransformPlugin::skip_field_value(const char *&data, in
 void ObMysqlResponseCursorTransformPlugin::handle_input_complete()
 {
   PROXY_API_LOG(DEBUG, "ObMysqlResponseCursorTransformPlugin::handle_input_complete happen");
+  if (OB_NOT_NULL(sm_->protocol_diagnosis_)) {
+    sm_->protocol_diagnosis_->record_resp_forward_ctrl_flow(ObRespForwardCtrlFlow::PLUGIN_CURSOR_FINISH);
+    PROTOCOL_FORWARD_LOG(TRACE, "plugin_cursor process response finish");
+  }
+
   free_local_buffer();
   set_output_complete();
 }

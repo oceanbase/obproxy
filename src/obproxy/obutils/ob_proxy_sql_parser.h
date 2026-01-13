@@ -741,8 +741,8 @@ struct ObSqlParseResult
   bool has_show_errors() const { return is_show_errors_stmt(); }
   bool has_show_warnings() const { return is_show_warnings_stmt(); }
 
-  bool need_hold_start_trans() const { return is_start_trans_stmt() && !is_multi_stmt(); }
-  bool need_hold_xa_start() const { return xa_stmt_.is_xa_start_ && !is_multi_stmt(); }
+  bool is_single_start_trans() const { return is_start_trans_stmt() && !is_multi_stmt(); }
+  bool is_single_xa_start() const { return xa_stmt_.is_xa_start_ && !is_multi_stmt(); }
   // has a function depend on the sql last executed, such as found_rows , row_count, etc.
   bool has_dependent_func() const;
   // whether a sql is not supported by PROXY (BUT it is supported by observer)

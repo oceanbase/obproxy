@@ -434,6 +434,7 @@ public:
   ObProxyLoginUserType get_user_identity() const { return session_info_.get_user_identity(); }
   void set_user_identity(const ObProxyLoginUserType identity) { session_info_.set_user_identity(identity); }
   void set_conn_prometheus_decrease(bool conn_prometheus_decrease) { conn_prometheus_decrease_ = conn_prometheus_decrease; }
+  bool is_set_conn_prometheus_decrease() const { return conn_prometheus_decrease_; }
   void set_vip_connection_decrease(bool vip_connection_decrease) { vip_connection_decrease_ = vip_connection_decrease; }
   void record_sess_killed(uint32_t cs_id);
   optimizer::ObShardingSelectLogPlan* get_sharding_select_log_plan() const { return select_plan_; }
