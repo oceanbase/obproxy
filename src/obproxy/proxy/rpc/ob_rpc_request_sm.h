@@ -494,6 +494,7 @@ public:
   int cancel_call_next_action();
 
   int cancel_child_callback_action();
+  event::ObAction* get_child_callback_action() { return child_callback_action_; }
 
   //TODO, need check request release not, when canceled and cleanup, just used in QA mode
   int schedule_release_check_action();

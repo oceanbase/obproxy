@@ -3240,6 +3240,7 @@ void ObTableLSOpResult::reset()
   tablet_op_result_.reset();
   rowkey_names_.reset();
   properties_names_.reset();
+  allocator_.reuse();
 }
 
 // int ObTableLSOpResult::deep_copy(common::ObIAllocator &allocator, const ObTableLSOpResult &other)

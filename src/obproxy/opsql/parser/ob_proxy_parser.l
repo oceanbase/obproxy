@@ -886,6 +886,14 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   }
 }
 
+<in_expr,in_subquery,in_no_select_query>{c_cmt_begin} {
+  // Handle comments in expression states (like after SELECT)
+  // Just skip the comment without returning any token
+  // This prevents keywords in comments (like FROM) from being misidentified
+  // e.g. SELECT /* xxx-FROM-yyy */ * FROM tbl_name;
+  PUSH_STATE(in_c_comment);
+}
+
 <in_c_comment>{c_cmt_end} { POP_STATE(); }
 <in_c_comment>[\n]        {}
 <in_c_comment>.           {}

@@ -353,8 +353,8 @@ public:
   //debug
   DEF_STR(test_server_addr, "", "proxy will choose this addr(if not empty) as observer addr forcibly, format ip1:sql_port1;ip2:sql_port2", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(server_routing_mode, "oceanbase", "server routing mode: 1.oceanbase(default mode); 2.random; 3.mock; 4.mysql", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_LOG_LEVEL(monitor_log_level, "INFO", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
-  DEF_LOG_LEVEL(xflush_log_level, "ERROR", "specifies the current level of logging: DEBUG, TRACE, INFO, WDIAG, EDIAG, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_LOG_LEVEL(monitor_log_level, "WDIAG", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_LOG_LEVEL(xflush_log_level, "WDIAG", "specifies the current level of logging: DEBUG, TRACE, WDIAG, EDIAG, INFO, WARN, USER_ERR, ERROR", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_async_log, "true", "if enabled, use async logging way, maybe lost some log when busy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(mem_leak_check_mod_name, "", "proxy will record mem alloc backtrace for this mod at ob_malloc except OB_PROXY_MEM_LEAK_CHECK, name list can be find in [show proxymemory], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(mem_leak_check_class_name, "", "proxy will record mem alloc backtrace for this class at op_alloc, name list can be find in [show proxymemory objpool], [ALL] means record all", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

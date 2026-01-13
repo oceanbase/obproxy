@@ -17,6 +17,7 @@
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 #include "obproxy/packet/ob_mysql_packet_writer.h"
 #include "obproxy/proxy/mysqllib/ob_mysql_analyzer_utils.h"
+#include "rpc/obmysql/ob_mysql_util.h"
 
 using namespace oceanbase::obproxy::event;
 using namespace oceanbase::common;
@@ -111,7 +112,7 @@ int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const
 
   // write to buffer directly
   const char *buf = packet_str.ptr();
-  const int64_t buf_len = packet_str.length(); 
+  const int64_t buf_len = packet_str.length();
   if (OB_UNLIKELY(buf == NULL) || OB_UNLIKELY(buf_len <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument before write raw packet", K(ret), K(buf), K(buf_len));
@@ -143,7 +144,7 @@ int ObMysqlOB20PacketWriter::write_raw_packet(event::ObMIOBuffer &mio_buf, const
       tmp_mio_reader = NULL;
     }
   }
-  
+
   return ret;
 }
 
@@ -190,7 +191,7 @@ int ObMysqlOB20PacketWriter::write_packet(ObMIOBuffer &mio_buf,
                                          Ob20HeaderParam &ob20_head_param)
 {
   int ret = OB_SUCCESS;
-  
+
   int64_t serialize_size = packet.get_serialize_size();
   if (OB_UNLIKELY(serialize_size < 0)) {
     ret = OB_INVALID_ARGUMENT;

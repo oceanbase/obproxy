@@ -1,10 +1,10 @@
     AC_INIT([OceanBase],
-            [4.3.6.0],
+            [4.3.6.1],
             [wgs13579@gmail.com],
             [obproxy-ce],
             [http://oceanbase.taobao.org/])
 
-    obapi_version="4.3.6.0"
+    obapi_version="4.3.6.1"
     AC_SUBST(obapi_version)
 
     AC_ARG_VAR([TOPDIR], [The path of the project])

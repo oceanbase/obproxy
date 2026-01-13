@@ -60,9 +60,9 @@ int ObMysqlResponseBuilder::build_ok_resp(ObMIOBuffer &mio_buf,
     ok_packet->set_seq(seq);
 
     // default set of ok packet
-    // 0x22 means OB_SERVER_STATUS_AUTOCOMMIT, OB_SERVER_STATUS_NO_INDEX_USED is set
+    // 0x02 means only OB_SERVER_STATUS_AUTOCOMMIT is set
     int64_t autocommit = client_session.get_session_info().get_cached_variables().get_autocommit();
-    ObServerStatusFlags ssf(0x22);
+    ObServerStatusFlags ssf(0x02);
     if (is_in_trans) {
       ssf.status_flags_.OB_SERVER_STATUS_IN_TRANS = 1;
     }

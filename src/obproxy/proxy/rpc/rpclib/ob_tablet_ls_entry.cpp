@@ -29,6 +29,7 @@ void  ObTabletLsEntry::free()
 {
   LOG_DEBUG(" ObTabletLsEntry will be free", K(*this));
   buf_ = NULL;
+  this->~ObTabletLsEntry();
   op_fixed_mem_free(this, buf_len_);
 }
 
@@ -63,8 +64,11 @@ int  ObTabletLsEntry::alloc_and_init_tablet_ls_entry(const int64_t tenant_id, co
       }
     }
     if ((OB_FAIL(ret)) && (NULL != buf)) {
+      if (NULL != entry) {
+        entry->~ObTabletLsEntry();
+        entry = NULL;
+      }
       op_fixed_mem_free(buf, alloc_size);
-      entry = NULL;
       alloc_size = 0;
     }
   }

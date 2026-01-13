@@ -30,6 +30,7 @@
 #include "lib/hash/ob_hashutils.h"
 #include "lib/utility/ob_tablet_id.h"
 #include "lib/utility/ob_ls_id.h"
+#include "lib/allocator/page_arena.h"
 #include "ob_rpc_struct.h"
 #include "ob_proxy_rpc_serialize_utils.h"
 
@@ -1463,13 +1464,36 @@ public:
   ObTableLSOpResult()
     : tablet_op_result_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, SUB_REQ_COUNT * sizeof(ObTableTabletOpResult)),
       rowkey_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, 4 * sizeof(ObString)),
-      properties_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, 4 * sizeof(ObString)) {}
+      properties_names_(common::ObModIds::OB_RPC_TABLE_LS_OPERATION_RESULT, 4 * sizeof(ObString)),
+      allocator_() {}
   virtual ~ObTableLSOpResult() = default;
   int set_all_properties_names(const ObIArray<ObString>& all_properties_names) {
-    return properties_names_.assign(all_properties_names);
+    int ret = common::OB_SUCCESS;
+    properties_names_.reset();
+    if (OB_FAIL(properties_names_.prepare_allocate(all_properties_names.count()))) {
+      // ignore log in header
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < all_properties_names.count(); ++i) {
+        if (OB_FAIL(ob_write_string(allocator_, all_properties_names.at(i), properties_names_.at(i)))) {
+          // ignore log in header
+        }
+      }
+    }
+    return ret;
   }
   int set_all_rowkey_names(const ObIArray<ObString>& all_rowkey_names) {
-    return rowkey_names_.assign(all_rowkey_names);
+    int ret = common::OB_SUCCESS;
+    rowkey_names_.reset();
+    if (OB_FAIL(rowkey_names_.prepare_allocate(all_rowkey_names.count()))) {
+      // ignore log in header
+    } else {
+      for (int64_t i = 0; OB_SUCC(ret) && i < all_rowkey_names.count(); ++i) {
+        if (OB_FAIL(ob_write_string(allocator_, all_rowkey_names.at(i), rowkey_names_.at(i)))) {
+          // ignore log in header
+        }
+      }
+    }
+    return ret;
   }
   ObSEArray<ObTableTabletOpResult, SUB_REQ_COUNT>  &get_tablet_op_result() { return tablet_op_result_; }
   OB_INLINE ObSEArray<ObString, 1> &get_rowkey_names() { return rowkey_names_; }
@@ -1485,6 +1509,7 @@ private:
   // Only when this batch of operations is read-only is it not empty.
   ObSEArray<ObString, 4> properties_names_;
   // do not serialize
+  common::ObArenaAllocator allocator_;
 };
 
 struct ObTableApiCredential final

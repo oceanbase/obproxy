@@ -495,11 +495,11 @@ int ObRpcRequestSM::schedule_cleanup_action()
 int ObRpcRequestSM::cancel_cleanup_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != cleanup_action_) {
-    if (OB_FAIL(cleanup_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel cleanup action", K_(cleanup_action), K(ret), K_(rpc_trace_id));
-    } else {
-      cleanup_action_ = NULL;
+  event::ObAction *tmp_action = cleanup_action_;
+  cleanup_action_ = NULL;
+  if (NULL != tmp_action) {
+    if (OB_FAIL(tmp_action->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel cleanup action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -630,11 +630,11 @@ int ObRpcRequestSM::schedule_call_next_action(enum ObRpcRequestSMActionType next
 int ObRpcRequestSM::cancel_call_next_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != sm_next_action_) {
-    if (OB_FAIL(sm_next_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel call next action", K_(sm_next_action), K(ret), K_(rpc_trace_id));
-    } else {
-      sm_next_action_ = NULL;
+  event::ObAction *tmp_action = sm_next_action_;
+  sm_next_action_ = NULL;
+  if (NULL != tmp_action) {
+    if (OB_FAIL(tmp_action->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel call next action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -643,11 +643,25 @@ int ObRpcRequestSM::cancel_call_next_action()
 int ObRpcRequestSM::cancel_child_callback_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != child_callback_action_) {
-    if (OB_FAIL(child_callback_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel call child callback action", K_(child_callback_action), K(ret), K_(rpc_trace_id));
-    } else {
-      child_callback_action_ = NULL; //child_callback_action_ needn't canceled in any other position, it only be called once time
+  event::ObAction *tmp_action = child_callback_action_;
+  child_callback_action_ = NULL;
+
+  if (NULL != tmp_action) {
+    // 这个函数的作用是为了在split_cont被释放之前，取消子请求的回调事件，避免释放后子请求回调事件被触发
+    // 如果在执行cancel_child_callback_action之前，子请求回调事件已经被触发或则回收，那么这里调用cancel就会core dump
+    // tmp_action->cancel()这条虚函数调用依赖vptr,如果tmp_action已经被回收，就会导致core dump
+    // todo:待优化，核心是split_cont递归释放与子请求回调的并发冲突
+    // 临时解决方案：显式调用基类+传expected_cont校验
+    const event::ObContinuation *expected_cont = NULL;
+    if (OB_NOT_NULL(rpc_req_)) {
+      proxy::ObRpcReq *root_rpc_req = rpc_req_->get_root_rpc_req();
+      if (OB_NOT_NULL(root_rpc_req) && OB_NOT_NULL(root_rpc_req->split_cont_)) {
+        expected_cont = reinterpret_cast<event::ObContinuation *>(root_rpc_req->split_cont_);
+      }
+    }
+
+    if (OB_FAIL(tmp_action->oceanbase::obproxy::event::ObAction::cancel(expected_cont))) {
+      PROXY_LOG(WDIAG, "fail to cancel call child callback action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -656,11 +670,11 @@ int ObRpcRequestSM::cancel_child_callback_action()
 int ObRpcRequestSM::cancel_pending_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != pending_action_) {
-    if (OB_FAIL(pending_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel pending action", K_(pending_action), K(ret), K_(rpc_trace_id));
-    } else {
-      pending_action_ = NULL;
+  event::ObAction *tmp_action = pending_action_;
+  pending_action_ = NULL;
+  if (NULL != tmp_action) {
+    if (OB_FAIL(tmp_action->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel pending action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -669,11 +683,11 @@ int ObRpcRequestSM::cancel_pending_action()
 int ObRpcRequestSM::cancel_timeout_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != timeout_action_) {
-    if (OB_FAIL(timeout_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel timeout action", K_(timeout_action), K(ret), K_(rpc_trace_id));
-    } else {
-      timeout_action_ = NULL;
+  event::ObAction *tmp_action = timeout_action_;
+  timeout_action_ = NULL;
+  if (NULL != tmp_action) {
+    if (OB_FAIL(tmp_action->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel timeout action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -701,11 +715,11 @@ int ObRpcRequestSM::schedule_release_check_action()
 int ObRpcRequestSM::cancel_release_check_action()
 {
   int ret = common::OB_SUCCESS;
-  if (NULL != release_check_action_) {
-    if (OB_FAIL(release_check_action_->cancel())) {
-      PROXY_LOG(WDIAG, "fail to cancel release check action", K_(release_check_action), K(ret), K_(rpc_trace_id));
-    } else {
-      release_check_action_ = NULL;
+  event::ObAction *tmp_action = release_check_action_;
+  release_check_action_ = NULL;
+  if (NULL != tmp_action) {
+    if (OB_FAIL(tmp_action->cancel())) {
+      PROXY_LOG(WDIAG, "fail to cancel release check action", K(tmp_action), K(ret), K_(rpc_trace_id));
     }
   }
   return ret;
@@ -4945,6 +4959,10 @@ int ObRpcRequestSM::setup_rpc_handle_shard_request()
   RPC_REQ_SM_ENTER_STATE(ObRpcReq::RpcReqSmState::RPC_REQ_SM_SHARDING_HANDLE);
   update_rpc_req_state();
 
+  if (OB_NOT_NULL(rpc_req_) && OB_NOT_NULL(rpc_req_->split_cont_)) {
+    LOG_DEBUG("rpc_req_ has old split cont, need to free it", KPC_(rpc_req), K_(rpc_trace_id));
+    rpc_req_->free_split_cont();
+  }
   if (OB_ISNULL(rpc_req_)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("ObRpcRequestSM::setup_rpc_handle_shard_request get a NULL rpc req", K_(rpc_trace_id));
@@ -5347,6 +5365,21 @@ int ObRpcRequestSM::state_cancel_from_split_cont()
     if (OB_NOT_NULL(rpc_req_->split_cont_)) {
       //如果有子请求则设置server cancel可以及时释放，没有需要等待回调释放
       rpc_req_->set_snet_state(ObRpcReq::ServerNetState::RPC_REQ_SERVER_CANCLED);
+    }
+
+    // Cancel child_callback_action_ under lock protection
+    // This ensures child_callback_action_ is cancelled before split_cont might be released
+    // This is safe because we're on execute_thread and have acquired inner_request_cleanup_mutex_
+    if (OB_NOT_NULL(child_callback_action_)) {
+      ObRpcReq * root_rpc_req = rpc_req_->get_root_rpc_req();
+      if (OB_NOT_NULL(child_callback_action_) && OB_NOT_NULL(root_rpc_req) && OB_NOT_NULL(root_rpc_req->split_cont_)) {
+        root_rpc_req->split_cont_->dec_pending_cb();
+      }
+      if (OB_UNLIKELY(OB_SUCCESS != cancel_child_callback_action())) {
+        LOG_WDIAG("fail to cancel child callback action in state_cancel_from_split_cont", K_(rpc_trace_id));
+      } else {
+        LOG_DEBUG("successfully cancelled child_callback_action_ in state_cancel_from_split_cont", K_(rpc_trace_id));
+      }
     }
 
     // 5) 子请求自清理（由子 SM 调度），不回调 split_cont

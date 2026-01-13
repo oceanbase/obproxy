@@ -23,7 +23,7 @@ namespace packet
 {
 ObProxyOKPacket::ObProxyOKPacket()
     : is_buffer_valid_(false), seq_(1),
-      status_flags_(0x22), warnings_count_(0), affected_rows_(0), last_insert_id_(0),
+      status_flags_(0x02), warnings_count_(0), affected_rows_(0), last_insert_id_(0),
       status_flags_pos_(0), warnings_count_pos_(0), last_insert_id_pos_(0), pkt_len_(0)
 {
   // do not reset pkt_buf as we have set pkt_len to 0

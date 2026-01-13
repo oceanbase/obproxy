@@ -558,7 +558,7 @@ int ObMysqlClientSession::acquire_client_session_id_v1()
 
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(0 == next_cs_id) && OB_FAIL(get_thread_init_cs_id(CLIENT_SESSION_ID_V1, thread_init_cs_id, max_local_seq))) {
-    PROXY_CS_LOG(WDIAG, "fail to  is get thread init cs id", K(next_cs_id), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to get thread init cs id", K(next_cs_id), K(ret));
   }
 
   if (OB_SUCC(ret)) {
@@ -589,18 +589,22 @@ int ObMysqlClientSession::acquire_client_session_id_v2()
   uint32_t max_local_seq = get_g_max_local_seq_v2();
 
   int ret = OB_SUCCESS;
-  if (OB_UNLIKELY(0 == next_cs_id) || proxy_id != static_cast<uint32_t>(get_global_proxy_config().proxy_id)) {
+  if (OB_UNLIKELY(0 == next_cs_id || proxy_id != static_cast<uint32_t>(get_global_proxy_config().proxy_id))) {
     proxy_id = static_cast<uint32_t>(get_global_proxy_config().proxy_id);
-    get_thread_init_cs_id(CLIENT_SESSION_ID_V2, thread_init_cs_id, max_local_seq);
+    if(OB_FAIL(get_thread_init_cs_id(CLIENT_SESSION_ID_V2, thread_init_cs_id, max_local_seq))) {
+      PROXY_CS_LOG(WDIAG, "fail to get thread init cs_id", K(next_cs_id), K(ret));
+    }
   }
 
-  uint32_t cs_id = ++next_cs_id;
-  if ((cs_id & max_local_seq) == 0) {
-    cs_id ++;
+  if (OB_SUCC(ret)) {
+    uint32_t cs_id = ++next_cs_id;
+    if ((cs_id & max_local_seq) == 0) {
+      cs_id ++;
+    }
+    cs_id &= max_local_seq;
+    cs_id |= thread_init_cs_id;
+    cs_id_ = cs_id;
   }
-  cs_id &= max_local_seq;
-  cs_id |= thread_init_cs_id;
-  cs_id_ = cs_id;
   return ret;
 }
 
@@ -663,14 +667,12 @@ int ObMysqlClientSession::get_thread_init_cs_id(const ObClientSessionIDVersion v
     }
     case CLIENT_SESSION_ID_V2: {
       // calc bits
-      const uint32_t flag_bits = 1;
-      const uint32_t proxy_id_bits =  13;
+      const uint32_t proxy_id_bits =  14; // MARKS + PROXY_ID
       const uint32_t upgrade_ver_bits = 1;
       const uint32_t thread_id_bits = get_thread_id_bits();
 
       // calc offset
-      const uint32_t flag_offset = 32 - flag_bits;
-      const uint32_t proxy_id_offset = flag_offset - proxy_id_bits;
+      const uint32_t proxy_id_offset = 32 - proxy_id_bits;
       const uint32_t upgrade_ver_offset = proxy_id_offset - upgrade_ver_bits;
       const uint32_t thread_id_offset = upgrade_ver_offset - thread_id_bits;
 
@@ -761,11 +763,21 @@ int ObMysqlClientSession::add_to_list()
       }
       if (OB_SUCC(ret)) {
         if (is_exist) {
+          PROXY_CS_LOG(EDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(is_proxy_mysql_client()), K(client_vc_), K(ret));
           ret = OB_SESSION_ENTRY_EXIST;
-          PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
+          OBPROXY_ERROR_LOG(ERROR, "there is no enough cs id, close this connect", "is_proxy_mysql_client", is_proxy_mysql_client(),
+                            "cs_id_version", cs_id_version_, "cluster_name", ct_info_.vip_tenant_.cluster_name_,
+                            "tenant_name", ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(), K_(cs_id), K(ret));
+          OBPROXY_DIAGNOSIS_LOG(INFO, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
+                                "error_msg", "obproxy disconnect because the cs_id has been used up", K_(cs_id),
+                                "is_proxy_mysql_client", is_proxy_mysql_client(),
+                                "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
+                                ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(),
+                                "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES),
+                                "login_result", "failed");
           cs_id_ = 0;
         } else {
-          PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(MAX_TRY_TIMES));
+          PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(is_proxy_mysql_client()), K(MAX_TRY_TIMES));
         }
       }
     }
@@ -801,19 +813,21 @@ int ObMysqlClientSession::add_to_list()
     }
     if (OB_SUCC(ret)) {
       if (LIST_ADDED != in_list_stat_) {
+        PROXY_CS_LOG(EDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(is_proxy_mysql_client()), K(client_vc_), K(MAX_TRY_TIMES), "cs id list size", cs_id_list.size(), K(ret));
         ret = OB_SESSION_ENTRY_EXIST;
-        PROXY_CS_LOG(WDIAG, "there is no enough cs id, close this connect", K_(cs_id), K(client_vc_), K(ret));
-        OBPROXY_ERROR_LOG(ERROR, "there is no enough cs id, close this connect", "cluster_name", ct_info_.vip_tenant_.cluster_name_,
+        OBPROXY_ERROR_LOG(ERROR, "there is no enough cs id, close this connect", "is_proxy_mysql_client", is_proxy_mysql_client(),
+                          "cs_id_version", cs_id_version_, "cluster_name", ct_info_.vip_tenant_.cluster_name_,
                           "tenant_name", ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(), K_(cs_id), K(ret));
-        OBPROXY_DIAGNOSIS_LOG(WDIAG, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
+        OBPROXY_DIAGNOSIS_LOG(INFO, "[LOGIN]", "trace_type", "PROXY_INTERNAL_TRACE",
                               "error_msg", "obproxy disconnect because the cs_id has been used up", K_(cs_id),
+                              "is_proxy_mysql_client", is_proxy_mysql_client(),
                               "cluster_name", ct_info_.vip_tenant_.cluster_name_, "tenant_name",
                               ct_info_.vip_tenant_.tenant_name_, "client_addr", get_real_client_addr(),
                               "cs_map size", cs_map.size(), "cs id list size", cs_id_list.size(), K(MAX_TRY_TIMES),
                               "login_result", "failed");
         cs_id_ = 0;
       } else {
-        PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(MAX_TRY_TIMES));
+        PROXY_CS_LOG(DEBUG, "acquire cs id succ", K_(cs_id), K(is_proxy_mysql_client()), K(MAX_TRY_TIMES));
       }
     }
   }

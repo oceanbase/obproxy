@@ -10,6 +10,8 @@
  * See the Mulan PubL v2 for more details.
  */
 
+#define USING_LOG_PREFIX COMMON
+
 #include "common/ob_common_utility.h"
 #include "lib/coro/co_var.h"
 
@@ -59,27 +61,18 @@ void set_reserved_stack_size(int64_t reserved_size)
 }
 
 int check_stack_overflow(bool &is_overflow,
-    int64_t reserved_size/* default equals 'reserved_stack_size' variable*/)
+                         int64_t reserved_size/* default equals 'reserved_stack_size' variable*/,
+                         int64_t *used_size/*nullptr*/)
 {
   int ret = OB_SUCCESS;
   is_overflow = false;
   size_t stack_size = 0;
-  pthread_attr_t attr;
   char *stack_eof = NULL;
   void *cur_stack = NULL;
   void *stack_start = NULL;
-  if (OB_UNLIKELY(0 != pthread_getattr_np(pthread_self(), &attr))) {
-    ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(EDIAG, "cannot get thread params", K(ret));
+  if (OB_FAIL(get_stackattr(stack_start, stack_size))) {
+    LOG_EDIAG("get stack attributes fail", K(ret));
     is_overflow = true;
-  } else if (OB_UNLIKELY(0 != pthread_attr_getstack(&attr, &stack_start, &stack_size))) {
-    ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(EDIAG, "cannot get thread statck params", K(ret));
-    is_overflow = true;
-  } else if (OB_UNLIKELY(0 != pthread_attr_destroy(&attr))) {
-    is_overflow = true;
-    ret = OB_ERR_UNEXPECTED;
-    COMMON_LOG(EDIAG, "destroy thread attr failed", K(ret));
   } else {
     stack_eof = static_cast<char *>(stack_start) + stack_size;
     cur_stack = &stack_start;
@@ -94,6 +87,9 @@ int check_stack_overflow(bool &is_overflow,
       COMMON_LOG(EDIAG, "stack incorrect params", K(ret), KP(stack_eof), KP(cur_stack));
     } else {
       int64_t cur_stack_used = stack_eof - (static_cast<char *>(cur_stack));
+      if (used_size != nullptr) {
+        *used_size = cur_stack_used;
+      }
       COMMON_LOG(DEBUG, "stack info ", K(cur_stack_used), K(stack_size), K(reserved_size));
       if (OB_UNLIKELY(cur_stack_used > (static_cast<int64_t>(stack_size) - reserved_size))) {
         is_overflow = true;
@@ -118,7 +114,7 @@ int get_stackattr(void *&stackaddr, size_t &stacksize)
       COMMON_LOG(ERROR, "cannot get thread params", K(ret));
     } else if (OB_UNLIKELY(0 != pthread_attr_getstack(&attr, &stackaddr, &stacksize))) {
       ret = OB_ERR_UNEXPECTED;
-      COMMON_LOG(ERROR, "cannot get thread statck params", K(ret));
+      COMMON_LOG(ERROR, "cannot get thread stack params", K(ret));
     } else if (OB_UNLIKELY(0 != pthread_attr_destroy(&attr))) {
       ret = OB_ERR_UNEXPECTED;
       COMMON_LOG(ERROR, "destroy thread attr failed", K(ret));
@@ -129,6 +125,12 @@ int get_stackattr(void *&stackaddr, size_t &stacksize)
     }
   }
   return ret;
+}
+
+void set_stackattr(void *stackaddr, size_t stacksize)
+{
+  g_stackaddr = (char*)stackaddr;
+  g_stacksize = stacksize;
 }
 
 } // end of namespace common

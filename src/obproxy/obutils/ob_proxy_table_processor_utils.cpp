@@ -492,6 +492,7 @@ int ObProxyTableProcessorUtils::fill_local_vip_tenant_cache(ObMysqlResultHandler
   int64_t rw_type = -1;
   json::Value *info_config = NULL;
   bool need_free = true;
+  int64_t rollback_sql_len = 0;
 
   ObArenaAllocator json_allocator(ObModIds::OB_JSON_PARSER);
   json::Parser parser;
@@ -524,6 +525,7 @@ int ObProxyTableProcessorUtils::fill_local_vip_tenant_cache(ObMysqlResultHandler
   // 1. 将每batch_size个sql拼接到一起，收集之后，调用execute执行sql
   // 2. 接口中调用了handle_dml_stmt，改造接口，可以支持批量修改，并且回滚
   while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
+    rollback_sql_len = sql_buf_len;
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vid", vid, int64_t);
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "vip", vip, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "vport", vport, int64_t);
@@ -575,7 +577,12 @@ int ObProxyTableProcessorUtils::fill_local_vip_tenant_cache(ObMysqlResultHandler
         ret = OB_INVALID_ARGUMENT;
         LOG_WDIAG("invalid input value", KPC(vip_tenant), K(ret));
       } else if (OB_FAIL(cache_map.unique_set(vip_tenant))) {
-        LOG_WDIAG("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
+        if (OB_HASH_EXIST == ret) {
+          // 出现重复数据，可能是管控出现了bug
+          LOG_WDIAG("vip_tenant already exists in cache_map, please check the metadb", K(*vip_tenant));
+        } else {
+          LOG_WDIAG("fail to insert one vip_tenant into cache_map", K(*vip_tenant), K(ret));
+        }
       } else {
         need_free = false;
         char request_target_buf[32];
@@ -634,8 +641,29 @@ int ObProxyTableProcessorUtils::fill_local_vip_tenant_cache(ObMysqlResultHandler
           }
         }
       }
-    }//end if OB_SUCCESS
-  }//end of while
+    } // end if OB_SUCCESS
+
+    // 存在异常情况，跳过此行数据，继续循环
+    if (OB_FAIL(ret)) {
+      LOG_WDIAG("skip invalid vip_tenant record", K(ret), K(vip), K(vport), K(vid), K(tenant_name), K(cluster_name));
+      // 处理部分concate成功的情况，回滚本行已拼接的 SQL
+      sql_buf_len = rollback_sql_len;
+      sql_buf[sql_buf_len] = '\0';
+      // 释放本行申请的对象，避免内存泄漏
+      if (need_free && OB_NOT_NULL(vip_tenant)) {
+        vip_tenant->destroy();
+        vip_tenant = NULL;
+        need_free = false;
+      }
+      // 重置本行状态，避免污染下一行
+      request_target_type = -1;
+      rw_type = -1;
+      info_config = NULL;
+      // 继续循环
+      ret = OB_SUCCESS;
+    }
+  } // end of while
+
   // 执行剩余插入配置的sql
   const int iter_ret = ret;
   if (OB_ITER_END != iter_ret) {

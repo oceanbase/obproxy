@@ -8701,6 +8701,7 @@ void ObMysqlSM::do_internal_request()
       case OB_MYSQL_COM_CHANGE_USER:
       case OB_MYSQL_COM_SHUTDOWN:
       case OB_MYSQL_COM_STMT_PREPARE_EXECUTE:
+      case OB_MYSQL_COM_STMT_PREPARE:
       case OB_MYSQL_COM_DAEMON: {
         ObProxyMysqlRequest &client_request = trans_state_.trans_info_.client_request_;
         ObClientSessionInfo &client_info = client_session_->get_session_info();

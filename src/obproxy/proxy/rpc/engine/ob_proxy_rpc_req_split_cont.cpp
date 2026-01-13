@@ -258,7 +258,7 @@ int ObProxyRpcReqSplitCont::handle_shard_rpc_obkv_batch_request(proxy::ObRpcReq*
     ObSEArray<ObRpcReq *, DEFAULT_PARALLEL_SUB_REQUEST_COUNT> rpc_reqs; //temp variables not to change it
     for (; OB_SUCC(ret) && it != end; it++) {
       int64_t partition_id = it->first;
-      ObSEArray<int64_t, DEFAULT_PARALLEL_SUB_REQUEST_COUNT> &index = it->second;
+      ObSEArray<int64_t, 4> &index = it->second;
       ObRpcTableBatchOperationRequest *sub_batch_request = NULL;
       proxy::ObRpcReq *sub_rpc_req = NULL;
       ObRpcRequestSM *request_sm = NULL;
@@ -1252,36 +1252,7 @@ void ObProxyRpcReqSplitCont::cleanup()
   if (is_canceled_) {
     LOG_WDIAG("split cont is canceled, skip cleanup", K_(rpc_trace_id));
   } else {
-    LOG_DEBUG("start to cleanup split cont", K_(rpc_trace_id));
-    for (RESP_MAP::iterator it = resp_map_.begin(); it != resp_map_.end(); ++it) {
-      if (OB_NOT_NULL(it->second)) {
-        it->second->~ObRpcResponse();
-        it->second = NULL;
-      }
-    }
-    resp_map_.destroy();
-
-    for (ALLOCATOR_MAP::iterator it = allocator_map_.begin(); it != allocator_map_.end(); ++it) {
-      if (OB_NOT_NULL(it->second)) {
-        it->second->reset();
-        optimizer::get_global_optimizer_rpc_req_processor().free_allocator(it->second);
-        it->second = NULL;
-      }
-    }
-    allocator_map_.destroy();
-
-    for (int64_t i = 0; i < fallback_allocator_array_.count(); ++i) {
-      uintptr_t allocator_ptr = fallback_allocator_array_.at(i);
-      if (allocator_ptr != 0) {
-        common::ObIAllocator *allocator = reinterpret_cast<common::ObIAllocator *>(allocator_ptr);
-        allocator->reset();
-        optimizer::get_global_optimizer_rpc_req_processor().free_allocator(allocator);
-        fallback_allocator_array_.at(i) = 0;
-      }
-    }
-    fallback_allocator_array_.destroy();
-
-    parallel_param_.destroy(); // only release param, not release sub req
+    rpc_trace_id_.reset();
     cb_cont_ = NULL;
     mutex_ = NULL;
     root_rpc_req_ = NULL;
@@ -1295,23 +1266,54 @@ void ObProxyRpcReqSplitCont::detach()
   cb_cont_ = NULL;
   root_rpc_req_ = NULL;
   detached_ = true;
-  if (0 == pending_cb_count_) {
-    ObEThread *execute_thread = (OB_NOT_NULL(mutex_) && OB_NOT_NULL(mutex_->thread_holding_)) ? mutex_->thread_holding_ : this_ethread();
-    execute_thread->schedule_imm(this, ObRpcReq::SPLIT_CONT_SELF_TRY_FREE);
+
+  for (RESP_MAP::iterator it = resp_map_.begin(); it != resp_map_.end(); ++it) {
+    if (OB_NOT_NULL(it->second)) {
+      it->second->~ObRpcResponse();
+      it->second = NULL;
+    }
+  }
+  resp_map_.destroy();
+
+  for (ALLOCATOR_MAP::iterator it = allocator_map_.begin(); it != allocator_map_.end(); ++it) {
+    if (OB_NOT_NULL(it->second)) {
+      it->second->reset();
+      optimizer::get_global_optimizer_rpc_req_processor().free_allocator(it->second);
+      it->second = NULL;
+    }
+  }
+  allocator_map_.destroy();
+
+  for (int64_t i = 0; i < fallback_allocator_array_.count(); ++i) {
+    uintptr_t allocator_ptr = fallback_allocator_array_.at(i);
+    if (allocator_ptr != 0) {
+      common::ObIAllocator *allocator = reinterpret_cast<common::ObIAllocator *>(allocator_ptr);
+      allocator->reset();
+      optimizer::get_global_optimizer_rpc_req_processor().free_allocator(allocator);
+      fallback_allocator_array_.at(i) = 0;
+    }
+  }
+  fallback_allocator_array_.destroy();
+  parallel_param_.destroy();
+
+  if (0 >= pending_cb_count_) {
+    if (OB_NOT_NULL(execute_thread_)) {
+      event::ObAction *action = execute_thread_->schedule_imm(this, ObRpcReq::SPLIT_CONT_SELF_TRY_FREE);
+      if (OB_ISNULL(action)) {
+        LOG_WDIAG("fail to schedule self try free, fallback to sync try_free_self", K_(rpc_trace_id));
+        try_free_self();
+      }
+    } else {
+      LOG_WDIAG("execute_thread is NULL, fallback to sync try_free_self", K_(rpc_trace_id));
+      try_free_self();
+    }
   }
 }
 
 int ObProxyRpcReqSplitCont::try_free_self()
 {
   int ret = OB_SUCCESS;
-  bool all_cleared = true;
-  for (int64_t i = 0; i < parallel_param_.count(); ++i) {
-    if (parallel_param_.at(i).need_cancel_) {
-      all_cleared = false;
-      break;
-    }
-  }
-  if (all_cleared && 0 == pending_cb_count_ && !is_canceled_) {
+  if (0 >= pending_cb_count_ && !is_canceled_) {
     cleanup();
     if (OB_NOT_NULL(allocator_)) {
       allocator_->reset();
@@ -1343,7 +1345,6 @@ int ObProxyRpcReqSplitCont::dispatch_cancel_to_child_request_only()
 {
   int ret = OB_SUCCESS;
   ObRpcReq *sub_req = NULL;
-  bool need_retry = false;
   for (int64_t i = 0; i < parallel_param_.count(); ++i) {
     if (!parallel_param_.at(i).need_cancel_) {
       parallel_param_.at(i).request_ = NULL;
@@ -1368,12 +1369,14 @@ int ObProxyRpcReqSplitCont::dispatch_cancel_to_child_request_only()
           if (OB_NOT_NULL(cleanup_mutex)) {
             MUTEX_TRY_LOCK(lock, cleanup_mutex, this_ethread());
             if (lock.is_locked()) {
+              if (OB_NOT_NULL(sub_sm->get_child_callback_action())) {
+                dec_pending_cb();
+              }
               if (OB_UNLIKELY(OB_SUCCESS != sub_sm->cancel_child_callback_action())) {
                 LOG_WDIAG("fail to cancel child callback action", K(i), K_(rpc_trace_id));
               }
             } else {
-              need_retry = true;
-              parallel_param_.at(i).need_retry_ = true;
+              LOG_WDIAG("fail to lock cleanup_mutex, need to retry", K(i), K_(rpc_trace_id));
             }
           }
           // proceed with async cancel dispatch regardless of cancel_child_callback_action result
@@ -1388,43 +1391,12 @@ int ObProxyRpcReqSplitCont::dispatch_cancel_to_child_request_only()
               LOG_DEBUG("schedule cancel to execute_thread success, set need_cancel to false and request to NULL", K(i), K_(rpc_trace_id));
             }
           }
-          if (!parallel_param_.at(i).need_retry_) {
-            parallel_param_.at(i).request_ = NULL;
-          }
+          parallel_param_.at(i).request_ = NULL;
         }
       }
       sub_req = NULL;
     }
   } // end for
-  if (need_retry) {
-    for (int64_t i = 0; i < parallel_param_.count(); ++i) {
-      if (parallel_param_.at(i).need_retry_) {
-        if (OB_ISNULL(parallel_param_.at(i).request_)) {
-          LOG_WDIAG("sub request is NULL, skip retry", K(i), K_(rpc_trace_id));
-        } else {
-          sub_req = parallel_param_.at(i).request_;
-          ObRpcRequestSM *sub_sm = sub_req->get_request_sm();
-          if (OB_ISNULL(sub_sm)) {
-            LOG_WDIAG("sub sm is NULL, skip retry", K(i), K_(rpc_trace_id));
-          } else {
-            event::ObProxyMutex *cleanup_mutex = sub_sm->lock_for_inner_request();
-            if (OB_NOT_NULL(cleanup_mutex)) {
-              MUTEX_TRY_LOCK(lock, cleanup_mutex, this_ethread());
-              if (lock.is_locked()) {
-                if (OB_UNLIKELY(OB_SUCCESS != sub_sm->cancel_child_callback_action())) {
-                  LOG_WDIAG("fail to cancel child callback action", K(i), K_(rpc_trace_id));
-                }
-                parallel_param_.at(i).need_retry_ = false;
-                parallel_param_.at(i).request_ = NULL;
-              } else {
-                LOG_WDIAG("fail to lock cleanup_mutex", K(i), K_(rpc_trace_id));
-              }
-            }
-          }
-        }
-      }
-    }
-  }
   return ret;
 }
 
@@ -1442,11 +1414,12 @@ int ObProxyRpcReqSplitCont::main_handler(int event, void *data)
     } else {
       //make sure only sub request can callback here
       dec_pending_cb();
-      if (0 == pending_cb_count_) {
+      if (0 >= pending_cb_count_) {
         try_free_self();
       }
     }
   } else {
+    dec_pending_cb();
     // process callback event
     if (OB_ISNULL(data) || OB_ISNULL(reinterpret_cast<ObEvent*>(data)->cookie_)) {
       ret = OB_ERR_UNEXPECTED;
@@ -1552,7 +1525,6 @@ int ObProxyRpcReqSplitCont::count_inner_callback_nums(bool &is_final)
   int ret = OB_SUCCESS;
 
   completed_sub_req_count_++;
-  dec_pending_cb();
   if (OB_UNLIKELY(completed_sub_req_count_ < 0) || OB_UNLIKELY(completed_sub_req_count_ > parallel_param_.count())) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("unexpected completed sub requests", K(completed_sub_req_count_), K(parallel_param_.count()), K(ret), K_(rpc_trace_id));

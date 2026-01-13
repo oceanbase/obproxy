@@ -243,6 +243,25 @@ int ObMysqlRequestBuilder::build_xa_start_request(ObMysqlSM *sm,
   ObString &xa_start_req_pkt = client_info.get_start_trans_sql();
   ObString xa_pkt_payload(xa_start_req_pkt.length() - MYSQL_NET_META_LENGTH,
                           xa_start_req_pkt.ptr() + MYSQL_NET_META_LENGTH);
+  const char *cmd_pos = xa_start_req_pkt.ptr() + MYSQL_NET_HEADER_LENGTH;
+  uint8_t xa_cmd;
+  ObMySQLUtil::get_uint1(cmd_pos, xa_cmd);
+  if (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == xa_cmd) {
+    const char *stmt_pos = xa_pkt_payload.ptr();
+    uint32_t client_ps_id = 0;
+    ObMySQLUtil::get_uint4(stmt_pos, client_ps_id);
+    if (0 != client_ps_id) {
+      ObServerSessionInfo &ss_info =
+          sm->get_server_session()->get_session_info();
+      /* 如果这个 Server 已经发送过一次，则拿到的是真实的 Server Ps Id
+       * 如果这个 Server 还没发送过，返回的则是 0
+       */
+      uint32_t server_ps_id = ss_info.get_server_ps_id(client_ps_id);
+      memcpy(xa_pkt_payload.ptr(), &server_ps_id, sizeof(server_ps_id));
+    }
+  } else {
+    LOG_EDIAG("xa start cmd is not OB_MYSQL_COM_STMT_PREPARE_EXECUTE, something wrong");
+  }
   ObMySQLCmd cmd = OB_MYSQL_COM_STMT_PREPARE_EXECUTE;
   if (OB_FAIL(build_request_packet(xa_pkt_payload, cmd, sm, mio_buf, server_session, ob_proxy_protocol))) {
     LOG_WDIAG("fail to build xa start packet", K(xa_pkt_payload), K(cmd), K(ret));

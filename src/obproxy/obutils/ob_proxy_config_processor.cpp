@@ -2297,11 +2297,33 @@ int ObProxyConfigProcessor::do_update_global_proxy_config(const ObProxyBaseConfi
         old_config_item = NULL;
       } else if (OB_FAIL(get_global_proxy_config().update_config_item(key_string, value_string))) {
         LOG_WDIAG("fail to update config", K(key_string), K(value_string), K(ret));
+      } else if (OB_FAIL(get_global_config_processor().store_global_proxy_config(key_string, value_string))) {
+        LOG_WDIAG("fail to store config to local file", K(key_string), K(value_string), K(ret));
       } else {
-        LOG_DEBUG("succ to update config", K(key_string), K(value_string));
+        LOG_DEBUG("succ to update config and store to local file", K(key_string), K(value_string));
       }
     }
   } // end for
+
+  // 防御代码：如果只有部分配置更新成功，需要回滚本地文件已提交的修改，内存的由方法调用者回滚
+  if (OB_FAIL(ret)) {
+    int rollback_ret = OB_SUCCESS;
+    for (int64_t i = 0; i < old_config_items.count(); ++i) {
+      const ObConfigItem *item = old_config_items.at(i);
+      if (NULL != item) {
+        int tmp_ret = get_global_config_processor().store_global_proxy_config(
+            ObString::make_string(item->name()),
+            ObString::make_string(item->str()));
+        if (OB_FAIL(tmp_ret)) {
+          LOG_WDIAG("fail to rollback local file config", "name", item->name(), K(tmp_ret));
+          rollback_ret = tmp_ret; // record the last error
+        }
+      }
+    }
+    if (OB_FAIL(rollback_ret)) {
+      LOG_WDIAG("part of local file config rollback failed", K(rollback_ret));
+    }
+  }
 
   return ret;
 }

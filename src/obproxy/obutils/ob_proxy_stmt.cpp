@@ -14,6 +14,8 @@
 #include "obutils/ob_proxy_stmt.h"
 #include "utils/ob_proxy_utils.h"
 
+#include "common/ob_common_utility.h"
+
 using namespace oceanbase::common;
 namespace oceanbase
 {
@@ -635,7 +637,10 @@ int ObProxyDMLStmt::handle_where_clause(ParseNode* node)
 {
   int ret = OB_SUCCESS;
   ParseNode* tmp_node = NULL;
-  if (OB_ISNULL(field_results_)) {
+
+  if (OB_FAIL(check_stack_overflow())) {
+    LOG_WDIAG("maybe stack overflow, stop sql parse", K(ret));
+  } else if (OB_ISNULL(field_results_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("unexpected null");
   } else {

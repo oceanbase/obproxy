@@ -1662,7 +1662,7 @@ void ObLogger::do_async_flush_to_file(ObLogItem **log_item, const int64_t count)
       for (int32_t i = 0; i < static_cast<int32_t>(MAX_FD_FILE); i++) {
         size = 0;
         if (iovcnt[i] > 0 && log_file_[i].fd_ > 0) {
-          size = ::writev(log_file_[i].fd_, vec[i], iovcnt[i]) * 2;
+          size = ::writev(log_file_[i].fd_, vec[i], iovcnt[i]);
         }
 
         if (size > 0) {
