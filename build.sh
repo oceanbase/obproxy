@@ -155,39 +155,46 @@ function do_config()
   set -x
   get_os_release
 
+  # Check ASAN environment variable
+  ASAN_OPTION=""
+  if [ "${ASAN}" = "ON" ] || [ "${ASAN}" = "on" ] || [ "${ASAN}" = "1" ] || [ "${ASAN}" = "yes" ]; then
+    ASAN_OPTION="--with-asan"
+    echo -e "\033[33m [NOTICE] ASAN environment variable is set, will enable AddressSanitizer \033[0m"
+  fi
+
   case "x$1" in
     xdebug)
       # configure for developers
-      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no ${ASAN_OPTION}
       echo -e "\033[31m ===build debug version=== \033[0m"
       ;;
     xgcov)
       # configure for gcov
-      ./configure --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no
+      ./configure --with-coverage=yes --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no ${ASAN_OPTION}
       echo -e "\033[31m ===build gcov version=== \033[0m"
       ;;
     xasan)
       # configure for asan
-     ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-asan
       echo -e "\033[31m ===build asan version=== \033[0m"
       ;;
     xso)
       # configure for obproxy_so
-      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-so ${ASAN_OPTION}
       echo -e "\033[31m ===build so version=== \033[0m"
       ;;
     xerrsim)
      # configure for error injection
-      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-errsim=yes
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-errsim=yes ${ASAN_OPTION}
       echo -e "\033[31m ===build errsim version=== \033[0m"
        ;;
     xopt)
-      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-opt
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release --with-opt ${ASAN_OPTION}
       echo -e "\033[31m ===build release version with compile optimization(BOLT & AutoFDO) === \033[0m"
       ;;
     *)
       # configure for release
-      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release
+      ./configure --with-coverage=no --enable-buildtime=no --enable-strip-ut=no --enable-silent-rules --enable-dlink-observer=no --with-release ${ASAN_OPTION}
       echo -e "\033[31m ===build release version=== \033[0m"
       ;;
   esac
