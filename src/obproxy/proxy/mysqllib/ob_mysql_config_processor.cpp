@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -127,7 +120,8 @@ ObMysqlConfigParams::ObMysqlConfigParams()
     ob_max_read_stale_time_(0),
     rpc_request_max_retries_(0),
     rpc_srv_session_pool_inactive_timeout_(0),
-    client_session_id_version_(1)
+    client_session_id_version_(1),
+    enable_cdc_service_(true)
 {
   proxy_idc_name_[0] = '\0';
 }
@@ -230,6 +224,7 @@ int ObMysqlConfigParams::assign_config(const ObProxyConfig &proxy_config)
   CONFIG_ITEM_ASSIGN(ob_max_read_stale_time);
   CONFIG_ITEM_ASSIGN(rpc_request_max_retries);
   CONFIG_ITEM_ASSIGN(rpc_async_task_thread_num);
+  CONFIG_ITEM_ASSIGN(enable_cdc_service);
 
   if (OB_SUCC(ret)) {
     obsys::CRLockGuard guard(proxy_config.rwlock_);
@@ -336,7 +331,7 @@ DEF_TO_STRING(ObMysqlConfigParams)
        K_(enable_congestion), K_(enable_bad_route_reject), K_(test_server_addr),
        K_(sqlaudit_mem_limited), K_(client_max_connections),
        K_(enable_client_connection_lru_disconnect), K_(connect_observer_max_retries),
-       K_(rpc_request_max_retries),
+       K_(rpc_request_max_retries), K_(rpc_async_task_thread_num), K_(enable_cdc_service),
        K_(monitor_stat_low_threshold), K_(monitor_stat_middle_threshold), K_(monitor_stat_high_threshold));
   J_COMMA();
   J_KV(K_(enable_trans_detail_stats), K_(enable_mysqlsm_info),

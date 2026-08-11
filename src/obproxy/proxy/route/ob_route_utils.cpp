@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -74,8 +67,8 @@ static const char *PROXY_PLAIN_SCHEMA_SQL_RPC =
 
 static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4 =
     //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
-    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port, C.tenant_id as tenant_id "
-    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, IFNULL(B.svr_port, 0) as svr_port, C.tenant_id as tenant_id "
+    "FROM oceanbase.%s A left join oceanbase.%s B "
     "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
     "left join oceanbase.%s C on A.tenant_name = C.tenant_name "
     "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
@@ -102,8 +95,8 @@ static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_BATCH =
 
 static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4_BATCH =
     //svr_ip, sql_port, table_id, role, part_num, replica_num, spare1, svr_port
-    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, B.svr_port as svr_port "
-    "FROM oceanbase.%s A inner join oceanbase.%s B "
+    "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ A.*, IFNULL(B.svr_port, 0) as svr_port "
+    "FROM oceanbase.%s A left join oceanbase.%s B "
     "ON A.svr_ip = B.svr_ip and A.sql_port = B.sql_port "
     "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
     "AND A.tablet_id IN (%.*s) "
@@ -111,8 +104,8 @@ static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_V4_BATCH =
 
 static const char *PROXY_PLAIN_SCHEMA_SQL_RPC_AFTER_OB_4352_BATCH =
     "SELECT /*+READ_CONSISTENCY(WEAK)%s*/ * "
-    "FROM oceanbase.%s "
-    "WHERE tenant_name = '%.*s' AND database_name = '%.*s' AND table_name = '%.*s' "
+    "FROM oceanbase.%s A "
+    "WHERE A.tenant_name = '%.*s' AND A.database_name = '%.*s' AND A.table_name = '%.*s' "
     "AND A.tablet_id IN (%.*s) "
     "ORDER BY A.tablet_id, A.role ASC LIMIT %ld";
 
@@ -247,23 +240,38 @@ static const char *PROXY_TABLEGROUP_TABLES_SQL_V4 =
   "WHERE tenant_id = '%lu' and table_id = '%lu' "
   "LIMIT %ld;";
 
-static void get_tenant_name(const ObString &origin_tenant_name, char *new_tenant_name_buf, ObString &new_tenant_name) {
-  new_tenant_name = origin_tenant_name;
-  int32_t pos = 0;
-  for (int64_t i = 0; i < origin_tenant_name.length(); i++) {
-    if (origin_tenant_name[i] == '\'') {
-      new_tenant_name_buf[pos++] = '\'';
-      new_tenant_name_buf[pos++] = '\'';
-    } else if (origin_tenant_name[i] == '\\') {
-      new_tenant_name_buf[pos++] = '\\';
-      new_tenant_name_buf[pos++] = '\\';
-    } else {
-      new_tenant_name_buf[pos++] = origin_tenant_name[i];
-    }
-  }
+  static const char *PROXY_CDC_MSGSERVICE_ADDR_SQL =
+    "SHOW CDC SERVER FOR CHANNEL %lu, STREAM '%s'";
 
-  if (pos != origin_tenant_name.length()) {
-    new_tenant_name.assign_ptr(new_tenant_name_buf, pos);
+static void get_tenant_name(const ObString &origin_tenant_name, char *new_tenant_name_buf, ObString &new_tenant_name) {
+  // All callers size new_tenant_name_buf to OB_MAX_TENANT_NAME_LENGTH * 2 + 1.
+  // Reject overlong input to prevent stack buffer overflow on attacker-controlled tenant_name.
+  // Callers should already gate on ObTableEntryName::is_valid(); this is defense in depth.
+  if (OB_UNLIKELY(origin_tenant_name.length() > OB_MAX_TENANT_NAME_LENGTH)) {
+    new_tenant_name = origin_tenant_name;
+    LOG_WDIAG("tenant name length exceeds limit, skip escape",
+              "length", origin_tenant_name.length(),
+              "limit", OB_MAX_TENANT_NAME_LENGTH);
+  } else {
+    new_tenant_name = origin_tenant_name;
+    int32_t pos = 0;
+    for (int64_t i = 0; i < origin_tenant_name.length(); i++) {
+      if (origin_tenant_name[i] == '\'') {
+        new_tenant_name_buf[pos++] = '\'';
+        new_tenant_name_buf[pos++] = '\'';
+      } else if (origin_tenant_name[i] == '\\') {
+        new_tenant_name_buf[pos++] = '\\';
+        new_tenant_name_buf[pos++] = '\\';
+      } else {
+        new_tenant_name_buf[pos++] = origin_tenant_name[i];
+      }
+    }
+    // Buffer is sized [OB_MAX_TENANT_NAME_LENGTH * 2 + 1]; pos <= length*2 <= buf_size - 1.
+    new_tenant_name_buf[pos] = '\0';
+
+    if (pos != origin_tenant_name.length()) {
+      new_tenant_name.assign_ptr(new_tenant_name_buf, pos);
+    }
   }
 }
 
@@ -356,6 +364,29 @@ int ObRouteUtils::get_table_entry_sql(char *sql_buf, const int64_t buf_len,
   return ret;
 }
 
+int ObRouteUtils::get_cdc_msgservice_addr_sql(char *sql_buf, const int64_t buf_len,
+                                              ObTableRouteParam &param)
+{
+  int ret = OB_SUCCESS;
+  int64_t len = 0;
+  if (OB_ISNULL(sql_buf) || OB_UNLIKELY(buf_len <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", LITERAL_K(sql_buf), K(buf_len), K(ret));
+  } else {
+    len = static_cast<int64_t>(snprintf(sql_buf, buf_len, PROXY_CDC_MSGSERVICE_ADDR_SQL,
+                                        param.cdc_msgservice_param_.get_channel_id(),
+                                        param.cdc_msgservice_param_.get_stream_name().ptr()));
+  }
+
+  if (OB_FAIL(ret)) {
+    // nothing
+  } else if (OB_UNLIKELY(len <= 0) || OB_UNLIKELY(len >= buf_len)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to fill sql", K(sql_buf), K(len), K(buf_len), K(ret));
+  }
+
+  return ret;
+}
 int ObRouteUtils::get_part_info_sql(char *sql_buf,
                                     const int64_t buf_len,
                                     const uint64_t table_id,
@@ -420,7 +451,7 @@ int ObRouteUtils::get_first_part_sql(char *sql_buf,
                    new_tenant_name.length(), new_tenant_name.ptr(),
                    INT64_MAX);
   } else {
-    char new_tenant_name_buf[OB_MAX_TENANT_INFO_LENGTH * 2 + 1];
+    char new_tenant_name_buf[OB_MAX_TENANT_NAME_LENGTH * 2 + 1];
     ObString new_tenant_name;
     get_tenant_name(name.tenant_name_, new_tenant_name_buf, new_tenant_name);
     len = snprintf(sql_buf, buf_len, PROXY_FIRST_PART_SQL_AFTER_OB_4352,
@@ -1660,7 +1691,7 @@ int ObRouteUtils::build_sys_dummy_entry(
 }
 
 
-int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
+int ObRouteUtils::build_and_add_sys_dummy_entry(const ObString &cluster_name,
                                                 const int64_t cluster_id,
                                                 const LocationList &locaiton_list,
                                                 const bool is_rslist)
@@ -1695,7 +1726,7 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
   return ret;
 }
 
-int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
+int ObRouteUtils::build_and_add_sys_dummy_entry(const ObString &cluster_name,
                                                 const int64_t cluster_id,
                                                 const ObIArray<ObAddr> &addr_list,
                                                 const ObIArray<ObAddr> &rpc_addr_list,
@@ -1717,6 +1748,162 @@ int ObRouteUtils::build_and_add_sys_dummy_entry(const common::ObString &cluster_
   return ret;
 }
 
+int ObRouteUtils::build_cdc_dummy_entry(
+    const ObString &cluster_name,
+    const ObString &tenant_name,
+    const LocationList &cdc_coordinator_list,
+    ObTableEntry *&entry)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(cdc_coordinator_list.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input value", K(cluster_name), K(tenant_name), K(cdc_coordinator_list), K(ret));
+  } else {
+    // there is need to set database name for __all_cdc_coordinator_dummy.
+    ObString database_name(OB_SYS_DATABASE_NAME);
+    ObString table_name(OB_ALL_CDC_COORDINATOR_DUMMY_TNAME);
+    ObTableEntryName name;
+    name.cluster_name_ = cluster_name;
+    name.tenant_name_ = tenant_name;
+    name.database_name_ = database_name;
+    name.table_name_ = table_name;
+    // cr_version and cluster_id should be 0
+    const int64_t belonged_cr_version = 0;
+    const int64_t cluster_id = 0;
+
+    ObProxyPartitionLocation *pp_location = NULL;
+    if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(name, belonged_cr_version, cluster_id, entry))) {
+      LOG_WDIAG("fail to alloc and init table entry", K(name), K(cluster_id), K(ret));
+    } else if (OB_ISNULL(pp_location = op_alloc(ObProxyPartitionLocation))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to allocate memory for ObProxyPartitionLocation", K(ret));
+    } else if (OB_FAIL(pp_location->set_replicas(cdc_coordinator_list))) {
+      LOG_WDIAG("fail to set replicas", K(cdc_coordinator_list), K(ret));
+    } else if (!cdc_coordinator_list.empty() && OB_UNLIKELY(!pp_location->is_valid())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("ppl should not unavailable", KPC(pp_location), K(ret));
+    } else {
+      entry->set_cdc_coordinator_entry(true);
+      entry->set_allow_empty_entry(false);
+      entry->set_part_num(1);
+      entry->set_replica_num(1);
+      entry->set_schema_version(0);
+      entry->set_tenant_id(OB_INVALID_TENANT_ID);
+      entry->set_table_id(0);
+      entry->set_table_type(MAX_TABLE_TYPE);
+      if (OB_FAIL(entry->set_first_partition_location(pp_location))) {
+        LOG_WDIAG("fail to set first partition location", K(ret));
+      } else {
+        pp_location = NULL; // set to NULL, if succ
+      }
+    }
+
+    if (OB_FAIL(ret)) {
+      if (NULL != entry) {
+        entry->dec_ref();
+        entry = NULL;
+      }
+    }
+    if (NULL != pp_location) {
+      op_free(pp_location);
+    }
+  }
+  return ret;
+}
+
+int ObRouteUtils::build_and_add_cdc_dummy_entry(const ObString &cluster_name,
+                                                const ObString &tenant_name,
+                                                const LocationList &locaiton_list)
+{
+  int ret = OB_SUCCESS;
+  ObTableEntry *entry = NULL;
+  ObTableCache &table_cache = get_global_table_cache();
+  if (OB_FAIL(build_cdc_dummy_entry(cluster_name, tenant_name, locaiton_list, entry))) {
+    LOG_WDIAG("fail to build cdc dummy entry", K(cluster_name), K(tenant_name),
+              K(locaiton_list), KP(entry), K(ret));
+  } else if (OB_ISNULL(entry) || OB_UNLIKELY(!entry->is_valid())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("entry can not be NULL here", KPC(entry), K(ret));
+  } else {
+    entry->inc_ref();
+    ObTableEntry *tmp_entry = entry;
+    bool direct_add = (NULL == this_ethread()) ? true : false;
+    if (OB_FAIL(table_cache.add_table_entry(*tmp_entry, direct_add))) {
+      LOG_WDIAG("fail to add table entry", KPC(tmp_entry), K(ret));
+    } else {
+      LOG_INFO("update sys tenant __all_cdc_coordinator_dummy succ", K(cluster_name), KPC(tmp_entry));
+    }
+    tmp_entry->dec_ref();
+    tmp_entry = NULL;
+  }
+
+  if (OB_FAIL(ret)) {
+    if (NULL != entry) {
+      entry->dec_ref();
+      entry = NULL;
+    }
+  }
+  return ret;
+}
+
+int ObRouteUtils::convert_ip_string_to_locations(const ObString &ip_port_list_string,
+                                                 LocationList &location_list)
+{
+  int ret = OB_SUCCESS;
+
+  ObSEArray<ObAddr, 4> addr_list;
+  if (OB_FAIL(convert_ip_string_to_addrs(ip_port_list_string, addr_list))) {
+    LOG_WDIAG("fail to convert to addrs", K(ip_port_list_string), K(ret));
+  } else if (OB_FAIL(convert_addrs_to_locations(addr_list, location_list))) {
+    LOG_WDIAG("fail to convert to locations", K(ip_port_list_string), K(ret));
+  }
+
+  return ret;
+}
+
+int ObRouteUtils::convert_ip_string_to_addrs(const ObString &ip_port_list_string,
+                                             ObIArray<ObAddr> &addr_list)
+{
+  int ret = OB_SUCCESS;
+
+  ObSEArray<ObString, 4> ip_port_list;
+  if (OB_FAIL(obproxy::split_string_by_char(ip_port_list_string, ip_port_list, ';'))) {
+    LOG_WDIAG("fail to split ip_port_list_string", K(ip_port_list_string), K(ret));
+  } else {
+    for (int64_t i = 0; OB_SUCC(ret) && i < ip_port_list.count(); ++i) {
+      ObAddr tmp_addr;
+
+      if (OB_FAIL(tmp_addr.parse_from_obtring(ip_port_list.at(i)))) {
+        LOG_WDIAG("fail to parse ip_port_string", K(tmp_addr), "ip_port_string", ip_port_list.at(i), K(ret));
+      } else if (OB_FAIL(addr_list.push_back(tmp_addr))) {
+        LOG_WDIAG("fail to push back tmp_addr", K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
+int ObRouteUtils::refresh_cdc_dummy_entry_by_config(const ObString &ip_port_list_string,
+                                                    const ObString &cluster_name,
+                                                    const ObString &tenant_name)
+{
+  int ret = OB_SUCCESS;
+
+  LocationList location_list;
+  if (OB_FAIL(convert_ip_string_to_locations(ip_port_list_string, location_list))) {
+    LOG_WDIAG("fail to convert to locations", K(ret));
+  } else if (OB_UNLIKELY(location_list.empty())) {
+    LOG_DEBUG("empty cdc coordinator list, ignore it", K(ip_port_list_string), K(cluster_name),
+              K(tenant_name));
+  } else if (OB_FALSE_IT(location_list.at(0).set_role(LEADER))) {
+    // treat first ip:port as leader
+  } else if (OB_FAIL(build_and_add_cdc_dummy_entry(cluster_name, tenant_name, location_list))) {
+    LOG_WDIAG("fail to add cdc dummy_entry", K(ret));
+  }
+
+  return ret;
+}
 
 int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
                                              const ObIArray<ObAddr> &rpc_addr_list,
@@ -1742,6 +1929,28 @@ int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
   return ret;
 }
 
+int ObRouteUtils::convert_addrs_to_locations(const ObIArray<ObAddr> &addr_list,
+                                             LocationList &location_list)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(addr_list.empty())) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid input vlue", K(addr_list), K(ret));
+  } else {
+    ObProxyReplicaLocation prl;
+    for (int64_t i = 0; (i < addr_list.count()) && OB_SUCC(ret); ++i) {
+      prl.reset();
+      prl.server_ = addr_list.at(i);
+      prl.role_ = FOLLOWER;
+      if (OB_FAIL(location_list.push_back(prl))) {
+        LOG_WDIAG("fail to push back replica location", K(prl), K(ret));
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObRouteUtils::convert_route_param_to_table_param(
     const ObRouteParam &route_param,
     ObTableRouteParam &table_param)
@@ -1754,6 +1963,8 @@ int ObRouteUtils::convert_route_param_to_table_param(
     table_param.name_.shallow_copy(route_param.name_);
     table_param.current_idc_name_ = route_param.current_idc_name_;//shallow copy
     table_param.force_renew_ = route_param.force_renew_;
+    table_param.force_use_cache_ = route_param.force_use_cache_;
+    table_param.skip_refresh_cache_ = route_param.skip_refresh_cache_;
     table_param.mysql_proxy_ = route_param.mysql_proxy_;
     table_param.cr_version_ = route_param.cr_version_;
     table_param.cr_id_ = route_param.cr_id_;
@@ -1765,6 +1976,7 @@ int ObRouteUtils::convert_route_param_to_table_param(
     table_param.set_route_diagnosis(route_param.route_diagnosis_);
     table_param.binlog_service_ip_ = route_param.binlog_service_ip_;
     table_param.is_single_partition_table_ = route_param.is_single_partition_table_;
+    table_param.cdc_msgservice_param_ = route_param.cdc_msgservice_param_;
   }
 
   return ret;
@@ -2372,7 +2584,7 @@ int ObRouteUtils::fetch_one_routine_entry_info(
 }
 
 int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
-                                    ObTableEntry &entry)
+                                     ObTableEntry &entry)
 {
   int ret = OB_SUCCESS;
   int64_t tmp_real_str_len = 0;
@@ -2400,7 +2612,7 @@ int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
     if (OB_SUCC(ret) && binlog_service_ok) {
       if (OB_FAIL(prl.add_addr(ip, port))) {
         LOG_WDIAG("invalid ip or port in fetching binlog entry", K(ret));
-      } else if (server_list.push_back(prl)) {
+      } else if (OB_FAIL(server_list.push_back(prl))) {
         LOG_WDIAG("fail to add server", K(prl), K(ret));
       }
     }
@@ -2420,6 +2632,82 @@ int ObRouteUtils::fetch_binlog_entry(ObResultSetFetcher &rs_fetcher,
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("ppl should not unavailabe", KPC(ppl), K(ret));
     } else {
+      if (ppl->is_valid()) {
+        if (OB_FAIL(entry.set_first_partition_location(ppl))) {
+          LOG_WDIAG("fail to set first partition location", K(ret));
+        } else {
+          ppl = NULL;
+        }
+      }
+    }
+  }
+
+  if (NULL != ppl) {
+    op_free(ppl);
+    ppl = NULL;
+  }
+
+  return ret;
+}
+
+int ObRouteUtils::fetch_cdc_msgservice_entry(ObResultSetFetcher &rs_fetcher,
+                                             ObTableEntry &entry)
+{
+  int ret = OB_SUCCESS;
+  int64_t tmp_real_str_len = 0;
+
+  const int64_t MAX_DISPLAY_STATE_LEN = 64;
+  char ip[OB_IP_PORT_STR_BUFF];
+  char state[MAX_DISPLAY_STATE_LEN];
+  int64_t port = 0;
+  ObProxyReplicaLocation prl;
+  ObProxyPartitionLocation *ppl = NULL;
+  ObSEArray<ObProxyReplicaLocation, 1> server_list;
+
+  while (OB_SUCC(ret) && OB_SUCC(rs_fetcher.next())) {
+    ip[0] = '\0';
+    state[0] = '\0';
+    prl.reset();
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "HOST", ip, OB_IP_PORT_STR_BUFF, tmp_real_str_len);
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "STATE", state, MAX_DISPLAY_STATE_LEN, tmp_real_str_len);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "DATA_PORT", port, int64_t);
+
+    if (OB_SUCC(ret)) {
+      if (OB_FAIL(prl.add_addr(ip, port))) {
+        LOG_WDIAG("invalid ip or port in fetching cdc msgservice entry", K(ret));
+      } else if (OB_FAIL(server_list.push_back(prl))) {
+        LOG_WDIAG("fail to add server", K(prl), K(ret));
+      }
+      LOG_DEBUG("get msgservice add", K(prl), "state", state);
+    }
+  }
+
+  if (OB_ITER_END == ret) {
+    ret = OB_SUCCESS;
+  }
+
+  if (OB_SUCC(ret) && !server_list.empty()) {
+    if (OB_ISNULL(ppl = op_alloc(ObProxyPartitionLocation))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to allocate memory for ObProxyPartitionLocation", K(ret));
+    } else if (OB_FAIL(ppl->set_replicas(server_list))) {
+      LOG_WDIAG("fail to set replicas", K(server_list), K(ret));
+    } else if (!server_list.empty() && OB_UNLIKELY(!ppl->is_valid())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("ppl should not unavailabe", KPC(ppl), K(ret));
+    } else {
+      // in normal case, msgservice addr won`t be more than 1
+      if (OB_UNLIKELY(server_list.count() > 1)) {
+        LOG_WDIAG("msgservice addr more than 1, maybe there are exceptions", K(server_list));
+      }
+
+      entry.set_allow_empty_entry(false);
+      entry.set_part_num(1);
+      entry.set_replica_num(1);
+      entry.set_schema_version(0);
+      entry.set_tenant_id(OB_INVALID_TENANT_ID);
+      entry.set_table_id(0);
+      entry.set_table_type(MAX_TABLE_TYPE);
       if (ppl->is_valid()) {
         if (OB_FAIL(entry.set_first_partition_location(ppl))) {
           LOG_WDIAG("fail to set first partition location", K(ret));

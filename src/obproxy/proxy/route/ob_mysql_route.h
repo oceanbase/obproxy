@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_MYSQL_ROUTE_H
@@ -98,16 +91,45 @@ inline void ObMysqlRouteResult::ref_reset()
   rpc_error_code_ = OB_SUCCESS;
 }
 
+class ObCdcMsgServiceParam
+{
+  // used for cdc msgservice
+public:
+  ObCdcMsgServiceParam() { reset(); };
+  ~ObCdcMsgServiceParam() = default;
+  ObCdcMsgServiceParam(ObCdcMsgServiceParam&) = default;
+  ObCdcMsgServiceParam(const ObCdcMsgServiceParam&) = default;
+  ObCdcMsgServiceParam& operator=(const ObCdcMsgServiceParam&) = default;
+
+  void reset() {
+    channel_id_ = 0;
+    stream_name_.reset();
+  }
+
+  int64_t get_channel_id() { return channel_id_; }
+  void set_channel_id(int64_t channel_id) {
+    channel_id_ = channel_id;
+  }
+
+  const common::ObString& get_stream_name() { return stream_name_; }
+  void set_stream_name(const common::ObString& stream_name) {
+    stream_name_ = stream_name;
+  }
+private:
+  int64_t channel_id_;
+  common::ObString stream_name_;
+};
+
 class ObRouteParam
 {
 public:
   ObRouteParam()
-    : cont_(NULL), name_(), force_renew_(false), use_lower_case_name_(false),
+    : cont_(NULL), name_(), force_renew_(false), force_use_cache_(false), skip_refresh_cache_(false), use_lower_case_name_(false),
       is_partition_table_route_supported_(false), need_pl_route_(false), is_oracle_mode_(false), is_single_partition_table_(false),
       is_need_force_flush_(false), result_(), mysql_proxy_(NULL), client_request_(NULL), client_info_(NULL),
       route_(NULL), cr_version_(-1), cr_id_(-1), tenant_version_(0), timeout_us_(-1), current_idc_name_(),
       cluster_version_(0), ob_rpc_req_(NULL), src_type_(OB_PROXY_ROUTE_FOR_SQL), route_diagnosis_(NULL),
-      binlog_service_ip_(), cr_(NULL) {}
+      binlog_service_ip_(), cdc_msgservice_param_(), cr_(NULL) {}
   ~ObRouteParam() { reset(); }
 
   void set_route_diagnosis(ObRouteDiagnosis *route_diagnosis);
@@ -123,6 +145,8 @@ public:
   // both table entry and partition entry from remote; indeedly,
   // only update partition entry is enough; TODO
   bool force_renew_;
+  bool force_use_cache_;
+  bool skip_refresh_cache_;
   bool use_lower_case_name_;
   bool is_partition_table_route_supported_;
   bool need_pl_route_;// whether try pl route
@@ -146,6 +170,7 @@ public:
   ObRouteDiagnosis *route_diagnosis_;
   common::ObString binlog_service_ip_;
 
+  ObCdcMsgServiceParam cdc_msgservice_param_;
 private:
   // for defense, ensure mysql_proxy_ is safely used
   obutils::ObClusterResource *cr_;
@@ -170,6 +195,8 @@ inline void ObRouteParam::reset()
   name_.reset();
   result_.reset();
   force_renew_ = false;
+  force_use_cache_ = false;
+  skip_refresh_cache_ = false;
   use_lower_case_name_ = false;
   is_oracle_mode_ = false;
   is_single_partition_table_ = false;

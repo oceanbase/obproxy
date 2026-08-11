@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  *
  * *************************************************************
  *
@@ -280,6 +273,17 @@ public:
    * @return       reamin untrimed bytes
    */
   int64_t trim(const int64_t len);
+
+  /**
+   * Attention: dangerous function!!!
+   * Write data into the inuse area at the given offset.
+   * @param offset  bytes from start() if >= 0, bytes from end() if < 0
+   *                (e.g. offset -2 writes at end() - 2)
+   * @param data    source data to write
+   * @param data_len length of data
+   * @return OB_SUCCESS, or error if out of inuse range
+   */
+  int direct_write_block_data(const int64_t offset, const char *data, const int64_t data_len);
 
   /**
    * Reset the inuse area. The start and end of the inuse area are reset

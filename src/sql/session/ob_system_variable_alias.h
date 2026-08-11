@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OCEANBASE_SQL_SESSION_OB_SYSTEM_VARIABLE_ALIAS_
@@ -95,6 +88,9 @@ namespace sql
   static const char* const OB_SV_ENABLE_TRANSMISSION_CHECKSUM = "ob_enable_transmission_checksum";
   static const char* const OB_SV_STATEMENT_TRACE_ID = "ob_statement_trace_id";
   static const char* const OB_SV_CLIENT_REROUTE_INFO = "ob_client_reroute_info";
+  // ColumnStore replica routing policy (OceanBase v4.6.0+)
+  // Values: OFF/AUTO/FORCE
+  static const char* const OB_SV_AP_QUERY_ROUTE_POLICY = "ap_query_route_policy";
   static const char* const OB_SV_NLS_DATE_FORMAT = "nls_date_format";
   static const char* const OB_SV_NLS_TIMESTAMP_FORMAT = "nls_timestamp_format";
   static const char* const OB_SV_NLS_TIMESTAMP_TZ_FORMAT = "nls_timestamp_tz_format";

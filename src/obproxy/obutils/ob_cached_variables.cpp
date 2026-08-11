@@ -1,19 +1,13 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
 #include "obutils/ob_cached_variables.h"
 #include "lib/time/ob_hrtime.h"
 #include "sql/session/ob_system_variable_alias.h"
+#include "opsql/parser/ob_proxy_parse_result.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::sql;
@@ -30,6 +24,9 @@ ObCachedVariables::ObCachedVariables()
   memset(cached_vars_, 0, sizeof(cached_vars_));
   cached_sql_mode_ = SMO_DEFAULT;
   tx_read_only_str_ = ObString::make_string("0");
+  // default ap_query_route_policy is AUTO
+  cached_vars_[CACHED_INT_VAR_AP_QUERY_ROUTE_POLICY].set_int(
+      static_cast<int64_t>(OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO));
 }
 
 // Keep the order with ObCachedVariableType
@@ -43,6 +40,7 @@ static const ObString type_names[CACHED_VAR_MAX + 1] = {
     ObString(OB_SV_LOWER_CASE_TABLE_NAMES),
     ObString(OB_SV_TX_READ_ONLY),
     ObString(OB_SV_READ_CONSISTENCY),
+    ObString(OB_SV_AP_QUERY_ROUTE_POLICY),
     ObString(OB_SV_COLLATION_CONNECTION),
     ObString(OB_SV_NCHARACTER_SET_CONNECTION),
     ObString(OB_SV_ENABLE_TRANSMISSION_CHECKSUM),
@@ -109,6 +107,7 @@ int ObCachedVariables::update_var(const ObCachedVariableType &type, const ObObj 
     case CACHED_INT_VAR_AUTOCOMMIT:
     case CACHED_INT_VAR_LOWER_CASE_TABLE_NAMES:
     case CACHED_INT_VAR_READ_CONSISTENCY:
+    case CACHED_INT_VAR_AP_QUERY_ROUTE_POLICY:
     case CACHED_INT_VAR_COLLATION_CONNECTION:
     case CACHED_INT_VAR_NCHARACTER_SET_CONNECTION:
     case CACHED_INT_VAR_ENABLE_TRANSMISSION_CHECKSUM: {

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_PARSER_H
@@ -99,6 +92,7 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.has_trace_log_hint_ = false;
   p.has_connection_id_ = false;
   p.has_sys_context_ = false;
+  p.has_force_master_hint_ = false;
   p.stmt_type_ = OBPROXY_T_INVALID;
   p.sub_stmt_type_ = OBPROXY_T_SUB_INVALID;
   p.stmt_count_ = 0;
@@ -119,6 +113,7 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.table_info_.join_table_alias_name_.str_len_ = 0;
 
   p.read_consistency_type_ = OBPROXY_READ_CONSISTENCY_INVALID;
+  p.ap_query_route_policy_type_ = OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID;
   p.cmd_info_.sub_type_ = OBPROXY_T_SUB_INVALID;
   p.cmd_info_.err_type_ = OBPROXY_T_ERR_INVALID;
   for (int64_t i = 0; i < OBPROXY_ICMD_MAX_VALUE_COUNT; ++i) {
@@ -187,6 +182,8 @@ inline void ObProxyParser::init_result_set(ObProxyParseResult &p)
 inline void ObProxyParser::init_result_others(ObProxyParseResult &p)
 {
   p.is_binlog_related_ = false;
+  p.is_cdc_coordinator_related_ = false;
+  p.is_cdc_coordinator_readonly_ = false;
   p.has_ever_set_anonymous_block_ = false;
   p.is_table_lock_related_ = false;
   p.is_xa_related_ = false;

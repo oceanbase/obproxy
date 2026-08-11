@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -464,7 +457,8 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
     const ObIArray<ObString> &proxy_primary_zone_name,
     const ObString &tenant_name,
     obutils::ObClusterResource *cluster_resource,
-    const ObRoutePolicyEnum &route_policy)
+    const ObRoutePolicyEnum &route_policy,
+    const bool is_force_columnstore_route)
 {
   int ret = OB_SUCCESS;
   entry_need_update = false;
@@ -486,7 +480,7 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
     if (NULL != pl && pl->is_valid()) {
       if (OB_FAIL(fill_item_array_from_pl(pl, ss_info, region_names, proxy_primary_zone_name, need_skip_leader_item,
                                           is_only_readwrite_zone, need_use_dup_replica, dummy_ldc, entry_need_update,
-                                          leader_item, tmp_item_array, route_policy))) {
+                                          leader_item, tmp_item_array, route_policy, is_force_columnstore_route))) {
         LOG_WDIAG("fail to fill item array from pl", K(ret));
       }
     } else if (cluster_resource != NULL
@@ -516,8 +510,14 @@ int ObLDCLocation::fill_strong_read_location(const ObProxyPartitionLocation *pl,
         const ObLDCItem &dummy_item = dummy_ldc.item_array_[j];
         int64_t priority = 0;
         // 请求不能发往日志型副本
-        if (dummy_item.is_used_
-            || not_allowed_replica_type(dummy_item.replica_->get_replica_type(), route_policy)) {
+        if (dummy_item.is_used_) {
+          //continue
+        } else if (is_force_columnstore_route
+                   && OB_NOT_NULL(dummy_item.replica_)
+                   && !dummy_item.replica_->is_columnstore_replica()) { // 列存force时，只选择columnstore副本
+          // strong read columnstore FORCE: ldc pool only keeps columnstore replicas
+        } else if (not_allowed_replica_type(dummy_item.replica_->get_replica_type(), route_policy,
+                                            is_force_columnstore_route)) {
           //continue
         } else if (is_only_readwrite_zone && common::ZONE_TYPE_READWRITE != dummy_item.zone_type_) {
           //do not use id
@@ -767,7 +767,8 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
                                            bool &entry_need_update,
                                            ObLDCItem &leader_item,
                                            LdcItemArrayType &tmp_item_array,
-                                           const ObRoutePolicyEnum &route_policy)
+                                           const ObRoutePolicyEnum &route_policy,
+                                           const bool is_force_columnstore_route)
 {
   int ret = OB_SUCCESS;
 
@@ -796,8 +797,12 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
             && !replica.is_leader()) {
           //do not use it
           need_use_it = false;
-        } else if (not_allowed_replica_type(replica.get_replica_type(), route_policy)) {
+        } else if (not_allowed_replica_type(replica.get_replica_type(), route_policy,
+                                            is_force_columnstore_route)) {
           // replica type logonly, pass it
+          need_use_it = false;
+        } else if (is_force_columnstore_route && !replica.is_leader() && !replica.is_columnstore_replica()) {
+          // 列存force时，不选择follower副本
           need_use_it = false;
         } else {
           tmp_item.set_partition_item(replica, dummy_item);
@@ -837,8 +842,10 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
                    "continue use it", K(replica));
           tmp_item.set(replica, default_merging_status, default_idc_type, default_zone_type,
                        true, default_congested_status); //without ldc, location will put into same_idc
-          if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
-            LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+          if (!is_force_columnstore_route || replica.is_columnstore_replica()) { // 列存force时，只选择columnstore副本
+            if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
+              LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
+            }
           }
         }
       } else {
@@ -851,6 +858,12 @@ int ObLDCLocation::fill_item_array_from_pl(const ObProxyPartitionLocation *pl,
               if (OB_FAIL(tmp_item_array.push_back(leader_item))) {
                 LOG_WDIAG("fail to push_back leader_item", K(leader_item), K(tmp_item_array), K(ret));
               }
+            }
+          }
+        } else if (is_force_columnstore_route) {
+          if (replica.is_columnstore_replica()) {
+            if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {
+              LOG_WDIAG("fail to push_back target_item", K(tmp_item), K(tmp_item_array), K(ret));
             }
           }
         } else if (OB_FAIL(tmp_item_array.push_back(tmp_item))) {

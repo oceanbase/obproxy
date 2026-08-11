@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -1337,6 +1330,10 @@ int ObClientSessionInfo::load_all_cached_variable()
         ret = OB_SUCCESS;
         obj.set_int(0);
         LOG_DEBUG("skip the variable max_execution_time because observer does not offer it");
+      } else if (name.case_compare(OB_SV_AP_QUERY_ROUTE_POLICY) == 0) {
+        ret = OB_SUCCESS;
+        obj.set_int(static_cast<int64_t>(OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO));
+        LOG_DEBUG("ap_query_route_policy not in default sys var set, use AUTO for compatibility");
       } else {
         LOG_WDIAG("get system variable value failed", K(name), K(obj), K(ret));
       }

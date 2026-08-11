@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "lib/allocator/ob_malloc.h"
@@ -30,13 +23,10 @@ namespace common
 
 #ifdef USING_ASAN
 
-static constexpr int64_t MOD_ID_SIZE = sizeof(int64_t);
-
 void *ob_malloc(const int64_t nbyte, const ObMemAttr &attr)
 {
-  void* ptr = ::malloc(MOD_ID_SIZE + nbyte);
+  void* ptr = ::malloc(nbyte);
   if (OB_NOT_NULL(ptr)) {
-    ptr = static_cast<void *>(static_cast<char*>(ptr) + MOD_ID_SIZE);
     get_global_mem_leak_checker().on_alloc(attr.mod_id_, get_global_mod_set().get_mod_name(attr.mod_id_), ptr, nbyte);
   }
   return ptr;
@@ -44,13 +34,9 @@ void *ob_malloc(const int64_t nbyte, const ObMemAttr &attr)
 
 void ob_free(void *ptr)
 {
-  abort_unless(reinterpret_cast<int64_t>(ptr) - MOD_ID_SIZE > 0);
-  int64_t mod_id = *reinterpret_cast<int64_t *>(static_cast<char*>(ptr) - MOD_ID_SIZE);
-  get_global_mem_leak_checker().on_free(mod_id, get_global_mod_set().get_mod_name(mod_id), ptr);
-  ptr = static_cast<void *>(static_cast<char*>(ptr) - MOD_ID_SIZE);
+  get_global_mem_leak_checker().on_free(ObModIds::OB_PROXY_UNKNOWN_MOD, "", ptr);
   ::free(ptr);
   ptr = NULL;
-
 }
 
 void *ob_realloc(void *ptr, const int64_t nbyte, const ObMemAttr &attr)

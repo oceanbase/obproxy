@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -30,6 +23,38 @@ namespace proxy
 
 #define MAX_BATCH_PARTION_IDS_NUM 50
 
+int ObTableEntryBatchFetchInfo::init()
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(batch_mutex_ = event::new_proxy_mutex())) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to alloc batch fetch mutex", K(ret));
+  } else if (OB_FAIL(batch_fetch_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM))) {
+    LOG_WDIAG("fail to create batch fetch tablet id set", K(ret));
+  } else if (OB_FAIL(remote_fetching_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM))) {
+    LOG_WDIAG("fail to create remote fetching tablet id set", K(ret));
+  }
+
+  if (OB_FAIL(ret)) {
+    destroy();
+  }
+  return ret;
+}
+
+void ObTableEntryBatchFetchInfo::destroy()
+{
+  if (batch_fetch_tablet_id_set_.created()) {
+    batch_fetch_tablet_id_set_.destroy();
+  }
+  if (remote_fetching_tablet_id_set_.created()) {
+    remote_fetching_tablet_id_set_.destroy();
+  }
+  if (NULL != batch_mutex_) {
+    batch_mutex_.release();
+  }
+  batch_fetch_cont_ = NULL;
+}
+
 int ObTableEntry::init(char *buf_start, const int64_t buf_len)
 {
   int ret = OB_SUCCESS;
@@ -39,12 +64,7 @@ int ObTableEntry::init(char *buf_start, const int64_t buf_len)
   } else if (OB_UNLIKELY(buf_len <= 0) || OB_ISNULL(buf_start)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
-  } else if (OB_ISNULL(batch_mutex_ = event::new_proxy_mutex())) { //must be inited
-    ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("invalid input value", K(buf_len), K(buf_start), K(ret));
   } else {
-    batch_fetch_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM); // maybe set by 
-    remote_fetching_tablet_id_set_.create(MAX_BATCH_PARTION_IDS_NUM);
     create_time_us_ = ObTimeUtility::current_time();
     buf_len_ = buf_len;
     buf_start_ = buf_start;
@@ -158,9 +178,10 @@ void ObTableEntry::free()
     }
   }
 
-  batch_fetch_tablet_id_set_.destroy();
-  remote_fetching_tablet_id_set_.destroy();
-  batch_mutex_.release();
+  if (NULL != batch_fetch_info_) {
+    op_free(batch_fetch_info_);
+    batch_fetch_info_ = NULL;
+  }
 
   is_need_force_flush_ = false;
 
@@ -219,9 +240,11 @@ void ObTableEntry::reuse()
   part_num_ = 0;
   replica_num_ = 0;
   // name_.reset();
-  batch_fetch_tablet_id_set_.reuse();
-  remote_fetching_tablet_id_set_.reuse();
-  batch_fetch_cont_ = NULL;
+  // not init batch_fetch_info_ by default when entry is reused
+  if (NULL != batch_fetch_info_) {
+    op_free(batch_fetch_info_);
+    batch_fetch_info_ = NULL;
+  }
 }
 
 int ObTableEntry::alloc_and_init_table_entry(
@@ -377,7 +400,7 @@ bool ObTableEntry::is_the_same_entry(const ObTableEntry &entry) const
   return bret;
 }
 
-int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id)
+int ObTableEntryBatchFetchInfo::put_batch_fetch_tablet_id(uint64_t tablet_id)
 {
   int ret = OB_SUCCESS; //always 0 
   event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
@@ -394,7 +417,7 @@ int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id)
 }
 
 //TODO will be used in ObBatchPartitionEntryCont
-int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id, int &count)
+int ObTableEntryBatchFetchInfo::put_batch_fetch_tablet_id(uint64_t tablet_id, int &count)
 {
   int ret = OB_SUCCESS; //always 0 
   count = 0; //0 means not put to batch set, > 0 batch size in set
@@ -414,7 +437,7 @@ int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id, int &count)
 }
 
 //TODO will be used in ObBatchPartitionEntryCont
-int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids)
+int ObTableEntryBatchFetchInfo::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids)
 {
   int ret = OB_SUCCESS;
   event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
@@ -433,7 +456,7 @@ int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids)
   return ret;
 }
 
-int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id)
+int ObTableEntryBatchFetchInfo::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id)
 {
   int ret = OB_SUCCESS;
   event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
@@ -473,7 +496,7 @@ int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int 
   return ret;
 }
 
-int ObTableEntry::remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force)
+int ObTableEntryBatchFetchInfo::remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force)
 {
   int ret = OB_SUCCESS;
   if (batch_ids.count() > 0) {
@@ -501,7 +524,7 @@ int ObTableEntry::remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &bat
   return ret;
 }
 
-int ObTableEntry::get_batch_fetch_size()
+int ObTableEntryBatchFetchInfo::get_batch_fetch_size()
 {
   int ret = 0; //0 means not put to batch set, > 0 batch size in set
   event::MUTEX_TRY_LOCK(lock, batch_mutex_, event::this_ethread());
@@ -512,10 +535,132 @@ int ObTableEntry::get_batch_fetch_size()
   return ret;
 } 
 
-void ObTableEntry::reset_batch_tablet_ids()
+void ObTableEntryBatchFetchInfo::reset_batch_tablet_ids()
 {
   MUTEX_LOCK(lock, batch_mutex_, event::this_ethread());
   batch_fetch_tablet_id_set_.reuse();
+}
+
+int ObTableEntry::get_or_create_batch_fetch_info(ObTableEntryBatchFetchInfo *&batch_fetch_info)
+{
+  int ret = OB_SUCCESS;
+  batch_fetch_info = batch_fetch_info_;
+  if (NULL == batch_fetch_info) {
+    ObTableEntryBatchFetchInfo *new_info = NULL;
+    if (OB_ISNULL(new_info = op_alloc(ObTableEntryBatchFetchInfo))) {
+      ret = OB_ALLOCATE_MEMORY_FAILED;
+      LOG_WDIAG("fail to alloc table entry batch fetch info", K(ret), KPC(this));
+    } else if (OB_FAIL(new_info->init())) {
+      LOG_WDIAG("fail to init table entry batch fetch info", K(ret), KPC(this));
+      op_free(new_info);
+      new_info = NULL;
+    } else if (ATOMIC_BCAS(&batch_fetch_info_, NULL, new_info)) {
+      batch_fetch_info = new_info;
+    } else {
+      op_free(new_info);
+      new_info = NULL;
+      batch_fetch_info = batch_fetch_info_;
+    }
+  }
+  return ret;
+}
+
+int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id)
+{
+  int ret = OB_SUCCESS;
+  ObTableEntryBatchFetchInfo *batch_fetch_info = NULL;
+  if (OB_FAIL(get_or_create_batch_fetch_info(batch_fetch_info))) {
+    LOG_WDIAG("fail to get or create batch fetch info", K(ret), K(tablet_id), KPC(this));
+  } else if (OB_FAIL(batch_fetch_info->put_batch_fetch_tablet_id(tablet_id))) {
+    LOG_WDIAG("fail to put batch fetch tablet id", K(ret), K(tablet_id), KPC(this));
+  }
+  return ret;
+}
+
+int ObTableEntry::put_batch_fetch_tablet_id(uint64_t tablet_id, int &count)
+{
+  int ret = OB_SUCCESS;
+  ObTableEntryBatchFetchInfo *batch_fetch_info = NULL;
+  if (OB_FAIL(get_or_create_batch_fetch_info(batch_fetch_info))) {
+    count = 0;
+    LOG_WDIAG("fail to get or create batch fetch info", K(ret), K(tablet_id), KPC(this));
+  } else if (OB_FAIL(batch_fetch_info->put_batch_fetch_tablet_id(tablet_id, count))) {
+    LOG_WDIAG("fail to put batch fetch tablet id", K(ret), K(tablet_id), K(count), KPC(this));
+  }
+  return ret;
+}
+
+int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids)
+{
+  int ret = OB_SUCCESS;
+  batch_ids.reset();
+  if (NULL != batch_fetch_info_) {
+    if (OB_FAIL(batch_fetch_info_->get_batch_fetch_tablet_ids(batch_ids))) {
+      LOG_WDIAG("fail to get batch fetch tablet ids", K(ret), KPC(this));
+    }
+  }
+  return ret;
+}
+
+int ObTableEntry::get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id)
+{
+  int ret = OB_NEED_RETRY;
+  batch_ids.reset();
+  if (NULL != batch_fetch_info_) {
+    if (OB_FAIL(batch_fetch_info_->get_batch_fetch_tablet_ids(batch_ids, max_count, tablet_id))) {
+      LOG_WDIAG("fail to get batch fetch tablet ids", K(ret), K(max_count), K(tablet_id), KPC(this));
+    }
+  }
+  return ret;
+}
+
+int ObTableEntry::remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force)
+{
+  int ret = OB_SUCCESS;
+  if (NULL != batch_fetch_info_) {
+    if (OB_FAIL(batch_fetch_info_->remove_pending_batch_fetch_tablet_ids(batch_ids, force))) {
+      LOG_WDIAG("fail to remove pending batch fetch tablet ids", K(ret), K(force), KPC(this));
+    }
+  } else {
+    batch_ids.reset();
+  }
+  return ret;
+}
+
+int ObTableEntry::get_batch_fetch_size()
+{
+  return NULL == batch_fetch_info_ ? 0 : batch_fetch_info_->get_batch_fetch_size();
+}
+
+void ObTableEntry::set_batch_fetch_cont(void *cont)
+{
+  int ret = OB_SUCCESS;
+  ObTableEntryBatchFetchInfo *batch_fetch_info = NULL;
+  if (OB_FAIL(get_or_create_batch_fetch_info(batch_fetch_info))) {
+    LOG_WDIAG("fail to get or create batch fetch info", K(ret), K(cont));
+  } else {
+    batch_fetch_info->set_batch_fetch_cont(cont);
+  }
+}
+
+void ObTableEntry::reset_batch_tablet_ids()
+{
+  if (NULL != batch_fetch_info_) {
+    batch_fetch_info_->reset_batch_tablet_ids();
+  }
+}
+
+event::ObProxyMutex *ObTableEntry::get_batch_fetch_mutex()
+{
+  event::ObProxyMutex *mutex = NULL;
+  ObTableEntryBatchFetchInfo *batch_fetch_info = NULL;
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(get_or_create_batch_fetch_info(batch_fetch_info))) {
+    LOG_WDIAG("fail to get or create batch fetch info", K(ret));
+  } else {
+    mutex = batch_fetch_info->get_batch_fetch_mutex();
+  }
+  return mutex;
 }
 
 } // end of namespace proxy

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_CONFIG_H
@@ -331,6 +324,7 @@ public:
   DEF_BOOL(enable_ob_protocol_v2_with_client, "false", "if enabled, proxy will use oceanbase protocol 2.0 with client", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_transaction_internal_routing, "true", "if enabled, proxy will route the dml statement in a transaction to different servers", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_full_link_trace, "false", "if enable proxy will use full link trace to trace query execution", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_db_to_extra_info, "false", "parse database from request SQL and attach to OceanBase 2.0 new extra info for observer (requires OB 2.0 protocol, server capability, and enable_db_to_extra_info)", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(compression_algorithm, "", "format: <algorithm_name>:<compression_level>, only support zlib:[0-9] now, compression level for compressed protocol and oceanbase 2.0 protocol, 0 will disable compression for compressed protocol and oceanbase 2.0 protocol", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_single_leader_node_routing, "false", "if enabled, proxy detect tenant's single leader node and route strong-read request to leader node", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_reroute, "false", "if this and protocol_v2 enabled, proxy will reroute when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
@@ -518,6 +512,10 @@ public:
 
   // binlog service
   DEF_STR(binlog_service_ip, "", "binlog service ip/hostname list, format ip1:sql_port1;hostname2:sql_port2, separate with ';'. prefer to use the forward", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_STR(cdc_coordinator_list, "", "cdc coordinator ip/hostname list, format ip1:sql_port1, separate with ';', the first ip:port will be treated as leader", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
+  DEF_BOOL(enable_refresh_cdc_coordinator, "true", "if enabled, obproxy will refresh cdc coordinator list for ob cluster periodly", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_TIME(cdc_coordinator_refresh_interval, "60s", "[1s,1h]", "cdc coordinator refresh interval, [1s, 1h]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_cdc_service, "true", "if enabled, obproxy will support route ob-cdc related sql to cdc cluster", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_STR(init_sql, "", "proxy will send init sql to observer after login success", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
 
   // session info verification with server

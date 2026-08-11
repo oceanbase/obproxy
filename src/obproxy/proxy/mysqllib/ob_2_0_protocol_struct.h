@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_OB20_PROTOCOL_STRUCT_H
@@ -30,6 +23,8 @@ const char * const OB_V20_PRO_EXTRA_KV_NAME_FULL_LINK_TRACE = "full_trc";
 const char * const OB_SESSION_INFO_VERI = "sess_ver";
 const char * const OB_TRACE_INFO_VAR_NAME = "ob_trace_info";
 const char * const OB_TRACE_INFO_CLIENT_IP = "client_ip";
+// varchar key mapped to PROXY_ONE_WAY_SYNC_INFO in ob20 new extra info (see fill_proto20_new_extra_info)
+const char * const OB_V20_PRO_EXTRA_KV_NAME_PROXY_ONE_WAY_SYNC = "prx_ows";
 
 
 /*
@@ -38,6 +33,10 @@ const char * const OB_TRACE_INFO_CLIENT_IP = "client_ip";
  * [0, 999] only for ob driver
  * [1001, 1999] only for obproxy
  * [2001, 65535] common for observer + obclient + obproxy
+ *
+ * Note: range above describes reservation, not transfer direction.
+ * - FEEDBACK_PROXY_INFO(1001) is observer -> proxy only (asymmetric)
+ * - PROXY_ONE_WAY_SYNC_INFO(2005) is proxy -> observer only (asymmetric)
  */
 enum Ob20NewExtraInfoProtocolKeyType {
   OB20_DRIVER_END = 1000,
@@ -47,6 +46,7 @@ enum Ob20NewExtraInfoProtocolKeyType {
   SESS_INFO = 2002,
   FULL_TRC = 2003,
   SESS_INFO_VERI = 2004,
+  PROXY_ONE_WAY_SYNC_INFO = 2005,
 
   OB20_SVR_END,
 };
@@ -95,6 +95,11 @@ enum FeedbackProxyInfoType {
   IS_LOCK_SESSION = 0,
   IS_TEMPORARY_TABLE_SESSION,
   FEEDBACK_PROXY_MAX_TYPE,
+};
+
+// nested kv inside PROXY_ONE_WAY_SYNC_INFO value (uint16 type + uint32 len + payload), same layout as feedback proxy info
+enum Ob20ProxyOneWaySyncSubType {
+  OB20_PROXY_ONE_WAY_SYNC_SQL_DATABASE = 0,
 };
 
 // all feedback info from observer in extra info should define here

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY_TXN
@@ -78,6 +71,26 @@ namespace proxy
 #define MYSQL_SUM_TIME_STAT(X, cost) update_stat(s, X, cost);
 #define GET_MULTI_CONFIG(sm, config)  (OB_NOT_NULL((sm)->multi_level_config_) ? &((sm)->multi_level_config_->config##_) : NULL)
 
+struct ObMysqlTransact::ObPlRouteSelection
+{
+  ObPlRouteSelection(const ObConsistencyLevel consistency_level,
+                     const ObRoutePolicyEnum route_policy,
+                     const omt::ObTargetReplicaType *target_replica_type)
+      : route_consistency_level_(consistency_level),
+        effective_route_policy_(route_policy),
+        effective_target_replica_type_(target_replica_type),
+        force_target_replica_type_(),
+        is_force_columnstore_route_(false)
+  {
+  }
+
+  ObConsistencyLevel route_consistency_level_;
+  ObRoutePolicyEnum effective_route_policy_;
+  const omt::ObTargetReplicaType *effective_target_replica_type_;
+  omt::ObTargetReplicaType force_target_replica_type_;
+  bool is_force_columnstore_route_;
+};
+
 bool ObMysqlTransact::is_in_trans(ObTransState &s)
 {
   // if a trans is commit, the state will be set to TRANSACTION_COMPLETE,
@@ -115,9 +128,10 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
   if (OB_UNLIKELY(s.sm_->handling_internal_request_)) {
     LOG_DEBUG("inernal request, ignore trans state");
     s.sm_->handling_internal_request_ = false;
-  } else if (OB_UNLIKELY(ObMysqlTransact::is_binlog_request(s))) {
-    // binlog不影响事务状态的记录
-    LOG_DEBUG("binlog request, ignore trans state");
+  } else if (OB_UNLIKELY(ObMysqlTransact::is_binlog_request(s)
+                         || ObMysqlTransact::is_cdc_request(s))) {
+    // binlog 和 cdc 请求不影响事务状态的记录
+    LOG_DEBUG("binlog and cdc request, ignore trans state");
   } else if (OB_UNLIKELY(!client_session->is_proxy_enable_trans_internal_routing())) {
     client_session->set_last_request_in_trans(is_in_trans);
     LOG_DEBUG("not support trans internal routing");
@@ -312,15 +326,17 @@ ObConsistencyLevel ObMysqlTransact::ObTransState::get_trans_consistency_level(
    * when chose read_consistency, we use the follower rules:
    * 1. if in trans, use strong
    * 2. if it is inner connection or non select_read_only_stmt, use strong
-   * 3. else get result by sql_hint and sys_var, like the followers
+   * 3. else get result by priority: sql_hint > FORCE_MASTER > sys_var > read_write_split
    *
-   *     sql_hint       sys_var     result
-   *     ---------------------------------
-   *     strong         *           strong
-   *     weak           *           weak
-   *     NULL/others    strong      strong
-   *     NULL/others    weak        weak
-   *     NULL/others    other       strong
+   *     sql_hint       FORCE_MASTER  sys_var     read_write_split  result
+   *     -----------------------------------------------------------------
+   *     strong         *             *           *                 strong
+   *     weak           *             *           *                 weak
+   *     NULL/others    yes           *           *                 strong
+   *     NULL/others    no            weak        *                 weak
+   *     NULL/others    no            strong      weak              weak
+   *     NULL/others    no            strong      strong            strong
+   *     NULL/others    no            other       *                 strong
    *
    * */
   ObConsistencyLevel ret_level = common::STRONG;
@@ -337,17 +353,20 @@ ObConsistencyLevel ObMysqlTransact::ObTransState::get_trans_consistency_level(
       const ObConsistencyLevel read_write_consistence_level = get_read_write_consistency_level(cs_info);
       if (common::STRONG == sql_hint || common::WEAK == sql_hint) {
         ret_level = sql_hint;
+      } else if (trans_info_.client_request_.get_parse_result().has_force_master_comment()) {
+        ret_level = common::STRONG;
+        PROXY_LOG(DEBUG, "FORCE_MASTER comment forces strong read",
+                  "sys_var", get_consistency_level_str(sys_var),
+                  "read_write_consistence_level", read_write_consistence_level);
+      } else if (common::WEAK == sys_var) {
+        ret_level = sys_var;
       } else {
-        if (common::WEAK == sys_var) {
-          ret_level = sys_var;
-        } else {
-          if (common::STRONG == read_write_consistence_level || common::WEAK == read_write_consistence_level) {
-            ret_level = read_write_consistence_level;
-          }
-          if (common::STRONG != sys_var) {
-            PROXY_LOG(DEBUG, "unsupport ob_read_consistency vars, maybe proxy is old, use strong read "
-                    "instead", "sys_var", get_consistency_level_str(sys_var));
-          }
+        if (common::STRONG == read_write_consistence_level || common::WEAK == read_write_consistence_level) {
+          ret_level = read_write_consistence_level;
+        }
+        if (common::STRONG != sys_var) {
+          PROXY_LOG(DEBUG, "unsupport ob_read_consistency vars, maybe proxy is old, use strong read "
+                  "instead", "sys_var", get_consistency_level_str(sys_var));
         }
       }
       if (common::WEAK == ret_level) {
@@ -741,7 +760,16 @@ void ObMysqlTransact::handle_send_ps_close_reset_server(ObTransState &s,
   } else if (need_rewrite_login_req) {
     // 跳转到切换集群资源
     client_session->set_first_handle_ps_close_reset_request(false);
-    TRANSACT_RETURN(SM_ACTION_SETUP_GET_CLUSTER_RESOURCE, handle_pl_lookup)
+    // 移除当前 address，防止 rewrite 后循环回来重复处理同一 address 导致死循环
+    if (OB_FAIL(cs_info.remove_request_send_addr(addr.sa_))) {
+      LOG_WDIAG("fail to remove_request_send_addr", K(addr), K(ret));
+    } else if (using_service_name && OB_FAIL(tenant_name_array.remove(addr_index))) {
+      LOG_WDIAG("fail to remove send tenant", K(addr_index), K(addr), K(ret));
+    } else if (using_service_name && OB_FAIL(cluster_name_array.remove(addr_index))) {
+      LOG_WDIAG("fail to remove send cluster", K(addr_index), K(addr), K(ret));
+    } else {
+      TRANSACT_RETURN(SM_ACTION_SETUP_GET_CLUSTER_RESOURCE, handle_pl_lookup);
+    }
   } else {
     /* 如果不需要路由, 并且要发送的 server 里没有 last server sesion, 则迁移 */
     if (!s.is_need_pl_lookup() && !is_need_send_to_last_ss
@@ -1516,6 +1544,27 @@ void ObMysqlTransact::handle_fetch_request(ObTransState &s)
   TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
 }
 
+int ObMysqlTransact::check_force_master_ob20_protocol(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+  const ObSqlParseResult &parse_result = s.trans_info_.client_request_.get_parse_result();
+  if (parse_result.has_force_master_comment()
+      && (parse_result.is_select_stmt() || parse_result.is_text_ps_select_stmt())
+      && STRONG == s.get_trans_consistency_level(s.sm_->get_client_session()->get_session_info())
+      && ObProxyProtocol::PROTOCOL_OCEANBASE_20 != s.sm_->get_server_session_protocol()) {
+    int tmp_ret = OB_NOT_SUPPORTED;
+    s.mysql_errcode_ = OB_NOT_SUPPORTED;
+    s.mysql_errmsg_ = "/* FORCE_MASTER */ comment with OceanBase 2.0 protocol disabled is not supported, please set server_protocol to 'OceanBase 2.0'";
+    if (OB_FAIL(encode_error_message(s))) {
+      LOG_WDIAG("fail to build err packet for FORCE_MASTER without OB20", K(ret));
+    }
+    if (OB_SUCC(ret)) {
+      ret = tmp_ret;
+    }
+  }
+  return ret;
+}
+
 void ObMysqlTransact::handle_target_db_not_allow(ObTransState &s)
 {
   int ret = OB_SUCCESS;
@@ -1676,6 +1725,8 @@ void ObMysqlTransact::handle_request(ObTransState &s)
     TRANSACT_RETURN(SM_ACTION_INTERNAL_REQUEST, handle_internal_request);
   } else if (OB_UNLIKELY(is_binlog_request(s))) {
     handle_binlog_request(s);
+  } else if (OB_UNLIKELY(is_cdc_request(s))) {
+    TRANSACT_RETURN(SM_ACTION_CDC_COORDINATOR_LOCATION_LOOKUP, handle_cdc_location_lookup);
   } else {
     if (OB_UNLIKELY(get_global_performance_params().enable_stat_)) {
       if (obmysql::OB_MYSQL_COM_QUERY == s.trans_info_.sql_cmd_) {
@@ -2009,15 +2060,20 @@ int ObMysqlTransact::extract_partition_info(ObTransState &s, ObRouteInfoType *ty
           if (OB_SUCCESS != cs_info.get_database_name(database_name)) {
             database_name = OB_SYS_DATABASE_NAME;
           }
-          if (OB_FAIL(parse_result.set_real_db_name(database_name))) {
-            LOG_WDIAG("parse result set db name failed", K(ret));
-          }
         } else {
           is_database_name_from_parser = true;
+          database_name = parse_result.get_database_name();
         }
 
         if (OB_SUCC(ret)) {
-          database_name = parse_result.get_database_name();
+          if (OB_FAIL(s.set_real_database_name(database_name))) {
+            LOG_WDIAG("fail to set real database name", K(database_name), K(ret));
+          } else {
+            database_name = s.get_real_database_name();
+          }
+        }
+
+        if (OB_SUCC(ret)) {
           package_name = parse_result.get_package_name();
           if (OB_UNLIKELY(!package_name.empty())) {
             is_package_name_from_parser = true;
@@ -3006,6 +3062,18 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
 #endif
       bool fill_addr = false;
 
+      // ap_query_route_policy=FORCE: for user SELECT, try route to ColumnStore replica.
+      // Safe strategy: default rowstore; only FORCE triggers columnstore routing.
+      ObPlRouteSelection route_selection(
+          consistency_level,
+          route_policy,
+          GET_MULTI_CONFIG(s.sm_, route_target_replica_type));
+      try_columnstore_force_route(s, parse_result, route_selection);
+      if (route_selection.is_force_columnstore_route_) {
+        // 列存副本路由优先级高于复制表路由
+        use_dup_replica = false;
+      }
+
       // if not support safe_weak_read snapshot version, we should disable sort by priority
       if (OB_UNLIKELY(common::WEAK == consistency_level)) {
         if (!s.sm_->is_causal_order_read_enabled()) {
@@ -3019,7 +3087,9 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
           LOG_DEBUG("safe weak read is enabled");
         }
       } else {
-        if (common::STRONG == consistency_level && 1 == s.pll_info_.pl_attempts_
+        if (common::STRONG == consistency_level
+          && !route_selection.is_force_columnstore_route_ // 列存force不走leader
+          && 1 == s.pll_info_.pl_attempts_
           && NULL != s.pll_info_.route_.table_entry_
           && !s.pll_info_.route_.table_entry_->is_dummy_entry()
           && !use_dup_replica
@@ -3047,14 +3117,19 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
         get_region_name_and_server_info(s, simple_servers_info, region_names);
         ObSEArray<ObString, 5> zone_array;
         ObZoneWeakReadWeight *weight_zone = NULL;
-        if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_policy) {
+        if (WEAKREAD_WEIGHT_LOAD_BALANCE == route_selection.effective_route_policy_) {
           weight_zone = GET_MULTI_CONFIG(s.sm_, weakread_weight_zone);
         }
         if (OB_FAIL(get_proxy_primary_zone_array(zone, zone_array))) {
           LOG_WDIAG("fail to fill proxy primary zone array", K(ret));
-        } else if (OB_FAIL(s.pll_info_.route_.fill_replicas(
+        } else {
+          if (route_selection.is_force_columnstore_route_ && common::STRONG == consistency_level) {
+            s.pll_info_.route_.set_force_columnstore_route(true);
+          }
+          if (OB_FAIL(s.pll_info_.route_.fill_replicas(
                       consistency_level,
-                      route_policy,
+                      route_selection.is_force_columnstore_route_
+                          ? route_selection.effective_route_policy_ : route_policy,
                       is_random_routing_mode,
                       disable_merge_status_check,
                       s.sm_->client_session_,
@@ -3063,106 +3138,108 @@ void ObMysqlTransact::handle_pl_lookup(ObTransState &s)
                       region_names,
                       zone_array,
                       weight_zone,
-                      GET_MULTI_CONFIG(s.sm_, route_target_replica_type)
+                      route_selection.is_force_columnstore_route_
+                          ? route_selection.effective_target_replica_type_
+                          : GET_MULTI_CONFIG(s.sm_, route_target_replica_type)
 #if OB_DETAILED_SLOW_QUERY
                       ,
                       s.sm_->cmd_time_stats_.debug_random_time_,
                       s.sm_->cmd_time_stats_.debug_fill_time_
 #endif
                 ))) {
-          LOG_WDIAG("fail to fill replicas", K(ret));
-        } else {
+            LOG_WDIAG("fail to fill replicas", K(ret));
+          } else {
 #if OB_DETAILED_SLOW_QUERY
           t2 = get_based_hrtime(s);
           s.sm_->cmd_time_stats_.debug_total_fill_time_ += milestone_diff(t1, t2);
           t1 = t2;
 #endif
 
-          int32_t attempt_count = 0;
-          bool found_leader_force_congested = false;
-          bool is_all_stale = false;
-          ObReadStaleParam param;
-          build_read_stale_param(s, param);
-          // is_all_iterate_once会判断leader是否使用，对复制表、proxy_primary_zone不会填充leader_item
-          // 所以无需校验leader_item
-          bool is_need_check_leader_item = true;
-          if (use_dup_replica || !zone_array.empty()) {
-            is_need_check_leader_item = false;
-          }
-          if (OB_FAIL(s.pll_info_.get_next_avail_replica(s.force_retry_congested_, attempt_count, found_leader_force_congested, param, is_all_stale, replica))) {
-            LOG_WDIAG("fail to get next avail replica", K(ret));
-          } else {
-            s.current_.attempts_ += attempt_count;
-            if ((NULL == replica) && s.pll_info_.is_all_iterate_once(is_need_check_leader_item)) { // next round
-              if (is_all_stale && common::WEAK == consistency_level) {
-                LOG_INFO("all available replica staled or congested, route weak read request to leader", "route", s.pll_info_.route_);
-                s.pll_info_.reset_cursor();
-                if (NULL != s.pll_info_.route_.table_entry_) {
-                  set_route_leader_replica(s, replica);
-                }
-                if (replica == NULL) {
+            int32_t attempt_count = 0;
+            bool found_leader_force_congested = false;
+            bool is_all_stale = false;
+            ObReadStaleParam param;
+            build_read_stale_param(s, param);
+            // is_all_iterate_once会判断leader是否使用，对复制表、proxy_primary_zone不会填充leader_item
+            // 所以无需校验leader_item
+            bool is_need_check_leader_item = true;
+            if (use_dup_replica || !zone_array.empty()) {
+              is_need_check_leader_item = false;
+            }
+            if (OB_FAIL(s.pll_info_.get_next_avail_replica(s.force_retry_congested_, attempt_count, found_leader_force_congested, param, is_all_stale, replica))) {
+              LOG_WDIAG("fail to get next avail replica", K(ret));
+            } else {
+              s.current_.attempts_ += attempt_count;
+              if ((NULL == replica) && s.pll_info_.is_all_iterate_once(is_need_check_leader_item)) { // next round
+                if (is_all_stale && common::WEAK == consistency_level) {
+                  LOG_INFO("all available replica staled or congested, route weak read request to leader", "route", s.pll_info_.route_);
+                  s.pll_info_.reset_cursor();
+                  if (NULL != s.pll_info_.route_.table_entry_) {
+                    set_route_leader_replica(s, replica);
+                  }
+                  if (replica == NULL) {
+                    s.force_retry_congested_ = true;
+                    LOG_INFO("no avail replica found, try again");
+                    replica = s.pll_info_.get_next_avail_replica();
+                  }
+                } else {
+                  // if we has tried all servers, do force retry in next round
+                  LOG_INFO("all replica is force_congested, force retry congested now",
+                            "route", s.pll_info_.route_);
+                  s.pll_info_.reset_cursor();
                   s.force_retry_congested_ = true;
-                  LOG_INFO("no avail replica found, try again");
+                  // get replica again
                   replica = s.pll_info_.get_next_avail_replica();
                 }
-              } else {
-                // if we has tried all servers, do force retry in next round
-                LOG_INFO("all replica is force_congested, force retry congested now",
-                          "route", s.pll_info_.route_);
-                s.pll_info_.reset_cursor();
-                s.force_retry_congested_ = true;
-                // get replica again
-                replica = s.pll_info_.get_next_avail_replica();
               }
             }
-          }
 
 #if OB_DETAILED_SLOW_QUERY
           t2 = get_based_hrtime(s);
           s.sm_->cmd_time_stats_.debug_get_next_time_ += milestone_diff(t1, t2);
           t1 = t2;
 #endif
-          if (OB_ISNULL(replica)) {
-            // 1. 对指定副本路由，没指定F副本下；2. 权重路由的zone为空；上述返回err_msg便于排查问题
-            if (OB_NOT_NULL(GET_MULTI_CONFIG(s.sm_, route_target_replica_type))
-                && ((is_target_replica_route(route_policy)
-                    && !GET_MULTI_CONFIG(s.sm_, route_target_replica_type)->is_exist_full_replica())
-                    || (is_weight_load_balance_route(route_policy)
-                        && !GET_MULTI_CONFIG(s.sm_, weakread_weight_zone)->is_valid()))) {
-              const omt::ObTargetReplicaType &target_replica_type = *GET_MULTI_CONFIG(s.sm_, route_target_replica_type);
-              handle_not_exist_replica(s, target_replica_type, route_policy);
-              ret = OB_NO_REPLICA_VALID;
+            if (OB_ISNULL(replica)) {
+              // 1. 对指定副本路由，没指定F副本下；2. 权重路由的zone为空；上述返回err_msg便于排查问题
+              if (OB_NOT_NULL(route_selection.effective_target_replica_type_)
+                  && ((is_target_replica_route(route_selection.effective_route_policy_)
+                      && !route_selection.effective_target_replica_type_->is_exist_full_replica())
+                      || (is_weight_load_balance_route(route_selection.effective_route_policy_)
+                          && !GET_MULTI_CONFIG(s.sm_, weakread_weight_zone)->is_valid()))) {
+                const omt::ObTargetReplicaType &target_replica_type = *route_selection.effective_target_replica_type_;
+                handle_not_exist_replica(s, target_replica_type, route_selection.effective_route_policy_);
+                ret = OB_NO_REPLICA_VALID;
+              } else {
+                ObString route_policy_string = get_route_policy_enum_string(route_selection.effective_route_policy_);
+                COLLECT_INTERNAL_DIAGNOSIS(
+                    s.sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
+                    OB_PROXY_INTERNAL_ERROR,
+                    "proxy routing find no avail replicas route policy:%s, "
+                    "valid replicas count:%ld, ss_info count:%ld",
+                    route_policy_string.ptr(), s.pll_info_.route_.replica_size(), simple_servers_info.count());
+                ret = OB_ERR_UNEXPECTED;
+                LOG_WDIAG("no replica avail", K(replica), K(ret));
+              }
             } else {
-              ObString route_policy_string = get_route_policy_enum_string(route_policy);
-              COLLECT_INTERNAL_DIAGNOSIS(
-                  s.sm_->connection_diagnosis_trace_, OB_PROXY_INTERNAL_TRACE,
-                  OB_PROXY_INTERNAL_ERROR,
-                  "proxy routing find no avail replicas route policy:%s, "
-                  "valid replicas count:%ld, ss_info count:%ld",
-                  route_policy_string.ptr(), s.pll_info_.route_.replica_size(), simple_servers_info.count());
-              ret = OB_ERR_UNEXPECTED;
-              LOG_WDIAG("no replica avail", K(replica), K(ret));
+              s.server_info_.set_addr(ops_ip_sa_cast(replica->server_.get_sockaddr()));
+              LOG_DEBUG("get replica by pl lookup, set addr", K(s.server_info_.addr_),
+                        "is_proxy_mysql_client", s.sm_->client_session_->is_proxy_mysql_client());
             }
-          } else {
-            s.server_info_.set_addr(ops_ip_sa_cast(replica->server_.get_sockaddr()));
-            LOG_DEBUG("get replica by pl lookup, set addr", K(s.server_info_.addr_),
-                      "is_proxy_mysql_client", s.sm_->client_session_->is_proxy_mysql_client());
-          }
 
-          if (found_leader_force_congested) {
-            ObProxyMutex *mutex_ = s.sm_->mutex_; // for stat
-            PROCESSOR_INCREMENT_DYN_STAT(UPDATE_ROUTE_ENTRY_BY_CONGESTION);
-            // when leader first router && (leader was congested from server or dead congested),
-            // we need set forceUpdateTableEntry to avoid senseless of leader migrate
-            if (s.pll_info_.set_target_dirty()) {
-              LOG_INFO("leader is force_congested in strong read, set it to dirty "
-                       "and wait for updating",
-                       "addr", s.server_info_.addr_,
-                       "route", s.pll_info_.route_);
+            if (found_leader_force_congested) {
+              ObProxyMutex *mutex_ = s.sm_->mutex_; // for stat
+              PROCESSOR_INCREMENT_DYN_STAT(UPDATE_ROUTE_ENTRY_BY_CONGESTION);
+              // when leader first router && (leader was congested from server or dead congested),
+              // we need set forceUpdateTableEntry to avoid senseless of leader migrate
+              if (s.pll_info_.set_target_dirty()) {
+                LOG_INFO("leader is force_congested in strong read, set it to dirty "
+                        "and wait for updating",
+                        "addr", s.server_info_.addr_,
+                        "route", s.pll_info_.route_);
+              }
             }
           }
         }
-      } else {
       }
       if (OB_NOT_NULL(diagnosis_route_policy)) {
         diagnosis_route_policy->opt_route_policy_ = s.pll_info_.route_.ldc_route_.policy_;
@@ -3665,8 +3742,9 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
     bool is_last_packet = false;
     const bool need_reroute = is_need_reroute(s);
     const bool is_weak_read = (WEAK == s.sm_->trans_state_.get_trans_consistency_level(s.sm_->get_client_session()->get_session_info()));
-    ObSEArray<ObObJKV, 3> extra_info;
+    ObSEArray<ObObJKV, 4> extra_info;
     ObSqlString sess_info_value;
+    ObSqlString proxy_one_way_sync_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
     char flt_info_buf[SERVER_FLT_INFO_BUF_MAX_LEN] = "\0";
     char sess_info_veri_buf[OB_SESS_INFO_VERI_BUF_MAX] = "\0";
@@ -3696,7 +3774,8 @@ int ObMysqlTransact::build_oceanbase_ob20_user_request(ObTransState &s, ObMIOBuf
                       client_ip_buf, MAX_IP_BUFFER_LEN,
                       total_flt_info_buf, total_flt_info_buf_len,
                       sess_info_veri_buf, OB_SESS_INFO_VERI_BUF_MAX,
-                      sess_info_value, true, is_proxy_switch_route))) {
+                      sess_info_value, proxy_one_way_sync_value,
+                      true, is_proxy_switch_route))) {
           LOG_WDIAG("fail to build related extra info", K(ret));
         } else {
           generated_extra_info = true;
@@ -3886,7 +3965,7 @@ int ObMysqlTransact::build_server_request(ObTransState &s, ObIOBufferReader *&re
       }
 
       case SERVER_SEND_SAVED_LOGIN:
-        if (is_binlog_request(s)) {
+        if (is_binlog_request(s) || is_cdc_request(s)) {
           build_func = ObMysqlRequestBuilder::build_binlog_login_packet;
         } else if (s.sm_->client_session_->get_session_info().is_oceanbase_server()) {
           // write the buffor using saved login packet directly
@@ -7132,10 +7211,10 @@ void ObMysqlTransact::handle_retry_server_connection(ObTransState &s)
   s.sm_->api_.txn_destroy_hook(OB_MYSQL_RESPONSE_TRANSFORM_HOOK);
 
   // binlog 请求也不支持重试
-  if (OB_UNLIKELY(is_binlog_request(s))) {
+  if (OB_UNLIKELY(is_binlog_request(s) || is_cdc_request(s))) {
     COLLECT_INTERNAL_DIAGNOSIS(
         s.sm_->connection_diagnosis_trace_, obutils::OB_PROXY_INTERNAL_TRACE,
-        OB_PROXY_NO_NEED_RETRY, "binlog request is unable to retry");
+        OB_PROXY_NO_NEED_RETRY, "binlog and cdc request is unable to retry");
     handle_server_connection_break(s);
   } else if (OB_UNLIKELY(!s.sm_->client_session_->get_session_info().is_oceanbase_server())) {
     COLLECT_INTERNAL_DIAGNOSIS(
@@ -7451,8 +7530,10 @@ inline void ObMysqlTransact::handle_server_connection_break(ObTransState &s)
 
 void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
 {
+
+  const char* send_action_name = ObMysqlTransact::get_send_action_name(s.current_.send_action_);
   LOG_DEBUG("[ObMysqlTransact::handle_on_forward_server_response]",
-            "cur_send_action", ObMysqlTransact::get_send_action_name(s.current_.send_action_),"startm trans", s.is_hold_start_trans());
+            "cur_send_action", send_action_name, "startm trans", s.is_hold_start_trans());
 
   switch (s.current_.send_action_) {
     case SERVER_SEND_HANDSHAKE: {
@@ -7655,7 +7736,12 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
         break;
       } else if (client_info.is_oceanbase_server()) {
         bool is_proxy_mysql_client = s.sm_->client_session_->is_proxy_mysql_client();
-        if (is_binlog_request(s)) {
+        if (OB_UNLIKELY(is_cdc_request(s))) {
+          s.current_.send_action_ = SERVER_SEND_REQUEST;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          LOG_DEBUG("cdc send request directly");
+          break;
+        } else if (is_binlog_request(s)) {
           if (client_info.need_reset_session_vars(server_info)) {
             s.current_.send_action_ = SERVER_SEND_SESSION_VARS;
             s.next_action_ = SM_ACTION_API_SEND_REQUEST;
@@ -7746,7 +7832,12 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
     case SERVER_SEND_XA_START:
     case SERVER_SEND_START_TRANS:
     case SERVER_SEND_INIT_SQL: {
-      if (is_binlog_request(s)) {
+      if (OB_UNLIKELY(is_cdc_request(s))) {
+        s.current_.state_ = INTERNAL_ERROR;
+        handle_server_connection_break(s);
+        LOG_EDIAG("unexpected action for cdc request", "cur_send_action", send_action_name,
+                  "startm trans", s.is_hold_start_trans());
+      } else if (is_binlog_request(s)) {
         s.current_.send_action_ = SERVER_SEND_REQUEST;
         if (is_large_request(s)) { // large request
           // after sync all session variables, we need send user request.
@@ -8604,7 +8695,9 @@ int ObMysqlTransact::build_error_packet(ObTransState &s, ObMysqlClientSession *c
         case OB_PROXY_INTERNAL_REQUEST_FAIL:
         case OB_SERVICE_NAME_NOT_FOUND:
         case OB_PROXY_NO_NEED_RETRY:
-        case OB_CONNECT_BINLOG_ERROR: {
+        case OB_CONNECT_BINLOG_ERROR:
+        case OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR:
+        case OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR: {
           char *err_msg = NULL;
           if (OB_FAIL(ObProxyPacketWriter::get_err_buf(errcode, err_msg))) {
             LOG_WDIAG("fail to get err buf", K(ret));
@@ -9177,6 +9270,120 @@ inline ObRoutePolicyEnum ObMysqlTransact::ObTransState::get_route_policy(ObMysql
   return ret_policy;
 }
 
+// -------------------------- ap_query_route_policy (ColumnStore routing) --------------------------
+ObProxyApQueryRoutePolicyType ObMysqlTransact::get_session_ap_query_route_policy(ObClientSessionInfo &cs_info)
+{
+  // Like ob_read_consistency: server returns integer code and session field mgr casts it.
+  // ap_query_route_policy: OFF=0, AUTO=1, FORCE=2
+  const int64_t v = cs_info.get_cached_variables().get_ap_query_route_policy();
+  ObProxyApQueryRoutePolicyType policy = OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO; // default AUTO
+  if (0 == v) {
+    policy = OBPROXY_AP_QUERY_ROUTE_POLICY_OFF;
+  } else if (1 == v) {
+    policy = OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO;
+  } else if (2 == v) {
+    policy = OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE;
+  } else {
+    // unexpected value, keep default AUTO
+    LOG_WDIAG("unexpected ap_query_route_policy cached value, treat as AUTO", K(v));
+    policy = OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO;
+  }
+  return policy;
+}
+
+bool ObMysqlTransact::has_columnstore_replica_in_pl(const ObProxyPartitionLocation *pl)
+{
+  bool bret = false;
+  if (OB_NOT_NULL(pl) && pl->is_valid()) {
+    for (int64_t i = 0; i < pl->replica_count(); ++i) {
+      const ObProxyReplicaLocation *r = pl->get_replica(i);
+      if (OB_NOT_NULL(r) && r->is_valid() && r->is_columnstore_replica()) {
+        bret = true;
+        break;
+      }
+    }
+  }
+  return bret;
+}
+
+bool ObMysqlTransact::has_columnstore_replica_in_route(const ObServerRoute &route)
+{
+  const ObProxyPartitionLocation *pl = NULL;
+  if (route.is_non_partition_table()) {
+    if (OB_NOT_NULL(route.table_entry_)) {
+      pl = route.table_entry_->get_first_pl();
+    }
+  } else {
+    if (OB_NOT_NULL(route.part_entry_)) {
+      pl = &(route.part_entry_->get_pl());
+    }
+  }
+  return has_columnstore_replica_in_pl(pl);
+}
+
+void ObMysqlTransact::try_columnstore_force_route(ObTransState &s,
+                                                         ObSqlParseResult &parse_result,
+                                                         ObPlRouteSelection &route_selection)
+{
+  if (OB_ISNULL(s.sm_)) {
+    LOG_WDIAG("state machine is null, skip columnstore route calculate", K(s.sm_));
+  } else if (OB_ISNULL(s.sm_->client_session_)) {
+    LOG_WDIAG("client session is null, skip columnstore route calculate", K(s.sm_), K(s.sm_->client_session_));
+  } else if (OB_ISNULL(s.pll_info_.route_.table_entry_)) {
+    LOG_DEBUG("table entry is null, skip columnstore route calculate");
+  } else {
+    // Do not override when user explicitly sets target server by config/comment.
+    if (!s.is_use_comment_target_server() && !s.is_use_config_target_server()) {
+      const ObProxyApQueryRoutePolicyType hint_policy = parse_result.get_hint_ap_query_route_policy();
+      const ObProxyApQueryRoutePolicyType session_policy =
+          get_session_ap_query_route_policy(s.sm_->client_session_->get_session_info());
+      const ObProxyApQueryRoutePolicyType effective_policy = (OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID != hint_policy)
+          ? hint_policy : session_policy;
+
+      if (OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE == effective_policy) {
+        // 以下场景 is_in_trans 为 false，但实际会在事务内执行，列存副本路由需排除：
+        // 1. multi-stmt 首条为 BEGIN/START TRANSACTION（不 hold begin）
+        // 2. enable_hold_begin 后首条业务 SQL（hold_start_trans）
+        // 3. enable_xa_route 后首条业务 SQL（hold_xa_start）
+        // 注：set autocommit = 0 后的 select 不算开启事务，这里还是路由到列存
+        const bool in_txn = ObMysqlTransact::is_in_service_name_trans(s)
+                            || s.trans_info_.client_request_.is_multi_stmt_with_start_trans();
+        const bool is_all_dummy_entry = s.pll_info_.route_.table_entry_->is_dummy_entry();
+        // Route user SELECT on query/prepare/execute paths.
+        const bool is_query_or_ps_select_cmd =
+                                    (obmysql::OB_MYSQL_COM_QUERY == s.trans_info_.sql_cmd_)
+                                    || (obmysql::OB_MYSQL_COM_STMT_PREPARE == s.trans_info_.sql_cmd_)
+                                    || (obmysql::OB_MYSQL_COM_STMT_EXECUTE == s.trans_info_.sql_cmd_)
+                                    || (obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE == s.trans_info_.sql_cmd_);
+        const bool is_user_select = is_query_or_ps_select_cmd
+                                    && parse_result.is_select_stmt()
+                                    && !parse_result.is_internal_select()
+                                    && !parse_result.is_select_database_stmt()
+                                    && !parse_result.is_select_proxy_status_stmt()
+                                    && !parse_result.is_select_proxy_version()
+                                    && !parse_result.is_select_route_addr()
+                                    && !parse_result.is_select_global_port();
+        const bool has_cs = has_columnstore_replica_in_route(s.pll_info_.route_);
+
+        if (!in_txn && !is_all_dummy_entry && is_user_select && has_cs) {
+          route_selection.force_target_replica_type_.set_column_store_replica();
+          route_selection.effective_target_replica_type_ = &route_selection.force_target_replica_type_;
+          route_selection.effective_route_policy_ = TARGET_REPLICA_TYPE_FOLLOWER_ONLY;
+          route_selection.is_force_columnstore_route_ = true;
+          LOG_DEBUG("ap_query_route_policy FORCE route to columnstore",
+                    K(route_selection.effective_route_policy_),
+                    K(route_selection.route_consistency_level_),
+                    K(s.trans_info_.sql_cmd_), K(has_cs));
+        } else {
+          LOG_DEBUG("ap_query_route_policy FORCE downgrade to rowstore",
+                    K(in_txn), K(is_all_dummy_entry), K(is_user_select), K(has_cs),
+                    K(s.trans_info_.sql_cmd_));
+        }
+      }
+    }
+  }
+}
+
 const char *ObMysqlTransact::get_action_name(ObMysqlTransact::ObStateMachineActionType e)
 {
   const char *ret = NULL;
@@ -9683,6 +9890,10 @@ void ObMysqlTransact::handle_binlog_request(ObTransState &s)
     client_session->attach_last_to_second_last_session();
   }
 
+  // there are some cases in which last_ss_ may be disconnected for timeout or other reasons
+  // we need set the flag below, and release_server_session at tunnel_handler_response_transfered
+  client_session->set_need_return_second_last_server_session(true);
+
   ObClientSessionInfo &cs_info = get_client_session_info(s);
   ObString cluster_name = cs_info.get_priv_info().cluster_name_;
   ObString tenant_name = cs_info.get_priv_info().tenant_name_;
@@ -9734,6 +9945,109 @@ void ObMysqlTransact::handle_bl_lookup(ObTransState &s)
       s.sm_->milestones_.bl_process_end_ = get_based_hrtime(s);
       s.sm_->cmd_time_stats_.bl_process_time_ +=
         milestone_diff(s.sm_->milestones_.bl_process_begin_, s.sm_->milestones_.bl_process_end_);
+    }
+    // 目前binlog没有高可用特性，路由后直接走转发，不走容灾管理流程
+    TRANSACT_RETURN(SM_ACTION_OBSERVER_OPEN, ObMysqlTransact::handle_response);
+  }
+
+  if (OB_FAIL(ret)) {
+    s.inner_errcode_ = ret;
+    // disconnect
+    TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+  }
+}
+
+bool ObMysqlTransact::is_cdc_request(const ObTransState &s)
+{
+  bool bret = false;
+  bret = is_cdc_coordinator_request(s)
+         || is_cdc_msgservice_request(s);
+
+  return bret;
+}
+
+bool ObMysqlTransact::is_cdc_coordinator_request(const ObTransState &s)
+{
+  bool bret = false;
+  if (s.trans_info_.client_request_.get_parse_result().is_cdc_coordinator_related()
+      && s.mysql_config_params_->enable_cdc_service_) {
+    bret = true;
+  }
+
+  return bret;
+}
+
+bool ObMysqlTransact::is_cdc_msgservice_request(const ObTransState &s)
+{
+  bool bret = false;
+  if (obmysql::OB_MYSQL_COM_CDC_DUMP == s.trans_info_.client_request_.get_packet_meta().cmd_
+      && s.mysql_config_params_->enable_cdc_service_) {
+    bret = true;
+  }
+
+  return bret;
+}
+
+void ObMysqlTransact::handle_cdc_location_lookup(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+  ++s.pll_info_.pl_attempts_;
+
+  bool is_cdc_coordinator_req = is_cdc_coordinator_request(s);
+  bool is_cdc_msgservice_req = is_cdc_msgservice_request(s);
+  if (OB_UNLIKELY(!s.pll_info_.lookup_success_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("[ObMysqlTransact::handle_cdc_location_lookup]"
+              "fail to lookup cdc location, will disconnect", K(ret));
+  } else {
+    LOG_DEBUG("ObMysqlTransact::handle_cdc_location_lookup] lookup successful",
+        "pl_attempts", s.pll_info_.pl_attempts_);
+    const ObProxyPartitionLocation *pl = s.pll_info_.route_.table_entry_->get_first_pl();
+    int64_t replica_cnt = 0;
+    if (OB_UNLIKELY(!is_cdc_coordinator_req && !is_cdc_msgservice_req)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unknown request type", K(ret));
+    } else if (OB_UNLIKELY(NULL == pl)) {
+      ret = OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR;
+      LOG_WDIAG("fail to connect cdc", K(ret));
+    } else if (OB_FALSE_IT(replica_cnt = pl->replica_count())) {
+    } else if (is_cdc_coordinator_req) {
+      bool find_leader = false;
+      for (int64_t i = 0; !find_leader && i < replica_cnt; ++i) {
+        if (pl->get_replica(i)->is_leader()) {
+          find_leader = true;
+          s.server_info_.set_addr(ops_ip_sa_cast(pl->get_replica(i)->server_.get_sockaddr()));
+          s.pll_info_.route_.cur_chosen_server_.replica_ = pl->get_replica(i);
+          break;
+        }
+      }
+
+      if (OB_UNLIKELY(!find_leader)) {
+        ret = OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR;
+        LOG_WDIAG("fail to connect cdc", K(ret));
+      }
+    } else if (is_cdc_msgservice_req) {
+      if (replica_cnt > 0) {
+        if (OB_UNLIKELY(replica_cnt > 1)) {
+          // just warn, not influence the execution
+          LOG_WDIAG("there should be only one msgservice", K(replica_cnt));
+        }
+        s.server_info_.set_addr(ops_ip_sa_cast(pl->get_replica(0)->server_.get_sockaddr()));
+        s.pll_info_.route_.cur_chosen_server_.replica_ = pl->get_replica(0);
+      } else {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_EDIAG("not found cdc msgservice replica", K(ret));
+      }
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    LOG_DEBUG("[ObMysqlTransact::handle_cdc_location_lookup] chosen server, and begin to congestion lookup",
+                "addr", s.server_info_.addr_, "attempts", s.current_.attempts_, "sm_id", s.sm_->sm_id_);
+    if (OB_UNLIKELY(get_global_performance_params().enable_trace_)) {
+      s.sm_->milestones_.pl_process_end_ = get_based_hrtime(s);
+      s.sm_->cmd_time_stats_.pl_process_time_ +=
+        milestone_diff(s.sm_->milestones_.pl_process_begin_, s.sm_->milestones_.pl_process_end_);
     }
     // 目前binlog没有高可用特性，路由后直接走转发，不走容灾管理流程
     TRANSACT_RETURN(SM_ACTION_OBSERVER_OPEN, ObMysqlTransact::handle_response);

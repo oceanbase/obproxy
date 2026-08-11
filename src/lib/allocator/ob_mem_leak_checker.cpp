@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX LIB
@@ -116,8 +109,10 @@ int ObMemLeakChecker::change_check_name(const char* name)
 bool ObMemLeakChecker::need_mem_leak_check(int64_t id, const char * name)
 {
   bool b_ret = false;
-  if (id == MOD_ID_FOR_CHECK) {
+  if (OB_UNLIKELY(id == MOD_ID_FOR_CHECK)) {
     // do nothing for MOD_ID_FOR_CHECK, or will there will be a dead cycle
+  } else if (OB_UNLIKELY(id == ObModIds::OB_PROXY_UNKNOWN_MOD)) {
+    b_ret = true;
   } else {
     const ObString check_name(check_name_);
     b_ret = (0 == check_name.case_compare("ALL")

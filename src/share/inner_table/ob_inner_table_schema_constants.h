@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef _OB_INNER_TABLE_SCHEMA_CONSTANTS_H_
@@ -299,6 +292,8 @@ const char *const OB_HELP_RELATION_TNAME                            = "help_rela
 const char *const OB_ALL_LOCAL_INDEX_STATUS_TNAME                   = "__all_local_index_status";
 const char *const OB_ALL_DUMMY_TNAME                                = "__all_dummy";
 const char *const OB_ALL_BINLOG_DUMMY_TNAME                         = "__all_binlog_dummy";
+const char *const OB_ALL_CDC_COORDINATOR_DUMMY_TNAME                = "__all_cdc_coordinator_dummy";
+const char *const OB_ALL_CDC_MSGSERVICE_DUMMY_TNAME                 = "__all_cdc_msgservice_dummy";
 const char *const OB_ALL_FROZEN_MAP_TNAME                           = "__all_frozen_map";
 const char *const OB_ALL_CLOG_HISTORY_INFO_TNAME                    = "__all_clog_history_info";
 const char *const OB_ALL_CLOG_HISTORY_INFO_V2_TNAME                 = "__all_clog_history_info_v2";

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_SERVER_ROUTE_H
@@ -50,9 +43,11 @@ public:
       is_table_entry_from_remote_(false), is_part_entry_from_remote_(false),
       has_dup_replica_(false), need_use_dup_replica_(false), no_need_pl_update_(false),
       use_proxy_primary_zone_name_(false), is_partition_calc_fail_(false),
+      need_refresh_table_entry_(false),
       consistency_level_(common::INVALID_CONSISTENCY), leader_item_(),
       ldc_route_(), valid_count_(0), cur_chosen_server_(),
-      cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false) {}
+      cur_chosen_route_type_(ROUTE_TYPE_MAX), skip_leader_item_(false),
+      is_force_columnstore_route_(false) {}
   ~ObServerRoute() { reset(); };
   inline void reset();
 
@@ -134,8 +129,13 @@ public:
   bool is_remote_readonly() const;
   bool is_no_route_info_found() const { return (NULL == table_entry_) || (table_entry_->is_partition_table() && NULL == part_entry_); }
   bool is_empty_entry_allowed() const { return NULL != table_entry_ && table_entry_->is_empty_entry_allowed(); }
-  bool is_all_iterate_once(bool is_need_check_leader_item = true) const { return (leader_item_.is_used_ || !is_need_check_leader_item) && ldc_route_.is_reach_end(); }
+  bool is_all_iterate_once(bool is_need_check_leader_item = true) const;
   void reset_cursor() { leader_item_.is_used_ = false; ldc_route_.reset_cursor(); }
+  bool is_force_columnstore_route() const { return is_force_columnstore_route_; }
+  void set_force_columnstore_route(const bool is_force_columnstore_route)
+  {
+    is_force_columnstore_route_ = is_force_columnstore_route;
+  }
   bool is_leader_existent() const { return (NULL != get_leader_replica()); }
   bool is_server_from_rslist() const;
   bool need_update_entry() const;
@@ -184,6 +184,7 @@ public:
   bool no_need_pl_update_;
   bool use_proxy_primary_zone_name_;
   bool is_partition_calc_fail_;
+  bool need_refresh_table_entry_;
 
   common::ObConsistencyLevel consistency_level_;
   ObLDCItem leader_item_;
@@ -192,9 +193,20 @@ public:
   ObLDCItem cur_chosen_server_;
   ObRouteType cur_chosen_route_type_;
   bool skip_leader_item_;
+  bool is_force_columnstore_route_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObServerRoute);
 };
+
+inline bool ObServerRoute::is_all_iterate_once(const bool is_need_check_leader_item) const
+{
+  bool bret = false;
+  bret = ldc_route_.is_reach_end()
+        && (leader_item_.is_used_
+        || !is_need_check_leader_item
+        || (is_force_columnstore_route_ && !leader_item_.is_valid())); // 列存force时需要检查leader是否有效
+  return bret;
+}
 
 inline void ObServerRoute::reset()
 {
@@ -205,7 +217,9 @@ inline void ObServerRoute::reset()
   no_need_pl_update_ = false;
   use_proxy_primary_zone_name_ = false;
   is_partition_calc_fail_ = false;
+  need_refresh_table_entry_ = false;
   skip_leader_item_ = false;
+  is_force_columnstore_route_ = false;
   set_dummy_entry(NULL);
   set_table_entry(NULL);
   set_part_entry(NULL);
@@ -272,7 +286,8 @@ inline int ObServerRoute::fill_strong_read_replica(const ObProxyPartitionLocatio
                                                     proxy_primary_zone_name,
                                                     tenant_name,
                                                     cluster_resource,
-                                                    ldc_route_.policy_))) {
+                                                    ldc_route_.policy_,
+                                                    is_force_columnstore_route_))) {
     PROXY_LOG(WDIAG, "fail to divide_leader_replica", K(ret));
   } else {
     valid_count_ = ldc_route_.location_.count() + (((!need_use_dup_replica_ && proxy_primary_zone_name.empty()) && leader_item_.is_valid()) ? 1 : 0);
@@ -438,7 +453,16 @@ inline const ObProxyReplicaLocation *ObServerRoute::get_next_avail_replica()
 {
   const ObLDCItem *item = NULL;
   if (is_strong_read()) {
-    if (need_use_dup_replica_ || use_proxy_primary_zone_name_) {
+    if (is_force_columnstore_route_) {
+      // ap_query_route_policy FORCE on strong read: columnstore followers first, leader rowstore fallback.
+      item = ldc_route_.get_next_item();
+      cur_chosen_route_type_ = ldc_route_.get_curr_route_type();
+      if (NULL == item && NULL != leader_item_.replica_ && !leader_item_.is_used_) {
+        item = &leader_item_;
+        cur_chosen_route_type_ = ROUTE_TYPE_LEADER;
+        leader_item_.is_used_ = true;
+      }
+    } else if (need_use_dup_replica_ || use_proxy_primary_zone_name_) {
       // if need_use_dup_replica or proxy_primary_zone
       // leader item has already been added into item_array of ldc_route
       item = ldc_route_.get_next_item();

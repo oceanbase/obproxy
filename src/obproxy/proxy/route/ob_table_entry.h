@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_TABLE_ENTRY_H
@@ -38,16 +31,47 @@ class ObProxyPartInfo;
 
 #define TABLE_ENTRY_EVENT_LOOKUP_DONE     (TABLE_ENTRY_EVENT_EVENTS_START + 1)
 
+class ObTableEntryBatchFetchInfo
+{
+public:
+  ObTableEntryBatchFetchInfo()
+    : batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
+      batch_mutex_(), batch_fetch_cont_(NULL)
+  {}
+  ~ObTableEntryBatchFetchInfo() { destroy(); }
+
+  int init();
+  void destroy();
+
+  int put_batch_fetch_tablet_id(uint64_t tablet_id);
+  int put_batch_fetch_tablet_id(uint64_t tablet_id, int &count);
+  int get_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids);
+  int get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id);
+  int remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force);
+  int get_batch_fetch_size();
+  void *get_batch_fetch_cont() { return batch_fetch_cont_; }
+  void set_batch_fetch_cont(void *cont) { batch_fetch_cont_ = cont; }
+  void reset_batch_tablet_ids();
+  event::ObProxyMutex *get_batch_fetch_mutex() { return batch_mutex_.ptr_; }
+
+private:
+  common::hash::ObHashSet<uint64_t> batch_fetch_tablet_id_set_;
+  common::hash::ObHashSet<uint64_t> remote_fetching_tablet_id_set_; //tablet id in remote fetching
+  common::ObPtr<obproxy::event::ObProxyMutex> batch_mutex_; //used by batch fetch
+  void *batch_fetch_cont_;
+
+  DISALLOW_COPY_AND_ASSIGN(ObTableEntryBatchFetchInfo);
+};
+
 class ObTableEntry : public ObRouteEntry
 {
 public:
   ObTableEntry()
-    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_entry_from_rslist_(false),
+    : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_cdc_coordinator_entry_(false), is_entry_from_rslist_(false),
       is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), is_single_partition_table_(false),
       need_rebuild_as_single_partition_table_(false), tenant_id_(common::OB_INVALID_ID),
       table_id_(common::OB_INVALID_ID), table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), level1_decoded_db_name_(),
-      name_(), buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
-      batch_mutex_(), batch_fetch_cont_(NULL)
+      name_(), buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_info_(NULL)
   {
   }
 
@@ -91,7 +115,8 @@ public:
   void set_need_force_flush(const bool is_need_force_flush) { is_need_force_flush_ = is_need_force_flush; }
   bool has_dup_replica() const { return has_dup_replica_; }
   void set_has_dup_replica() { has_dup_replica_ = true; }
-
+  bool is_cdc_coordinator_entry() { return is_cdc_coordinator_entry_; }
+  void set_cdc_coordinator_entry(bool is_cdc_coordinator_entry) { is_cdc_coordinator_entry_ = is_cdc_coordinator_entry; };
   bool exist_leader_server() const;
   const ObProxyReplicaLocation *get_leader_replica() const;
   bool need_update_entry() const;
@@ -135,10 +160,10 @@ public:
   int get_batch_fetch_tablet_ids(ObIArray<uint64_t> &batch_ids, int max_count, uint64_t tablet_id);
   int remove_pending_batch_fetch_tablet_ids(ObIArray<uint64_t>  &batch_ids, bool force);
   int get_batch_fetch_size();
-  void *get_batch_fetch_cont() { return batch_fetch_cont_; }
-  void set_batch_fetch_cont(void *cont) { batch_fetch_cont_ = cont; }
+  void *get_batch_fetch_cont() { return NULL == batch_fetch_info_ ? NULL : batch_fetch_info_->get_batch_fetch_cont(); }
+  void set_batch_fetch_cont(void *cont);
   void reset_batch_tablet_ids();
-  event::ObProxyMutex *get_batch_fetch_mutex() { return batch_mutex_.ptr_; }
+  event::ObProxyMutex *get_batch_fetch_mutex();
   int init_new_batch_cont();
   int set_level1_decoded_db_name(const ObString& db_name) { return level1_decoded_db_name_.rewrite(db_name); }
   const ObConfigVariableString& get_level1_decoded_db_name() { return level1_decoded_db_name_;}
@@ -146,6 +171,7 @@ public:
 private:
   uint64_t get_all_server_hash() const;
   bool is_leader_server_equal(const ObTableEntry &entry) const;
+  int get_or_create_batch_fetch_info(ObTableEntryBatchFetchInfo *&batch_fetch_info);
 
 public:
   Que(event::ObContinuation, link_) pending_queue_;
@@ -154,6 +180,7 @@ private:
   bool is_inited_;
   bool is_dummy_entry_;
   bool is_binlog_entry_;
+  bool is_cdc_coordinator_entry_;
   bool is_entry_from_rslist_;
   bool is_empty_entry_allowed_;
   bool is_need_force_flush_;
@@ -181,10 +208,7 @@ private:
     ObProxyPartInfo *part_info_; // part_info use it
   };
 
-  common::hash::ObHashSet<uint64_t> batch_fetch_tablet_id_set_;
-  common::hash::ObHashSet<uint64_t> remote_fetching_tablet_id_set_; //tablet id in remote fetching 
-  common::ObPtr<obproxy::event::ObProxyMutex> batch_mutex_; //used by batch fetch
-  void *batch_fetch_cont_;
+  ObTableEntryBatchFetchInfo *batch_fetch_info_;
 
   DISALLOW_COPY_AND_ASSIGN(ObTableEntry);
 };
@@ -204,7 +228,8 @@ inline bool ObTableEntry::is_valid() const
                       || (is_location_entry() && NULL != first_pl_ && OB_LIKELY(first_pl_->is_valid()))
                       || (is_part_info_entry() && NULL != part_info_ && OB_LIKELY(part_info_->is_valid()))))
               )
-          ) || is_binlog_entry_;
+          ) || is_binlog_entry_
+            || is_cdc_coordinator_entry_;
 }
 
 inline int64_t ObTableEntry::get_server_count() const

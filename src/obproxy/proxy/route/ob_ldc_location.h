@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_LDC_LOCATION_H
@@ -268,7 +261,8 @@ public:
                                        const common::ObIArray<common::ObString> &proxy_primary_zone_name,
                                        const common::ObString &tenant_name,
                                        obutils::ObClusterResource *cluster_resource,
-                                       const ObRoutePolicyEnum &route_policy);
+                                       const ObRoutePolicyEnum &route_policy,
+                                       const bool is_force_columnstore_route = false);
   static bool is_weak_read_avail_replica(const ObProxyReplicaLocation &replica,
                                 const ObRoutePolicyEnum &route_policy,
                                 const omt::ObTargetReplicaType *target_replica_type,
@@ -311,7 +305,9 @@ public:
   static ObIDCType get_idc_type(const ObAddr &ip, const ObLDCLocation &dummy_ldc);
   static bool is_target_replica_type(const omt::ObTargetReplicaType &target_replica_type,
                                      const ObReplicaType &replica_type);
-  static bool not_allowed_replica_type(const ObReplicaType &replica_type, const ObRoutePolicyEnum &route_policy);
+  static bool not_allowed_replica_type(const ObReplicaType &replica_type,
+                                       const ObRoutePolicyEnum &route_policy,
+                                       const bool is_force_columnstore_route = false);
   static int copy_dummy_ldc(ObLDCLocation &src_dummy_ldc, ObLDCLocation &dest_dummy_ldc);
   int set_weight_zone_array(const ObIArray<ObLDCItem> &tmp_weight_zone_item_array,
                             const omt::ObZoneWeakReadWeight &weight_zone);
@@ -373,7 +369,8 @@ private:
                                      bool &entry_need_update,
                                      ObLDCItem &leader_item,
                                      LdcItemArrayType &tmp_item_array,
-                                     const ObRoutePolicyEnum &route_policy);
+                                     const ObRoutePolicyEnum &route_policy,
+                                     const bool is_force_columnstore_route = false);
 private:
   ObLDCItem *item_array_;
   int64_t item_count_;
@@ -417,11 +414,14 @@ inline const int64_t ObLDCLocation::get_item_count() const
   return item_count_;
 }
 
-inline bool ObLDCLocation::not_allowed_replica_type(const ObReplicaType &replica_type, const ObRoutePolicyEnum &route_policy)
+inline bool ObLDCLocation::not_allowed_replica_type(const ObReplicaType &replica_type,
+                                                    const ObRoutePolicyEnum &route_policy,
+                                                    const bool is_force_columnstore_route)
 {
   return REPLICA_TYPE_LOGONLY == replica_type
         || REPLICA_TYPE_ENCRYPTION_LOGONLY == replica_type
-        || (PROXY_PRIMARY_ZONE_NAME_ONLY != route_policy && REPLICA_TYPE_COLUMNSTORE == replica_type);
+        || (PROXY_PRIMARY_ZONE_NAME_ONLY != route_policy
+            && (REPLICA_TYPE_COLUMNSTORE == replica_type && !is_force_columnstore_route));
 }
 
 void ObLDCLocation::reset_item_status()

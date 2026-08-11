@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_PARSE_RESULT_H
@@ -285,6 +278,16 @@ typedef enum ObProxyReadConsistencyType
   OBPROXY_READ_CONSISTENCY_STRONG,
 } ObProxyReadConsistencyType;
 
+// ap_query_route_policy, only used for proxy routing decision
+// OFF/AUTO/FORCE, consistent with OceanBase server side semantics.
+typedef enum ObProxyApQueryRoutePolicyType
+{
+  OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID = -1,
+  OBPROXY_AP_QUERY_ROUTE_POLICY_OFF = 0,
+  OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO = 1,
+  OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE = 2,
+} ObProxyApQueryRoutePolicyType;
+
 typedef struct _ObProxyInternalCmdInfo
 {
   ObProxyBasicStmtSubType sub_type_;
@@ -485,6 +488,8 @@ typedef struct _ObProxyParseResult
   ObProxyParseString target_db_server_;
   // read_consistency
   ObProxyReadConsistencyType read_consistency_type_;
+  // ap_query_route_policy (hint only)
+  ObProxyApQueryRoutePolicyType ap_query_route_policy_type_;
   // db/table name
   ObProxyTableInfo table_info_;
   // internal cmd
@@ -509,10 +514,13 @@ typedef struct _ObProxyParseResult
   ObDbMeshRouteInfo dbmesh_route_info_;
   ObDbpRouteInfo dbp_route_info_;
   bool is_binlog_related_;
+  bool is_cdc_coordinator_related_;
+  bool is_cdc_coordinator_readonly_;
   bool is_xa_related_;
   bool has_ever_set_anonymous_block_;
   bool is_table_lock_related_;
   bool is_sharding_req_;
+  bool has_force_master_hint_;
 } ObProxyParseResult;
 
 #ifdef __cplusplus

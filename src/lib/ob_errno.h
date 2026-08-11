@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OCEANBASE_LIB_OB_ERRNO_H_
@@ -822,6 +815,10 @@ namespace common
   static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
   static const int OB_CONNECT_BINLOG_ERROR = -10102;
   static const int OB_PROXY_CLUSTER_RESOURCE_EXPIRED = -10103;
+  static const int OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR = -10104;
+  static const int OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR = -10105;
+  static const int OB_PROXY_OBI_CONNECTION_ERROR = -10106;
+  static const int OB_PROXY_CDC_CONNECTION_ERROR = -10107;
 
   // sharding related error code
   static const int OB_PROXY_SHARD_HINT_NOT_SUPPORTED = -10304;
@@ -1592,6 +1589,8 @@ namespace common
 // obproxy related error code
 #define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
 #define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
+#define OB_PROXY_OBI_CONNECTION_ERROR__USER_ERROR_MSG "ObProxy get OBI connection error"
+#define OB_PROXY_CDC_CONNECTION_ERROR__USER_ERROR_MSG "ObProxy get CDC connection error"
 
 // sharding related error code
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"

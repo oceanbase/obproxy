@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -16,6 +9,7 @@
 #include "proxy/mysqllib/ob_proxy_mysql_request.h"
 #include "obproxy/cmd/ob_internal_cmd_processor.h"
 #include "obproxy/utils/ob_proxy_privilege_check.h"
+#include "obproxy/proxy/mysqllib/ob_cdc_dump_packet.h"
 
 using namespace oceanbase::common;
 using namespace oceanbase::sql;
@@ -70,11 +64,219 @@ ObProxyMysqlRequest::ObProxyMysqlRequest()
     req_pkt_len_(0), req_buf_for_prepare_execute_(NULL),
     req_buf_for_prepare_execute_len_(0), result_(), ps_result_(NULL),
     user_identity_(USER_TYPE_NONE), is_internal_cmd_(false), is_kill_query_(false),
-    is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false), expr_parse_second_sql_()
+    is_large_request_(false), enable_analyze_internal_cmd_(false), is_mysql_req_in_ob20_payload_(false),
+    expr_parse_second_sql_(), cdc_dump_pkt_(NULL)
 {
   sql_id_buf_[0] = '\0';
   is_for_update_sql_.valid_ = false;
   is_for_update_sql_.value_ = false;
+}
+
+bool ObProxyMysqlRequest::is_real_dml_sql() const
+{
+  bool bret = false;
+  switch (result_.get_stmt_type()) {
+    case OBPROXY_T_SELECT: {
+      //select without table name is not real dml
+      if (!result_.get_table_name().empty()) {
+        bret = true;
+      }
+      break;
+    }
+    case OBPROXY_T_UPDATE:
+    case OBPROXY_T_DELETE:
+    case OBPROXY_T_INSERT:
+    case OBPROXY_T_MERGE:
+    case OBPROXY_T_REPLACE: {
+      bret = true;
+      break;
+    }
+    default:
+      break;
+  }
+  return bret;
+}
+
+void ObProxyMysqlRequest::reset(bool is_reset_origin_db_table /* true */)
+{
+  is_for_update_sql_.valid_ = false;
+  is_for_update_sql_.value_ = false;
+  reuse(is_reset_origin_db_table);
+  allocator_.reset();
+  int ret = common::OB_SUCCESS;
+  if (OB_FAIL(free_request_buf())) {
+    PROXY_LOG(EDIAG, "free request buf error", K(ret));
+  }
+
+  if (OB_FAIL(free_prepare_execute_request_buf())) {
+    PROXY_LOG(EDIAG, "free prepare execute request buf error", K(ret));
+  }
+
+  if (OB_NOT_NULL(cdc_dump_pkt_)) {
+    op_free(cdc_dump_pkt_);
+    cdc_dump_pkt_ = NULL;
+  }
+}
+
+obutils::ObSqlParseResult& ObProxyMysqlRequest::get_parse_result()
+{
+  obutils::ObSqlParseResult *result = &result_;
+  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_ || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
+      && NULL != ps_result_) {
+    result = ps_result_;
+  }
+  return *result;
+}
+
+const obutils::ObSqlParseResult& ObProxyMysqlRequest::get_parse_result() const
+{
+  const obutils::ObSqlParseResult *result = &result_;
+  if ((obmysql::OB_MYSQL_COM_STMT_EXECUTE == meta_.cmd_ || obmysql::OB_MYSQL_COM_STMT_SEND_LONG_DATA == meta_.cmd_)
+      && NULL != ps_result_) {
+    result = ps_result_;
+  }
+  return *result;
+}
+
+int ObProxyMysqlRequest::alloc_request_buf(int64_t buf_len)
+{
+  int ret = common::OB_SUCCESS;
+  // free buf if has alloc
+  if (OB_UNLIKELY(NULL != req_buf_)) {
+    if (OB_FAIL(free_request_buf())) {
+      PROXY_LOG(EDIAG, "free request buf error", K(ret));
+    }
+  }
+  if (OB_SUCC(ret)) {
+    char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(buf_len));
+    if (OB_UNLIKELY(NULL == buf)) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_LOG(EDIAG, "fail to alloc mem", K(buf_len), K(ret));
+    } else {
+      req_buf_ = buf;
+      req_buf_len_ = buf_len;
+    }
+  }
+  return ret;
+}
+
+int ObProxyMysqlRequest::free_request_buf()
+{
+  int ret = common::OB_SUCCESS;
+  if (NULL != req_buf_) {
+    if (req_buf_len_ <= 0) {
+      ret = common::OB_ERR_UNEXPECTED;
+      PROXY_LOG(EDIAG, "req_buf_len_ must > 0", K_(req_buf_len), K_(req_buf), K(ret));
+    } else {
+      op_fixed_mem_free(req_buf_, req_buf_len_);
+      req_buf_ = NULL;
+      req_buf_len_ = 0;
+    }
+  }
+  return ret;
+}
+
+int ObProxyMysqlRequest::alloc_prepare_execute_request_buf(const int64_t buf_len)
+{
+  int ret = common::OB_SUCCESS;
+
+  if (OB_UNLIKELY(buf_len < 0)) {
+    ret = common::OB_ERR_UNEXPECTED;
+    PROXY_LOG(EDIAG, "buf_len must > 0", K(buf_len), K(ret));
+  }
+
+  // free buf if has alloc
+  if (OB_SUCC(ret) && OB_UNLIKELY(NULL != req_buf_for_prepare_execute_)) {
+    if (OB_FAIL(free_prepare_execute_request_buf())) {
+      PROXY_LOG(EDIAG, "free prepare execute request buf error", K(ret));
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    char *buf = reinterpret_cast<char *>(op_fixed_mem_alloc(buf_len));
+    if (OB_UNLIKELY(NULL == buf)) {
+      ret = common::OB_ALLOCATE_MEMORY_FAILED;
+      PROXY_LOG(EDIAG, "fail to alloc mem", K(buf_len), K(ret));
+    } else {
+      req_buf_for_prepare_execute_ = buf;
+      req_buf_for_prepare_execute_len_ = buf_len;
+    }
+  }
+  return ret;
+}
+
+void ObProxyMysqlRequest::borrow_req_buf(char *&req_buf, int64_t &req_buf_len) {
+  if (OB_LIKELY(obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE != meta_.cmd_)) {
+    req_buf = req_buf_;
+    req_buf_len = req_buf_len_;
+    req_buf_ = NULL;
+    req_buf_len_ = 0;
+  } else {
+    req_buf = req_buf_for_prepare_execute_;
+    req_buf_len = req_buf_for_prepare_execute_len_;
+    req_buf_for_prepare_execute_ = NULL;
+    req_buf_for_prepare_execute_len_ = 0;
+  }
+}
+
+int ObProxyMysqlRequest::free_prepare_execute_request_buf()
+{
+  int ret = common::OB_SUCCESS;
+  if (NULL != req_buf_for_prepare_execute_) {
+    if (req_buf_for_prepare_execute_len_ <= 0) {
+      ret = common::OB_ERR_UNEXPECTED;
+      PROXY_LOG(EDIAG, "req_buf_len_ must > 0", K_(req_buf_for_prepare_execute_len), K_(req_buf_for_prepare_execute), K(ret));
+    } else {
+      op_fixed_mem_free(req_buf_for_prepare_execute_, req_buf_for_prepare_execute_len_);
+      req_buf_for_prepare_execute_ = NULL;
+      req_buf_for_prepare_execute_len_ = 0;
+    }
+  }
+  return ret;
+}
+
+common::ObString ObProxyMysqlRequest::get_sql()
+{
+  const char *sql = NULL;
+  int64_t sql_len = 0;
+  if (OB_LIKELY(NULL != req_buf_ && req_pkt_len_ > MYSQL_NET_META_LENGTH)) {
+    if (OB_LIKELY(obmysql::OB_MYSQL_COM_STMT_PREPARE_EXECUTE != meta_.cmd_)) {
+      sql = req_buf_ + MYSQL_NET_META_LENGTH; // skip pkt meta(5 bytes)
+      sql_len = req_pkt_len_ - MYSQL_NET_META_LENGTH;
+    } else {
+      int ret = OB_SUCCESS;
+      uint64_t query_len = 0;
+      const char *pos = req_buf_ + MYSQL_NET_META_LENGTH + MYSQL_PS_EXECUTE_HEADER_LENGTH; // skip 9 bytes
+      int64_t buf_len = req_pkt_len_ - MYSQL_NET_META_LENGTH - MYSQL_PS_EXECUTE_HEADER_LENGTH;
+      if (OB_FAIL(ObMysqlPacketUtil::get_length(pos, buf_len, query_len))) {
+        PROXY_LOG(EDIAG, "failed to get length", K(ret));
+      } else if (query_len > 0) {
+        // buf_len is less than (req_buf_len_ - PARSE_EXTRA_CHAR_NUM + other fields)
+        // so mem of req_buf_len_ will never overflow
+        int64_t copy_len = std::min(static_cast<int64_t>(query_len), buf_len);
+        if (OB_ISNULL(req_buf_for_prepare_execute_)
+            || req_buf_for_prepare_execute_len_ < req_buf_len_
+            || req_buf_for_prepare_execute_len_ > req_buf_len_ * 2) {
+          if (OB_FAIL(alloc_prepare_execute_request_buf(req_buf_len_))) {
+            PROXY_LOG(EDIAG, "fail to alloc buf", K_(req_buf_len), K(ret));
+          } else {
+            PROXY_LOG(DEBUG, "alloc request buf ", K_(req_buf_len));
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          MEMCPY(req_buf_for_prepare_execute_, pos, copy_len);
+          req_buf_for_prepare_execute_[copy_len + 1] = 0;
+          req_buf_for_prepare_execute_[copy_len] = 0;
+
+          sql = req_buf_for_prepare_execute_;
+          sql_len = copy_len;
+        }
+      }
+    }
+  }
+  common::ObString sql_str(sql_len, sql);
+  return sql_str;
 }
 
 int ObProxyMysqlRequest::add_request(event::ObIOBufferReader *reader, const int64_t buf_len)
@@ -258,6 +460,10 @@ void ObProxyMysqlRequest::reuse(bool is_reset_origin_db_table /* true */)
   req_pkt_len_ = 0;
   enable_server_kill_connection_ = false;
   expr_parse_second_sql_.reset();
+  if (OB_NOT_NULL(cdc_dump_pkt_)) {
+    op_free(cdc_dump_pkt_);
+    cdc_dump_pkt_ = NULL;
+  }
   allocator_.reuse();
   sql_id_buf_[0] = '\0';
   is_for_update_sql_.valid_ = false;

@@ -163,6 +163,13 @@ do {\
   }\
 } while (0);
 
+#define SET_AP_QUERY_ROUTE_POLICY(policy_type) \
+do {\
+  if (OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID == result->ap_query_route_policy_type_) {\
+    result->ap_query_route_policy_type_ = policy_type;\
+  }\
+} while (0);
+
 #define add_call_node(call_parse_info, call_node) \
 do {                                                      \
   if (NULL != call_parse_info.tail_) {\
@@ -284,7 +291,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token GRANT REVOKE ANALYZE PURGE COMMENT
 %token FROM DUAL JOIN INNER CROSS FULL LEFT RIGHT OUTER
 %token PREPARE EXECUTE USING DEALLOCATE
-%token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN LOAD_DATA_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END ROUTE_TABLE ROUTE_PART_KEY PLACE_HOLDER
+%token SELECT_HINT_BEGIN UPDATE_HINT_BEGIN DELETE_HINT_BEGIN INSERT_HINT_BEGIN REPLACE_HINT_BEGIN MERGE_HINT_BEGIN LOAD_DATA_HINT_BEGIN HINT_END COMMENT_BEGIN COMMENT_END FORCE_MASTER_HINT ROUTE_TABLE ROUTE_PART_KEY PLACE_HOLDER
 %token END_P ERROR
 %token WHEN
 %token TABLEGROUP /*OB 特有的保留关键字*/
@@ -301,6 +308,8 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
 %token<str> QUERY_TIMEOUT MAX_EXECUTION_TIME READ_CONSISTENCY WEAK STRONG FROZEN
+/* hint tokens (only produced in lexer <hint> state) */
+%token HINT_OPT_PARAM HINT_AP_QUERY_ROUTE_POLICY HINT_AP_QRP_FORCE HINT_AP_QRP_AUTO HINT_AP_QRP_OFF
 %token<num> INT_NUM 
 %type<str> right_string_val tracer_right_string_val name_right_string_val
 %type<node> call_expr
@@ -331,6 +340,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> PING_PROXY
 %token<str> KILL_PROXYSESSION KILL_GLOBALSESSION KILL QUERY
 %token<str> BINLOG_VARIABLE BINLOG_USER_VAR BINLOG_SYS_VAR
+%token<str> CDC REGISTER UNREGISTER AUTH ACK DESCRIBE_CDC
 
 %type<str> table_factor non_reserved_keyword var_name
 %start root
@@ -376,6 +386,7 @@ stmt: select_stmt                    {}
     | text_ps_stmt                   {}
     | merge_stmt                     {}
     | binlog_stmt                    {}
+    | cdc_coordinator_stmt           {}
     | load_data_stmt                 {}
     | other_stmt                     { result->cur_stmt_type_ = OBPROXY_T_OTHERS; }
 
@@ -806,6 +817,7 @@ comment_expr_list: comment_expr
                  | comment_expr comment_expr_list
 
 comment_expr: COMMENT_BEGIN comment_list COMMENT_END {}
+            | COMMENT_BEGIN FORCE_MASTER_HINT COMMENT_END { result->has_force_master_hint_ = true; }
             | COMMENT_BEGIN ODP_COMMENT odp_comment odp_comment_list COMMENT_END {}
             | COMMENT_BEGIN TABLE_ID '=' right_string_val odp_comment_list COMMENT_END   { result->dbmesh_route_info_.tb_idx_str_ = $4; }
             | COMMENT_BEGIN TABLE_NAME '=' right_string_val odp_comment_list COMMENT_END   { result->dbmesh_route_info_.table_name_str_ = $4; }
@@ -825,6 +837,7 @@ comment_expr: COMMENT_BEGIN comment_list COMMENT_END {}
             | COMMENT_BEGIN DBP_COMMENT ROUTE_TAG '=' '{' dbp_comment_list '}' COMMENT_END  {}
             | COMMENT_BEGIN DBP_COMMENT SYS_TAG '=' '{' dbp_sys_comment '}' COMMENT_END  {}
             | COMMENT_BEGIN TARGET_DB_SERVER '=' right_string_val odp_comment_list COMMENT_END { result->target_db_server_ = $4; }
+            | COMMENT_BEGIN error COMMENT_END { yyerrok; yyclearin; }
 
 comment_list: /* empty */ {}
             | comment_list comment
@@ -833,7 +846,6 @@ comment_list: /* empty */ {}
 /* yyclearin: skip current token for error recovery */
 comment: var_name
          | END_P { handle_stmt_end(result); HANDLE_ACCEPT_FINISH(); }
-         | error { yyerrok; yyclearin; }
 
 dbp_comment_list: dbp_comment ',' dbp_comment_list
                 | dbp_comment
@@ -948,6 +960,14 @@ hint_val_list:
 hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
     | MAX_EXECUTION_TIME '(' INT_NUM ')' { result->max_execution_time_ = $3; }
     | READ_CONSISTENCY '(' opt_read_consistency ')'
+    /* OPT_PARAM('ap_query_route_policy' 'FORCE'|'AUTO'|'OFF') without comma */
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY HINT_AP_QRP_FORCE ')' { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE); }
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY HINT_AP_QRP_AUTO ')'  { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO); }
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY HINT_AP_QRP_OFF ')'   { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_OFF); }
+    /* OPT_PARAM('ap_query_route_policy', 'FORCE'|'AUTO'|'OFF') */
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY ',' HINT_AP_QRP_FORCE ')' { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE); }
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY ',' HINT_AP_QRP_AUTO ')'  { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO); }
+    | HINT_OPT_PARAM '(' HINT_AP_QUERY_ROUTE_POLICY ',' HINT_AP_QRP_OFF ')'   { SET_AP_QUERY_ROUTE_POLICY(OBPROXY_AP_QUERY_ROUTE_POLICY_OFF); }
     | INDEX '(' var_name var_name ')'
     {
       add_hint_index(result->dbmesh_route_info_, $3);
@@ -1029,6 +1049,20 @@ binlog_stmt:
 | RESET MASTER { result->is_binlog_related_ = true; }
 | PURGE BINARY LOGS { result->is_binlog_related_ = true; }
 | FLUSH BINARY LOGS { result->is_binlog_related_ = true; }
+
+
+cdc_coordinator_stmt :
+  CREATE CDC      { result->is_cdc_coordinator_related_ = true; }
+| DROP CDC        { result->is_cdc_coordinator_related_ = true; }
+| SHOW CDC        { result->is_cdc_coordinator_related_ = true; result->is_cdc_coordinator_readonly_ = true; }
+| DESCRIBE_CDC    { result->is_cdc_coordinator_related_ = true; result->is_cdc_coordinator_readonly_ = true; }
+| REGISTER CDC    { result->is_cdc_coordinator_related_ = true; }
+| UNREGISTER CDC  { result->is_cdc_coordinator_related_ = true; }
+| ALTER CDC       { result->is_cdc_coordinator_related_ = true; }
+| PURGE CDC       { result->is_cdc_coordinator_related_ = true; }
+| RESET CDC       { result->is_cdc_coordinator_related_ = true; }
+| AUTH CDC        { result->is_cdc_coordinator_related_ = true; }
+| ACK CDC         { result->is_cdc_coordinator_related_ = true; }
 
  /* limit param stmt*/
 opt_limit:
@@ -1403,6 +1437,11 @@ non_reserved_keyword: START
                     | SERVER
                     | TENANT
                     | DETAIL
+                    | CDC
+                    | REGISTER
+                    | UNREGISTER
+                    | AUTH
+                    | ACK
 
 var_name: NAME_OB
         | non_reserved_keyword

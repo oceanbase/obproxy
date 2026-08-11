@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_LIB_H
@@ -219,6 +212,7 @@ static const uint64_t OBPROXY_DEFAULT_CAPABILITY_FLAG =
      | OB_CAP_FEEDBACK_PROXY
      | OB_CAP_CHANGE_USER_CONN_ATTRS
      | OB_CAP_MAX_EXECUTION_TIME
+     | OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC
     );
 
 #define OBPROXY_SYS_ERRNO_START -10000

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -47,24 +40,13 @@ int64_t ObRouteParam::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(KP_(cont),
-       K_(cr_version),
-       K_(cr_id),
-       K_(name),
-       K_(force_renew),
-       K_(use_lower_case_name),
-       KP_(mysql_proxy),
-       KP_(client_request),
-       KP_(client_info),
-       K_(is_partition_table_route_supported),
-       K_(need_pl_route),
-       K_(is_oracle_mode),
-       K_(is_need_force_flush),
-       K_(is_single_partition_table),
-       K_(tenant_version),
-       K_(timeout_us),
-       K_(current_idc_name),
-       K_(cluster_version));
+  J_KV(KP_(cont), K_(cr_version), K_(cr_id), K_(name),
+       K_(force_renew), K_(force_use_cache), K_(skip_refresh_cache),
+       K_(use_lower_case_name), KP_(mysql_proxy), KP_(client_request),
+       KP_(client_info), K_(is_partition_table_route_supported),
+       K_(need_pl_route), K_(is_oracle_mode), K_(is_need_force_flush),
+       K_(is_single_partition_table), K_(tenant_version),
+       K_(timeout_us), K_(current_idc_name), K_(cluster_version));
   J_OBJ_END();
   return pos;
 }
@@ -1158,6 +1140,8 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
     } else {
       param_.cont_ = param.cont_;
       param_.force_renew_ = param.force_renew_;
+      param_.force_use_cache_ = param.force_use_cache_;
+      param_.skip_refresh_cache_ = param.skip_refresh_cache_;
       param_.mysql_proxy_ = param.mysql_proxy_;
       param_.cr_version_ = param.cr_version_;
       param_.cr_id_ = param.cr_id_;
@@ -1170,6 +1154,7 @@ inline int ObMysqlRoute::deep_copy_route_param(ObRouteParam &param)
       param_.cluster_version_ = param.cluster_version_;
       param_.set_route_diagnosis(param.route_diagnosis_);
       param_.binlog_service_ip_ = param.binlog_service_ip_;
+      param_.cdc_msgservice_param_ = param.cdc_msgservice_param_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         param_.current_idc_name_.assign_ptr(param_.current_idc_name_buf_, param.current_idc_name_.length());

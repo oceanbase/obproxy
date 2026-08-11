@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -624,7 +617,8 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
             | OB_CAP_PROXY_REROUTE
             | OB_CAP_PROXY_SESSION_SYNC
             | OB_CAP_PROXY_SESSION_VAR_SYNC
-            | OB_CAP_FEEDBACK_PROXY);
+            | OB_CAP_FEEDBACK_PROXY
+            | OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC);
   } else {
     cap &= ~(OB_CAP_OB_PROTOCOL_V2
              | OB_CAP_PROXY_NEW_EXTRA_INFO
@@ -632,7 +626,8 @@ inline int ObProxySessionInfoHandler::rewrite_common_login_req(ObClientSessionIn
              | OB_CAP_PROXY_REROUTE
              | OB_CAP_PROXY_SESSION_SYNC
              | OB_CAP_PROXY_SESSION_VAR_SYNC
-             | OB_CAP_FEEDBACK_PROXY);
+             | OB_CAP_FEEDBACK_PROXY
+             | OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC);
   }
 
   if (!param.enable_full_link_trace_) {

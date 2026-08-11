@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2024 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef OBPROXY_OB_REPS_ANALYZER_H
 #define OBPROXY_OB_REPS_ANALYZER_H
@@ -49,7 +42,7 @@ public:
       protocol_mode_(ObMysqlProtocolMode::OCEANBASE_MYSQL_PROTOCOL_MODE),
       req_cmd_(obmysql::OB_MYSQL_COM_SLEEP), last_ob_seq_(0),
       request_id_(0), sess_id_(0), is_inited_(false),
-      mysql_pkt_buf_(NULL),
+      mysql_pkt_buf_(NULL), prev_data_block_(NULL), cur_data_block_(NULL),
       is_mysql_stream_end_(false),
       is_oceanbase_stream_end_(false),
       is_compressed_stream_end_(false),
@@ -140,6 +133,7 @@ private:
   int analyze_prepare_ok_pkt();
   int update_ending_type();
   void handle_last_eof(const char *pkt_end, uint32_t pkt_len);
+  int rewrite_server_status(const char *pkt_end, const int64_t reserve_body_offset, const uint16_t flags);
   OB_INLINE bool need_copy_ok_pkt();
   OB_INLINE bool need_reserve_pkt();
   OB_INLINE bool need_analyze_mysql_pkt_type();
@@ -155,6 +149,7 @@ private:
   int alloc_mysql_pkt_buf();
   inline void dealloc_mysql_pkt_buf();
 private:
+  static const int64_t MYSQL_EOF_SERVER_STATUS_OFFSET = 2;
   ObProxyProtocol protocol_;
   ObRespAnalyzeMode analyze_mode_;
   ObMysqlProtocolMode protocol_mode_;
@@ -175,6 +170,10 @@ private:
   } params_;
   bool is_inited_;
   event::ObMIOBuffer *mysql_pkt_buf_;
+  // record IO buffer blocks for some condition.
+  // for example, binlog request maybe need rewrite server_status across blocks
+  common::ObPtr<event::ObIOBufferBlock> prev_data_block_;
+  common::ObPtr<event::ObIOBufferBlock> cur_data_block_;
   bool is_mysql_stream_end_; // mark mysql packets stream end
   bool is_oceanbase_stream_end_; // mark oceanbase packets stream end (crc tailer included)
   bool is_compressed_stream_end_; // mark compressed packets stream end (compressed tailer included)
@@ -278,10 +277,14 @@ bool ObRespAnalyzer::need_analyze_all_packets(bool need_receive_completed, ObRes
   } else if (OB_LIKELY(ObProxyProtocol::PROTOCOL_MYSQL != protocol_)) {
     ret = is_decompress_mode();
   } else {
-    ret = !resp_result.is_resultset_resp() && OB_MYSQL_COM_BINLOG_DUMP != req_cmd_ && OB_MYSQL_COM_BINLOG_DUMP_GTID != req_cmd_;
+    ret = !resp_result.is_resultset_resp()
+          && OB_MYSQL_COM_BINLOG_DUMP != req_cmd_
+          && OB_MYSQL_COM_BINLOG_DUMP_GTID != req_cmd_
+          && OB_MYSQL_COM_CDC_DUMP != req_cmd_;
   }
   return ret;
 }
+
 void ObRespAnalyzer::reset()
 {
   compressor_.reset();
@@ -329,7 +332,6 @@ void ObRespAnalyzer::reset_for_mysql_tunnel()
   stream_mysql_state_ = STREAM_MYSQL_HEADER;
   is_in_multi_pkt_ = false;
   is_mysql_stream_end_ = false;
-
 }
 void ObRespAnalyzer::dealloc_mysql_pkt_buf()
 {
@@ -337,6 +339,8 @@ void ObRespAnalyzer::dealloc_mysql_pkt_buf()
     free_miobuffer(mysql_pkt_buf_);
     mysql_pkt_buf_ = NULL;
   }
+  prev_data_block_ = NULL;
+  cur_data_block_ = NULL;
 }
 
 void ObRespAnalyzer::handle_analyze_ob20_extra_info_header(ObRespAnalyzeResult &resp_result)

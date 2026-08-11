@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2024 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -532,14 +525,16 @@ int ObRespAnalyzer::handle_analyze_mysql_pkt_type(const char *buf)
 
   reserved_len_ += 1;
   // binlog service seq check
-  if(OB_UNLIKELY(OB_MYSQL_COM_BINLOG_DUMP == req_cmd_ || OB_MYSQL_COM_BINLOG_DUMP_GTID == req_cmd_)) {
+  if (OB_UNLIKELY(OB_MYSQL_COM_BINLOG_DUMP == req_cmd_
+                  || OB_MYSQL_COM_BINLOG_DUMP_GTID == req_cmd_
+                  || OB_MYSQL_COM_CDC_DUMP == req_cmd_)) {
     uint8_t seq = mysql_analyzer_.get_pkt_seq();
     if (last_mysql_pkt_seq_ < 255 && (last_mysql_pkt_seq_ + 1 != seq)) {
-      LOG_EDIAG("BINLOG_DUMP seq is not expected", K(last_mysql_pkt_seq_), K(seq));
+      LOG_EDIAG("DUMP seq is not expected", K(last_mysql_pkt_seq_), K(seq));
     } else if (last_mysql_pkt_seq_ == 255 && 0 != seq) {
-      LOG_EDIAG("BINLOG_DUMP seq is not expected", K(last_mysql_pkt_seq_), K(seq));
+      LOG_EDIAG("DUMP seq is not expected", K(last_mysql_pkt_seq_), K(seq));
     } else {
-      LOG_DEBUG("check binlog dump seq pass", K(last_mysql_pkt_seq_), K(seq));
+      LOG_DEBUG("check dump seq pass", K(last_mysql_pkt_seq_), K(seq));
     }
   }
 
@@ -1430,6 +1425,8 @@ int ObRespAnalyzer::analyze_response(event::ObIOBufferReader &reader, ObRespAnal
     }
 
     ObString resp_buf;
+    prev_data_block_ = NULL;
+    cur_data_block_ = block;
     while (OB_SUCC(ret) && NULL != block && data_size > 0 && !is_stream_end()) {
       resp_buf.assign_ptr(data, static_cast<int32_t>(data_size));
       if (OB_FAIL(stream_analyze_packets(resp_buf, resp_result))) {
@@ -1437,13 +1434,18 @@ int ObRespAnalyzer::analyze_response(event::ObIOBufferReader &reader, ObRespAnal
       } else {
         // on to the next block
         offset = 0;
+        prev_data_block_ = cur_data_block_;
         block = block->next_;
+        cur_data_block_ = block;
         if (NULL != block) {
           data = block->start();
           data_size = block->read_avail();
         }
       }
     }
+
+    prev_data_block_ = NULL;
+    cur_data_block_ = NULL;
     LOG_DEBUG("analyze response finished", "data_size", reader.read_avail(), K(is_mysql_stream_end_), K(analyze_mode_), K(resp_result));
   }
 
@@ -1475,6 +1477,8 @@ int ObRespAnalyzer::analyze_response_with_length(event::ObIOBufferReader &reader
 
   ObString resp_buf;
   ObRespAnalyzeResult resp_result;
+  prev_data_block_ = NULL;
+  cur_data_block_ = block;
   while (OB_SUCC(ret) && NULL != block && length > 0) {
     resp_buf.assign_ptr(data, static_cast<int32_t>(data_size));
     if (OB_FAIL(stream_analyze_packets(resp_buf, resp_result))) {
@@ -1484,7 +1488,9 @@ int ObRespAnalyzer::analyze_response_with_length(event::ObIOBufferReader &reader
       if (length > 0) {
         // on to the next block
         offset = 0;
+        prev_data_block_ = cur_data_block_;
         block = block->next_;
+        cur_data_block_ = block;
         if (NULL != block) {
           data = block->start();
           data_size = block->read_avail();
@@ -1495,6 +1501,9 @@ int ObRespAnalyzer::analyze_response_with_length(event::ObIOBufferReader &reader
       }
     }
   }
+
+  prev_data_block_ = NULL;
+  cur_data_block_ = NULL;
   LOG_DEBUG("analyze response with length finished", K(length), K(resp_result));
 
   return ret;
@@ -1521,6 +1530,56 @@ int ObRespAnalyzer::analyze_response(
       LOG_WDIAG("fail to analyze_all_packets", K(result), K(resp_result), K(ret));
     } else {
       LOG_DEBUG("succ to analyze all pkts", K(resp_result), K(result));
+    }
+  }
+  return ret;
+}
+
+int ObRespAnalyzer::rewrite_server_status(const char *pkt_end,
+                                          const int64_t rewrite_offset_in_packet,
+                                          const uint16_t flags)
+{
+  int ret = OB_SUCCESS;
+  if (!params_.is_binlog_req_) {
+    // nothing
+  } else if (OB_ISNULL(pkt_end)
+             || OB_ISNULL(cur_data_block_)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_EDIAG("invalid argument", K(pkt_end), K(ret));
+  } else {
+    event::ObIOBufferBlock *curr_block = cur_data_block_;
+    event::ObIOBufferBlock *prev_block = prev_data_block_;
+    constexpr int64_t REWRITE_BUF_LEN = sizeof(flags);
+
+    const int64_t pkt_len = reserve_pkt_body_buf_.len();
+    const int64_t rewrite_offset_from_pkt_end = pkt_len - rewrite_offset_in_packet;
+    const int64_t pkt_data_in_cur_block = std::min(pkt_end - curr_block->start(), pkt_len);
+    if (OB_UNLIKELY(rewrite_offset_in_packet < 0)
+        || OB_UNLIKELY(rewrite_offset_from_pkt_end < REWRITE_BUF_LEN)
+        || OB_UNLIKELY(pkt_data_in_cur_block <= 0)
+        || OB_UNLIKELY(pkt_data_in_cur_block > pkt_len)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("invalid offset rewrite server status", K(rewrite_offset_in_packet),
+                K(pkt_len), K(pkt_data_in_cur_block), K(rewrite_offset_from_pkt_end), K(ret));
+    } else if (OB_LIKELY(pkt_data_in_cur_block >= rewrite_offset_from_pkt_end)) {
+      // only in current block, direct rewrite
+      const char *pos = pkt_end - rewrite_offset_from_pkt_end;
+      (*((unsigned short *) (pos))) = flags;
+    } else if (OB_ISNULL(prev_block)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("invalid prev_block", K(prev_block), K(ret));
+    } else {
+      // need write data in prev_data_block, rewrite_offset means offset from the prev block end
+      int64_t rewrite_offset = pkt_data_in_cur_block - rewrite_offset_from_pkt_end;
+      char flag_buf[REWRITE_BUF_LEN];
+      (*((unsigned short *) (flag_buf))) = flags;
+      if (OB_FAIL(prev_block->direct_write_block_data(rewrite_offset, flag_buf, REWRITE_BUF_LEN))) {
+        LOG_WDIAG("fail to rewrite in different data_block", K(rewrite_offset_from_pkt_end),
+                  K(pkt_data_in_cur_block), K(rewrite_offset));
+      } else {
+        LOG_DEBUG("succ to rewrite in different data_block", K(rewrite_offset_from_pkt_end),
+                  K(pkt_data_in_cur_block), K(rewrite_offset));
+      }
     }
   }
   return ret;
@@ -1561,14 +1620,11 @@ int ObRespAnalyzer::analyze_ok_pkt(const char *pkt_end, bool &is_in_trans)
       cur_stmt_has_more_result_ = false;
     }
     if (params_.is_binlog_req_) {
-      if (OB_ISNULL(pkt_end)) {
-        ret = OB_INVALID_ARGUMENT;
-        LOG_EDIAG("invalid argument", KP(pkt_end), K(ret));
-      } else {
-        server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
-        server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
-        pos = pkt_end - len + (pos - ptr) - 2;
-        (*((unsigned short *) (pos))) = server_status.flags_;
+      server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
+      server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
+      const int64_t status_reserve_offset = (pos - ptr) - 2;
+      if (OB_FAIL(rewrite_server_status(pkt_end, status_reserve_offset, server_status.flags_))) {
+        LOG_WDIAG("fail to rewrite binlog ok server status", K(status_reserve_offset), K(ret));
       }
     }
   }
@@ -1635,14 +1691,10 @@ int ObRespAnalyzer::analyze_eof_pkt(const char *pkt_end, bool &is_in_trans, bool
     }
 
     if (params_.is_binlog_req_) {
-      if (OB_ISNULL(pkt_end)) {
-        ret = OB_INVALID_ARGUMENT;
-        LOG_EDIAG("invalid argument", KP(pkt_end), K(ret));
-      } else {
-        server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
-        server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
-        char *ptr = const_cast<char*>(pkt_end) - len + 2;
-        (*((unsigned short *) (ptr))) = server_status.flags_;
+      server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
+      server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
+      if (OB_FAIL(rewrite_server_status(pkt_end, MYSQL_EOF_SERVER_STATUS_OFFSET, server_status.flags_))) {
+        LOG_WDIAG("fail to rewrite binlog eof server status", K(ret));
       }
     }
   }
@@ -1813,7 +1865,8 @@ int ObRespAnalyzer::update_ending_type()
       // so in ResultSet Protocol, a packet can be detemined as ok packet by
       // both 0x00 === pkt_type and 1 != has_already_recived_eof_pkt_cnt
       if (OB_MYSQL_COM_BINLOG_DUMP == req_cmd_
-          || OB_MYSQL_COM_BINLOG_DUMP_GTID == req_cmd_) {
+          || OB_MYSQL_COM_BINLOG_DUMP_GTID == req_cmd_
+          || OB_MYSQL_COM_CDC_DUMP == req_cmd_) {
         break;
       } else if (OB_MYSQL_COM_STMT_PREPARE == req_cmd_) {
         /* Preapre 请求, in OCEANBASE, 可能是 error + ok, 这时的 OK 应该是 OK_PACKET_ENDING_TYPE */
@@ -1909,11 +1962,10 @@ void ObRespAnalyzer::handle_last_eof(const char *pkt_end, uint32_t pkt_len)
       // skip 2 bytes of warning_count, we don't care it
       server_status.flags_ = uint2korr(reserve_pkt_body_buf_.ptr() + 2);
 
-      if (params_.is_binlog_req_) {
-        server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
-        server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
-        char *ptr = const_cast<char*>(pkt_end) - len + 2;
-        (*((unsigned short *) (ptr))) = server_status.flags_;
+      server_status.status_flags_.OB_SERVER_STATUS_IN_TRANS = params_.is_in_trans_;
+      server_status.status_flags_.OB_SERVER_STATUS_AUTOCOMMIT = params_.is_autocommit_;
+      if (OB_SUCCESS != rewrite_server_status(pkt_end, MYSQL_EOF_SERVER_STATUS_OFFSET, server_status.flags_)) {
+        LOG_WDIAG("fail to rewrite binlog last eof server status", K(len));
       }
     }
   }

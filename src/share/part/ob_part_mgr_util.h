@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OCEANBASE_SHARE_PART_OB_PART_MGR_UTIL_
@@ -99,9 +92,20 @@ inline bool is_range_part(const ObPartitionFuncType part_type, const int64_t clu
     bret = PARTITION_FUNC_TYPE_RANGE == part_type || PARTITION_FUNC_TYPE_RANGE_COLUMNS == part_type;
   } else {
     ObPartitionFuncTypeV4 v4_type = static_cast<ObPartitionFuncTypeV4>(part_type);
-    bret = PARTITION_FUNC_TYPE_V4_RANGE == v4_type || PARTITION_FUNC_TYPE_V4_RANGE_COLUMNS == v4_type;
+    bret = PARTITION_FUNC_TYPE_V4_RANGE == v4_type
+        || PARTITION_FUNC_TYPE_V4_RANGE_COLUMNS == v4_type
+        || PARTITION_FUNC_TYPE_V4_INTERVAL == v4_type;
   }
 
+  return bret;
+}
+
+inline bool is_interval_part(const ObPartitionFuncType part_type, const int64_t cluster_version)
+{
+  bool bret = false;
+  if (!IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+    bret = PARTITION_FUNC_TYPE_V4_INTERVAL == static_cast<ObPartitionFuncTypeV4>(part_type);
+  }
   return bret;
 }
 

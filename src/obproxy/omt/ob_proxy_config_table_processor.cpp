@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  *
  * *************************************************************
  *
@@ -44,6 +37,7 @@
 #include "lib/alloc/malloc_hook.h"
 #include "obproxy/ob_proxy_main.h"
 #include "lib/signal/ob_signal_handler.h"
+#include "proxy/route/ob_route_utils.h"
 
 static const char *EXECUTE_SQL =
     "replace into proxy_config(vip, vid, vport, cluster_name, tenant_name, name, value, config_level) values("
@@ -1235,6 +1229,22 @@ int ObProxyConfigTableProcessor::check_multi_level_config_valid(ObProxyConfigIte
       if (OB_FAIL(oceanbase::common::ignore_crash_error_signal())) {
         LOG_WDIAG("fail to ignore crash error signal");
       }
+    }
+  }
+
+  if (OB_SUCC(ret)
+      && is_backup
+      && 0 == strcasecmp("cdc_coordinator_list", item.config_item_.name())
+      && NULL != item.config_item_.str()
+      && '\0' != *item.config_item_.str()) {
+    const ObString config_value = item.config_item_.get_value();
+    const ObString cluster_name = item.vip_info_.cluster_name_;
+    ObString tenant_name = item.vip_info_.tenant_name_;
+    if (tenant_name.empty()) {
+      tenant_name = OB_SYS_TENANT_NAME;
+    }
+    if (OB_FAIL(proxy::ObRouteUtils::refresh_cdc_dummy_entry_by_config(config_value, cluster_name, tenant_name))) {
+      LOG_WDIAG("fail to refresh cdc dummmy_entry", K(config_value), K(cluster_name), K(tenant_name), K(ret));
     }
   }
 

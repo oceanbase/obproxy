@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_UTILS_CACHED_VARIABLES_H
@@ -34,6 +27,8 @@ enum ObCachedVariableType
   CACHED_INT_VAR_LOWER_CASE_TABLE_NAMES,
   CACHED_INT_VAR_TX_READ_ONLY,
   CACHED_INT_VAR_READ_CONSISTENCY,
+  // ap_query_route_policy: OFF=0, AUTO=1, FORCE=2 (store enum code in cached int)
+  CACHED_INT_VAR_AP_QUERY_ROUTE_POLICY,
   CACHED_INT_VAR_COLLATION_CONNECTION,
   CACHED_INT_VAR_NCHARACTER_SET_CONNECTION,
   CACHED_INT_VAR_ENABLE_TRANSMISSION_CHECKSUM,
@@ -63,6 +58,7 @@ public:
   int64_t get_lower_case_table_names() const { return get_int_var(CACHED_INT_VAR_LOWER_CASE_TABLE_NAMES); }
   int64_t get_tx_read_only() const { return get_int_var(CACHED_INT_VAR_TX_READ_ONLY); }
   int64_t get_read_consistency() const { return get_int_var(CACHED_INT_VAR_READ_CONSISTENCY); }
+  int64_t get_ap_query_route_policy() const { return get_int_var(CACHED_INT_VAR_AP_QUERY_ROUTE_POLICY); }
   int64_t get_ncharacter_set_connection() const { return get_int_var(CACHED_INT_VAR_NCHARACTER_SET_CONNECTION); }
   int64_t get_max_execution_time() const { return get_int_var(CACHED_INT_VAR_MAX_EXECUTION_TIME); }
   const common::ObObj &get_query_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_QUERY_TIMEOUT); }

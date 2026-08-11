@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -1880,12 +1873,19 @@ int ObClusterResource::init_server_state_processor(const ObResourcePoolConfig &c
     LOG_WDIAG("fail to alloc ObDetectServerStateCont", K(ret));
   } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->init(this, config.server_detect_refresh_interval_))) {
     LOG_WDIAG("fail to init detect server state cont", K_(config.server_detect_refresh_interval), K(ret));
+  } else if (!is_metadb && OB_ISNULL(cdc_coordinator_refresh_cont_ = op_alloc(ObCdcCoordinatorRefreshCont))) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to alloc ObCdcCoordinatorRefreshCont", K(ret));
+  } else if (!is_metadb && OB_FAIL(cdc_coordinator_refresh_cont_->init(this, config.cdc_coordinator_refresh_interval_))) {
+    LOG_WDIAG("fail to init cdc coordinator dummy refresh cont", K_(cluster_info_key), K(ret));
   } else {
     bool imm = true;
     if (OB_FAIL(ss_refresh_cont_->schedule_refresh_server_state(imm))) {
       LOG_WDIAG("fail to start schedule refresh server state", K(ret));
     } else if (!is_metadb && OB_FAIL(detect_server_state_cont_->schedule_detect_server_state())) {
       LOG_WDIAG("fail to start schedule detect server state", K(ret));
+    } else if (!is_metadb && OB_FAIL(cdc_coordinator_refresh_cont_->schedule_cdc_coordinator_refresh())) {
+      LOG_WDIAG("fail to start schedule cdc coordinator dummy refresh", K(ret));
     }
   }
 
@@ -1897,6 +1897,10 @@ int ObClusterResource::init_server_state_processor(const ObResourcePoolConfig &c
     if (NULL != detect_server_state_cont_) {
       detect_server_state_cont_->kill_this();
       detect_server_state_cont_ = NULL;
+    }
+    if (NULL != cdc_coordinator_refresh_cont_) {
+      cdc_coordinator_refresh_cont_->kill_this();
+      cdc_coordinator_refresh_cont_ = NULL;
     }
   }
   return ret;
@@ -1995,6 +1999,8 @@ void ObClusterResource::destroy()
       LOG_WDIAG("fail to stop refresh server state", K(ret));
     } else if (OB_FAIL(stop_detect_server_state())) {
       LOG_WDIAG("fail to stop detect server state", K(ret));
+    } else if (OB_FAIL(stop_cdc_coordinator_refresh())) {
+      LOG_WDIAG("fail to stop cdc coordinator dummy refresh", K(ret));
     }
     destroy_location_tenant_info();
     destory_single_leader_info_map();
@@ -2050,6 +2056,20 @@ int ObClusterResource::stop_detect_server_state()
     }
     LOG_DEBUG("stop detect server state", KPC(this));
     detect_server_state_cont_ = NULL;
+  }
+  return ret;
+}
+
+int ObClusterResource::stop_cdc_coordinator_refresh()
+{
+  int ret = OB_SUCCESS;
+  if (NULL != cdc_coordinator_refresh_cont_) {
+    if (OB_ISNULL(g_event_processor.schedule_imm(cdc_coordinator_refresh_cont_, ET_NET, DESTROY_SERVER_STATE_EVENT))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to schedule imm DESTROY_SERVER_STATE_EVENT", KPC_(cdc_coordinator_refresh_cont), K(ret));
+    }
+    LOG_DEBUG("stop cdc coordinator dummy refresh", KPC(this));
+    cdc_coordinator_refresh_cont_ = NULL;
   }
   return ret;
 }
@@ -2429,6 +2449,10 @@ bool ObResourcePoolConfig::update(const ObProxyConfig &config)
     server_detect_refresh_interval_ = config.server_detect_refresh_interval;
     bret = true;
   }
+  if (cdc_coordinator_refresh_interval_ != config.cdc_coordinator_refresh_interval.get()) {
+    cdc_coordinator_refresh_interval_ = config.cdc_coordinator_refresh_interval;
+    bret = true;
+  }
   return bret;
 }
 
@@ -2742,6 +2766,7 @@ int ObResourcePoolProcessor::update_config_param()
     const int64_t metadb_server_state_refresh_interval = config_.metadb_server_state_refresh_interval_;
     const int64_t mysql_client_timeout_ms = (config_.short_async_task_timeout_ / 1000);
     const int64_t detect_server_state_refresh_interval = config_.server_detect_refresh_interval_;
+    const int64_t cdc_coordinator_refresh_interval = config_.cdc_coordinator_refresh_interval_;
     ObCongestionControlConfig *control_config = NULL;
     if (OB_ISNULL(control_config = op_alloc(ObCongestionControlConfig))) {
       ret = OB_ALLOCATE_MEMORY_FAILED;
@@ -2762,19 +2787,23 @@ int ObResourcePoolProcessor::update_config_param()
           if (OB_FAIL(cr_iter->congestion_manager_.update_congestion_config(control_config))) {
             LOG_WDIAG("fail to update congestion config", K(cr_iter->cluster_info_key_), K(ret));
           } else if ((NULL != cr_iter->ss_refresh_cont_)
-            && !is_metadb
-            && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(server_state_refresh_interval))) {
+                      && !is_metadb
+                      && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(server_state_refresh_interval))) {
             LOG_WDIAG("fail to update server state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
           } else if ((NULL != cr_iter->ss_refresh_cont_)
-            && is_metadb
-            && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(metadb_server_state_refresh_interval))) {
+                      && is_metadb
+                      && OB_FAIL(cr_iter->ss_refresh_cont_->set_server_state_refresh_interval(metadb_server_state_refresh_interval))) {
             LOG_WDIAG("fail to update metadb state refresh task interval", K(cr_iter->cluster_info_key_), K(ret));
           } else if (OB_FAIL(cr_iter->mysql_proxy_.set_timeout_ms(mysql_client_timeout_ms))) {
             LOG_WDIAG("fail to update mysql proxy timeout", K(mysql_client_timeout_ms), K(ret));
-          } else if ((NULL != cr_iter->ss_refresh_cont_)
-            && !is_metadb
-            && OB_FAIL(cr_iter->detect_server_state_cont_->set_detect_server_state_interval(detect_server_state_refresh_interval))) {
+          } else if ((NULL != cr_iter->detect_server_state_cont_)
+                      && !is_metadb
+                      && OB_FAIL(cr_iter->detect_server_state_cont_->set_detect_server_state_interval(detect_server_state_refresh_interval))) {
             LOG_WDIAG("fail to set detect server state interval", K(ret));
+          } else if ((NULL != cr_iter->cdc_coordinator_refresh_cont_)
+                      && !is_metadb
+                      && OB_FAIL(cr_iter->cdc_coordinator_refresh_cont_->set_refresh_interval(cdc_coordinator_refresh_interval))) {
+            LOG_WDIAG("fail to set cdc coordinator dummy refresh interval", K(ret));
           }
         }
       } // end for
@@ -2955,6 +2984,8 @@ int ObResourcePoolProcessor::delete_cluster_resource(const ObString &cluster_nam
         LOG_WDIAG("fail to stop refresh server state", K(ret));
       } else if (OB_FAIL(cr->stop_detect_server_state())) {
         LOG_WDIAG("fail to stop detect server state", K(ret));
+      } else if (OB_FAIL(cr->stop_cdc_coordinator_refresh())) {
+        LOG_WDIAG("fail to stop cdc coordinator dummy refresh", K(ret));
       } else {
         // push to every work thread
         int64_t thread_count = g_event_processor.thread_count_for_type_[ET_NET];

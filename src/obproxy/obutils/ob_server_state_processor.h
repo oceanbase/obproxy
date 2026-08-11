@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_STATE_PROCESSOR_H
@@ -31,6 +24,7 @@
 #define REFRESH_SERVICE_NAME_INFO_EVENT (SERVER_STATE_EVENT_EVENTS_START + 9)
 #define REFRESH_SINGLE_LEADER_EVENT (SERVER_STATE_EVENT_EVENTS_START + 10)
 #define REFRESH_SINGLE_LEADERS_FOLLOWER_EVENT (SERVER_STATE_EVENT_EVENTS_START + 11)
+#define REFRESH_CDC_COORDINATOR_EVENT (SERVER_STATE_EVENT_EVENTS_START + 12)
 
 namespace oceanbase
 {
@@ -40,6 +34,7 @@ namespace proxy
 {
 class ObMysqlProxy;
 class ObMysqlResultHandler;
+class ObClientMysqlResp;
 }
 namespace obutils
 {
@@ -175,6 +170,44 @@ public:
   static uint64_t get_servers_state_hash(common::ObIArray<ObServerStateInfo> &servers_state);
   static uint64_t get_servers_addr_hash(common::ObIArray<ObServerStateInfo> &servers_state);
   static int order_servers_state(const common::ObIArray<ObServerStateInfo> &servers_state, LocationList &server_list);
+};
+
+// Periodically execute SHOW CDC SERVERS and refresh __all_cdc_coordinator_dummy table entry in table cache.
+class ObCdcCoordinatorRefreshCont : public event::ObContinuation
+{
+public:
+  ObCdcCoordinatorRefreshCont()
+      : ObContinuation(NULL), is_inited_(false), kill_this_(false), cluster_resource_(NULL),
+        refresh_interval_us_(0), pending_action_(NULL), set_interval_task_count_(0)
+  {
+    SET_HANDLER(&ObCdcCoordinatorRefreshCont::main_handler);
+  }
+  virtual ~ObCdcCoordinatorRefreshCont() {}
+  virtual void destroy() { kill_this(); }
+  virtual int main_handler(int event, void *data);
+  void kill_this();
+  int init(ObClusterResource *cluster_resource, int64_t refresh_interval_us);
+  int schedule_cdc_coordinator_refresh();
+  int set_refresh_interval(const int64_t refresh_interval_us);
+  DECLARE_TO_STRING;
+
+private:
+  int cancel_pending_action();
+  int do_async_show_cdc_servers();
+  int handle_show_cdc_servers_resp(void *data);
+  int handle_cdc_servers_list(ObClientMysqlResp& resp,
+                              LocationList& cdc_coordinator_list);
+
+private:
+  bool is_inited_;
+  bool kill_this_;
+  ObClusterResource *cluster_resource_;
+  int64_t refresh_interval_us_;
+  event::ObAction *pending_action_;
+  volatile int64_t set_interval_task_count_;
+
+private:
+  DISALLOW_COPY_AND_ASSIGN(ObCdcCoordinatorRefreshCont);
 };
 
 class ObDetectServerStateCont : public event::ObContinuation

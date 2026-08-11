@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY_API
@@ -361,8 +354,9 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
       request_id_ = sm_->get_server_session()->get_next_server_request_id();
     }
 
-    ObSEArray<ObObJKV, 3> extra_info;
+    ObSEArray<ObObJKV, 4> extra_info;
     ObSqlString sess_info_value;
+    ObSqlString proxy_one_way_sync_value;
     char client_ip_buf[MAX_IP_BUFFER_LEN] = "\0";
 
     char flt_info_buf[SERVER_FLT_INFO_BUF_MAX_LEN] = "\0";
@@ -381,7 +375,8 @@ int ObMysqlRequestCompressTransformPlugin::build_compressed_packet(bool is_last_
                                                                        client_ip_buf, MAX_IP_BUFFER_LEN,
                                                                        total_flt_info_buf, total_flt_info_buf_len,
                                                                        sess_info_veri_buf, OB_SESS_INFO_VERI_BUF_MAX,
-                                                                       sess_info_value, is_last_segment,
+                                                                       sess_info_value, proxy_one_way_sync_value,
+                                                                       is_last_segment,
                                                                        is_proxy_switch_route))) {
       PROXY_API_LOG(WDIAG, "fail to build related extra info all", K(ret));
     } else {

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_OB20_PROTOCOL_UTILS_H
@@ -22,6 +15,7 @@
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
 #include "proxy/mysqllib/ob_resp_analyzer_util.h"
 #include "proxy/mysqllib/ob_oceanbase_20_header_param.h"
+#include "opsql/parser/ob_proxy_parse_result.h"
 
 namespace oceanbase
 {
@@ -118,11 +112,28 @@ public:
   static int build_sess_veri_for_server(ObMysqlSM *sm, common::ObIArray<ObObJKV> &extra_info,
                                         char *sess_veri_buf, const int64_t sess_veri_buf_len,
                                         const bool is_last_packet, const bool is_proxy_switch_route);
+
+  static bool is_sql_cmd_need_transport_db(const ObMySQLCmd cmd) {
+    return OB_MYSQL_COM_QUERY == cmd
+        || OB_MYSQL_COM_STMT_PREPARE == cmd
+        || OB_MYSQL_COM_STMT_PREPARE_EXECUTE == cmd;
+  }
+  static bool is_stmt_type_need_transport_db(const ObProxyBasicStmtType stmt_type) {
+    return OBPROXY_T_SELECT == stmt_type
+        || OBPROXY_T_INSERT == stmt_type
+        || OBPROXY_T_UPDATE == stmt_type
+        || OBPROXY_T_DELETE == stmt_type;
+  }
+  static int build_proxy_one_way_sync_info(common::ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
+                                           common::ObSqlString &inner_value,
+                                           const bool is_last_packet_or_segment);
   static int build_related_extra_info_all(common::ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
                                           char *ip_buf, const int64_t ip_buf_len,
                                           char *flt_info_buf, const int64_t flt_info_buf_len,
                                           char *sess_veri_buf, const int64_t sess_veri_buf_len,
-                                          common::ObSqlString &info_value, const bool is_last_packet,
+                                          common::ObSqlString &sess_info_value,
+                                          common::ObSqlString &proxy_one_way_sync_value,
+                                          const bool is_last_packet,
                                           const bool is_proxy_switch_route);
   static int build_show_trace_info_buffer(ObMysqlSM *sm, const bool is_last_packet, char *&buf, int64_t &buf_len);
   

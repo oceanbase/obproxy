@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  *
  * *************************************************************
  *
@@ -39,6 +32,37 @@ namespace obproxy
 {
 namespace event
 {
+
+int ObIOBufferBlock::direct_write_block_data(const int64_t offset, const char *data, const int64_t data_len)
+{
+  int ret = common::OB_SUCCESS;
+
+  if (OB_ISNULL(data) || OB_UNLIKELY(data_len <= 0)) {
+    ret = common::OB_INVALID_ARGUMENT;
+    PROXY_EVENT_LOG(WDIAG, "invalid argument", K(data), K(data_len), K(ret));
+  } else if (OB_ISNULL(start_) || OB_ISNULL(end_) || OB_UNLIKELY(start_ > end_)) {
+    ret = common::OB_ERR_UNEXPECTED;
+    PROXY_EVENT_LOG(WDIAG, "block inuse area is invalid", K_(start), K_(end), K(ret));
+  } else {
+    char *write_ptr = (offset >= 0) ? (start_ + offset) : (end_ + offset);
+    if (OB_UNLIKELY((write_ptr < start_) || (write_ptr >= end_))) {
+      ret = common::OB_SIZE_OVERFLOW;
+      PROXY_EVENT_LOG(WDIAG, "invalid write offset", K(offset), K(data_len), K(write_ptr), K_(start), K(ret));
+    } else if (write_ptr + data_len <= end_) {
+      MEMCPY(write_ptr, data, data_len);
+    } else if (NULL != next_) {
+      const int64_t copy_len = end_ - write_ptr;
+      MEMCPY(write_ptr, data, copy_len);
+      ret = next_->direct_write_block_data(0, data + copy_len, data_len - copy_len);
+    } else {
+      ret = common::OB_SIZE_OVERFLOW;
+      PROXY_EVENT_LOG(WDIAG, "write length overflow",
+                      K(offset), K(data_len), "writable buf size", end_ - start_, K(ret));
+    }
+  }
+
+  return ret;
+}
 
 int ObMIOBuffer::remove_append(ObIOBufferReader *r, int64_t &append_len)
 {

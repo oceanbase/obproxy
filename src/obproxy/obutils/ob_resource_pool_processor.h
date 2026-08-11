@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_RESOURCES_POOL_PROCESSOR_H
@@ -272,7 +265,8 @@ class ObClusterResource : public common::ObSharedRefCount
 public:
   ObClusterResource()
     : sys_var_set_processor_(), congestion_manager_(), ss_refresh_cont_(NULL),
-      detect_server_state_cont_(NULL), mysql_proxy_(), server_state_version_(0), dummy_entry_(NULL),
+      detect_server_state_cont_(NULL), cdc_coordinator_refresh_cont_(NULL), mysql_proxy_(),
+      server_state_version_(0), dummy_entry_(NULL),
       cluster_info_key_(), last_access_time_ns_(0), deleting_completed_thread_num_(0),
       version_(0), fetch_rslist_task_count_(0), fetch_idc_list_task_count_(0),
       last_idc_list_refresh_time_ns_(0), last_rslist_refresh_time_ns_(0),
@@ -308,6 +302,7 @@ public:
   bool inc_and_test_deleting_complete();
   int stop_refresh_server_state();
   int stop_detect_server_state();
+  int stop_cdc_coordinator_refresh();
   bool is_default_cluster_resource() const { return (ObString::make_string(OB_PROXY_DEFAULT_CLUSTER_NAME) == get_cluster_name()); }
   bool is_metadb_cluster_resource() const { return (ObString::make_string(OB_META_DB_CLUSTER_NAME) == get_cluster_name()); }
 
@@ -407,6 +402,7 @@ public:
   ObCongestionManager congestion_manager_;
   ObServerStateRefreshCont *ss_refresh_cont_;
   ObDetectServerStateCont *detect_server_state_cont_;
+  ObCdcCoordinatorRefreshCont *cdc_coordinator_refresh_cont_;
   proxy::ObMysqlProxy mysql_proxy_;
 
   volatile uint64_t server_state_version_;
@@ -473,7 +469,7 @@ struct ObResourcePoolConfig
                K_(server_state_refresh_interval), K_(metadb_server_state_refresh_interval),
                K_(min_keep_congestion_interval_us), K_(congestion_retry_interval_us),
                K_(congestion_fail_window_us), K_(congestion_failure_threshold),
-               K_(server_detect_refresh_interval));
+               K_(server_detect_refresh_interval), K_(cdc_coordinator_refresh_interval));
 
   int64_t long_async_task_timeout_;
   int64_t short_async_task_timeout_;
@@ -484,6 +480,7 @@ struct ObResourcePoolConfig
   int64_t congestion_fail_window_us_;
   int64_t congestion_failure_threshold_;
   int64_t server_detect_refresh_interval_;
+  int64_t cdc_coordinator_refresh_interval_;
 };
 
 class ObResourcePoolProcessor

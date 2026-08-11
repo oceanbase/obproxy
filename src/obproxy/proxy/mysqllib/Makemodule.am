@@ -16,6 +16,8 @@ obproxy/proxy/mysqllib/ob_proxy_auth_parser.h\
 obproxy/proxy/mysqllib/ob_proxy_auth_parser.cpp\
 obproxy/proxy/mysqllib/ob_proxy_parser_utils.h\
 obproxy/proxy/mysqllib/ob_proxy_parser_utils.cpp\
+obproxy/proxy/mysqllib/ob_cdc_dump_packet.h\
+obproxy/proxy/mysqllib/ob_cdc_dump_packet.cpp\
 obproxy/proxy/mysqllib/ob_mysql_config_processor.h\
 obproxy/proxy/mysqllib/ob_mysql_config_processor.cpp\
 obproxy/proxy/mysqllib/ob_mysql_packet_rewriter.cpp\

@@ -1,14 +1,6 @@
 /**
- *
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_MYSQL_TRANSACT_H
@@ -227,6 +219,7 @@ enum ObServerRespErrorType
     SM_ACTION_API_SM_SHUTDOWN,
 
     SM_ACTION_BINLOG_LOCATION_LOOKUP,
+    SM_ACTION_CDC_COORDINATOR_LOCATION_LOOKUP,
     SM_ACTION_SETUP_GET_CLUSTER_RESOURCE,
   };
 
@@ -474,6 +467,8 @@ enum ObServerRespErrorType
     DISALLOW_COPY_AND_ASSIGN(ObPartitionLookupInfo);
   };
 
+  struct ObPlRouteSelection;
+
   struct ObTransactInfo
   {
     ObTransactInfo()
@@ -541,6 +536,8 @@ enum ObServerRespErrorType
           internal_reader_(NULL),
           reroute_info_(),
           pll_info_(),
+          real_database_name_(),
+          real_database_name_buf_{},
           mysql_errcode_(0),
           mysql_errmsg_(NULL),
           inner_errcode_(0),
@@ -591,6 +588,30 @@ enum ObServerRespErrorType
     bool need_sqlaudit()
     {
       return ((mysql_config_params_->sqlaudit_mem_limited_ > 0) && (NULL != sqlaudit_record_queue_));
+    }
+
+    int set_real_database_name(const common::ObString &database_name)
+    {
+      int ret = common::OB_SUCCESS;
+      if (OB_UNLIKELY(database_name.length() > OB_MAX_DATABASE_NAME_LENGTH)) {
+        ret = common::OB_INVALID_ARGUMENT;
+        PROXY_TXN_LOG(WDIAG, "invalid real database name", K(database_name), K(ret));
+      } else {
+        if (!database_name.empty()) {
+          MEMCPY(real_database_name_buf_, database_name.ptr(), database_name.length());
+        }
+        real_database_name_buf_[database_name.length()] = '\0';
+        real_database_name_.assign_ptr(real_database_name_buf_, database_name.length());
+      }
+      return ret;
+    }
+
+    const ObString &get_real_database_name() const { return real_database_name_; }
+
+    void reset_real_database_name()
+    {
+      real_database_name_.reset();
+      real_database_name_buf_[0] = '\0';
     }
 
     void refresh_mysql_config();
@@ -738,6 +759,7 @@ enum ObServerRespErrorType
       set_execute_on_prepare_execute(false);
       set_handling_ps_close_reset(false);
       reroute_info_.reset();
+      reset_real_database_name();
       mysql_errmsg_ = NULL;
       inner_errcode_ = 0;
       inner_errmsg_ = NULL;
@@ -1023,6 +1045,11 @@ enum ObServerRespErrorType
 
     ObProxyRerouteInfo reroute_info_;
     ObPartitionLookupInfo pll_info_;
+    // The database parsed from SQL belongs to the immutable parse result.  The
+    // effective database used by routing is request-local and may come from
+    // the current session or the global-index mapping.
+    ObString real_database_name_;
+    char real_database_name_buf_[OB_MAX_DATABASE_NAME_LENGTH + 1];
 
     // used to building error packet, which will be sent to client
     int mysql_errcode_;
@@ -1086,6 +1113,7 @@ enum ObServerRespErrorType
                                         int64_t &request_len);
   static int build_server_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                   int64_t &request_len);
+  static int check_force_master_ob20_protocol(ObTransState &s);
 
   static int build_oceanbase_user_request(ObTransState &s, event::ObIOBufferReader *client_buffer_reader,
                                           event::ObIOBufferReader *&reader, int64_t &request_len);
@@ -1113,9 +1141,16 @@ enum ObServerRespErrorType
                                               common::ObIArray<common::ObString> &region_names);
   static int get_proxy_primary_zone_array(common::ObString zone,
                                           common::ObSEArray<common::ObString, 5> &zone_array);
+  static ObProxyApQueryRoutePolicyType get_session_ap_query_route_policy(ObClientSessionInfo &cs_info);
+  static bool has_columnstore_replica_in_pl(const ObProxyPartitionLocation *pl);
+  static bool has_columnstore_replica_in_route(const ObServerRoute &route);
+  static void try_columnstore_force_route(ObTransState &s,
+                                                 obutils::ObSqlParseResult &parse_result,
+                                                 ObPlRouteSelection &route_selection);
   static int handle_dup_join(ObTransState &s);
   static void handle_pl_lookup(ObTransState &s);
   static void handle_bl_lookup(ObTransState &s);
+  static void handle_cdc_location_lookup(ObTransState &s);
   static void modify_pl_lookup(ObTransState &s);
   static void handle_congestion_control_lookup(ObTransState &s);
   static void handle_congestion_entry_not_exist(ObTransState &s);
@@ -1139,6 +1174,9 @@ enum ObServerRespErrorType
   static void handle_server_resp_error(ObTransState &s);
   static bool is_internal_request(ObTransState &s);
   static bool is_binlog_request(const ObTransState &s);
+  static bool is_cdc_request(const ObTransState &s);
+  static bool is_cdc_coordinator_request(const ObTransState &s);
+  static bool is_cdc_msgservice_request(const ObTransState &s);
   static bool is_single_shard_db_table(ObTransState &s);
   static bool can_direct_ok_for_login(ObTransState &s);
   static bool is_in_trans(ObTransState &s);

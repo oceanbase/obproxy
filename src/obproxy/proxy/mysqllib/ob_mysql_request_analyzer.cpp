@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -23,6 +16,7 @@
 #include "opsql/expr_parser/ob_expr_parser.h"
 #include "proxy/mysqllib/ob_mysql_config_processor.h"
 #include "obproxy/obutils/ob_proxy_sql_parser.h"
+#include "proxy/mysqllib/ob_cdc_dump_packet.h"
 #include "proxy/shard/obproxy_shard_utils.h"
 #include "proxy/mysqllib/ob_protocol_diagnosis.h"
 #include "lib/ptr/ob_ptr.h"
@@ -737,6 +731,28 @@ inline int ObMysqlRequestAnalyzer::do_analyze_request(
           LOG_INFO("this is proxysys user, current cmd was treated as error inter request cmd",
                    K(sql_cmd));
         }
+      }
+      break;
+    }
+
+    case OB_MYSQL_COM_CDC_DUMP: {
+      ObCdcDumpPacket* cdc_dump_packet = NULL;
+      if (OB_FAIL(client_request.add_request(ctx.reader_, ctx.request_buffer_length_))) {
+        LOG_WDIAG("fail to add cdc dump request", K(ret));
+      } else if (OB_ISNULL(cdc_dump_packet = op_alloc(ObCdcDumpPacket))) {
+        ret = OB_ALLOCATE_MEMORY_FAILED;
+        LOG_WDIAG("fail to alloc cdc_dump_packet", K(ret));
+      } else if (OB_FAIL(cdc_dump_packet->parse_from_reader(*ctx.reader_, client_request.get_packet_len()))) {
+        LOG_WDIAG("fail to parse cdc dump packet", K(ret));
+      } else {
+        LOG_DEBUG("succ to parse cdc dump request", KPC(cdc_dump_packet));
+        client_request.set_cdc_dump_pkt(cdc_dump_packet);
+        cdc_dump_packet = NULL;
+      }
+
+      if (OB_FAIL(ret) && OB_NOT_NULL(cdc_dump_packet)) {
+        op_free(cdc_dump_packet);
+        cdc_dump_packet = NULL;
       }
       break;
     }

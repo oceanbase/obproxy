@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -215,21 +208,34 @@ void ObVipReadStaleInfo::read_stale_feedback_gc(const int64_t max_gc_count,
                                                 int64_t &gc_count)
 {
   common::ObSEArray<ObReadStaleFeedback*, 64> feedback_gc;
-  FeedbackIterator feedback_it = read_stale_feedback_map_.begin();
-  FeedbackIterator feedback_end = read_stale_feedback_map_.end();
-  for(; feedback_it != feedback_end && gc_count < max_gc_count; ++feedback_it) {
-    if (feedback_it->is_read_stale_feedback_need_remove(remove_interval, now)) {
-      gc_count ++;
-      feedback_gc.push_back(feedback_it.value_);
+  {
+    DRWLock::RDLockGuard guard(lock_);
+    FeedbackIterator feedback_it = read_stale_feedback_map_.begin();
+    FeedbackIterator feedback_end = read_stale_feedback_map_.end();
+    for (; feedback_it != feedback_end && gc_count < max_gc_count; ++feedback_it) {
+      ObReadStaleFeedback *feedback = feedback_it.value_;
+      if (OB_ISNULL(feedback)) {
+        LOG_WDIAG("unexpected pointer, there are some potential problems");
+        continue;
+      }
+      if (feedback->is_read_stale_feedback_need_remove(remove_interval, now)) {
+        gc_count++;
+        feedback_gc.push_back(feedback);
+      }
     }
   }
   if (feedback_gc.count() > 0) {
-    lock_.wrlock();
+    DRWLock::WRLockGuard guard(lock_);
     for (int i = 0; i < feedback_gc.count(); i++) {
-      read_stale_feedback_map_.remove(feedback_gc[i]);
-      feedback_gc[i]->destroy();
+      ObReadStaleFeedback *feedback = feedback_gc[i];
+      if (OB_ISNULL(feedback)) {
+        LOG_EDIAG("unexpected pointer, there are some potential problems");
+        continue;
+      } else {
+        read_stale_feedback_map_.remove(feedback);
+        feedback->destroy();
+      }
     }
-    lock_.wrunlock();
   }
 }
 
@@ -414,29 +420,31 @@ int ObReadStaleProcessor::vip_read_stale_gc()
 {
   int ret = OB_SUCCESS;
   int64_t gc_count = 0;
-  // only remove feedback here, dont't need to lock on iterate
+
   common::ObSEArray<ObVipReadStaleInfo*, 16> vip_gc;
   int64_t now = hrtime_to_usec(event::get_hrtime());
   int64_t remove_interval = get_global_proxy_config().read_stale_remove_interval;
   VipIterator it = vip_read_stale_map_.begin();
   VipIterator end = vip_read_stale_map_.end();
 
-  for (; it != end && gc_count < MAX_FEEDBACK_GC_COUNT; ++it) {
-    it->read_stale_feedback_gc(MAX_FEEDBACK_GC_COUNT, now, remove_interval, gc_count);
-    if (it->get_feedback_count() == 0) {
-      vip_gc.push_back(it.value_);
+  {
+    DRWLock::RDLockGuard guard(lock_);
+    for (; it != end && gc_count < MAX_FEEDBACK_GC_COUNT; ++it) {
+      it->read_stale_feedback_gc(MAX_FEEDBACK_GC_COUNT, now, remove_interval, gc_count);
+      if (it->get_feedback_count() == 0) {
+        vip_gc.push_back(it.value_);
+      }
     }
   }
 
   if (vip_gc.count() > 0){
-    lock_.wrlock();
+    DRWLock::WRLockGuard guard(lock_);
     for (int i = 0; i < vip_gc.count(); i++) {
       if (vip_gc[i]->get_feedback_count() == 0) {
         vip_read_stale_map_.remove(vip_gc[i]);
         vip_gc[i]->destroy();
       }
     }
-    lock_.wrunlock();
   }
   return ret;
 }

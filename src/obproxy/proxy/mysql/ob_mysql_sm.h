@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_MYSQL_SM_H
@@ -304,6 +297,7 @@ public:
   int state_server_addr_lookup(int event, void *data);
   int state_partition_location_lookup(int event, void *data);
   int state_binlog_location_lookup(int event, void *data);
+  int state_cdc_coordinator_location_lookup(int event, void *data);
   int state_add_to_list(int event, void *data);
   int state_remove_from_list(int event, void *data);
 
@@ -335,6 +329,7 @@ public:
 
   void do_partition_location_lookup();
   void do_binlog_location_lookup();
+  void do_cdc_location_lookup();
   void do_congestion_control_lookup();
   void do_server_addr_lookup();
   int do_observer_open();

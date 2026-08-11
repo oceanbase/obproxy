@@ -598,6 +598,16 @@ FLUSH            { RETURN_NON_RESERVED_KEYWORD(FLUSH); }
 SERVER           { RETURN_NON_RESERVED_KEYWORD(SERVER); }
 TENANT           { RETURN_NON_RESERVED_KEYWORD(TENANT); }
 
+  /* CDC relate keyword */
+CDC               { RETURN_NON_RESERVED_KEYWORD(CDC); }
+REGISTER          { RETURN_NON_RESERVED_KEYWORD(REGISTER); }
+UNREGISTER        { RETURN_NON_RESERVED_KEYWORD(UNREGISTER); }
+AUTH              { RETURN_NON_RESERVED_KEYWORD(AUTH); }
+ACK               { RETURN_NON_RESERVED_KEYWORD(ACK); }
+
+  /* to avoid shift/reduce of DESCRIBE and CDC*/
+DESCRIBE{space}+CDC { return DESCRIBE_CDC; }
+
  /*set names*/
 {set_names}         { SET_BASIC_STMT(OBPROXY_T_SET_NAMES); return SET_NAMES; }
  /*set charset*/
@@ -859,11 +869,17 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>"max_execution_time"     { return MAX_EXECUTION_TIME; }
 <hint>{int_num}           { RETURN_INT_NUM(); }
 <hint>"read_consistency"  { return READ_CONSISTENCY; }
+<hint>"opt_param"         { return HINT_OPT_PARAM; }
 <hint>WEAK                { RETURN_NON_RESERVED_KEYWORD(WEAK); }
 <hint>STRONG              { RETURN_NON_RESERVED_KEYWORD(STRONG); }
 <hint>FROZEN              { RETURN_NON_RESERVED_KEYWORD(FROZEN); }
 <hint>INDEX               { return INDEX; }
 <hint>TRACE_LOG           { return TRACE_LOG; }
+<hint>{comma}|{multi_byte_comma} { return ','; }
+<hint>"'ap_query_route_policy'" { return HINT_AP_QUERY_ROUTE_POLICY; }
+<hint>"'force'" { return HINT_AP_QRP_FORCE; }
+<hint>"'auto'"  { return HINT_AP_QRP_AUTO; }
+<hint>"'off'"   { return HINT_AP_QRP_OFF; }
 <hint>{leftbracket}|{rightbracket}  { return yytext[0]; }
 <hint>{identifer}         { RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>{c_cmt_end}         { POP_STATE(); return HINT_END; }
@@ -915,7 +931,6 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   return COMMENT_END;
 }
 
-
 <in_comment_expr>{c_cmt_end} {
   ObProxyParseResult *p = (ObProxyParseResult *)yyextra;
   if (OB_NOTNULL(p)) {
@@ -926,20 +941,20 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
   return COMMENT_END;
 }
 
-<in_comment_expr>.           { PUSH_STATE(in_old_comment_expr); }
-
 <in_comment_expr>"ODP:"                      { PUSH_STATE(in_odp_comment_expr); return ODP_COMMENT; }
-<in_comment_expr>{space}*"group_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(GROUP_ID); }
-<in_comment_expr>{space}*"table_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_ID); }
-<in_comment_expr>{space}*"table_name"        { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_NAME); }
-<in_comment_expr>{space}*"elastic_id"        { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(ELASTIC_ID); }
-<in_comment_expr>{space}*"testload"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TESTLOAD); }
-<in_comment_expr>{space}*"disaster_status"   { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(DISASTER_STATUS); }
-<in_comment_expr>{space}*"tnt_id"            { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TNT_ID); }
-<in_comment_expr>{space}*"trace_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TRACE_ID); }
-<in_comment_expr>{space}*{comment_identifer}"." { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT_NAME_OB_DOT(NAME_OB_DOT); }
-<in_comment_expr>{space}*"rpc_id"            { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(RPC_ID); }
-<in_comment_expr>{space}*"target_db_server"  { PUSH_STATE(in_odp_comment_expr); return TARGET_DB_SERVER; }
+<in_comment_expr>"FORCE_MASTER"      { return FORCE_MASTER_HINT; }
+<in_comment_expr>"group_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(GROUP_ID); }
+<in_comment_expr>"table_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_ID); }
+<in_comment_expr>"table_name"        { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TABLE_NAME); }
+<in_comment_expr>"elastic_id"        { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(ELASTIC_ID); }
+<in_comment_expr>"testload"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TESTLOAD); }
+<in_comment_expr>"disaster_status"   { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(DISASTER_STATUS); }
+<in_comment_expr>"tnt_id"            { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TNT_ID); }
+<in_comment_expr>"trace_id"          { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(TRACE_ID); }
+<in_comment_expr>"rpc_id"            { PUSH_STATE(in_odp_comment_expr); RETURN_SHARD_COMMENT(RPC_ID); }
+<in_comment_expr>"target_db_server"  { PUSH_STATE(in_odp_comment_expr); return TARGET_DB_SERVER; }
+<in_comment_expr>{space}             {}
+<in_comment_expr>.                   { PUSH_STATE(in_old_comment_expr); }
 
 <in_odp_comment_expr>"group_id"          { return GROUP_ID; }
 <in_odp_comment_expr>"table_id"          { return TABLE_ID; }

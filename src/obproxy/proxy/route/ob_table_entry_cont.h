@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_TABLE_ENTRY_CONT_H
@@ -17,6 +10,7 @@
 #include "obutils/ob_async_common_task.h"
 #include "proxy/route/ob_table_entry.h"
 #include "proxy/client/ob_client_vc.h"
+#include "proxy/route/ob_mysql_route.h"
 
 
 #define TABLE_ENTRY_LOOKUP_CACHE_EVENT (ROUTE_EVENT_EVENTS_START + 1)
@@ -43,6 +37,7 @@ enum ObTableEntryLookupOp
   LOOKUP_PUSH_INTO_PENDING_LIST_OP,
   LOOKUP_GLOBAL_CACHE_HIT_OP,
   LOOKUP_FIRST_PART_OP,
+  RETURN_WITH_GLOBAL_CACHE_MISS_OP,
 };
 
 enum ObTableEntryLookupState
@@ -55,6 +50,7 @@ enum ObTableEntryLookupState
   LOOKUP_BINLOG_ENTRY_STATE,
   LOOKUP_BINLOG_HOSTNAME_STATE,
   LOOKUP_BINLOG_RETRY_STATE,
+  LOOKUP_CDC_MSGSERVICE_STATE,
   LOOKUP_DONE_STATE,
 };
 
@@ -100,6 +96,8 @@ public:
   uint64_t tenant_version_;
   bool is_partition_table_route_supported_;
   bool force_renew_;
+  bool force_use_cache_;
+  bool skip_refresh_cache_;
   bool is_oracle_mode_;
   bool is_need_force_flush_;
   bool is_single_partition_table_;
@@ -109,7 +107,7 @@ public:
   char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
   common::ObString binlog_service_ip_;
   ObRouteDiagnosis *route_diagnosis_;
-
+  ObCdcMsgServiceParam cdc_msgservice_param_;
 private:
   DISALLOW_COPY_AND_ASSIGN(ObTableRouteParam);
 };
@@ -153,6 +151,7 @@ private:
   int handle_lookup_remote();
   int handle_lookup_remote_done();
   int handle_binlog_entry_resp(ObResultSetFetcher &rs_fetcher);
+  int handle_cdc_msgservice_resp(ObResultSetFetcher &rs_fetcher);
   int do_lookup_binlog_entry_remote(bool need_use_next_hostname_ip, bool hostname_refresh_succ = false);
 
   int handle_lookup_remote_for_update();

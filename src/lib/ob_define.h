@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OCEANBASE_COMMON_OB_DEFINE_H_
@@ -643,6 +636,7 @@ enum ObCapabilityFlagShift
   OB_CAP_FEEDBACK_PROXY_SHIFT,                      // 23
   OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT,              // 24
   OB_CAP_MAX_EXECUTION_TIME_SHIFT,                  // 25
+  OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC_SHIFT,       // 26
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -672,6 +666,7 @@ enum ObCapabilityFlagShift
 #define OB_CAP_CHANGE_USER_CONN_ATTRS OB_CAP_GET_TYPE(common::OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT)
 #define OB_CAP_MAX_EXECUTION_TIME OB_CAP_GET_TYPE(common::OB_CAP_MAX_EXECUTION_TIME_SHIFT)
 
+#define OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC OB_CAP_GET_TYPE(common::OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC_SHIFT)
 #define OB_CAP_CHECK_ENABLE_CAPS(enable_caps, src_caps) ((enable_caps & src_caps) == enable_caps)
 #define OB_CAP_CHECK_DISABLE_CAPS(disable_caps, src_caps) ((~disable_caps | src_caps) == ~disable_caps)
 

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -377,7 +370,8 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
         break;
       }
       case OB_MYSQL_COM_BINLOG_DUMP:
-      case OB_MYSQL_COM_BINLOG_DUMP_GTID : {
+      case OB_MYSQL_COM_BINLOG_DUMP_GTID:
+      case OB_MYSQL_COM_CDC_DUMP: {
         if (1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
           finished = true;
           ending_type = EOF_PACKET_ENDING_TYPE;

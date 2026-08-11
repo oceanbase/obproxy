@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -418,7 +411,7 @@ int split_weight_group(ObString weight_group_str,
   return ret;
 }
 
-int split_string_by_char(ObString &org_str,
+int split_string_by_char(const ObString &org_str,
                          ObIArray<ObString> &result_strs,
                          const char split_char, /* ';' */
                          const bool contain_split_char /* false */)
@@ -427,7 +420,7 @@ int split_string_by_char(ObString &org_str,
 
   int64_t str_len = org_str.length();
   int64_t last_split_char_pos = -1;
-  char * const str_ptr = org_str.ptr();
+  char * const str_ptr = const_cast<char * const>(org_str.ptr());
 
   if (OB_UNLIKELY(org_str.empty())) {
     if (OB_FAIL(result_strs.push_back(org_str))) {

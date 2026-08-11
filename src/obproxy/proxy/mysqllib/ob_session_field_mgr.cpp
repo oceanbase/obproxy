@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -18,6 +11,7 @@
 #include "proxy/mysqllib/ob_resultset_fetcher.h"
 #include "proxy/client/ob_mysql_proxy.h"
 #include "proxy/client/ob_client_utils.h"
+#include "opsql/parser/ob_proxy_parse_result.h"
 
 using namespace oceanbase::sql;
 using namespace oceanbase::common;
@@ -2907,6 +2901,10 @@ int ObDefaultSysVarSet::load_default_system_variable()
     LOG_WDIAG("fail to load default sysvar tx_read_only", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_READ_CONSISTENCY), 3, both_scope, print_info_log))) {
     LOG_WDIAG("fail to load default sysvar ob_read_consistency", K(ret));
+  } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_AP_QUERY_ROUTE_POLICY),
+                                     static_cast<int64_t>(OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO),
+                                     both_scope, print_info_log))) {
+    LOG_WDIAG("fail to load default sysvar ap_query_route_policy", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_COLLATION_CONNECTION), 45, both_scope, print_info_log))) {
     LOG_WDIAG("fail to load default sysvar collation_connection", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_ENABLE_TRANSMISSION_CHECKSUM), 1, both_scope, print_info_log))) {

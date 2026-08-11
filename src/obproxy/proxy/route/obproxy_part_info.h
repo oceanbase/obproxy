@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_PART_INFO_H
@@ -34,6 +27,7 @@ public:
   bool is_hash_part(const int64_t cluster_version) const;
   bool is_key_part(const int64_t cluster_version) const;
   bool is_list_part(const int64_t cluster_version) const;
+  bool is_interval_part(const int64_t cluster_version) const;
 
   int64_t to_string(char *buf, const int64_t buf_len) const;
 
@@ -164,6 +158,11 @@ inline bool ObProxyPartOption::is_key_part(const int64_t cluster_version) const
 inline bool ObProxyPartOption::is_list_part(const int64_t cluster_version) const
 {
   return share::schema::is_list_part(part_func_type_, cluster_version);
+}
+
+inline bool ObProxyPartOption::is_interval_part(const int64_t cluster_version) const
+{
+  return share::schema::is_interval_part(part_func_type_, cluster_version);
 }
 
 } // namespace proxy

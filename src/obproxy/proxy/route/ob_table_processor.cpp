@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -188,10 +181,13 @@ int ObTableProcessor::get_table_entry_from_global_cache(
         target_entry = table_cache.lookup_entry(hash, key);
         bool is_entry_from_rslist = false;
         if (NULL == target_entry) { // find nothing, should alloc building state table entry and fetch from remote
-          if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
+          if (OB_UNLIKELY(table_param.force_use_cache_)) {
+            op = RETURN_WITH_GLOBAL_CACHE_MISS_OP;
+            LOG_DEBUG("table entry cache miss, will return directly");
+          } else if (OB_UNLIKELY(table_param.name_.is_sys_dummy())) {
             is_entry_from_rslist = true;
             LOG_WDIAG("sys tenant' all dummy entry is not in global cache, will add one with rslist",
-                     K(table_param));
+                      K(table_param));
             if (OB_FAIL(get_table_entry_from_rslist(table_param, target_entry, op, is_entry_from_rslist))) {
               LOG_WDIAG("fail to get table entry from rslist", K(ret));
             }
@@ -474,6 +470,13 @@ int ObTableProcessor::handle_lookup_global_cache_done(
             entry->dec_ref();
             entry = NULL;
           }
+        }
+        break;
+      }
+      case RETURN_WITH_GLOBAL_CACHE_MISS_OP: {
+        if (NULL != entry) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("table entry must be NULL here", K(entry), K(ret));
         }
         break;
       }

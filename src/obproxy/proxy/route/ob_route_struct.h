@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_ROUTE_STRUCT_H
@@ -95,6 +88,7 @@ public:
   int add_rpc_addr(const char *ip, const int64_t svr_port);
   int set_replica_type(const int32_t replica_type);
   common::ObReplicaType get_replica_type() const { return replica_type_; }
+  void set_role(common::ObRole role) { role_ = role; }
   bool is_leader() const { return common::LEADER == role_; }
   bool is_follower() const { return common::FOLLOWER == role_; }
   static common::ObString get_role_type_string(const common::ObRole role);
@@ -555,6 +549,7 @@ public:
   bool is_oceanbase_db() const;
   bool is_all_dummy_table() const;
   bool is_binlog_table() const;
+  bool is_cdc_msgservice_table() const;
   int deep_copy(const ObTableEntryName &name, char *buf, const int64_t buf_len);
   void shallow_copy(const ObTableEntryName &name);
   void shallow_copy(const common::ObString &cluster_name, const common::ObString &tenant_name,
@@ -628,6 +623,12 @@ inline bool ObTableEntryName::is_binlog_table() const
   return is_valid() && binlog_tname_str == table_name_;
 }
 
+inline bool ObTableEntryName::is_cdc_msgservice_table() const
+{
+  static const common::ObString cdc_msgservice_tname_str(share::OB_ALL_CDC_MSGSERVICE_DUMMY_TNAME);
+  return is_valid() && cdc_msgservice_tname_str == table_name_;
+}
+
 inline bool ObTableEntryName::is_ob_dummy() const
 {
   return is_oceanbase_db() && is_all_dummy_table();
@@ -674,6 +675,7 @@ inline bool ObTableEntryName::is_valid() const
 {
   return ((!cluster_name_.empty())
           && (!tenant_name_.empty())
+          && (tenant_name_.length() <= common::OB_MAX_TENANT_NAME_LENGTH)
           && (!database_name_.empty())
           && (!table_name_.empty()));
 }

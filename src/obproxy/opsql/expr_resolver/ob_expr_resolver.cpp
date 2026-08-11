@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -1222,6 +1215,12 @@ int ObExprResolverV2::calc_token_func_obj(ObProxyTokenNode *token,
     expr_type = expr->get_expr_type();
   }
 
+  if (OB_NOT_NULL(expr)) {
+    // the memory of expr will be free by allocator_
+    // but the memory related to expr need be cleared with destruct func.
+    expr->~ObProxyExpr();
+  }
+
   return ret;
 }
 
@@ -2051,6 +2050,12 @@ int ObExprResolverV2::parse_and_resolve_default_value(const ObProxyParseString& 
             LOG_WDIAG("get expr calc result fail", K(ret));
           }
         }
+
+        if (OB_NOT_NULL(expr)) {
+          // the memory of expr will be free by allocator_
+          // but the memory related to expr need be cleared with destruct func.
+          expr->~ObProxyExpr();
+        }
       }
     }
   }
@@ -2099,6 +2104,12 @@ int ObExprResolverV2::cal_part_key_func(ObPartkeyFuncInfo &func_info,
       expr_type = expr->get_expr_type();
       LOG_DEBUG("succ to cal part_key_func", K(get_expr_type_name(expr_type)), K(target_obj));
     }
+  }
+
+  if (OB_NOT_NULL(expr)) {
+    // the memory of expr will be free by allocator_
+    // but the memory related to expr need be cleared with destruct func.
+    expr->~ObProxyExpr();
   }
 
   return ret;

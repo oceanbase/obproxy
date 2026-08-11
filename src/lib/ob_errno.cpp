@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "ob_errno.h"
@@ -3054,6 +3047,22 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_CLUSTER_RESOURCE_EXPIRED] = "HY000";
     STR_ERROR[-OB_PROXY_CLUSTER_RESOURCE_EXPIRED] = "ObProxy cluster resource expired";
     STR_USER_ERROR[-OB_PROXY_CLUSTER_RESOURCE_EXPIRED] = "ObProxy cluster resource expired";
+    MYSQL_ERRNO[-OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR] = -1;
+    SQLSTATE[-OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR] = "HY000";
+    STR_ERROR[-OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR] = "OBProxy connect cdc coordinator failed";
+    STR_USER_ERROR[-OB_PROXY_CONNECT_CDC_COORDINATOR_ERROR] = "OBProxy connect cdc coordinator failed";
+    MYSQL_ERRNO[-OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR] = -1;
+    SQLSTATE[-OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR] = "HY000";
+    STR_ERROR[-OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR] = "OBProxy connect cdc msgservice failed";
+    STR_USER_ERROR[-OB_PROXY_CONNECT_CDC_MSGSERVICE_ERROR] = "OBProxy connect cdc msgservice failed";
+    MYSQL_ERRNO[-OB_PROXY_OBI_CONNECTION_ERROR] = -1;
+    SQLSTATE[-OB_PROXY_OBI_CONNECTION_ERROR] = "HY000";
+    STR_ERROR[-OB_PROXY_OBI_CONNECTION_ERROR] = "ObProxy get OBI connection error";
+    STR_USER_ERROR[-OB_PROXY_OBI_CONNECTION_ERROR] = "ObProxy get OBI connection error";
+    MYSQL_ERRNO[-OB_PROXY_CDC_CONNECTION_ERROR] = -1;
+    SQLSTATE[-OB_PROXY_CDC_CONNECTION_ERROR] = "HY000";
+    STR_ERROR[-OB_PROXY_CDC_CONNECTION_ERROR] = "ObProxy get CDC connection error";
+    STR_USER_ERROR[-OB_PROXY_CDC_CONNECTION_ERROR] = "ObProxy get CDC connection error";
 
     // sharding related error code
     MYSQL_ERRNO[-OB_PROXY_SHARD_HINT_NOT_SUPPORTED] = -1;
@@ -3848,9 +3857,14 @@ static struct ObStrErrorInit
     STR_ERROR_NAME[-OB_PROXY_PROXY_ID_OVER_LIMIT]="ObProxyProxyIdOverLimit";
     STR_ERROR_NAME[-OB_LOCK_SESSION_CLOSED]="ObLockSessionClosedError";
     STR_ERROR_NAME[-OB_PROXY_SEND_LONG_DATA_PIECES_ERROR]="ObProxySendLongDataPiecesError";
+    STR_ERROR_NAME[-OB_SQLITE3_EXEC_ERROR]="ObSqlite3ExecError";
+    STR_ERROR_NAME[-OB_PROXY_COORDINATOR_CLOSED]="ObProxyCoordinatorClosed";
+    STR_ERROR_NAME[-OB_TEMPORARY_TABLE_SESSION_CLOSED]="ObTemporaryTableSessionClosed";
     STR_ERROR_NAME[-OB_PROXY_FETCH_RSLIST_FAIL]="ObProxyFetchRslistFail";
     STR_ERROR_NAME[-OB_CONNECT_BINLOG_ERROR]="ObConnectBinlogError";
     STR_ERROR_NAME[-OB_PROXY_CLUSTER_RESOURCE_EXPIRED]="ObProxyClusterResourceExpired";
+    STR_ERROR_NAME[-OB_PROXY_OBI_CONNECTION_ERROR]="ObProxyOBIConnectionError";
+    STR_ERROR_NAME[-OB_PROXY_CDC_CONNECTION_ERROR]="ObProxyCDCConnectionError";
     STR_ERROR_NAME[-OB_PROXY_SHARD_HINT_NOT_SUPPORTED]="ObProxyShardHintNotSupported";
     STR_ERROR_NAME[-OB_PROXY_SHARD_INVALID_CONFIG]="ObProxyShardInvalidConfig";
     STR_ERROR_NAME[-OB_PROXY_SHARD_TXN_SESSION_CLOSED]="ObProxyShardTxnSessionClose";

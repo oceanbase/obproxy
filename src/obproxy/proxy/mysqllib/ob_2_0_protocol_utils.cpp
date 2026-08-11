@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -592,6 +585,8 @@ int ObProto20Utils::fill_proto20_new_extra_info(ObMIOBuffer *write_buf, const Ob
           key_type = TRACE_INFO;
         } else if (obj_key.case_compare(OB_SESSION_INFO_VERI) == 0) {
           key_type = SESS_INFO_VERI;
+        } else if (obj_key.case_compare(OB_V20_PRO_EXTRA_KV_NAME_PROXY_ONE_WAY_SYNC) == 0) {
+          key_type = PROXY_ONE_WAY_SYNC_INFO;
         } else {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("unexpected extra key error", K(ret), K(obj_key), K(obj_value));
@@ -606,7 +601,7 @@ int ObProto20Utils::fill_proto20_new_extra_info(ObMIOBuffer *write_buf, const Ob
           const char *ptr = obj_value.ptr();
           const int32_t len = obj_value.length();
           if (OB_FAIL(Ob20FullLinkTraceTransUtil::store_type_and_len(
-                        new_extra_info_key_len_buf, FLT_TYPE_AND_LEN, t_pos, key_type, len))) {
+                        new_extra_info_key_len_buf, FLT_TYPE_AND_LEN, t_pos, static_cast<int16_t>(key_type), len))) {
             LOG_WDIAG("fail to store type and len for new extra info", K(ret), K(key_type), K(obj_value));
           } else if (OB_FAIL(write_buf->write(new_extra_info_key_len_buf, FLT_TYPE_AND_LEN, type_written_len))) {
             LOG_WDIAG("fail to write type and len to buf", K(ret));
@@ -1132,11 +1127,106 @@ int ObProxyTraceUtils::build_extra_info_for_client(ObMysqlSM *sm,
   return ret;
 }
 
+int ObProxyTraceUtils::build_proxy_one_way_sync_info(ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
+                                                     ObSqlString &inner_value,
+                                                     const bool is_last_packet_or_segment)
+{
+  int ret = OB_SUCCESS;
+
+  if (!obutils::get_global_proxy_config().enable_db_to_extra_info) {
+    LOG_DEBUG("skip proxy one way sync db, enable_db_to_extra_info=false");
+  } else if (is_last_packet_or_segment
+      && NULL != sm
+      && NULL != sm->client_session_
+      && !sm->client_session_->is_proxy_mysql_client()
+      && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
+      && is_sql_cmd_need_transport_db(sm->trans_state_.trans_info_.sql_cmd_)) {
+    const ObProxyBasicStmtType stmt_type =
+        sm->trans_state_.trans_info_.client_request_.get_parse_result().get_stmt_type();
+    if (!is_stmt_type_need_transport_db(stmt_type)) {
+      LOG_DEBUG("skip proxy one way sync db, unsupported stmt type",
+                K(stmt_type),
+                "sql_cmd", sm->trans_state_.trans_info_.sql_cmd_,
+                "sm_id", sm->sm_id_);
+    } else {
+      ObMysqlServerSession *server_session = sm->get_server_session();
+      if (OB_NOT_NULL(server_session)) {
+        ObServerSessionInfo &server_info = server_session->get_session_info();
+        const uint64_t server_cap = server_info.get_server_ob_capability();
+        if (server_info.is_new_extra_info_supported()
+            && OB_TEST_CAPABILITY(server_cap, OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC)) {
+          const obutils::ObSqlParseResult &parse_result = sm->trans_state_.trans_info_.client_request_.get_parse_result();
+          const ObString parse_db = parse_result.get_database_name();
+          const ObString join_db = parse_result.get_join_database_name();
+          const ObString sess_db = sm->client_session_->get_session_info().get_database_name();
+          ObString db;
+          if (!parse_db.empty() && (join_db.empty() || 0 == join_db.case_compare(parse_db))) {
+            // sql显式带database
+            db = parse_db;
+          } else if (parse_db.empty() && join_db.empty()) {
+            // sql未显式带database，但client session已执行过USE database
+            db = sess_db;
+          }
+
+          LOG_DEBUG("proxy one way sync db resolved",
+                    K(parse_db), K(join_db), K(sess_db), K(db), "sm_id", sm->sm_id_);
+
+          if (!db.empty() && db.length() <= common::OB_MAX_DATABASE_NAME_LENGTH) {
+            char inner_buf[ObProto20Utils::OB_20_PROTOCOL_TYPE_LEN
+                           + ObProto20Utils::OB_20_PROTOCOL_VAL_LENGTH_LEN + 128];
+            int64_t pos = 0;
+            if (OB_FAIL(ObMySQLUtil::store_int2(inner_buf, static_cast<int64_t>(sizeof(inner_buf)),
+                                                static_cast<int16_t>(OB20_PROXY_ONE_WAY_SYNC_SQL_DATABASE), pos))) {
+              LOG_WDIAG("fail to store proxy one way sync sub type", K(ret));
+            } else if (OB_FAIL(ObMySQLUtil::store_int4(inner_buf, static_cast<int64_t>(sizeof(inner_buf)),
+                                                       static_cast<int32_t>(db.length()), pos))) {
+              LOG_WDIAG("fail to store proxy one way sync value len", K(ret));
+            } else if (OB_UNLIKELY(pos + db.length() > static_cast<int64_t>(sizeof(inner_buf)))) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("unexpected proxy one way sync inner buf size", K(ret), K(pos), K(db.length()));
+            } else {
+              MEMCPY(inner_buf + pos, db.ptr(), db.length());
+              pos += db.length();
+              if (OB_FAIL(inner_value.assign(inner_buf, pos))) {
+                LOG_WDIAG("fail to copy proxy one way sync inner blob", K(ret), K(pos));
+              } else {
+                ObObJKV kv;
+                kv.key_.set_varchar(OB_V20_PRO_EXTRA_KV_NAME_PROXY_ONE_WAY_SYNC,
+                                    static_cast<int32_t>(STRLEN(OB_V20_PRO_EXTRA_KV_NAME_PROXY_ONE_WAY_SYNC)));
+                kv.key_.set_default_collation_type();
+                kv.value_.set_varchar(inner_value.string());
+                kv.value_.set_default_collation_type();
+                if (OB_FAIL(extra_info.push_back(kv))) {
+                  LOG_WDIAG("fail to push back to extra info", K(ret));
+                } else {
+                  LOG_DEBUG("succ to build proxy one way sync info", "key", kv.key_,
+                            "val_len", kv.value_.get_val_len(), K(db), K(pos), "sm_id", sm->sm_id_);
+                }
+              }
+            }
+          }
+        } else {
+          LOG_DEBUG("skip proxy one way sync db, server capability not satisfied",
+                    K(server_cap),
+                    "is_new_extra_info_supported", server_info.is_new_extra_info_supported(),
+                    "is_one_way_sync_supported",
+                    OB_TEST_CAPABILITY(server_cap, OB_CAP_PROXY_EXTRA_INFO_ONE_WAY_SYNC),
+                    "sm_id", sm->sm_id_);
+        }
+      }
+    }
+  }
+
+  return ret;
+}
+
 int ObProxyTraceUtils::build_related_extra_info_all(ObIArray<ObObJKV> &extra_info, ObMysqlSM *sm,
                                                     char *ip_buf, const int64_t ip_buf_len,
                                                     char *flt_info_buf, const int64_t flt_info_buf_len,
                                                     char *sess_veri_buf, const int64_t sess_veri_buf_len,
-                                                    ObSqlString &sess_info_value, const bool is_last_packet,
+                                                    ObSqlString &sess_info_value,
+                                                    ObSqlString &proxy_one_way_sync_value,
+                                                    const bool is_last_packet,
                                                     const bool is_proxy_switch_route)
 {
   int ret = OB_SUCCESS;
@@ -1151,6 +1241,10 @@ int ObProxyTraceUtils::build_related_extra_info_all(ObIArray<ObObJKV> &extra_inf
   } else if (OB_FAIL(ObProxyTraceUtils::build_sess_veri_for_server(sm, extra_info, sess_veri_buf, sess_veri_buf_len,
                                                                    is_last_packet, is_proxy_switch_route))) {
     LOG_WDIAG("fail to build sess veri for server", K(ret));
+  } else if (OB_FAIL(ObProxyTraceUtils::build_proxy_one_way_sync_info(extra_info, sm,
+                                                                      proxy_one_way_sync_value,
+                                                                      is_last_packet))) {
+    LOG_WDIAG("fail to build proxy one way sync info", K(ret));
   } else {
 
   }

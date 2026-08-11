@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2024 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_resp_analyzer_util.h"
@@ -219,6 +212,9 @@ int ObRespAnalyzerUtil::do_new_extra_info_decode(
         if (OB_FAIL(extra_info.decode_feedback_proxy_info(buf + pos, key_len))) {
           LOG_WDIAG("fail to decode feedback info", K(ret), K(key_len));
         }
+      } else if (type == PROXY_ONE_WAY_SYNC_INFO) {
+        LOG_EDIAG("unexpected PROXY_ONE_WAY_SYNC_INFO from observer, proxy-to-server only, ignore",
+                  K(key_len), K(type));
       } else {
         LOG_DEBUG("unexpected new extra info type, ignore", K(type), K(key_len));
       }

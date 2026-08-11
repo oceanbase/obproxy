@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -385,6 +378,38 @@ void ObProxyExprCalculator::set_route_diagnosis(ObRouteDiagnosis *route_diagnosi
   }
 }
 
+static bool need_random_part_for_ap_force_route(const ObSqlParseResult &parse_result,
+                                                ObClientSessionInfo &client_info,
+                                                const ObMySQLCmd cmd)
+{
+  const ObProxyApQueryRoutePolicyType hint_policy = parse_result.get_hint_ap_query_route_policy();
+  const int64_t session_v = client_info.get_cached_variables().get_ap_query_route_policy();
+  ObProxyApQueryRoutePolicyType session_policy = OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO;
+  if (0 == session_v) {
+    session_policy = OBPROXY_AP_QUERY_ROUTE_POLICY_OFF;
+  } else if (1 == session_v) {
+    session_policy = OBPROXY_AP_QUERY_ROUTE_POLICY_AUTO;
+  } else if (2 == session_v) {
+    session_policy = OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE;
+  }
+  const ObProxyApQueryRoutePolicyType effective_policy =
+      (OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID != hint_policy) ? hint_policy : session_policy;
+  const bool is_query_or_ps_select_cmd =
+      (OB_MYSQL_COM_QUERY == cmd)
+      || (OB_MYSQL_COM_STMT_PREPARE == cmd)
+      || (OB_MYSQL_COM_STMT_EXECUTE == cmd)
+      || (OB_MYSQL_COM_STMT_PREPARE_EXECUTE == cmd);
+  const bool is_user_select = is_query_or_ps_select_cmd
+      && parse_result.is_select_stmt()
+      && !parse_result.is_internal_select()
+      && !parse_result.is_select_database_stmt()
+      && !parse_result.is_select_proxy_status_stmt()
+      && !parse_result.is_select_proxy_version()
+      && !parse_result.is_select_route_addr()
+      && !parse_result.is_select_global_port();
+  return OBPROXY_AP_QUERY_ROUTE_POLICY_FORCE == effective_policy && is_user_select;
+}
+
 int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allocator,
                                                   const ObString &req_sql,
                                                   const ObSqlParseResult &parse_result,
@@ -603,15 +628,39 @@ int ObProxyExprCalculator::calculate_partition_id(common::ObArenaAllocator &allo
   LOG_DEBUG("calc partition info from sql", K(first_part_id), K(sub_part_id), K(partition_id), K(first_part_index), K(sub_part_index));
   if ((OB_FAIL(ret) || partition_id == OB_INVALID_INDEX)) {
     route.is_partition_calc_fail_ = true;
-    if (!get_global_proxy_config().enable_primary_zone
-        && !get_global_proxy_config().enable_cached_server) {
-      // if proxy primary zone route optimization disabled, use random part id optimization
+    const bool need_random_part_for_ap_force = need_random_part_for_ap_force_route(parse_result, client_info, cmd);
+    // - 表是 interval 分区
+    // - 上游 generate_range 成功（OB_SUCC(ret)，否则属于解析/类型错误，不是越界）
+    // - 分区键的 range 是具体值而非 (min, max)（说明确实算出了 key）
+    // - 一级分区 id 仍为 OB_INVALID_INDEX（part_mgr 中找不到匹配的分区）
+    // 这种情况强烈暗示 observer 已经新增 interval 分区，但 proxy 的 part_mgr 尚未感知，
+    if (OB_SUCC(ret)
+        && OB_INVALID_INDEX == first_part_id
+        && part_info.has_first_part()
+        && part_info.get_first_part_option().is_interval_part(part_info.get_cluster_version())) {
+      const ObNewRange &first_part_range = expr_resolver.get_first_part_range();
+      const bool is_range_concrete = first_part_range.start_key_.is_valid()
+          && first_part_range.end_key_.is_valid()
+          && !(first_part_range.start_key_.is_min_row() && first_part_range.end_key_.is_max_row());
+      if (is_range_concrete) {
+        LOG_DEBUG("interval partition out-of-range detected, may caused by newly added partition,"
+                 " will set table entry dirty at SM level",
+                 K(first_part_range), "first_part_id", first_part_id);
+        route.need_refresh_table_entry_ = true;
+      }
+    }
+    if ((!get_global_proxy_config().enable_primary_zone
+        && !get_global_proxy_config().enable_cached_server)
+        || need_random_part_for_ap_force) {
+      // if proxy primary zone route optimization disabled, use random part id optimization;
+      // ap_query_route_policy=FORCE on user SELECT also needs a partition location for columnstore routing.
       if (OB_FAIL(calc_part_id_by_random_choose_from_exist(part_info, first_part_id, sub_part_id,
                                                           partition_id, first_part_index, sub_part_index))) {
         LOG_WDIAG("fail to cal part id by random choose", K(first_part_id), K(sub_part_id), K(partition_id), K(ret));
       } else {
         route.no_need_pl_update_ = true;
-        LOG_DEBUG("succ to cal part id by random choose", K(first_part_id), K(sub_part_id), K(partition_id));
+        LOG_DEBUG("succ to cal part id by random choose", K(first_part_id), K(sub_part_id), K(partition_id),
+                  K(need_random_part_for_ap_force));
       }
     } else {
       // // nothing, will use primary zone or cached server

@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -768,14 +761,18 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_anonymous_block_ = parse_result.has_anonymous_block_;
   has_ever_set_anonymous_block_ = parse_result.has_ever_set_anonymous_block_;
   has_trace_log_hint_ = parse_result.has_trace_log_hint_;
+  has_force_master_hint_ = parse_result.has_force_master_hint_;
   stmt_type_ = parse_result.stmt_type_;
   cmd_sub_type_ = parse_result.sub_stmt_type_;
   has_connection_id_ = parse_result.has_connection_id_;
   has_sys_context_ = parse_result.has_sys_context_;
   hint_consistency_level_ = static_cast<ObConsistencyLevel>(parse_result.read_consistency_type_);
+  hint_ap_query_route_policy_ = parse_result.ap_query_route_policy_type_;
   parsed_length_ = static_cast<int64_t>(parse_result.end_pos_ - parse_result.start_pos_);
   text_ps_inner_stmt_type_ = parse_result.text_ps_inner_stmt_type_;
   is_binlog_related_ = parse_result.is_binlog_related_;
+  is_cdc_coordinator_related_ = parse_result.is_cdc_coordinator_related_;
+  is_cdc_coordinator_readonly_ = parse_result.is_cdc_coordinator_readonly_;
   xa_stmt_.is_xa_other_ = parse_result.is_xa_related_;
   is_sharding_req_ = is_sharding_request;
   is_table_lock_related_ = parse_result.is_table_lock_related_;

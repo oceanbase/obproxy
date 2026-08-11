@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -108,6 +101,9 @@ const static char *SELECT_ALL_TENANT_SQL =
 const static char *SELECT_TENANT_ROLE_SQL =
     "SELECT /*+READ_CONSISTENCY(WEAK)*/ dba_tenant.tenant_role, c_service_name.service_name from oceanbase.%s "
     "c_service_name join oceanbase.%s dba_tenant on dba_tenant.tenant_id = c_service_name.tenant_id where dba_tenant.tenant_name ='%s' ";
+const static char *SHOW_CDC_COORDINATOR_SQL =
+    "SHOW CDC SERVERS";
+
 class ObDetectOneServerStateCont : public obutils::ObAsyncCommonTask
 {
 public:
@@ -590,7 +586,7 @@ int ObServerStateRefreshCont::handle_ldg_info(void *data)
           if (OB_FAIL(cluster_resource_->update_sys_ldg_info(sys_ldg_info))) {
             op_free(sys_ldg_info);
             sys_ldg_info = NULL;
-            LOG_WDIAG("update sys ldg info failed", K(ret));
+            LOG_WDIAG("fail to update sys ldg info", K(ret));
           }
         }
       }
@@ -656,7 +652,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         PROXY_EXTRACT_VARCHAR_FIELD_MYSQL(result_handler, "status", status);
         if (status.case_compare("NORMAL") == 0) {
           if (OB_FAIL(tenant_id_array_.push_back(tenant_id))) {
-            LOG_WDIAG("tenant id array push back failed", K(ret));
+            LOG_WDIAG("fail to push back tenant id array", K(ret));
           } else {
             LOG_DEBUG("found normal tenant", K(tenant_name), K(tenant_id), K(status));
           }
@@ -667,9 +663,9 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       }
 
       if (OB_FAIL(tenant_array.push_back(tenant_name))) {
-        LOG_WDIAG("tenant array push back failed", K(ret));
+        LOG_WDIAG("fail to push back tenant array", K(ret));
       } else if (OB_FAIL(primary_zone_array.push_back(primary_zone))) {
-        LOG_WDIAG("primary zone array push back failed", K(ret));
+        LOG_WDIAG("fail to push back primary zone array", K(ret));
       } else {
         /*
          * in oceanbase.__all_tenant, the column of previous_locality not empty
@@ -699,7 +695,7 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
       if (get_global_proxy_config().check_tenant_locality_change ||
           get_global_proxy_config().enable_primary_zone) {
         if (OB_FAIL(cluster_resource_->update_location_tenant_info(tenant_array, locality_array, primary_zone_array))) {
-          LOG_WDIAG("update location tenant info failed", K(ret));
+          LOG_WDIAG("fail to update location tenant info", K(ret));
         } else {
           LOG_DEBUG("update location tenant info succ");
         }
@@ -715,7 +711,8 @@ int ObServerStateRefreshCont::handle_all_tenant(void *data)
         refresh_single_leader = true;
       }
 
-      if (refresh_single_leader) {
+      if (refresh_single_leader
+          && get_global_proxy_config().enable_single_leader_node_routing) {
         if (OB_FAIL(schedule_imm(REFRESH_SINGLE_LEADER_EVENT))) {
           LOG_WDIAG("fail to schedule refresh single leader event", K(ret));
         }
@@ -1798,7 +1795,7 @@ int ObServerStateRefreshCont::update_safe_snapshot_manager(
     const ObServerStateInfo &server_state = servers_state.at(i);
     if (NULL == cluster_resource_->safe_snapshot_mgr_.get(server_state.replica_.server_)) {
       if (OB_FAIL(cluster_resource_->safe_snapshot_mgr_.add(server_state.replica_.server_))) {
-        LOG_WDIAG("failed to add server", K(server_state.replica_.server_), K(ret));
+        LOG_WDIAG("fail to add server", K(server_state.replica_.server_), K(ret));
         // ignore ret and go on
         ret = OB_SUCCESS;
       }
@@ -2042,7 +2039,7 @@ int ObServerStateRefreshUtils::get_server_state_info(
       server_state.server_status_ = ObServerStatus::OB_DISPLAY_MAX;
       if (OB_FAIL(ObServerStatus::str2display_status(
           display_status_str, server_state.server_status_))) {
-        LOG_WDIAG("display string to status failed", K(ret), K(display_status_str));
+        LOG_WDIAG("fail to display string to status", K(ret), K(display_status_str));
       } else if ((server_state.server_status_ < 0)
                  || (server_state.server_status_ >= ObServerStatus::OB_DISPLAY_MAX)) {
         ret = OB_ERR_UNEXPECTED;
@@ -2217,6 +2214,316 @@ int ObServerStateRefreshUtils::order_servers_state(const ObIArray<ObServerStateI
   return ret;
 }
 
+int ObCdcCoordinatorRefreshCont::init(ObClusterResource *cr, int64_t refresh_interval_us)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(NULL == cr || refresh_interval_us <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", KP(cr), K(refresh_interval_us), K(ret));
+  } else if (OB_ISNULL(mutex_ = event::new_proxy_mutex())) {
+    ret = OB_ALLOCATE_MEMORY_FAILED;
+    LOG_WDIAG("fail to allocate mutex", K(ret));
+  } else {
+    cr->inc_ref();
+    cluster_resource_ = cr;
+    refresh_interval_us_ = refresh_interval_us;
+    is_inited_ = true;
+  }
+  return ret;
+}
+
+void ObCdcCoordinatorRefreshCont::kill_this()
+{
+  if (is_inited_) {
+    LOG_INFO("ObCdcCoordinatorRefreshCont will kill self", KPC(this));
+    int ret = OB_SUCCESS;
+    if (OB_FAIL(cancel_pending_action())) {
+      LOG_WDIAG("fail to cancel pending action", K(ret));
+    }
+    if (OB_LIKELY(NULL != cluster_resource_)) {
+      cluster_resource_->dec_ref();
+      cluster_resource_ = NULL;
+    }
+    refresh_interval_us_ = 0;
+    kill_this_ = false;
+    is_inited_ = false;
+  }
+  mutex_.release();
+  op_free(this);
+}
+
+DEF_TO_STRING(ObCdcCoordinatorRefreshCont)
+{
+  int64_t pos = 0;
+  J_OBJ_START();
+  J_KV(K_(is_inited), K_(kill_this), K_(refresh_interval_us), KP_(pending_action), KPC_(cluster_resource));
+  J_OBJ_END();
+  return pos;
+}
+
+int ObCdcCoordinatorRefreshCont::cancel_pending_action()
+{
+  int ret = OB_SUCCESS;
+  if (NULL != pending_action_) {
+    if (OB_FAIL(pending_action_->cancel())) {
+      LOG_WDIAG("fail to cancel pending action", K_(pending_action), K(ret));
+    } else {
+      pending_action_ = NULL;
+    }
+  }
+  return ret;
+}
+
+int ObCdcCoordinatorRefreshCont::do_async_show_cdc_servers()
+{
+  int ret = OB_SUCCESS;
+
+  const obutils::ObVipAddr tmp_addr;
+  ObConfigItem item;
+
+  if (OB_UNLIKELY(!is_inited_) || OB_ISNULL(cluster_resource_)) {
+    ret = OB_NOT_INIT;
+    LOG_WDIAG("not init", K_(is_inited), KP_(cluster_resource), K(ret));
+  } else if (OB_UNLIKELY(NULL != pending_action_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("pending_action should be null here", K_(pending_action), K(ret));
+  } else if (!get_global_proxy_config().enable_refresh_cdc_coordinator
+             || !get_global_proxy_config().enable_cdc_service) {
+    ret = OB_EAGAIN;
+    LOG_DEBUG("it`s is disabled to refresh cdc_coordinator_list, ignore it");
+  } else if(OB_FAIL(get_global_config_processor().get_proxy_config(tmp_addr, cluster_resource_->get_cluster_name(),
+                    "", "cdc_coordinator_list", item, true))) {
+    LOG_WDIAG("fail to get cdc_coordinator_list config", K(ret));
+  } else if (0 == strlen(item.str())) {
+    ret = OB_EAGAIN;
+    LOG_DEBUG("there is no cdc config for this cluster, ignore refresh", K(ret));
+  } else {
+    proxy::ObMysqlProxy &mysql_proxy = cluster_resource_->mysql_proxy_;
+    int64_t timeout_ms = usec_to_msec(get_global_resource_pool_processor().config_.cdc_coordinator_refresh_interval_);
+    ObMysqlRequestParam req(SHOW_CDC_COORDINATOR_SQL);
+    if (OB_FAIL(mysql_proxy.async_read(this, req, pending_action_, timeout_ms))) {
+      LOG_WDIAG("fail to async read SHOW CDC SERVERS", K(ret));
+    } else if (OB_ISNULL(pending_action_)) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("pending_action can not be NULL", K_(pending_action), K(ret));
+    } else {
+      LOG_INFO("send show cdc servers succ and wait for result", K_(pending_action));
+    }
+  }
+  return ret;
+}
+
+int ObCdcCoordinatorRefreshCont::handle_show_cdc_servers_resp(void *data)
+{
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(data)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("invalid data for SHOW CDC SERVERS response", K(data), K(ret));
+  } else {
+    ObClientMysqlResp *resp = reinterpret_cast<ObClientMysqlResp *>(data);
+    LocationList cdc_coordinator_list;
+    if (resp->is_error_resp()) {
+      LOG_WDIAG("fail to execute SHOW CDC SERVERS", "err_code", resp->get_err_code(), KPC_(cluster_resource));
+      ret = OB_SUCCESS;
+    } else if (OB_FAIL(handle_cdc_servers_list(*resp, cdc_coordinator_list))) {
+      LOG_WDIAG("fail to handler cdc coordinator list", K(ret));
+    } else if (OB_UNLIKELY(cdc_coordinator_list.empty())) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_EDIAG("there is no usable cdc coordinator, don`t refresh it", K(ret));
+    } else if (OB_FAIL(ObRouteUtils::build_and_add_cdc_dummy_entry(
+                       cluster_resource_->get_cluster_name(), OB_SYS_TENANT_NAME, cdc_coordinator_list))) {
+      LOG_WDIAG("fail to build and add cdc dummy_entry", K(cdc_coordinator_list), K(ret));
+    } else {
+      LOG_INFO("refresh __all_cdc_coordinator_dummy succ", KPC_(cluster_resource), K(cdc_coordinator_list));
+    }
+  }
+
+  return ret;
+}
+
+int ObCdcCoordinatorRefreshCont::handle_cdc_servers_list(ObClientMysqlResp& resp,
+                                                         LocationList& cdc_coordinator_list)
+{
+  int ret = OB_SUCCESS;
+
+  ObMysqlResultHandler result_handler;
+  result_handler.set_resp(&resp);
+
+  char ip_str[MAX_IP_ADDR_LENGTH];
+  int64_t tmp_real_str_len = 0; // 仅用于填充出参，不起作用，需保证对应的字符串中间没有'\0'字符
+  int64_t port = 0;
+
+  const int64_t MAX_DISPLAY_STATUS_LEN = 64;
+  char role_str[MAX_DISPLAY_STATUS_LEN];
+  char admin_state_str[MAX_DISPLAY_STATUS_LEN];
+  char health_state_str[MAX_DISPLAY_STATUS_LEN];
+  int64_t role_str_len = 0;
+  int64_t admin_state_str_len = 0;
+  int64_t health_state_str_len = 0;
+  while (OB_SUCC(ret) && OB_SUCC(result_handler.next())) {
+    ip_str[0] = '\0';
+    port = 0;
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "HOST", ip_str,
+                                     MAX_IP_ADDR_LENGTH, tmp_real_str_len);
+    PROXY_EXTRACT_INT_FIELD_MYSQL(result_handler, "PORT", port, int64_t);
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "COORDINATOR_ROLE", role_str,
+                                     MAX_DISPLAY_STATUS_LEN, role_str_len);
+    // UNUSED below, just for debug
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "ADMIN_STATE", admin_state_str,
+                                     MAX_DISPLAY_STATUS_LEN, admin_state_str_len);
+    PROXY_EXTRACT_STRBUF_FIELD_MYSQL(result_handler, "HEALTH_STATE", health_state_str,
+                                     MAX_DISPLAY_STATUS_LEN, health_state_str_len);
+
+    ObProxyReplicaLocation replica_location;
+    replica_location.add_addr(ip_str, port);
+
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (OB_FAIL(str2role(role_str, replica_location.role_))) {
+      LOG_WDIAG("unknown cdc coordinator role", KP(role_str), K(ret));
+    } else {
+      // OB_SUCCESS == ret
+      if (LEADER == replica_location.role_) {
+        replica_location.replica_type_ = REPLICA_TYPE_FULL;
+      } else {
+        replica_location.replica_type_ = REPLICA_TYPE_READONLY;
+      }
+      ObString admin_state(admin_state_str_len, admin_state_str);
+      ObString health_state(health_state_str_len, health_state_str);
+      LOG_DEBUG("get cdc coordinator location", K(replica_location), K(admin_state), K(health_state), K(ret));
+
+      if (OB_FAIL(cdc_coordinator_list.push_back(replica_location))) {
+        LOG_WDIAG("fail to push back cdc coordinator location", K(replica_location), K(ret));
+      }
+    }
+  }
+  if (OB_ITER_END == ret) {
+    ret = OB_SUCCESS;
+  }
+
+  return ret;
+}
+
+
+int ObCdcCoordinatorRefreshCont::schedule_cdc_coordinator_refresh()
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(!is_inited_)) {
+    ret = OB_NOT_INIT;
+    LOG_WDIAG("not init", K_(is_inited), K(ret));
+  } else if (get_global_hot_upgrade_info().is_graceful_exit_timeout(get_hrtime())) {
+    ret = OB_SERVER_IS_STOPPING;
+    LOG_WDIAG("proxy need exit now", K(ret));
+  } else if (OB_UNLIKELY(!self_ethread().is_event_thread_type(ET_NET))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_EDIAG("cdc coordinator refresh cont must be scheduled in work thread", K(ret));
+  } else if (OB_UNLIKELY(NULL != pending_action_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("pending action should be null here", K_(pending_action), K(ret));
+  } else if (OB_UNLIKELY(refresh_interval_us_ <= 0)) {
+    ret = OB_INNER_STAT_ERROR;
+    LOG_WDIAG("refresh interval must be greater than zero", K_(refresh_interval_us), K(ret));
+  } else if (OB_ISNULL(pending_action_ = self_ethread().schedule_in(
+                 this, HRTIME_USECONDS(refresh_interval_us_), REFRESH_CDC_COORDINATOR_EVENT))) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("fail to schedule cdc coordinator refresh", K_(refresh_interval_us), KPC_(cluster_resource), K(ret));
+  } else {
+    LOG_DEBUG("schedule cdc dummy refresh", K_(refresh_interval_us), KP_(pending_action), K_(set_interval_task_count));
+  }
+  return ret;
+}
+
+int ObCdcCoordinatorRefreshCont::set_refresh_interval(const int64_t refresh_interval_us)
+{
+  int ret = OB_SUCCESS;
+  if (OB_UNLIKELY(refresh_interval_us <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid cdc coordinator refresh interval", K(refresh_interval_us), K(ret));
+  } else {
+    refresh_interval_us_ = refresh_interval_us;
+    ATOMIC_INC(&set_interval_task_count_);
+    if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_NET))) {
+      ATOMIC_DEC(&set_interval_task_count_);
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("schedule imm cdc coordinator refresh interval update error", K(ret));
+    }
+  }
+  LOG_DEBUG("set cdc coordinator refresh interval", K_(refresh_interval_us), K(refresh_interval_us));
+  return ret;
+}
+
+int ObCdcCoordinatorRefreshCont::main_handler(int event, void *data)
+{
+  UNUSED(data);
+  int event_ret = EVENT_CONT;
+  int ret = OB_SUCCESS;
+  bool need_reschedule = false;
+  LOG_DEBUG("[ObCdcCoordinatorRefreshCont::main_handler]", K(event), K(data), K_(kill_this));
+
+  switch (event) {
+    case DESTROY_SERVER_STATE_EVENT: {
+      if (0 == ATOMIC_CAS(&set_interval_task_count_, 0, 0)) {
+        LOG_INFO("ObCdcCoordinatorRefreshCont will terminate", KPC_(cluster_resource));
+        kill_this_ = true;
+      } else {
+        LOG_INFO("there are still set_interval tasks for cdc coordinator refresh, reschedule destroy", KPC(this));
+        if (OB_ISNULL(self_ethread().schedule_imm(this, DESTROY_SERVER_STATE_EVENT))) {
+          ret = OB_ERR_UNEXPECTED;
+          kill_this_ = true;
+          LOG_WDIAG("fail to schedule DESTROY_SERVER_STATE_EVENT", KPC(this), K(ret));
+        }
+      }
+      break;
+    }
+    case EVENT_IMMEDIATE: {
+      ATOMIC_DEC(&set_interval_task_count_);
+      if (OB_FAIL(cancel_pending_action())) {
+        LOG_WDIAG("fail to cancel pending action", K(ret));
+      } else if (OB_FAIL(schedule_cdc_coordinator_refresh())) {
+        LOG_WDIAG("fail to schedule cdc coordinator refresh", K(ret));
+      }
+      break;
+    }
+    case REFRESH_CDC_COORDINATOR_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(do_async_show_cdc_servers())) {
+        need_reschedule = true;
+        LOG_WDIAG("fail to async SHOW CDC SERVERS", K(ret));
+      }
+      break;
+    }
+    case CLIENT_TRANSPORT_MYSQL_RESP_EVENT: {
+      pending_action_ = NULL;
+      if (OB_FAIL(handle_show_cdc_servers_resp(data))) {
+        LOG_WDIAG("fail to handle SHOW CDC SERVERS response", K(ret));
+      }
+      need_reschedule = true;
+      break;
+    }
+    default: {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("unknown event", K(event), K(ret));
+      break;
+    }
+  }
+
+  if (!kill_this_
+      && need_reschedule) {
+    // ignore ret, schedule next refresh
+    if (OB_FAIL(schedule_cdc_coordinator_refresh())) {
+      kill_this_ = true;
+      LOG_EDIAG("fail to schedule next cdc coordinator, unable to handle", K(ret));
+    }
+  }
+
+  if (kill_this_) {
+    event_ret = EVENT_DONE;
+    kill_this();
+  }
+
+  return event_ret;
+}
+
 int ObDetectServerStateCont::init(ObClusterResource *cr, int64_t server_detect_refresh_interval_us)
 {
   int ret = OB_SUCCESS;
@@ -2310,7 +2617,7 @@ int ObDetectServerStateCont::schedule_detect_server_state()
           LOG_WDIAG("fail to init detect server state cont", K(ret));
         } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("schedule detect one server state failed", K(ret));
+          LOG_WDIAG("fail to schedule detect one server state", K(ret));
         }
         LOG_DEBUG("schedule detect one server state", K(info), K(ss_version));
       } else {
@@ -2334,7 +2641,7 @@ int ObDetectServerStateCont::schedule_detect_server_state()
         LOG_WDIAG("fail to init detect server cont", K(ret));
       } else if (OB_ISNULL(self_ethread().schedule_imm(cont, DETECT_SERVER_STATE_EVENT))) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("schedule detect one server state failed", K(ret));
+        LOG_WDIAG("fail to schedule detect one server state", K(ret));
       }
       it++;
       LOG_DEBUG("schedule detect one server state", K(addr), K(ss_version));
@@ -2383,7 +2690,7 @@ int ObDetectServerStateCont::main_handler(int event, void *data)
     case EVENT_IMMEDIATE: {
       ATOMIC_DEC(&set_interval_task_count_);
       if (OB_FAIL(cancel_pending_action())) {
-        LOG_WDIAG("cancel pending action failed", K(ret));
+        LOG_WDIAG("fail to cancel pending action", K(ret));
       } else if (OB_FAIL(schedule_detect_server_state())) {
         LOG_WDIAG("fail to schedule detect server state", K(ret));
       }
@@ -2460,7 +2767,7 @@ int ObDetectOneServerStateCont::init(ObClusterResource *cluster_resource, ObAddr
   const int64_t timeout_ms = usec_to_msec(get_global_proxy_config().detect_server_timeout);
   if (OB_UNLIKELY(NULL == cluster_resource || !addr.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("init obdetectserverstate cont failed", K(cluster_resource), K(ret));
+    LOG_WDIAG("fail to init obdetectserverstate cont", K(cluster_resource), K(ret));
     // 探测只看OBServer是否返回COM_HANDSHAKE，并不会登录，下面参数不会实际使用到，只是为了类对象初始化
     // user_name : detect_username
     // password : detect_password
@@ -2524,7 +2831,7 @@ int ObDetectOneServerStateCont::main_handler(int event, void *data)
     case EVENT_IMMEDIATE:
     case DETECT_SERVER_STATE_EVENT: {
       if (OB_FAIL(detect_server_state_by_sql())) {
-        LOG_WDIAG("detect server by sql failed", K(ret));
+        LOG_WDIAG("fail to detect server by sql", K(ret));
       }
       break;
     }
@@ -2751,19 +3058,19 @@ int ObServiceNameRoleRefreshCont::check_need_kill_this(bool &need_destory)
     // 让下一次service name的定时任务，重新获取
     if (fail_get_cr_event_ && OB_FAIL(service_name_instance_->cas_set_not_get_cr())) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexcepted set has_get_cr false failed",
+      LOG_WDIAG("fail to set has_get_cr false",
                 K(refresh_role_state), K(service_name), K(ret));
     }
   } else if (is_refresh_service_name_info_) {
     if (!service_name_instance_->cas_set_dirty_to_avail_state()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexcepted set dirty to avail failed, maybe other task modify state",
+      LOG_WDIAG("fail to set dirty to avail, maybe other task modify state",
                 K(service_name), K(refresh_role_state), K(ret));
     }
   } else if (found_primary_) {
     if (!service_name_instance_->cas_set_update_to_avail_state()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexcepted set update to avail failed, maybe other task modify state",
+      LOG_WDIAG("fail to set update to avail, maybe other task modify state",
                 K(service_name), K(refresh_role_state), K(ret));
     }
   } else {
@@ -2772,20 +3079,20 @@ int ObServiceNameRoleRefreshCont::check_need_kill_this(bool &need_destory)
     if (fail_cnt > fail_threshold) {
       if (!service_name_instance_->cas_set_update_to_avail_state()) {
         ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("unexcepted set dirty to avail failed, and fail_cnt is greater than fail_threshold",
+        LOG_WDIAG("fail to set dirty to avail, and fail_cnt is greater than fail_threshold",
                   K(service_name), K(refresh_role_state), K(fail_cnt), K(fail_threshold), K(ret));
       }
       LOG_DEBUG("fail_cnt is greater than fail_threshold, will not fetch GetTenantInfoUrl",
                 K(fail_cnt), K(fail_threshold), K(ret));
     } else if (!service_name_instance_->cas_set_dirty_state()) {
       ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexcepted set dirty failed, maybe other task modify state",
+      LOG_WDIAG("fail to set dirty, maybe other task modify state",
                 K(service_name), K(refresh_role_state), K(ret));
     } else {
       is_refresh_service_name_info_ = true;
       if (OB_ISNULL(g_event_processor.schedule_imm(this, ET_BLOCKING, REFRESH_SERVICE_NAME_INFO_EVENT))) {
         ret = OB_ALLOCATE_MEMORY_FAILED;
-        LOG_WDIAG("failed to schedule REFRESH_SERVICE_NAME_INFO_EVENT to ET_BLOCKING", K(service_name), K(ret));
+        LOG_WDIAG("fail to schedule REFRESH_SERVICE_NAME_INFO_EVENT to ET_BLOCKING", K(service_name), K(ret));
       } else {
         need_destory = false;
         LOG_WDIAG("not found primary, will refresh service name info", K(service_name));

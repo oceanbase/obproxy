@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #define USING_LOG_PREFIX PROXY
@@ -87,6 +80,8 @@ void ObTableRouteParam::reset()
   result_.reset();
   is_partition_table_route_supported_ = false;
   force_renew_ = false;
+  force_use_cache_ = false;
+  skip_refresh_cache_ = false;
   is_oracle_mode_ = false;
   mysql_proxy_ = NULL;
   cr_version_ = 0;
@@ -97,6 +92,7 @@ void ObTableRouteParam::reset()
   is_need_force_flush_ = false;
   binlog_service_ip_.reset();
   set_route_diagnosis(NULL);
+  cdc_msgservice_param_.reset();
 }
 
 void ObTableRouteParam::set_route_diagnosis(ObRouteDiagnosis *route_diagnosis)
@@ -115,15 +111,9 @@ int64_t ObTableRouteParam::to_string(char *buf, const int64_t buf_len) const
 {
   int64_t pos = 0;
   J_OBJ_START();
-  J_KV(KP_(cont),
-       K_(cr_version),
-       K_(name),
-       K_(cr_id),
-       K_(force_renew),
-       K_(is_oracle_mode),
-       K_(result),
-       KP_(mysql_proxy),
-       K_(current_idc_name),
+  J_KV(KP_(cont), K_(cr_version), K_(name), K_(cr_id),
+       K_(force_renew), K_(force_use_cache), K_(skip_refresh_cache),
+       K_(is_oracle_mode), K_(result), KP_(mysql_proxy), K_(current_idc_name),
        K_(is_need_force_flush));
   J_OBJ_END();
   return pos;
@@ -302,6 +292,9 @@ const char *ObTableEntryCont::get_state_name(const ObTableEntryLookupState state
     case LOOKUP_BINLOG_RETRY_STATE:
       name = "LOOKUP_BINLOG_RETRY_STATE";
       break;
+    case LOOKUP_CDC_MSGSERVICE_STATE:
+      name = "LOOKUP_CDC_MSGSERVICE_STATE";
+      break;
     default:
       name = "Unknown State";
       LOG_WDIAG("Unknown State", K(state));
@@ -435,6 +428,8 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
     } else {
       table_param_.cont_ = param.cont_;
       table_param_.force_renew_ = param.force_renew_;
+      table_param_.force_use_cache_ = param.force_use_cache_;
+      table_param_.skip_refresh_cache_ = param.skip_refresh_cache_;
       table_param_.mysql_proxy_ = param.mysql_proxy_;
       table_param_.cr_version_ = param.cr_version_;
       table_param_.cr_id_ = param.cr_id_;
@@ -445,6 +440,7 @@ inline int ObTableEntryCont::deep_copy_table_param(ObTableRouteParam &param)
       table_param_.is_need_force_flush_ = param.is_need_force_flush_;
       table_param_.is_single_partition_table_ = param.is_single_partition_table_;
       table_param_.set_route_diagnosis(param.route_diagnosis_);
+      table_param_.cdc_msgservice_param_ = param.cdc_msgservice_param_;
       if (!param.current_idc_name_.empty()) {
         MEMCPY(table_param_.current_idc_name_buf_, param.current_idc_name_.ptr(), param.current_idc_name_.length());
         table_param_.current_idc_name_.assign_ptr(table_param_.current_idc_name_buf_, param.current_idc_name_.length());
@@ -500,6 +496,13 @@ inline int ObTableEntryCont::set_next_state()
       } else {
         next_state = LOOKUP_DONE_STATE;
       }
+      break;
+    case LOOKUP_CDC_MSGSERVICE_STATE:
+      if (OB_ISNULL(newest_table_entry_)) {
+        ret = OB_ERR_NULL_VALUE;
+        LOG_WDIAG("newest_table_entry is null, maybe client_vc disconnect or timeout", K(ret));
+      }
+      next_state = LOOKUP_DONE_STATE;
       break;
     case LOOKUP_PART_INFO_STATE:
       if (OB_ISNULL(newest_table_entry_)) {
@@ -585,6 +588,9 @@ inline int ObTableEntryCont::handle_client_resp(void *data)
             break;
           case LOOKUP_BINLOG_ENTRY_STATE:
             ret = handle_binlog_entry_resp(*rs_fetcher);
+            break;
+          case LOOKUP_CDC_MSGSERVICE_STATE:
+            ret = handle_cdc_msgservice_resp(*rs_fetcher);
             break;
           case LOOKUP_DONE_STATE:
           default:
@@ -740,9 +746,23 @@ int ObTableEntryCont::handle_binlog_entry_resp(ObResultSetFetcher &rs_fetcher)
   } else if (OB_ISNULL(newest_table_entry_)) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("table entry should not be NULL", K_(newest_table_entry), K(ret));
-  } else if (OB_FAIL(ObRouteUtils::fetch_binlog_entry(rs_fetcher,
-                                                      *newest_table_entry_))) {
+  } else if (OB_FAIL(ObRouteUtils::fetch_binlog_entry(rs_fetcher, *newest_table_entry_))) {
     LOG_WDIAG("fail to fetch binlog entry info", K(ret));
+  }
+
+  return ret;
+}
+
+int ObTableEntryCont::handle_cdc_msgservice_resp(ObResultSetFetcher &rs_fetcher)
+{
+  int ret = OB_SUCCESS;
+  if (OB_FAIL(ObTableEntry::alloc_and_init_table_entry(table_param_.name_, 0, 0, newest_table_entry_))) {
+    LOG_WDIAG("fail to alloc and init table entry", "name", table_param_.name_, K(ret));
+  } else if (OB_ISNULL(newest_table_entry_)) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("table entry should not be NULL", K_(newest_table_entry), K(ret));
+  } else if (OB_FAIL(ObRouteUtils::fetch_cdc_msgservice_entry(rs_fetcher, *newest_table_entry_))) {
+    LOG_WDIAG("fail to fetch cdc msgservice entry info", K(ret));
   }
 
   return ret;
@@ -958,7 +978,9 @@ inline int ObTableEntryCont::add_to_global_cache(bool &add_succ)
   int ret = OB_SUCCESS;
   add_succ = false;
   ObTableEntry *entry = newest_table_entry_;
-  if (OB_LIKELY(NULL != entry) && OB_LIKELY(entry->is_valid())) {
+  if (OB_UNLIKELY(table_param_.skip_refresh_cache_)) {
+    LOG_DEBUG("will not add to global cache", KP(entry));
+  } else if (OB_LIKELY(NULL != entry) && OB_LIKELY(entry->is_valid())) {
     entry->inc_ref(); // Attention!! before add to table cache, must inc_ref
     if (OB_FAIL(table_cache_->add_table_entry(*entry, false))) {
       LOG_WDIAG("fail to add table entry", KPC(entry), K(ret));
@@ -1139,14 +1161,21 @@ inline int ObTableEntryCont::lookup_entry_remote()
     ObMysqlProxy *mysql_proxy = table_param_.mysql_proxy_;
     char sql[OB_SHORT_SQL_LENGTH];
     sql[0] = '\0';
-    if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, table_param_.name_,
-                                                  table_param_.is_need_force_flush_, table_param_.cluster_version_))) {
-      LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
-    } else {
-      const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
-      if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
-        LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
+    if (OB_UNLIKELY(table_param_.name_.is_cdc_msgservice_table())) {
+      state_ = LOOKUP_CDC_MSGSERVICE_STATE;
+      if (OB_FAIL(ObRouteUtils::get_cdc_msgservice_addr_sql(sql, OB_SHORT_SQL_LENGTH, table_param_))) {
+        LOG_WDIAG("fail to get cdc msgservice addr sql", K(ret));
       }
+    } else if (OB_FAIL(ObRouteUtils::get_table_entry_sql(sql, OB_SHORT_SQL_LENGTH, table_param_.name_,
+                                     table_param_.is_need_force_flush_, table_param_.cluster_version_))) {
+      LOG_WDIAG("fail to get table entry sql", K(sql), K(ret));
+    }
+
+    const ObMysqlRequestParam request_param(sql, table_param_.current_idc_name_);
+    if (OB_FAIL(ret)) {
+      // nothing
+    } else if (OB_FAIL(mysql_proxy->async_read(this, request_param, pending_action_))) {
+      LOG_WDIAG("fail to nonblock read", K(sql), K_(table_param), K(ret));
     }
   }
 
@@ -1428,6 +1457,16 @@ inline int ObTableEntryCont::lookup_entry_in_cache()
         }
         break;
       }
+      case RETURN_WITH_GLOBAL_CACHE_MISS_OP: {
+        if (NULL != entry
+            || NULL != newest_table_entry_) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("table entry must be NULL here", K(entry), K_(newest_table_entry), K(ret));
+        } else if (OB_FAIL(notify_caller())) {
+          LOG_WDIAG("fail to notify caller", K(ret));
+        }
+        break;
+      }
       default: {
         ret = OB_ERR_UNEXPECTED;
         LOG_WDIAG("unknown op", K(op), K(ret));
@@ -1490,13 +1529,29 @@ inline int ObTableEntryCont::notify_caller()
   newest_table_entry_ = NULL;
 
   // update thread cache table entry
-  if ((NULL != entry) && (entry->is_avail_state())) {
+  if (OB_UNLIKELY(table_param_.skip_refresh_cache_)) {
+    LOG_DEBUG("will not add to thread cache", KP(entry));
+  } else if ((NULL != entry) && (entry->is_avail_state())) {
     ObTableRefHashMap &table_map = self_ethread().get_table_map();
     if (OB_FAIL(table_map.set(entry))) {
       LOG_WDIAG("fail to set table map", KPC(entry), K(ret));
       ret = OB_SUCCESS; // ignore ret
     }
   }
+
+  // Dec the ref_count of table_param_.result_.target_old_entry_ before the result returing to
+  // caller, same as ObTableProcessor::get_table_entry(..)
+  if (OB_SUCC(ret) && NULL != table_param_.result_.target_old_entry_) {
+    if (NULL == table_param_.result_.target_entry_) {
+      table_param_.result_.target_entry_ = table_param_.result_.target_old_entry_;
+      table_param_.result_.target_old_entry_ = NULL;
+      entry = table_param_.result_.target_entry_;
+    } else {
+      table_param_.result_.target_old_entry_->dec_ref();
+      table_param_.result_.target_old_entry_ = NULL;
+    }
+  }
+
 
   if (action_.cancelled_) {
     // when cancelled, do no forget free the table entry

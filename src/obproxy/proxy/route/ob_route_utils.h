@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_ROUTE_UTILS_H
@@ -56,6 +49,7 @@ class ObRouteUtils
 public:
   static int get_table_entry_sql(char *sql_buf, const int64_t buf_len, ObTableEntryName &name,
                                  bool is_need_force_flush, const int64_t cluster_version);
+  static int get_cdc_msgservice_addr_sql(char *sql_buf, const int64_t buf_len, ObTableRouteParam &param);
   static int get_part_info_sql(char *sql_buf, const int64_t buf_len, const uint64_t table_id,
                                ObTableEntryName &name, const int64_t cluster_version);
   static int get_first_part_sql(char *sql_buf, const int64_t buf_len, const uint64_t table_id,
@@ -78,6 +72,7 @@ public:
                                   const ObString &tenant_name);
 
   static int fetch_binlog_entry(obproxy::ObResultSetFetcher &rs_fetcher, ObTableEntry &entry);
+  static int fetch_cdc_msgservice_entry(obproxy::ObResultSetFetcher &rs_fetcher, ObTableEntry &entry);
   static int split_part_expr(common::ObString expr, common::ObIArray<common::ObString> &arr);
 
   static int build_sys_dummy_entry(const common::ObString &cluster_name,
@@ -85,10 +80,6 @@ public:
                                    const obutils::LocationList &rs_list,
                                    const bool is_rslist,
                                    ObTableEntry *&entry);
-  //static int build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
-  //                                         const int64_t cluster_id,
-  //                                         const common::ObIArray<common::ObAddr> &addr_list,
-  //                                         const bool is_rslist);
   static int build_and_add_sys_dummy_entry(const common::ObString &cluster_name,
                                            const int64_t cluster_id,
                                            const common::ObIArray<common::ObAddr> &addr_list,
@@ -98,11 +89,26 @@ public:
                                            const int64_t cluster_id,
                                            const obutils::LocationList &location_list,
                                            const bool is_rslist);
-  //static int convert_addrs_to_locations(const common::ObIArray<common::ObAddr> &addr_list,
-  //                                      obutils::LocationList &location_list);
   static int convert_addrs_to_locations(const common::ObIArray<common::ObAddr> &addr_list,
                                         const common::ObIArray<common::ObAddr> &rpc_addr_list,
                                         obutils::LocationList &location_list);
+  static int convert_addrs_to_locations(const common::ObIArray<common::ObAddr> &addr_list,
+                                        obutils::LocationList &location_list);
+
+  static int build_cdc_dummy_entry(const common::ObString &cluster_name,
+                                   const common::ObString &tenant_name,
+                                   const obutils::LocationList &cdc_coordinator_list,
+                                   ObTableEntry *&entry);
+  static int build_and_add_cdc_dummy_entry(const common::ObString &cluster_name,
+                                             const common::ObString &tenant_name,
+                                             const obutils::LocationList &location_list);
+  static int convert_ip_string_to_locations(const common::ObString &ip_port_list_string,
+                                            obutils::LocationList &location_list);
+  static int convert_ip_string_to_addrs(const common::ObString &ip_port_list_string,
+                                        common::ObIArray<common::ObAddr> &addr_list);
+  static int refresh_cdc_dummy_entry_by_config(const common::ObString &ip_port_list_string,
+                                               const common::ObString &cluster_name,
+                                               const common::ObString &tenant_name);
 
   static int convert_route_param_to_table_param(const ObRouteParam &route_param,
                                                 ObTableRouteParam &table_param);

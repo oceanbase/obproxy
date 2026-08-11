@@ -1,13 +1,6 @@
 /**
  * Copyright (c) 2021 OceanBase
- * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
- * You can use this software according to the terms and conditions of the Mulan PubL v2.
- * You may obtain a copy of Mulan PubL v2 at:
- *          http://license.coscl.org.cn/MulanPubL-2.0
- * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
- * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
- * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
- * See the Mulan PubL v2 for more details.
+ * SPDX-License-Identifier: Apache-2.0
  */
 
 #ifndef OBPROXY_SQL_PARSER_H
@@ -538,6 +531,7 @@ struct ObSqlParseResult
       col_name_quote_(OBPROXY_QUOTE_T_INVALID),
       text_ps_inner_stmt_type_(OBPROXY_T_INVALID),
       hint_consistency_level_(common::INVALID_CONSISTENCY),
+      hint_ap_query_route_policy_(OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID),
       has_dbmesh_hint_(false),
       use_dbp_hint_(false),
       use_column_value_from_hint_(false),
@@ -557,8 +551,11 @@ struct ObSqlParseResult
       has_ever_set_anonymous_block_(false),
       has_for_update_(false),
       has_trace_log_hint_(false),
+      has_force_master_hint_(false),
       xa_stmt_{},
       is_binlog_related_(false),
+      is_cdc_coordinator_related_(false),
+      is_cdc_coordinator_readonly_(false),
       is_dblink_name_(false),
       is_sharding_req_(false),
       is_table_lock_related_(false) {}
@@ -730,9 +727,12 @@ struct ObSqlParseResult
   bool has_ever_set_anonymous_block() {return has_ever_set_anonymous_block_;}
   bool has_for_update() const { return has_for_update_; }
   bool has_trace_log_hint() const { return has_trace_log_hint_; }
+  bool has_force_master_comment() const { return has_force_master_hint_; }
   bool has_connection_id() const { return has_connection_id_;}
   bool has_sys_context() const { return has_sys_context_; }
   bool is_binlog_related() const { return is_binlog_related_; }
+  bool is_cdc_coordinator_related() const { return is_cdc_coordinator_related_; }
+  bool is_cdc_coordinator_readonly() const { return is_cdc_coordinator_readonly_; }
   bool is_xa_related() const { return xa_stmt_.is_xa_other_ || xa_stmt_.is_xa_start_; }
   bool is_dblink_name() const { return is_dblink_name_; }
   bool is_table_lock_related() const { return is_table_lock_related_; }
@@ -752,6 +752,7 @@ struct ObSqlParseResult
   int64_t get_hint_query_timeout() const { return hint_query_timeout_; }
   int64_t get_hint_max_execution_time() const { return hint_max_execution_time_; }
   common::ObConsistencyLevel get_hint_consistency_level() const { return hint_consistency_level_; }
+  ObProxyApQueryRoutePolicyType get_hint_ap_query_route_policy() const { return hint_ap_query_route_policy_; }
   int64_t get_parsed_length() const { return parsed_length_; }
   const common::ObString get_table_name() const { return table_name_; }
   const common::ObString get_package_name() const { return package_name_; }
@@ -877,6 +878,7 @@ struct ObSqlParseResult
       has_ever_set_anonymous_block_ = other.has_ever_set_anonymous_block_;
       has_for_update_ = other.has_for_update_;
       has_trace_log_hint_ = other.has_trace_log_hint_;
+      has_force_master_hint_ = other.has_force_master_hint_;
       has_connection_id_ = other.has_connection_id_;
       has_sys_context_ = other.has_sys_context_;
       xa_stmt_ = other.xa_stmt_;
@@ -887,6 +889,7 @@ struct ObSqlParseResult
       cmd_sub_type_ = other.cmd_sub_type_;
       cmd_err_type_ = other.cmd_err_type_;
       hint_consistency_level_ = other.hint_consistency_level_;
+      hint_ap_query_route_policy_ = other.hint_ap_query_route_policy_;
       dml_buf_ = other.dml_buf_;
       internal_select_buf_ = other.internal_select_buf_;
       part_name_buf_ = other.part_name_buf_;
@@ -901,6 +904,8 @@ struct ObSqlParseResult
       text_ps_inner_stmt_type_ = other.text_ps_inner_stmt_type_;
       is_multi_stmt_ = other.is_multi_stmt_;
       is_binlog_related_ = other.is_binlog_related_;
+      is_cdc_coordinator_related_ = other.is_cdc_coordinator_related_;
+      is_cdc_coordinator_readonly_ = other.is_cdc_coordinator_readonly_;
       is_dblink_name_ = other.is_dblink_name_;
       is_sharding_req_ = other.is_sharding_req_;
       is_table_lock_related_ = other.is_table_lock_related_;
@@ -968,12 +973,14 @@ struct ObSqlParseResult
     is_dblink_name_ = other.is_dblink_name_;
     is_table_lock_related_ = other.is_table_lock_related_;
     has_hint_route_info_ = other.has_hint_route_info_;
+    has_force_master_hint_ = other.has_force_master_hint_;
     hint_query_timeout_ = other.hint_query_timeout_;
     hint_max_execution_time_ = other.hint_max_execution_time_;
     parsed_length_ = other.parsed_length_;
     cmd_sub_type_ = other.cmd_sub_type_;
     cmd_err_type_ = other.cmd_err_type_;
     hint_consistency_level_ = other.hint_consistency_level_;
+    hint_ap_query_route_policy_ = other.hint_ap_query_route_policy_;
     text_ps_inner_stmt_type_ = other.text_ps_inner_stmt_type_;
     dml_buf_ = other.dml_buf_;
     internal_select_buf_ = other.internal_select_buf_;
@@ -1078,6 +1085,7 @@ private:
   ObProxyParseQuoteType col_name_quote_;
   ObProxyBasicStmtType text_ps_inner_stmt_type_;
   common::ObConsistencyLevel hint_consistency_level_;
+  ObProxyApQueryRoutePolicyType hint_ap_query_route_policy_;
   bool has_dbmesh_hint_;
   bool use_dbp_hint_;
   bool use_column_value_from_hint_;
@@ -1097,12 +1105,15 @@ private:
   bool has_ever_set_anonymous_block_;
   bool has_for_update_;
   bool has_trace_log_hint_;
+  bool has_force_master_hint_;
   struct {
     uint8_t is_xa_start_:     1;
     uint8_t is_xa_other_:     1;
     uint8_t :                 0;
   } xa_stmt_;
   bool is_binlog_related_;
+  bool is_cdc_coordinator_related_;
+  bool is_cdc_coordinator_readonly_;
   bool is_dblink_name_;
   bool is_sharding_req_;
   bool is_table_lock_related_;
@@ -1283,6 +1294,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   cmd_sub_type_ = OBPROXY_T_SUB_INVALID;
   cmd_err_type_ = OBPROXY_T_ERR_INVALID;
   hint_consistency_level_ = common::INVALID_CONSISTENCY;
+  hint_ap_query_route_policy_ = OBPROXY_AP_QUERY_ROUTE_POLICY_INVALID;
   use_column_value_from_hint_ = false;
   is_multi_stmt_ = false;
   has_last_insert_id_ = false;
@@ -1298,12 +1310,15 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_ever_set_anonymous_block_ = false;
   has_for_update_ = false;
   has_trace_log_hint_ = false;
+  has_force_master_hint_ = false;
   xa_stmt_ = {};
   hint_query_timeout_ = 0;
   hint_max_execution_time_ = 0;
   has_connection_id_ = false;
   has_sys_context_ = false;
   is_binlog_related_ = false;
+  is_cdc_coordinator_related_ = false;
+  is_cdc_coordinator_readonly_ = false;
   is_sharding_req_ = false;
   is_table_lock_related_ = false;
   is_dblink_name_ = false;
