@@ -233,7 +233,7 @@ ObRpcRequestSM::ObRpcRequestSM()
     sharding_action_(NULL), sm_next_action_(NULL), child_callback_action_(NULL), release_check_action_(NULL), inner_cont_(NULL),
     release_check_count_(0), reentrancy_count_(0),
     terminate_sm_(false), is_need_reuse_sm_(false), rpc_req_(NULL), rpc_req_origin_channel_id_(0), create_thread_(NULL), cmd_size_stats_(), cmd_time_stats_(),
-    milestones_(), mysql_config_params_(NULL), cluster_resource_(NULL), real_meta_cluster_name_(),
+  milestones_(), mysql_config_params_(NULL), current_idc_name_(), cluster_resource_(NULL), real_meta_cluster_name_(),
     real_meta_cluster_name_str_(NULL), cluster_id_(0), timeout_us_(0), retry_need_update_pl_(false),
     need_pl_lookup_(true), need_congestion_lookup_(false),
     force_retry_congested_(false), congestion_lookup_success_(false), is_congestion_entry_updated_(false),
@@ -257,6 +257,7 @@ inline void ObRpcRequestSM::inner_request_cleanup()
 {
   LOG_DEBUG("ObRpcRequestSM::inner_request_cleanup", K_(rpc_trace_id), K(this), K_(rpc_req));
   pll_info_.reset();
+  current_idc_name_.reset();
   if (OB_NOT_NULL(cluster_resource_)) {
     cluster_resource_->dec_ref();
     cluster_resource_ = NULL;
@@ -274,6 +275,7 @@ inline void ObRpcRequestSM::cleanup()
   magic_ = RPC_REQUEST_HANDLE_SM_MAGIC_DEAD;
   rpc_req_origin_channel_id_ = 0;
   pll_info_.reset();
+  current_idc_name_.reset();
   if (OB_NOT_NULL(rpc_req_)) {
     rpc_req_->sm_ = NULL;    // set rpc_req request_sm to NULL
     rpc_req_ = NULL;
@@ -322,6 +324,7 @@ inline void ObRpcRequestSM::reuse()
   cmd_time_stats_.reset();
   milestones_.trans_reset();
   pll_info_.reset();
+  current_idc_name_.reset();
   real_meta_cluster_name_.reset();
   // if (OB_NOT_NULL(rpc_req_)) {
   //   rpc_req_->sm_ = NULL;    // set rpc_req request_sm to NULL
@@ -2624,9 +2627,11 @@ int ObRpcRequestSM::keep_dummy_entry_and_update_ldc(ObMysqlRouteResult &result)
     obkv_info.dummy_entry_ = result.table_entry_;
     obkv_info.dummy_entry_->inc_ref();
 
+    const ObString current_idc = get_current_idc_name();
     // update ldc
     // 这里读rpc_ctx中的server_state_version不加锁，读到老的影响不大
-    if (OB_FAIL(ObRpcReqCtx::check_update_ldc(obkv_info.dummy_entry_, obkv_info.dummy_ldc_, rpc_ctx->server_state_version_, cluster_resource_))) {
+    if (OB_FAIL(ObRpcReqCtx::check_update_ldc(obkv_info.dummy_entry_, obkv_info.dummy_ldc_,
+                                              rpc_ctx->server_state_version_, cluster_resource_, current_idc))) {
       LOG_WDIAG("fail to call check_update_ldc", K(ret), "dummy_entry", obkv_info.dummy_entry_, "dummy_ldc", obkv_info.dummy_ldc_);
     }
   }
@@ -2649,7 +2654,9 @@ int ObRpcRequestSM::update_cached_dummy_entry_and_ldc()
     LOG_DEBUG("rpc update cached dummy entry and ldc", "is_auth", obkv_info.is_auth(), K_(rpc_trace_id));
 
     if (obkv_info.is_auth()) {
-      // 读请求不存在冲突，不需要拿锁
+      // auth path also updates rpc_ctx cache, serialize it with writers to avoid racing with weak-read refresh.
+      DRWLock &rwlock = rpc_ctx->get_rpc_ctx_lock();
+      DRWLock::WRLockGuard rwlock_guard(rwlock);
       if (OB_FAIL(rpc_ctx->update_cache_entry(obkv_info.dummy_entry_, obkv_info.dummy_ldc_, mysql_config_params_->tenant_location_valid_time_))) {
         LOG_WARN("fail to update_cache_entry for rpc_ctx", K(ret), K_(rpc_trace_id));
       } else {
@@ -2688,6 +2695,7 @@ int ObRpcRequestSM::get_cached_dummy_entry_and_ldc()
     LOG_WDIAG("get_cached_dummy_entry_and_ldc get a invalid rpc_req", K(ret), KP_(rpc_req), KP(rpc_ctx), K_(rpc_trace_id));
   } else {
     ObRpcOBKVInfo &obkv_info = rpc_req_->get_obkv_info();
+    bool need_update_ldc = false;
 
     if (rpc_ctx->is_cached_dummy_entry_avail_state()) {
       DRWLock &rwlock = rpc_ctx->get_rpc_ctx_lock();
@@ -2697,12 +2705,65 @@ int ObRpcRequestSM::get_cached_dummy_entry_and_ldc()
         || rpc_ctx->is_cached_dummy_ldc_empty()) {
         // set update state , update dummy entry and renew rpc ctx cached dummy entry
         rpc_ctx->cas_set_cluster_resource_updating_state();
+      } else {
+        // dummy entry 与 dummy_ldc 都存在时，检查 IDC 是否发生变化
+        // 如果 proxy_idc_name 发生变化，需要基于新的 IDC 重新构建 dummy_ldc
+        const ObString current_idc = get_current_idc_name();
+        const ObString &cached_idc = rpc_ctx->dummy_ldc_.get_idc_name();
+        if (rpc_ctx->dummy_ldc_.is_empty()
+            || 0 != current_idc.case_compare(cached_idc)) {
+          need_update_ldc = true;
+        }
       }
-      if (rpc_ctx->is_cached_dummy_entry_avail_state()) {
+      // 如果无需根据 IDC 重新刷新 ldc，直接从缓存中拷贝
+      if (!need_update_ldc && rpc_ctx->is_cached_dummy_entry_avail_state()) {
         if (OB_FAIL(obkv_info.set_dummy_entry(rpc_ctx->dummy_entry_))) {
           LOG_WARN("fail to set_dummy_entry into obkv_info", K(ret), KP_(rpc_ctx->dummy_entry));
         } else if (OB_FAIL(ObLDCLocation::copy_dummy_ldc(rpc_ctx->dummy_ldc_, obkv_info.dummy_ldc_))) {
           LOG_WARN("fail to copy_dummy_ldc", K(ret), K_(rpc_ctx->dummy_ldc));
+        }
+      }
+    }
+
+    // 需要基于当前 IDC 重新构建 dummy_ldc 的场景：
+    // 1. 登录之后中途修改了 proxy_idc_name
+    // 2. 之前构建 dummy_ldc 失败或未开启 LDC，导致 dummy_ldc 为空
+    if (OB_SUCC(ret) && need_update_ldc) {
+      if (OB_ISNULL(cluster_resource_) || OB_ISNULL(rpc_ctx->dummy_entry_)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_WDIAG("cluster_resource_ or cached dummy_entry_ is unexpected null when updating ldc",
+                  K(ret), KP_(cluster_resource), KP(rpc_ctx->dummy_entry_), K_(rpc_trace_id));
+      } else {
+        // IMPORTANT: when idc changes, multiple rpc requests can concurrently reach here.
+        // Serialize updating rpc_ctx->dummy_ldc_ with write lock to avoid concurrent reset/alloc/free.
+        DRWLock &rwlock = rpc_ctx->get_rpc_ctx_lock();
+        DRWLock::WRLockGuard rwlock_guard(rwlock);
+
+        // double-check after acquiring lock
+        if (OB_ISNULL(rpc_ctx->dummy_entry_)) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("cached dummy_entry_ is NULL when updating ldc under lock",
+                    K(ret), K_(rpc_trace_id));
+        } else {
+          const ObString current_idc = get_current_idc_name();
+          if (OB_FAIL(ObRpcReqCtx::check_update_ldc(rpc_ctx->dummy_entry_,
+                                                    rpc_ctx->dummy_ldc_,
+                                                    rpc_ctx->server_state_version_,
+                                                    cluster_resource_,
+                                                    current_idc))) {
+            LOG_WDIAG("fail to check_update_ldc when idc changed",
+                      K(ret), K(current_idc), K_(rpc_trace_id));
+          } else {
+            // 与 update_cached_dummy_entry_and_ldc 中保持一致，刷新 server_state_version_
+            rpc_ctx->server_state_version_ = cluster_resource_->server_state_version_;
+            // 更新 rpc_ctx 中的 dummy_ldc 成功后，再拷贝到 obkv_info
+            if (OB_FAIL(obkv_info.set_dummy_entry(rpc_ctx->dummy_entry_))) {
+              LOG_WARN("fail to set_dummy_entry into obkv_info after update ldc",
+                       K(ret), KP_(rpc_ctx->dummy_entry), K_(rpc_trace_id));
+            } else if (OB_FAIL(ObLDCLocation::copy_dummy_ldc(rpc_ctx->dummy_ldc_, obkv_info.dummy_ldc_))) {
+              LOG_WARN("fail to copy_dummy_ldc after update ldc", K(ret), K_(rpc_ctx->dummy_ldc), K_(rpc_trace_id));
+            }
+          }
         }
       }
     }
@@ -3110,6 +3171,8 @@ void ObRpcRequestSM::get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePoli
     ret_policy = UNMERGE_FOLLOWER_FIRST;
   } else if (FOLLOWER_ONLY_ENUM == policy) {
     ret_policy = FOLLOWER_ONLY;
+  } else {
+    ret_policy = FOLLOWER_FIRST;
   }
 }
 
@@ -3144,7 +3207,8 @@ ObRoutePolicyEnum ObRpcRequestSM::get_route_policy(const bool need_use_dup_repli
     if (need_use_dup_replica) {
       //if dup_replica read, use DUP_REPLICA_FIRST, no need care about zone type
       ret_policy = DUP_REPLICA_FIRST;
-    } else if (obkv_info.dummy_ldc_.is_readonly_zone_exist()) {
+    } else if (FALSE_IT(obkv_info.dummy_ldc_.is_readonly_zone_exist())) {
+    // TODO: obkv not support readonly zone currently, so we don't need to handle readonly zone
       if (common::WEAK == get_trans_consistency_level()) {
         //if wead read, use session_route_policy
         ret_policy = session_route_policy;
@@ -3171,7 +3235,7 @@ ObRoutePolicyEnum ObRpcRequestSM::get_route_policy(const bool need_use_dup_repli
           get_route_policy(obkv_info.proxy_route_policy_, ret_policy);
         } else {
           // const ObString value = get_global_proxy_config().proxy_route_policy.str();
-          ObProxyRoutePolicyEnum policy = get_proxy_route_policy(rpc_req_->get_rpc_request_config_info().proxy_route_policy_.get_config_str());
+          ObProxyRoutePolicyEnum policy = get_proxy_route_policy(rpc_req_->get_rpc_request_config_info().rpc_proxy_route_policy_.get_config_str());
           LOG_DEBUG("succ to global variable proxy_route_policy",
                   "policy", get_proxy_route_policy_enum_string(policy), K_(rpc_trace_id));
           get_route_policy(policy, ret_policy);
@@ -3183,11 +3247,20 @@ ObRoutePolicyEnum ObRpcRequestSM::get_route_policy(const bool need_use_dup_repli
   return ret_policy;
 }
 
-ObString ObRpcRequestSM::get_current_idc_name() const
+ObString ObRpcRequestSM::get_current_idc_name()
 {
-  ObString ret_idc(mysql_config_params_->proxy_idc_name_);
-
-  return ret_idc;
+  // mysql_config_params_->proxy_idc_name_ may be updated during proxyconfig hot update.
+  // Keep a per-request copy to avoid UAF in async route/ldc update paths.
+  if (OB_NOT_NULL(mysql_config_params_) && OB_NOT_NULL(mysql_config_params_->proxy_idc_name_)
+      && '\0' != mysql_config_params_->proxy_idc_name_[0]) {
+    const int64_t len = std::min(static_cast<int64_t>(STRLEN(mysql_config_params_->proxy_idc_name_)),
+                                 static_cast<int64_t>(OB_PROXY_MAX_IDC_NAME_LENGTH));
+    MEMCPY(current_idc_name_buf_, mysql_config_params_->proxy_idc_name_, len);
+    current_idc_name_.assign_ptr(current_idc_name_buf_, len);
+  } else {
+    current_idc_name_.reset();
+  }
+  return current_idc_name_;
 }
 
 void ObRpcRequestSM::get_region_name_and_server_info(ObIArray<ObServerStateSimpleInfo> &simple_servers_info, ObIArray<ObString> &region_names)
@@ -6303,13 +6376,13 @@ int ObRpcRequestSM::get_config_item(const ObString& cluster_name,
   if (OB_SUCC(ret)) {
     ObConfigItem item;
     if (OB_FAIL(get_global_config_processor().get_proxy_config(
-            addr, cluster_name, tenant_name, "proxy_route_policy", item))) {
+            addr, cluster_name, tenant_name, "rpc_proxy_route_policy", item))) {
       LOG_WDIAG("get proxy route policy config failed", K(addr), K(cluster_name), K(tenant_name), K(ret), K_(rpc_trace_id));
     } else {
-      req_config_info.proxy_route_policy_.check_and_extend_str(strlen(item.str()));
-      req_config_info.proxy_route_policy_.mem_reset();
-      // memset(req_config_info.proxy_route_policy_, 0, sizeof(sm_->proxy_route_policy_));
-      MEMCPY(req_config_info.proxy_route_policy_.get_config_str(), item.str(), strlen(item.str()));
+      req_config_info.rpc_proxy_route_policy_.check_and_extend_str(strlen(item.str()));
+      req_config_info.rpc_proxy_route_policy_.mem_reset();
+      // memset(req_config_info.rpc_proxy_route_policy_, 0, sizeof(sm_->rpc_proxy_route_policy_));
+      MEMCPY(req_config_info.rpc_proxy_route_policy_.get_config_str(), item.str(), strlen(item.str()));
     }
   }
 

@@ -44,11 +44,16 @@ public:
 
   int init(const int64_t bucket_size);
   void destroy();
-  int get_table_name(const ObSqlTableEntryKey &key, char *buf, const int64_t len);
-  int add_sql_table_entry(ObSqlTableEntry *entry);
-  int update_table_name(const ObSqlTableEntryKey &key, const common::ObString &table_name);
+  int get_table_and_db_name(const ObSqlTableEntryKey &key, char *tb_name_buf,
+                            const int64_t tb_name_buf_len,
+                            char* db_name_buf, const int64_t db_name_buf_len);
 
-  void set_cache_expire_time(const int64_t relative_time_s);
+  int add_sql_table_entry(ObSqlTableEntry *entry);
+  int update_table_and_db_name(const ObSqlTableEntryKey &key,
+                               const common::ObString &table_name,
+                               const common::ObString &origin_database_name);
+
+  void set_cache_expire_time(const int64_t relative_time_ms);
   int64_t get_cache_expire_time_us() const { return expire_time_us_; }
   bool is_sql_table_entry_expired(const ObSqlTableEntry &entry);
   int remove_sql_table_entry(const ObSqlTableEntryKey &key);
@@ -67,10 +72,10 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObSqlTableCache);
 };
 
-inline void ObSqlTableCache::set_cache_expire_time(const int64_t relative_time_s)
+inline void ObSqlTableCache::set_cache_expire_time(const int64_t relative_time_ms)
 {
   expire_time_us_ = common::ObTimeUtility::current_time();
-  expire_time_us_ += common::sec_to_usec(relative_time_s);
+  expire_time_us_ += common::msec_to_usec(relative_time_ms);
 }
 
 inline bool ObSqlTableCache::is_sql_table_entry_expired(const ObSqlTableEntry &entry)

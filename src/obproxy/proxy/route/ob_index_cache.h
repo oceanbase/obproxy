@@ -74,7 +74,7 @@ public:
 
   int update_entry(ObIndexEntry &new_entry, const ObIndexEntryKey &key, const uint64_t hash);
 
-  void set_cache_expire_time(const int64_t relative_time_s);
+  void set_cache_expire_time(const int64_t relative_time_ms);
   int64_t get_cache_expire_time_us() const { return expire_time_us_; }
   bool is_index_entry_expired(const ObIndexEntry &entry);
   bool is_index_entry_expired_in_qa_mode(const ObIndexEntry &entry);

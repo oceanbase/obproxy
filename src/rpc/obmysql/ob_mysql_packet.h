@@ -109,6 +109,13 @@ enum ObMySQLCmd
     proxy <--------- ok/err ---------- server
   */
   OB_MYSQL_COM_AUTH_SWITCH_RESP,
+  /*
+    proxy <--------- 0x01 ------------ server  (server Auth More Data request)
+    proxy ---------- data -----------> server
+                      ^--- client Auth More Data response (non-standard cmd; e.g. plaintext password under TLS)
+    proxy <--------- ok/err ---------- server
+   */
+  OB_MYSQL_COM_AUTH_MORE_DATA_RESP,
   OB_MYSQL_COM_MAX_NUM
 };
 
@@ -290,7 +297,7 @@ class ObMySQLPacket
 {
 public:
   ObMySQLPacket()
-      : hdr_(), cdata_(NULL)
+      : hdr_(), cdata_(nullptr)
   {}
   virtual ~ObMySQLPacket() {}
 

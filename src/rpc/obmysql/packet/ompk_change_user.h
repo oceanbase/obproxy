@@ -70,6 +70,10 @@ public:
   {
     return auth_response_;
   }
+  inline const ObString& get_auth_plugin_name() const
+  {
+    return auth_plugin_name_;
+  }
   inline const common::ObIArray<ObStringKV>& get_system_vars() const
   {
     return sys_vars_;

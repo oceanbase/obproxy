@@ -35,10 +35,22 @@ int OMPKAuthSwitchReq::decode()
       ret = OB_INVALID_ARGUMENT;
       LOG_EDIAG("not auth switch request", K(status_flag));
     } else {
-      int64_t auth_plugin_name_len = strlen(pos);  // NULL ternamite
+      int64_t auth_plugin_name_len = strlen(pos);  // NULL terminate
       auth_plugin_name_.assign_ptr(pos, auth_plugin_name_len);
       pos += (auth_plugin_name_len + 1);
-      auth_plugin_data_.assign_ptr(pos, end - pos + 1);
+      // auth plugin data is a NUL-terminated string per protocol, but for auth plugins like
+      // caching_sha2_password / mysql_native_password it is binary scramble ended by '\0'.
+      // Keep raw bytes excluding the trailing terminator if present.
+      int64_t data_len = end - pos;
+      if (data_len > 0 && *(end - 1) == '\0') {
+        data_len -= 1;
+      }
+      if (OB_UNLIKELY(data_len < 0)) {
+        ret = OB_ERR_UNEXPECTED;
+        LOG_EDIAG("invalid auth plugin data length", K(len), K(auth_plugin_name_len), KP(pos), KP(end), K(data_len));
+      } else {
+        auth_plugin_data_.assign_ptr(pos, data_len);
+      }
     }
   }
 

@@ -300,7 +300,7 @@ extern void *obproxy_parse_malloc(const size_t nbyte, void *malloc_pool);
 %token<str> NUMBER_VAL
 %token<str> GROUP_ID TABLE_ID ELASTIC_ID TESTLOAD ODP_COMMENT TNT_ID DISASTER_STATUS TRACE_ID RPC_ID TARGET_DB_SERVER TRACE_LOG
 %token<str> DBP_COMMENT ROUTE_TAG SYS_TAG TABLE_NAME SCAN_ALL STICKY_SESSION PARALL SHARD_KEY STOP_DDL_TASK RETRY_DDL_TASK
-%token<str> QUERY_TIMEOUT READ_CONSISTENCY WEAK STRONG FROZEN 
+%token<str> QUERY_TIMEOUT MAX_EXECUTION_TIME READ_CONSISTENCY WEAK STRONG FROZEN
 %token<num> INT_NUM 
 %type<str> right_string_val tracer_right_string_val name_right_string_val
 %type<node> call_expr
@@ -946,6 +946,7 @@ hint_val_list:
              | hint_val hint_val_list
 
 hint: QUERY_TIMEOUT '(' INT_NUM ')' { result->query_timeout_ = $3; }
+    | MAX_EXECUTION_TIME '(' INT_NUM ')' { result->max_execution_time_ = $3; }
     | READ_CONSISTENCY '(' opt_read_consistency ')'
     | INDEX '(' var_name var_name ')'
     {

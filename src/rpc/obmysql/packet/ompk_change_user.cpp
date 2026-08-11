@@ -184,11 +184,11 @@ int OMPKChangeUser::serialize(char* buffer, const int64_t length, int64_t& pos) 
           LOG_WDIAG("fail to store auth response length", K(ret));
         } else if (OB_FAIL(ObMySQLUtil::store_str_vnzt(
                        buffer, length, auth_response_.ptr(), auth_response_.length(), pos))) {
-          LOG_WDIAG("fail to store auth response", K_(auth_response), K(ret));
+          LOG_WDIAG("fail to store auth response", "auth_response_len", auth_response_.length(), K(ret));
         }
       } else {
         if (OB_FAIL(ObMySQLUtil::store_obstr_zt(buffer, length, auth_response_, pos))) {
-          LOG_WDIAG("fail to store auth response", K_(auth_response), K(ret));
+          LOG_WDIAG("fail to store auth response", "auth_response_len", auth_response_.length(), K(ret));
         }
       }
     }

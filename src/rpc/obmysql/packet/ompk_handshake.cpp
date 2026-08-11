@@ -23,6 +23,7 @@ const char *OMPKHandshake::AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD = "mysql_native_pas
 const char *OMPKHandshake::AUTH_PLUGIN_MYSQL_OLD_PASSWORD = "mysql_old_password";
 const char *OMPKHandshake::AUTH_PLUGIN_MYSQL_CLEAR_PASSWORD = "mysql_clear_password";
 const char *OMPKHandshake::AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT = "authentication_windows_client";
+const char *OMPKHandshake::AUTH_PLUGIN_CACHING_SHA2_PASSWORD = "caching_sha2_password";
 static const int32_t AUTH_SALT_SIZE = 13;
 
 OMPKHandshake::OMPKHandshake()
@@ -269,6 +270,8 @@ const char *OMPKHandshake::get_handshake_inner_pulgin_name(const ObString outer_
     name = AUTH_PLUGIN_MYSQL_CLEAR_PASSWORD;
   } else if (0 == outer_string.case_compare(AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT)) {
     name = AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT;
+  } else if (0 == outer_string.case_compare(AUTH_PLUGIN_CACHING_SHA2_PASSWORD)) {
+    name = AUTH_PLUGIN_CACHING_SHA2_PASSWORD;
   } else {
     name = NULL;
   }

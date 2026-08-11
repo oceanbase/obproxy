@@ -45,13 +45,30 @@ int ObSqlParseResult::set_real_table_name(const char *table_name, int64_t len)
   ObString tmp_str(len, table_name);
   if (OB_UNLIKELY(tmp_str.empty()) || OB_UNLIKELY(len > OB_MAX_TABLE_NAME_LENGTH)) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("invalid argument", K(table_name), K(len));
+    LOG_WDIAG("invalid argument", K(table_name), K(len), K(ret));
   } else if (table_name_ != tmp_str) {
     // table name 来自parse result 或者ob 返回的真正物理表名
     // 1. 如果是mysql 模式，大小写无关，sql 中表名为大写，而真实物理表名为小写时，这里会多一次拷贝操作
     // 2. 如果是oracle 模式, 可以直接比较
     MEMCPY(dml_buf_.table_name_buf_, table_name, len);
     table_name_.assign_ptr(dml_buf_.table_name_buf_, static_cast<int32_t>(len));
+  }
+  return ret;
+}
+
+int ObSqlParseResult::set_real_db_name(const char *db_name, int64_t len)
+{
+  int ret = OB_SUCCESS;
+  ObString tmp_str(len, db_name);
+  // empty database name is possible
+  if (OB_UNLIKELY(len > OB_MAX_DATABASE_NAME_LENGTH)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", K(db_name), K(len), K(ret));
+  } else if (database_name_ != tmp_str) {
+    // db_name 来自parse result 或者ob 返回的真正数据库名
+
+    MEMCPY(dml_buf_.database_name_buf_, db_name, len);
+    database_name_.assign_ptr(dml_buf_.database_name_buf_, static_cast<int32_t>(len));
   }
   return ret;
 }
@@ -747,6 +764,7 @@ int ObSqlParseResult::load_result(const ObProxyParseResult &parse_result,
   has_shard_comment_ = parse_result.has_shard_comment_;
   has_last_insert_id_ = parse_result.has_last_insert_id_;
   hint_query_timeout_ = parse_result.query_timeout_;
+  hint_max_execution_time_ = parse_result.max_execution_time_;
   has_anonymous_block_ = parse_result.has_anonymous_block_;
   has_ever_set_anonymous_block_ = parse_result.has_ever_set_anonymous_block_;
   has_trace_log_hint_ = parse_result.has_trace_log_hint_;

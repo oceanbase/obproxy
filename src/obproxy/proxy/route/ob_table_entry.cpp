@@ -135,6 +135,7 @@ void ObTableEntry::free()
 {
   LOG_DEBUG("ObTableEntry was freed", K(*this));
   name_.reset();
+  level1_decoded_db_name_.reset();
   if (is_dummy_entry()) {
     if (NULL != tenant_servers_) {
       op_free(tenant_servers_);

@@ -45,8 +45,8 @@ public:
     : ObRouteEntry(), is_inited_(false), is_dummy_entry_(false), is_binlog_entry_(false), is_entry_from_rslist_(false),
       is_empty_entry_allowed_(false), is_need_force_flush_(false), has_dup_replica_(false), is_single_partition_table_(false),
       need_rebuild_as_single_partition_table_(false), tenant_id_(common::OB_INVALID_ID),
-      table_id_(common::OB_INVALID_ID), table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), name_(),
-      buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
+      table_id_(common::OB_INVALID_ID), table_type_(share::schema::MAX_TABLE_TYPE), part_num_(0), replica_num_(0), level1_decoded_db_name_(),
+      name_(), buf_len_(0), buf_start_(NULL), first_pl_(NULL), batch_fetch_tablet_id_set_(), remote_fetching_tablet_id_set_(),
       batch_mutex_(), batch_fetch_cont_(NULL)
   {
   }
@@ -140,6 +140,8 @@ public:
   void reset_batch_tablet_ids();
   event::ObProxyMutex *get_batch_fetch_mutex() { return batch_mutex_.ptr_; }
   int init_new_batch_cont();
+  int set_level1_decoded_db_name(const ObString& db_name) { return level1_decoded_db_name_.rewrite(db_name); }
+  const ObConfigVariableString& get_level1_decoded_db_name() { return level1_decoded_db_name_;}
 
 private:
   uint64_t get_all_server_hash() const;
@@ -166,6 +168,7 @@ private:
   int64_t part_num_;
   int64_t replica_num_;
 
+  ObConfigVariableString level1_decoded_db_name_;
   ObTableEntryName name_;
   int64_t buf_len_;
   char *buf_start_;

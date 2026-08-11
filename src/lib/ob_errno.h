@@ -816,6 +816,7 @@ namespace common
   static const int OB_PROXY_SEND_LONG_DATA_PIECES_ERROR = -10027;
   static const int OB_SQLITE3_EXEC_ERROR = -10028;
   static const int OB_PROXY_COORDINATOR_CLOSED = -10029;
+  static const int OB_TEMPORARY_TABLE_SESSION_CLOSED = -10030;
 
   // obproxy related error code
   static const int OB_PROXY_FETCH_RSLIST_FAIL = -10101;
@@ -1583,12 +1584,14 @@ namespace common
 #define OB_PROXY_INVALID_COORDINATOR__USER_ERROR_MSG "OBProxy transaction coordinator is invalid"
 #define OB_PROXY_PROXY_ID_OVER_LIMIT__USER_ERROR_MSG "When changing proxy_id or client_session_id_version and client_session_id_version is version 1, proxy_id must be set to less than 255"
 #define OB_LOCK_SESSION_CLOSED__USER_ERROR_MSG "A server session with table lock closed"
-// obproxy related error code
-#define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
-#define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
 #define OB_PROXY_SEND_LONG_DATA_PIECES_ERROR__USER_ERROR_MSG "Send long data pieces ERROR"
 #define OB_SQLITE3_EXEC_ERROR__USER_ERROR_MSG "Sqlite exec ERROR"
 #define OB_PROXY_COORDINATOR_CLOSED__USER_ERROR_MSG "OBProxy transaction coordinator is closed"
+#define OB_TEMPORARY_TABLE_SESSION_CLOSED__USER_ERROR_MSG "OBProxy temporary table session is closed"
+
+// obproxy related error code
+#define OB_PROXY_FETCH_RSLIST_FAIL__USER_ERROR_MSG "ObProxy fail to fetch rootserver list"
+#define OB_PROXY_CLUSTER_RESOURCE_EXPIRED__USER_ERROR_MSG "ObProxy cluster resource expired"
 
 // sharding related error code
 #define OB_PROXY_SHARD_HINT_NOT_SUPPORTED__USER_ERROR_MSG "ObProxy shard hint usage not supported"

@@ -153,6 +153,7 @@ DEFINE_LOG_SUB_MOD(PVC)                    // plugin virtual connection
 DEFINE_LOG_SUB_MOD(TRANSFORM)              // transform
 DEFINE_LOG_SUB_MOD(API)                    // api
 DEFINE_LOG_SUB_MOD(ICMD)                   // internal cmd
+DEFINE_LOG_SUB_MOD(CSHA2)                  // caching_sha2_password auth trace
 LOG_MOD_END(PROXY)
 
 // liboblog submodules
@@ -680,6 +681,10 @@ LOG_MOD_END(STORAGETEST)
 #define PROXY_ICMD_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(PROXY, ICMD, level,           \
                                                                   info_string, ##args)
 #define _PROXY_ICMD_LOG(level, _fmt_, args...) _OBPROXY_SUB_MOD_LOG(PROXY, ICMD, level,               \
+                                                                _fmt_, ##args)
+#define PROXY_CSHA2_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(PROXY, CSHA2, level,        \
+                                                                  info_string, ##args)
+#define _PROXY_CSHA2_LOG(level, _fmt_, args...) _OBPROXY_SUB_MOD_LOG(PROXY, CSHA2, level,            \
                                                                 _fmt_, ##args)
 #define PROXY_CMD_LOG(level, info_string, args...) OBPROXY_SUB_MOD_LOG(PROXY, ICMD, level,           \
                                                                   info_string, ##args)

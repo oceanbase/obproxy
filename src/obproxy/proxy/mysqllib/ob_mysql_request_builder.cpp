@@ -12,6 +12,7 @@
 
 #define USING_LOG_PREFIX PROXY
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
+#include "proxy/mysqllib/ob_proxy_session_info.h"
 #include "proxy/mysql/ob_mysql_sm.h"
 #include "lib/utility/ob_2_0_sess_veri.h"
 #include "rpc/obmysql/packet/ompk_change_user.h"
@@ -509,7 +510,12 @@ int ObMysqlRequestBuilder::build_reset_session_request(ObMysqlSM *sm,
     } else {
       LOG_DEBUG("succ to serialize change user request to reset session status", K(pos));
       ObString change_user_req_str(pos, change_user_req_buf);
-      if (OB_FAIL(build_request_from_packet_str(sm, change_user_req_str, mio_buf, server_session, ob_proxy_protocol, &extra_info))) {
+      // Classic MySQL COM_CHANGE_USER only (before OB20/compress wrap). handle_change_user_request_succ
+      // decodes with MYSQL_NET_META_LENGTH + OMPKChangeUser; saving post-build_server_request reader
+      // would capture OB20 outer framing and break decode (empty username / wrong cmd).
+      if (OB_FAIL(client_info.get_csha2_auth_ctx().save_change_user_req(change_user_req_str))) {
+        PROXY_CSHA2_LOG(WDIAG, "fail to save raw reset-session change_user packet", K(ret));
+      } else if (OB_FAIL(build_request_from_packet_str(sm, change_user_req_str, mio_buf, server_session, ob_proxy_protocol, &extra_info))) {
         LOG_WDIAG("fail to build_request_from_packet_str", K(ret));
       } else {
         SESSION_POOL_LOG(DEBUG, "succ to build com_stmt_change_user to reset session",

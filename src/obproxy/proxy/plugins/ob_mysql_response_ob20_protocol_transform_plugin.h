@@ -106,11 +106,20 @@ public:
 
   inline bool need_enable_plugin(ObMysqlSM *sm) const
   {
+    // 客户端开启ob20协议，认证阶段的server回包需要包装一层ob20 header
+    const ObMysqlTransact::ObServerSendActionType send_action = sm->trans_state_.current_.send_action_;
+    const bool need_build_ob20_in_csha2 =
+        (ObMysqlTransact::SERVER_SEND_AUTH_MORE_DATA == send_action
+         || ObMysqlTransact::SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY == send_action)
+        && sm->trans_state_.is_auth_more_data_resp_phase()
+        && obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == sm->trans_state_.trans_info_.sql_cmd_
+        && !sm->trans_state_.trans_info_.resp_result_.is_rsa_public_key_resp();
     return (!sm->trans_state_.trans_info_.client_request_.is_internal_cmd()
             && NULL != sm->client_session_
             // inner sql will received compeleted, no need plugin
             && !sm->client_session_->is_proxy_mysql_client()
-            && ObMysqlTransact::SERVER_SEND_REQUEST == sm->trans_state_.current_.send_action_
+            && (ObMysqlTransact::SERVER_SEND_REQUEST == send_action
+                || need_build_ob20_in_csha2)
             && ObProxyProtocol::PROTOCOL_OCEANBASE_20 == sm->get_client_session_protocol());
   }
 

@@ -51,6 +51,8 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       || OB_UNLIKELY(pkt_cnt_[OK_PACKET_ENDING_TYPE] > 2)
       || OB_UNLIKELY(pkt_cnt_[EOF_PACKET_ENDING_TYPE] < 0)
       || OB_UNLIKELY(pkt_cnt_[EOF_PACKET_ENDING_TYPE] > 3)
+      || OB_UNLIKELY(pkt_cnt_[AUTH_MORE_DATA_ENDING_TYPE] < 0)
+      || OB_UNLIKELY(pkt_cnt_[AUTH_MORE_DATA_ENDING_TYPE] > 3)
       || OB_UNLIKELY(pkt_cnt_[ERROR_PACKET_ENDING_TYPE] < 0)
       || OB_UNLIKELY(pkt_cnt_[ERROR_PACKET_ENDING_TYPE] > 1)
       || OB_UNLIKELY(OB_MYSQL_COM_MAX_NUM == req_cmd)
@@ -66,6 +68,7 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
               "eof pkt count", pkt_cnt_[EOF_PACKET_ENDING_TYPE],
               "string eof pkt count", pkt_cnt_[STRING_EOF_ENDING_TYPE],
               "prepare ok pkt count", pkt_cnt_[PREPARE_OK_PACKET_ENDING_TYPE],
+              "auth more data pkt count", pkt_cnt_[AUTH_MORE_DATA_ENDING_TYPE],
               K(protocol_mode));
     switch (req_cmd) {
       case OB_MYSQL_COM_TIME :
@@ -103,6 +106,7 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
       case OB_MYSQL_COM_INIT_DB :
       case OB_MYSQL_COM_CHANGE_USER:
       case OB_MYSQL_COM_AUTH_SWITCH_RESP:
+      case OB_MYSQL_COM_AUTH_MORE_DATA_RESP:
       case OB_MYSQL_COM_RESET_CONNECTION: {
         if (OB_UNLIKELY(is_mysql_mode)) {
           if (1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
@@ -118,13 +122,25 @@ int ObRespPacketAnalyzeResult::is_resp_finished(
             finished = true;
             ending_type = OK_PACKET_ENDING_TYPE;
           } else if (1 == pkt_cnt_[ERROR_PACKET_ENDING_TYPE]
-                     && 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
+                    && 1 == pkt_cnt_[OK_PACKET_ENDING_TYPE]) {
             finished = true;
             ending_type = ERROR_PACKET_ENDING_TYPE;
-          // eof as auth switch response
-          } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd || OB_MYSQL_COM_LOGIN == req_cmd) && 1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
+          // eof as auth switch request
+          } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd
+                      || OB_MYSQL_COM_LOGIN == req_cmd
+                      || OB_MYSQL_COM_AUTH_SWITCH_RESP == req_cmd
+                      || OB_MYSQL_COM_AUTH_MORE_DATA_RESP == req_cmd)
+                     && 1 == pkt_cnt_[EOF_PACKET_ENDING_TYPE]) {
             finished = true;
             ending_type = EOF_PACKET_ENDING_TYPE;
+          // auth more data as "continue auth" request (e.g. caching_sha2_password full auth negotiation)
+          } else if ((OB_MYSQL_COM_CHANGE_USER == req_cmd
+                      || OB_MYSQL_COM_LOGIN == req_cmd
+                      || OB_MYSQL_COM_AUTH_SWITCH_RESP == req_cmd
+                      || OB_MYSQL_COM_AUTH_MORE_DATA_RESP == req_cmd)
+                     && 1 == pkt_cnt_[AUTH_MORE_DATA_ENDING_TYPE]) {
+            finished = true;
+            ending_type = AUTH_MORE_DATA_ENDING_TYPE;
           }
         } else {
           ret = OB_ERR_UNEXPECTED;

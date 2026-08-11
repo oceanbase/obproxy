@@ -103,6 +103,7 @@ inline void ObProxyParser::init_result_basic(ObProxyParseResult &p, const char *
   p.sub_stmt_type_ = OBPROXY_T_SUB_INVALID;
   p.stmt_count_ = 0;
   p.query_timeout_ = 0;
+  p.max_execution_time_ = 0;
   p.accept_pos_ = NULL;
   p.col_name_.str_len_ = 0;
   p.trace_id_.str_len_ = 0;

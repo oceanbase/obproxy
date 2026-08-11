@@ -46,6 +46,7 @@ static const ObString type_names[CACHED_VAR_MAX + 1] = {
     ObString(OB_SV_COLLATION_CONNECTION),
     ObString(OB_SV_NCHARACTER_SET_CONNECTION),
     ObString(OB_SV_ENABLE_TRANSMISSION_CHECKSUM),
+    ObString(OB_SV_MAX_EXECUTION_TIME),
     ObString("CACHED_VAR_MAX"),
 };
 
@@ -80,6 +81,11 @@ int ObCachedVariables::update_var(const ObCachedVariableType &type, const ObObj 
     case CACHED_INT_VAR_QUERY_TIMEOUT:
     case CACHED_INT_VAR_TRX_TIMEOUT: {
       cached_vars_[index].set_int(HRTIME_USECONDS(obj.get_int()));
+      break;
+    }
+
+    case CACHED_INT_VAR_MAX_EXECUTION_TIME: {
+      cached_vars_[index].set_int(HRTIME_MSECONDS(obj.get_int()));
       break;
     }
 

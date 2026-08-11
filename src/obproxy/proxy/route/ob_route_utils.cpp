@@ -553,6 +553,10 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
   const bool is_dummy_entry = entry.is_dummy_entry();
   bool use_fake_addrs = false;
   bool has_dup_replica = false;
+  int64_t complex_table_type = 0;
+  char level1_decoded_db_name[OB_MAX_DATABASE_NAME_LENGTH];
+  level1_decoded_db_name[0] = '\0';
+  int64_t decoded_db_str_len = 0;
 
   while ((OB_SUCC(ret)) && (OB_SUCC(rs_fetcher.next()))) {
     ip_str[0] = '\0';
@@ -562,6 +566,7 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
     replica_type = -1;
     table_type = -1;
     svr_port = 0;
+    decoded_db_str_len = 0;
 
     PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "svr_ip", ip_str, MAX_IP_ADDR_LENGTH, tmp_real_str_len);
     PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "sql_port", port, int64_t);
@@ -617,6 +622,21 @@ int ObRouteUtils::fetch_table_entry(ObResultSetFetcher &rs_fetcher,
         LOG_DEBUG("can not found table_type, maybe is old server, ignore", K(ret));
         ret = OB_SUCCESS;
         table_type = -1;
+      }
+    }
+
+    if (OB_SUCC(ret)) {
+      if (IS_CLUSTER_VERSION_LESS_THAN_V4(cluster_version)) {
+        // nothing
+      } else {
+        PROXY_EXTRACT_INT_FIELD_MYSQL(rs_fetcher, "complex_table_type", complex_table_type, int64_t);
+        PROXY_EXTRACT_STRBUF_FIELD_MYSQL(rs_fetcher, "level1_decoded_db_name", level1_decoded_db_name, OB_MAX_DATABASE_NAME_LENGTH, decoded_db_str_len);
+      }
+
+      if (OB_UNLIKELY(CT_SYNONYM == complex_table_type
+                      && decoded_db_str_len > 0)
+          && OB_FAIL(entry.set_level1_decoded_db_name(ObString(decoded_db_str_len, level1_decoded_db_name)))) {
+        LOG_WDIAG("fail to set level1_decoded_db_name", K(level1_decoded_db_name), K(ret));
       }
     }
 

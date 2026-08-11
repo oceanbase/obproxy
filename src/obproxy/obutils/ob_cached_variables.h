@@ -37,6 +37,7 @@ enum ObCachedVariableType
   CACHED_INT_VAR_COLLATION_CONNECTION,
   CACHED_INT_VAR_NCHARACTER_SET_CONNECTION,
   CACHED_INT_VAR_ENABLE_TRANSMISSION_CHECKSUM,
+  CACHED_INT_VAR_MAX_EXECUTION_TIME,
   CACHED_VAR_MAX,
 };
 
@@ -63,6 +64,7 @@ public:
   int64_t get_tx_read_only() const { return get_int_var(CACHED_INT_VAR_TX_READ_ONLY); }
   int64_t get_read_consistency() const { return get_int_var(CACHED_INT_VAR_READ_CONSISTENCY); }
   int64_t get_ncharacter_set_connection() const { return get_int_var(CACHED_INT_VAR_NCHARACTER_SET_CONNECTION); }
+  int64_t get_max_execution_time() const { return get_int_var(CACHED_INT_VAR_MAX_EXECUTION_TIME); }
   const common::ObObj &get_query_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_QUERY_TIMEOUT); }
   const common::ObObj &get_collation_connection_obj() const { return get_obj_var(CACHED_INT_VAR_COLLATION_CONNECTION); }
   const common::ObObj &get_trx_timeout_obj() const { return get_obj_var(CACHED_INT_VAR_TRX_TIMEOUT); }

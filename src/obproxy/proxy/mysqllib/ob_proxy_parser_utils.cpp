@@ -217,6 +217,10 @@ const char *ObProxyParserUtils::get_sql_cmd_name(const ObMySQLCmd cmd)
       name = "OB_MYSQL_COM_AUTH_SWITCH_RESP";
       break;
 
+    case OB_MYSQL_COM_AUTH_MORE_DATA_RESP:
+      name = "OB_MYSQL_COM_AUTH_MORE_DATA_RESP";
+      break;
+
     default:
       name = "unknown sql command";
       break;

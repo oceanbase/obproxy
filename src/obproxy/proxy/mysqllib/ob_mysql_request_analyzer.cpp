@@ -110,8 +110,10 @@ void ObMysqlRequestAnalyzer::analyze_request(const ObRequestAnalyzeCtx &ctx,
       if (OB_FAIL(handle_auth_request(*ctx.reader_, result))) {
         LOG_WDIAG("fail to handle auth request", K(ret));
       }
-    // for auth switch response and file content request set cmd manually
-    } else if (OB_UNLIKELY(ctx.is_auth_switch_resp_phase() || ctx.is_file_content_req_phase())) {
+    // for auth switch response / auth more data response / file content request set cmd manually
+    } else if (OB_UNLIKELY(ctx.is_auth_switch_resp_phase()
+                           || ctx.is_auth_more_data_resp_phase()
+                           || ctx.is_file_content_req_phase())) {
       if (OB_FAIL(handle_no_cmd_request(ctx, result))) {
         LOG_WDIAG("fail to analyze one packet only header", K(ret));
       }
@@ -435,6 +437,8 @@ inline int ObMysqlRequestAnalyzer::handle_no_cmd_request(const ObRequestAnalyzeC
   } else {
     if (ctx.is_auth_switch_resp_phase()) {
       result.meta_.cmd_ = OB_MYSQL_COM_AUTH_SWITCH_RESP;
+    } else if (ctx.is_auth_more_data_resp_phase()) {
+      result.meta_.cmd_ = OB_MYSQL_COM_AUTH_MORE_DATA_RESP;
     } else if (ctx.is_file_content_req_phase()) {
       result.meta_.cmd_ = OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT;
       // the last empty packet of content of file, reset read trigger

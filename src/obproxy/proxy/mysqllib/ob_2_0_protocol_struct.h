@@ -93,14 +93,22 @@ enum SessionSyncInfoType {
 
 enum FeedbackProxyInfoType {
   IS_LOCK_SESSION = 0,
+  IS_TEMPORARY_TABLE_SESSION,
   FEEDBACK_PROXY_MAX_TYPE,
 };
 
 // all feedback info from observer in extra info should define here
 struct Ob20FeedbackProxyInfo {
-  Ob20FeedbackProxyInfo() : is_lock_session_(false) {}
+  Ob20FeedbackProxyInfo() : is_lock_session_(-1), is_temporary_table_session_(-1) {}
   ~Ob20FeedbackProxyInfo() {}
-  bool is_lock_session_;
+
+  void reset() {
+    is_lock_session_ = -1;
+    is_temporary_table_session_ = -1;
+  }
+
+  int64_t is_lock_session_;
+  int64_t is_temporary_table_session_;
 };
 
 
@@ -121,6 +129,7 @@ public:
     sess_info_count_ = 0;
     extra_len_ = 0;
 
+    feedback_proxy_info_.reset();
     sess_info_length_.reset();
     sess_info_cur_idx_ = 0;
     sess_info_offset_ = 0;

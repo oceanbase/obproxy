@@ -3036,6 +3036,10 @@ static struct ObStrErrorInit
     SQLSTATE[-OB_PROXY_COORDINATOR_CLOSED] = "HY000";
     STR_ERROR[-OB_PROXY_COORDINATOR_CLOSED] = "OBProxy transaction coordinator is closed";
     STR_USER_ERROR[-OB_PROXY_COORDINATOR_CLOSED] = "OBProxy transaction coordinator is closed";
+    MYSQL_ERRNO[-OB_TEMPORARY_TABLE_SESSION_CLOSED] = -1;
+    SQLSTATE[-OB_TEMPORARY_TABLE_SESSION_CLOSED] = "HY000";
+    STR_ERROR[-OB_TEMPORARY_TABLE_SESSION_CLOSED] = "OBProxy temporary table session is closed";
+    STR_USER_ERROR[-OB_TEMPORARY_TABLE_SESSION_CLOSED] = "OBProxy temporary table session is closed";
 
     // obproxy related error code
     MYSQL_ERRNO[-OB_PROXY_FETCH_RSLIST_FAIL] = -1;

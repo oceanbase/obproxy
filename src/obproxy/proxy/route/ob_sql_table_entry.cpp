@@ -38,6 +38,7 @@ void ObSqlTableEntry::destroy()
 
 int ObSqlTableEntry::alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &key,
                                                     const ObString &table_name,
+                                                    const common::ObString &real_database_name,
                                                     ObSqlTableEntry *&entry)
 {
   int ret = OB_SUCCESS;
@@ -48,7 +49,7 @@ int ObSqlTableEntry::alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &ke
   } else {
     int64_t name_size = key.cluster_name_.length()
                         + key.tenant_name_.length() + key.database_name_.length()
-                        + key.sql_id_.length() + table_name.length();
+                        + key.sql_id_.length() + table_name.length() + real_database_name.length();
     int64_t obj_size = sizeof(ObSqlTableEntry);
     int64_t alloc_size =  name_size + obj_size;
     char *buf = static_cast<char *>(op_fixed_mem_alloc(alloc_size));
@@ -61,7 +62,7 @@ int ObSqlTableEntry::alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &ke
       if (OB_FAIL(entry->init(buf + obj_size, name_size))) {
         LOG_WDIAG("fail to init entry", K(alloc_size), K(ret));
       } else {
-        entry->copy_key_and_name(key, table_name);
+        entry->copy_key_and_name(key, table_name, real_database_name);
         entry->set_create_time();
         entry->set_avail_state();
         entry->inc_ref();
@@ -90,7 +91,9 @@ int ObSqlTableEntry::init(char *buf_start, const int64_t buf_len)
   return ret;
 }
 
-void ObSqlTableEntry::copy_key_and_name(const ObSqlTableEntryKey &key, const ObString &table_name)
+void ObSqlTableEntry::copy_key_and_name(const ObSqlTableEntryKey &key,
+                                        const ObString &table_name,
+                                        const ObString &real_database_name)
 {
   key_.cr_id_ = key.cr_id_;
   key_.cr_version_ = key.cr_version_;
@@ -107,9 +110,14 @@ void ObSqlTableEntry::copy_key_and_name(const ObSqlTableEntryKey &key, const ObS
   MEMCPY(buf_start_ + pos, key.sql_id_.ptr(), key.sql_id_.length());
   key_.sql_id_.assign_ptr(buf_start_ + pos, static_cast<int32_t>(key.sql_id_.length()));
   pos += key.sql_id_.length();
+
   MEMCPY(buf_start_ + pos, table_name.ptr(), table_name.length());
   table_name_.assign_ptr(buf_start_ + pos, static_cast<int32_t>(table_name.length()));
   pos += table_name.length();
+
+  MEMCPY(buf_start_ + pos, real_database_name.ptr(), real_database_name.length());
+  real_database_name_.assign_ptr(buf_start_ + pos, static_cast<int32_t>(real_database_name.length()));
+  pos += real_database_name.length();
 }
 
 } // end of namespace proxy

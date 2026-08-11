@@ -43,6 +43,7 @@
 #include "obutils/ob_metadb_create_cont.h"
 #include "obutils/ob_tenant_stat_manager.h"
 #include "obutils/ob_proxy_config_processor.h"
+#include "obutils/ob_proxy_csha2_rsa_keys.h"
 #include "obutils/ob_read_stale_processor.h"
 #if HAVE_BEYONDTRUST
 #include "obutils/ob_beyond_trust_processor.h"
@@ -215,6 +216,8 @@ int ObProxy::init(ObProxyOptions &opts, ObAppVersionInfo &proxy_version)
       LOG_EDIAG("fail to init ssl processor", K(ret));
     } else if (OB_FAIL(init_config())) {
       LOG_EDIAG("fail to init config", K(ret));
+    } else if (FALSE_IT(init_csha2_rsa_keys())) {
+      // do nothing
     } else if (OB_FAIL(get_global_config_processor().init())) {
       LOG_EDIAG("fail to init config processor", K(ret));
     } else if (OB_FAIL(config_->enable_sharding
@@ -994,18 +997,22 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
     if (0 != relative_expire_time_ms) {
       ObTableCache &table_cache = get_global_table_cache();
       ObPartitionCache &part_cache = get_global_partition_cache();
+      ObRoutineCache &routine_cache = get_global_routine_cache();
       ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
       ObIndexCache &index_cache = get_global_index_cache();
       ObTableGroupCache &tablegroup_cache = get_global_tablegroup_cache();
       ObTabletLsCache &tablet_ls_cache = get_global_tablet_ls_cache();
       ObTableQueryAsyncCache &query_async_cache = get_global_table_query_async_cache();
+
       table_cache.set_cache_expire_time(relative_expire_time_ms);
       part_cache.set_cache_expire_time(relative_expire_time_ms);
+      routine_cache.set_cache_expire_time(relative_expire_time_ms);
+      sql_table_cache.set_cache_expire_time(relative_sql_table_expire_time_ms);
       index_cache.set_cache_expire_time(relative_expire_time_ms);
       tablegroup_cache.set_cache_expire_time(relative_expire_time_ms);
       tablet_ls_cache.set_cache_expire_time(relative_expire_time_ms);
       query_async_cache.set_cache_expire_time(relative_expire_time_ms);
-      sql_table_cache.set_cache_expire_time(relative_sql_table_expire_time_ms);
+
       LOG_INFO("current table cache and part cache will exipre", K(relative_expire_time_ms), K(relative_sql_table_expire_time_ms),
                "table entry expire_time_us", table_cache.get_cache_expire_time_us(),
                "part entry expire_time_us", part_cache.get_cache_expire_time_us(),
@@ -1013,6 +1020,7 @@ int ObProxy::do_reload_config(obutils::ObProxyConfig &config)
                "tablegroup entry expire_time_us", tablegroup_cache.get_cache_expire_time_us(),
                "tablet ls entry expire_time_us", tablet_ls_cache.get_cache_expire_time_us(),
                "query async entry expire_time_us", query_async_cache.get_cache_expire_time_us(),
+               "routine entry expire_time_us", routine_cache.get_cache_expire_time_us(),
                "sql table entry expire time us", sql_table_cache.get_cache_expire_time_us());
       config.partition_location_expire_relative_time = 0;
       config.sql_table_cache_expire_relative_time = 0;

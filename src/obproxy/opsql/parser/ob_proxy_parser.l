@@ -856,6 +856,7 @@ LAST_TRACE_ID    { SET_LAST_TRACE_ID(); RETURN_NON_RESERVED_KEYWORD(NAME_OB); }
 <hint>{multi_byte_left_parenthesis}  { return '('; }
 <hint>{multi_byte_right_parenthesis}  { return ')'; }
 <hint>"query_timeout"     { return QUERY_TIMEOUT; }
+<hint>"max_execution_time"     { return MAX_EXECUTION_TIME; }
 <hint>{int_num}           { RETURN_INT_NUM(); }
 <hint>"read_consistency"  { return READ_CONSISTENCY; }
 <hint>WEAK                { RETURN_NON_RESERVED_KEYWORD(WEAK); }

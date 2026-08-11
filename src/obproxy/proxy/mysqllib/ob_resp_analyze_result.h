@@ -49,6 +49,7 @@ public:
     reset();
     memset(handshake_.scramble_buf_, 0, sizeof(handshake_.scramble_buf_));
     memset(sysvar_.server_trace_id_buf_, 0, sizeof(sysvar_.server_trace_id_buf_));
+    memset(rsa_.public_key_buf_, 0, sizeof(rsa_.public_key_buf_));
   }
   ~ObRespAnalyzeResult()
   {
@@ -89,6 +90,16 @@ public:
   inline void set_is_server_db_reset(bool v) { format_.is_server_db_reset_ = v; }
   inline bool is_auth_switch_req() const { return format_.is_auth_switch_req_; }
   inline void set_is_auth_switch_req(bool v) { format_.is_auth_switch_req_ = v; }
+  inline bool is_auth_more_data_req() const { return format_.is_auth_more_data_req_; }
+  inline void set_is_auth_more_data_req(bool v) { format_.is_auth_more_data_req_ = v; }
+  inline bool is_rsa_public_key_resp() const { return format_.is_rsa_public_key_resp_; }
+  inline void set_is_rsa_public_key_resp(bool v) { format_.is_rsa_public_key_resp_ = v; }
+  inline bool is_fast_auth_succ() const { return format_.is_fast_auth_succ_; }
+  inline void set_is_fast_auth_succ(bool v) { format_.is_fast_auth_succ_ = v; }
+  inline int64_t get_deferred_ok_offset() const { return transmit_control_.deferred_ok_offset_; }
+  inline void set_deferred_ok_offset(int64_t v) { transmit_control_.deferred_ok_offset_ = v; }
+  inline int64_t get_deferred_ok_pkt_len() const { return transmit_control_.deferred_ok_pkt_len_; }
+  inline void set_deferred_ok_pkt_len(int64_t v) { transmit_control_.deferred_ok_pkt_len_ = v; }
   inline bool is_partition_hit() const { return sysvar_.is_partition_hit_; }
   inline void set_is_partition_hit(bool v) { sysvar_.is_partition_hit_ = v; }
   inline ObWeakReadHitReplica get_weak_read_hit_replica() const { return sysvar_.weak_read_hit_replica_; }
@@ -104,6 +115,24 @@ public:
   inline common::ObString get_scramble_string() const { return common::ObString::make_string(handshake_.scramble_buf_); }
   inline char* get_scramble_buf() { return handshake_.scramble_buf_; }
   inline const int64_t get_scramble_buf_len() const { return sizeof(handshake_.scramble_buf_); }
+  inline common::ObString get_rsa_public_key() const
+  {
+    return common::ObString(rsa_.public_key_len_, rsa_.public_key_buf_);
+  }
+  inline int set_rsa_public_key(const common::ObString &public_key)
+  {
+    int ret = common::OB_SUCCESS;
+    if (OB_UNLIKELY(public_key.length() > static_cast<int64_t>(sizeof(rsa_.public_key_buf_) - 1))) {
+      ret = common::OB_SIZE_OVERFLOW;
+    } else {
+      rsa_.public_key_len_ = static_cast<int32_t>(public_key.length());
+      if (rsa_.public_key_len_ > 0) {
+        MEMCPY(rsa_.public_key_buf_, public_key.ptr(), rsa_.public_key_len_);
+      }
+      rsa_.public_key_buf_[rsa_.public_key_len_] = '\0';
+    }
+    return ret;
+  }
   inline bool is_server_can_use_compress() const { return (1 == handshake_.server_capabilities_lower_.capability_flag_.OB_SERVER_CAN_USE_COMPRESS); }
   inline bool support_ssl() const { return 1 == handshake_.server_capabilities_lower_.capability_flag_.OB_SERVER_SSL; }
   inline void set_server_cap_lower(uint16_t cap_lower) { handshake_.server_capabilities_lower_.capability_ = cap_lower; }
@@ -229,11 +258,16 @@ private:
     int64_t last_ok_pkt_len_;                     // the last ok pkt len including mysql header
     int64_t rewritten_last_ok_pkt_len_;           // the last ok pkt len including mysql header after rebuild it
     ObOKPacketActionType ok_packet_action_type_;  // rebuild or trim the last ok pkt
+    int64_t deferred_ok_offset_;                  // offset of OK pkt after 0x01 0x03 (fast auth succ), for csha2 defer
+    int64_t deferred_ok_pkt_len_;                // length of that OK pkt including mysql header
   } transmit_control_;
 
   /* format of the response */
   struct {
     bool is_auth_switch_req_:              1; // if resp is auth switch request
+    bool is_auth_more_data_req_:           1; // if resp is auth more data request (e.g. caching_sha2_password full auth)
+    bool is_rsa_public_key_resp_:          1; // if resp is auth more data carrying RSA public key text
+    bool is_fast_auth_succ_:               1; // if first pkt is 0x01 0x03 (fast auth success), expect OK next
     bool is_resultset_resp_:               1; // if resultset then handle_resultset_resp()
     bool is_server_db_reset_:              1; // if db reset(empty db) then disconnect all server session of current client session (ObMysqlTransact::handle_db_reset)
     ObMysqlRespEndingType ending_type_;       // if resp is eof/ok/err/handshake
@@ -257,6 +291,11 @@ private:
     obmysql::OMPKHandshake::ServerCapabilitiesUpper server_capabilities_upper_; // for handshake pkt
     char scramble_buf_[obmysql::OMPKHandshake::SCRAMBLE_TOTAL_SIZE + 1];        // for handshake pkt
   } handshake_;
+
+  struct {
+    int32_t public_key_len_;
+    char public_key_buf_[2048];
+  } rsa_;
 
   /* save whole error packet */
   struct {
@@ -288,6 +327,8 @@ inline void ObRespAnalyzeResult::reset_transmit_control()
   set_last_ok_pkt_len(0);
   set_rewritten_last_ok_pkt_len(0);
   set_ok_packet_action_type(OK_PACKET_ACTION_SEND);
+  set_deferred_ok_offset(0);
+  set_deferred_ok_pkt_len(0);
 }
 
 inline void ObRespAnalyzeResult::reset()
@@ -297,6 +338,9 @@ inline void ObRespAnalyzeResult::reset()
 
   // format
   set_is_auth_switch_req(false);
+  set_is_auth_more_data_req(false);
+  set_is_rsa_public_key_resp(false);
+  set_is_fast_auth_succ(false);
   set_is_resultset_resp(false);
   set_is_server_db_reset(false);
   set_ending_type(MAX_PACKET_ENDING_TYPE);
@@ -315,6 +359,10 @@ inline void ObRespAnalyzeResult::reset()
   set_server_cap_lower(0);
   set_server_cap_upper(0);
   handshake_.scramble_buf_[0] = '\0';
+
+  // rsa
+  rsa_.public_key_len_ = 0;
+  rsa_.public_key_buf_[0] = '\0';
 
   // error
   error_.error_pkt_buf_.reset();

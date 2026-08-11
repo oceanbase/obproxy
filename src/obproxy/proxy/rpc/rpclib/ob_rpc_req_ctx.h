@@ -106,7 +106,10 @@ public:
 
   ObRpcRequestConfigInfo &get_config_info() { return config_info_; }
   // check_update_ldc不应该依赖rpc_ctx内部变量
-  static int check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dummy_ldc, int64_t server_state_version, obutils::ObClusterResource *cluster_resource);
+  static int check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dummy_ldc, int64_t server_state_version,
+                              obutils::ObClusterResource *cluster_resource);
+  static int check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dummy_ldc, int64_t server_state_version,
+                              obutils::ObClusterResource *cluster_resource, const common::ObString &new_idc_name);
 
   common::DRWLock &get_rpc_ctx_lock() { return lock_; }
 

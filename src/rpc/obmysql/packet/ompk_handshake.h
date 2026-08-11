@@ -164,6 +164,10 @@ public:
   const static char *AUTH_PLUGIN_MYSQL_OLD_PASSWORD;    // Old Password Authentication
   const static char *AUTH_PLUGIN_MYSQL_CLEAR_PASSWORD;  // Clear Text Authentication
   const static char *AUTH_PLUGIN_AUTHENTICATION_WINDOWS_CLIENT; // Windows Native Authentication
+  const static char *AUTH_PLUGIN_CACHING_SHA2_PASSWORD; // MySQL 8 default plugin
+
+  // override auth plugin name (used by obproxy when constructing handshake for client)
+  void set_auth_plugin_name(const char *plugin_name) { auth_plugin_name_ = plugin_name; }
 private:
   const char *get_handshake_inner_pulgin_name(const common::ObString outer_string) const;
 

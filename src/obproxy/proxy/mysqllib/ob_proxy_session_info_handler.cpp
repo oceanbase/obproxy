@@ -447,7 +447,8 @@ int  ObProxySessionInfoHandler::rewrite_ldg_login_req(ObClientSessionInfo &clien
 // 客户端发送 COM_CHANGE_USER 切换用户成功后,要修改 handshake resp 的内容
 int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo &client_info,
   const ObString& username,
-  const ObString& auth_response)
+  const ObString& auth_response,
+  const ObString& auth_plugin_name)
 {
   int ret = OB_SUCCESS;
   const int64_t BUFFER_SIZE = BUFFER_SIZE_FOR_INDEX(BUFFER_SIZE_INDEX_4K);
@@ -474,6 +475,12 @@ int ObProxySessionInfoHandler::rewrite_change_user_login_req(ObClientSessionInfo
 
     // 3. change auth_response
     target_hsr.set_auth_response(auth_response);
+
+    // 4. if client sent auth_plugin_name in change user, update saved login plugin so it matches
+    //    the auth method actually used and accepted by server for this user
+    if (!auth_plugin_name.empty()) {
+      target_hsr.set_auth_plugin_name(auth_plugin_name);
+    }
 
     ObString default_tenant_name;
     ObString default_cluster_name;
@@ -879,6 +886,30 @@ inline int ObProxySessionInfoHandler::handle_set_trx_executed_var(
   return ret;
 }
 
+inline int ObProxySessionInfoHandler::handle_temporary_table_route_var(
+    ObClientSessionInfo &client_info,
+    const ObString &value,
+    const bool is_auth_request,
+    bool &need_save)
+{
+  int ret = OB_SUCCESS;
+
+  need_save = true;
+  if (is_auth_request) {
+    need_save = false;
+  } else {
+    if (value == ObString::make_string("1")) {
+      client_info.set_temporary_table_route_flag();
+      LOG_DEBUG("set temporary table route");
+    } else {
+      client_info.clear_temporary_table_route_flag();
+      LOG_DEBUG("clear temporary table route");
+    }
+  }
+
+  return ret;
+}
+
 inline int ObProxySessionInfoHandler::handle_partition_hit_var(
     const ObString &value,
     const bool is_auth_request,
@@ -1014,6 +1045,10 @@ inline int ObProxySessionInfoHandler::handle_sys_var(ObClientSessionInfo &client
     case OBPROXY_VAR_SET_TRX_EXECUTED:
       ret = handle_set_trx_executed_var(client_info, str_kv.value_,
                                         is_auth_request, need_save);
+      break;
+    case OBPROXY_VAR_TEMPORARY_TABLE_ROUTE:
+      ret = handle_temporary_table_route_var(client_info, str_kv.value_,
+                                             is_auth_request, need_save);
       break;
     case OBPROXY_VAR_PARTITION_HIT:
       ret = handle_partition_hit_var(str_kv.value_, is_auth_request,

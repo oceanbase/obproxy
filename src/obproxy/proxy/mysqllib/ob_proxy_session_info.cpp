@@ -40,8 +40,8 @@ namespace proxy
 {
 ObServerSessionInfo::ObServerSessionInfo() :
     cap_(0), compatible_capability_(0), checksum_switch_(CHECKSUM_ON), is_inited_(false),
-    is_sharding_txn_session_(false), is_lock_session_(false), is_trans_coordinator_session_(false),
-    is_binlog_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),
+    is_sharding_txn_session_(false), is_lock_session_(false), is_temporary_table_session_(false),
+    is_trans_coordinator_session_(false), is_binlog_session_(false), server_type_(DB_OB_MYSQL), shard_conn_(NULL),
     ps_id_(0), ps_id_pair_map_(), cursor_id_pair_map_(), allocator_(), text_ps_version_set_()
 {
   const int BUCKET_SIZE = 8;
@@ -208,7 +208,8 @@ void ObServerSessionInfo::reuse_text_ps_version_set()
 }
 
 ObClientSessionInfo::ObClientSessionInfo()
-    : lock_session_num_(0), is_inited_(false), is_trans_specified_(false), is_global_vars_changed_(false),
+    : lock_session_num_(0), temporary_table_session_num_(0), is_inited_(false), is_trans_specified_(false),
+      is_temporary_table_route_(false), is_global_vars_changed_(false),
       is_user_idc_name_set_(false), is_read_consistency_set_(false), is_oracle_mode_(false),
       is_proxy_route_policy_set_(false),
       enable_shard_authority_(false), enable_reset_db_(true),
@@ -229,7 +230,8 @@ ObClientSessionInfo::ObClientSessionInfo()
       service_name_session_info_(NULL), ps_id_addrs_map_(), request_send_addrs_(), is_read_only_user_(false), is_request_follower_user_(false),
       obproxy_force_parallel_query_dop_(1), ob_max_read_stale_time_(-1), last_server_addr_(),
       last_server_sess_id_(0), sync_conf_sys_var_(false),
-      login_config_(NULL), has_send_init_sql_(false)
+      login_config_(NULL),
+      has_send_init_sql_(false)
 {
   MEMSET(scramble_buf_, 0, sizeof(scramble_buf_));
   MEMSET(idc_name_buf_, 0, sizeof(idc_name_buf_));
@@ -253,7 +255,7 @@ int64_t ObClientSessionInfo::to_string(char *buf, const int64_t buf_len) const
   int64_t pos = 0;
   J_OBJ_START();
   J_KV(K_(is_inited), K_(priv_info), K_(version), K_(hash_version), K_(val_hash), K_(global_vars_version),
-       K_(is_global_vars_changed), K_(is_trans_specified), K_(is_user_idc_name_set),
+       K_(is_global_vars_changed), K_(is_trans_specified), K_(is_temporary_table_route), K_(is_user_idc_name_set),
        K_(is_read_consistency_set), K_(idc_name), K_(cluster_id), K_(real_meta_cluster_name),
        K_(safe_read_snapshot), K_(syncing_safe_read_snapshot), K_(route_policy),
        K_(proxy_route_policy), K_(user_identity), K_(global_vars_version),
@@ -1331,6 +1333,10 @@ int ObClientSessionInfo::load_all_cached_variable()
         ret = OB_SUCCESS;
         obj.set_int(0);
         LOG_DEBUG("skip the variable ncharacter_set_connection because observer does not offer it");
+      } else if (name.case_compare(OB_SV_MAX_EXECUTION_TIME) == 0) {
+        ret = OB_SUCCESS;
+        obj.set_int(0);
+        LOG_DEBUG("skip the variable max_execution_time because observer does not offer it");
       } else {
         LOG_WDIAG("get system variable value failed", K(name), K(obj), K(ret));
       }
@@ -1441,6 +1447,7 @@ void ObClientSessionInfo::destroy()
     digest_sql_len_ = 0;
   }
   set_has_send_init_sql(false);
+  csha2_auth_ctx_.reset();
 
   destroy_ps_id_entry_map();
   destroy_cursor_id_addr_map();
@@ -1449,6 +1456,7 @@ void ObClientSessionInfo::destroy()
   destroy_piece_info_map();
   destroy_text_ps_name_entry_map();
   is_trans_specified_ = false;
+  is_temporary_table_route_ = false;
   is_global_vars_changed_ = false;
   is_user_idc_name_set_ = false;
   is_read_consistency_set_ = false;
@@ -1497,6 +1505,7 @@ void ObClientSessionInfo::destroy()
   last_server_addr_.reset();
   last_server_sess_id_ = 0;
   lock_session_num_ = 0;
+  temporary_table_session_num_ = 0;
 }
 
 void ObClientSessionInfo::destroy_ps_id_entry_map()

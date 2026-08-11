@@ -337,6 +337,7 @@ public:
   DEF_BOOL(enable_weak_reroute, "true", "if this and protocol_v2 enabled, proxy will reroute weak read request when routing error", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
   DEF_BOOL(enable_pl_route, "true", "if enabled, pl will be accurate routing", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_cached_server, "true", "if enabled, use cached server session when no table entry", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_temporary_table_free_route, "false", "if enabled, proxy will route freely in session with temporary table when observer permit", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   // location rate limit
   DEF_INT(normal_pl_update_threshold, "100", "[0,]", "max partition location update task processing per second", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
@@ -410,7 +411,7 @@ public:
 
   DEF_BOOL(enable_cpu_isolate, "false", "enable cpu isolate or not", CFG_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
-  DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP)
+  DEF_STR(mysql_version, "5.6.25", "returned version for mysql mode, default value is 5.6.25. If set, proxy will send new version when user connect to proxy", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_VIP);
   // sql table cache
   DEF_BOOL(enable_index_route, "false", "enable index route or not", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_INT(sql_table_cache_expire_relative_time, "0", "[-36000000,36000000]", "the unit is ms, 0 means do not expire, others will expire sql table cache base on relative time", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
@@ -582,6 +583,7 @@ public:
   DEF_INT(rpc_partition_calc_max_retries, "5", "[0, 50]", "rpc request max retry times when partition calc failed", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_requestsm_info, "false", "if true, will print rpc requestsm info in memory, just for test", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(rpc_enable_sub_req_log, "true", "If enabled, sub-requests will record slow and digest logs", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_STR(rpc_proxy_route_policy, "", "proxy route policy for obkv weakread", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_VIP);
   // 以下是废弃、无用的配置，统一放在下面
   DEF_INT(session_pool_stat_log_ratio, "9000", "[0, 10000]", "deprecated. The num when reach will log", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_TIME(session_pool_default_blocking_timeout, "500ms", "[0ms,2s]", "deprecated. session_pool_default_blocking_timeout, [0ms, 2s]", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);

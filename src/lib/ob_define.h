@@ -642,6 +642,7 @@ enum ObCapabilityFlagShift
   OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT,             // 22
   OB_CAP_FEEDBACK_PROXY_SHIFT,                      // 23
   OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT,              // 24
+  OB_CAP_MAX_EXECUTION_TIME_SHIFT,                  // 25
 };
 
 #define OB_TEST_CAPABILITY(cap, tg_cap) (((cap) & (tg_cap)) == (tg_cap))
@@ -669,6 +670,8 @@ enum ObCapabilityFlagShift
 #define OB_CAP_OB_PROTOCOL_V2_COMPRESS OB_CAP_GET_TYPE(common::OB_CAP_OB_PROTOCOL_V2_COMPRESS_SHIFT)
 #define OB_CAP_FEEDBACK_PROXY OB_CAP_GET_TYPE(common::OB_CAP_FEEDBACK_PROXY_SHIFT)
 #define OB_CAP_CHANGE_USER_CONN_ATTRS OB_CAP_GET_TYPE(common::OB_CAP_CHANGE_USER_CONN_ATTRS_SHIFT)
+#define OB_CAP_MAX_EXECUTION_TIME OB_CAP_GET_TYPE(common::OB_CAP_MAX_EXECUTION_TIME_SHIFT)
+
 #define OB_CAP_CHECK_ENABLE_CAPS(enable_caps, src_caps) ((enable_caps & src_caps) == enable_caps)
 #define OB_CAP_CHECK_DISABLE_CAPS(disable_caps, src_caps) ((~disable_caps | src_caps) == ~disable_caps)
 

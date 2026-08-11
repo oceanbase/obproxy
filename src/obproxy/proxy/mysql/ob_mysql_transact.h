@@ -68,7 +68,6 @@ class ObClientSessionInfo;
 class ObServerSessionInfo;
 class ObSqlauditRecordQueue;
 class ObDiagnosisRoutePolicy;
-
 enum class ObRouteInfoType;
 
 enum
@@ -87,6 +86,7 @@ public:
     MAYBE_ABORTED,
     ABORTED
   };
+
   enum ObPLLookupState
   {
     NEED_PL_LOOKUP = 0,
@@ -317,7 +317,12 @@ enum ObServerRespErrorType
     SERVER_SEND_LOGIN,
     SERVER_SEND_INIT_SQL,
     SERVER_SEND_SAVED_LOGIN,
-    //SERVER_SEND_SAVED_AUTH_SWITCH_RESP,
+    // caching_sha2_password full auth: reply to server AuthMoreData during saved-login re-auth
+    SERVER_SEND_AUTH_MORE_DATA,
+    // Request server's RSA public key (0x02) before sending encrypted password when ODP<->server is non-SSL
+    SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY,
+    // Saved-login re-auth: replay client AuthSwitchResponse cached in csha2_ctx.auth_switch_resp_ to server
+    SERVER_SEND_SAVED_AUTH_SWITCH_RESP,
     SERVER_SEND_ALL_SESSION_VARS,
     SERVER_SEND_USE_DATABASE,
     SERVER_SEND_SESSION_VARS,
@@ -554,6 +559,7 @@ enum ObServerRespErrorType
           api_mysql_sm_shutdown_(false),
           api_server_addr_set_(false),
           need_retry_(true),
+          csha2_skip_phase_update_(false),
           sqlaudit_record_queue_(NULL),
           trace_log_(),
           internal_error_op_for_diagnosis_(PROXY_INTERNAL_ERROR_TRANSFER_WITH_DIAGNOSIS),
@@ -740,35 +746,13 @@ enum ObServerRespErrorType
       route_type_ = ObRouteInfoType::INVALID;
       route_policy_ = ObRoutePolicyEnum::MAX_ROUTE_POLICY_COUNT;
       ObRequestPhase prev_phase = request_phase_;
-      if (is_handshake_req_phase()) {
-        // 转发客户端 handshake response
-        if (obmysql::OB_MYSQL_COM_LOGIN == trans_info_.sql_cmd_) {
-          if (trans_info_.resp_result_.is_auth_switch_req()) {
-            // handshake response transferred and auth switch request received
-            set_login_auth_switch_resp_phase();
-          } else {
-            // handshake response transferred and ok resp received
-            set_common_req_phase();
-          }
-        // 收到客户端 handshake response, 但是由于使用了会话连接池, 使用 COM_CHANGE_USER 重置会话
-        } else if (obmysql::OB_MYSQL_COM_CHANGE_USER == trans_info_.sql_cmd_) {
-          if (trans_info_.resp_result_.is_auth_switch_req()) {
-            if (current_.send_action_ == ObMysqlTransact::SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN) {
-              set_login_auth_switch_resp_phase();
-            } else {
-            }
-          } else {
-            set_common_req_phase();
-          }
-        // 客户端新建 TCP 连接, 不做任何处理等待客户端发送 handshake response
-        } else {}
-      } else if (trans_info_.resp_result_.is_local_infile_0xfb_resp()) {
+      if (trans_info_.resp_result_.is_local_infile_0xfb_resp()) {
         set_file_content_req_phase();
-      } else if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_CHANGE_USER
-                 && trans_info_.resp_result_.is_auth_switch_req()) {
-        set_change_user_auth_switch_resp_phase();
+      } else if (csha2_skip_phase_update_) {
+        // 内置公钥等 internal 回包后不更新状态
+        csha2_skip_phase_update_ = false;
       } else {
-        set_common_req_phase();
+        csha2_update_request_phase_after_response();
       }
 
       if (prev_phase != request_phase_) {
@@ -801,6 +785,73 @@ enum ObServerRespErrorType
         // needn't reset trans_info, we will reset it when using client request and server response
         // trans_info_.reset();
       } else { /* do nothing */ }
+    }
+
+    inline void csha2_update_request_phase_after_response()
+    {
+      if (is_handshake_req_phase()) {
+        csha2_update_auth_request_phase_after_handshake();
+      } else {
+        csha2_update_auth_request_phase_after_regular_cmd();
+      }
+    }
+
+    inline void csha2_update_auth_request_phase_after_handshake()
+    {
+      if (obmysql::OB_MYSQL_COM_LOGIN == trans_info_.sql_cmd_) {
+        if (trans_info_.resp_result_.is_auth_switch_req()) {
+          // login触发auth switch的场景
+          set_login_auth_switch_resp_phase();
+        } else if (trans_info_.resp_result_.is_auth_more_data_req()) {
+          // login触发auth more data或强制auth more data的场景
+          set_login_auth_more_data_resp_phase();
+        } else {
+          set_common_req_phase();
+        }
+      // 收到客户端 handshake response, 但是由于使用了会话连接池, 使用 COM_CHANGE_USER 重置会话
+      } else if (obmysql::OB_MYSQL_COM_CHANGE_USER == trans_info_.sql_cmd_) {
+        // change user（含 reset session as first login）收到 auth switch 时，与普通 change user 一致，用 change_user_auth_switch_resp_phase，
+        // 以便后续 fast auth succ 时仍能走 handle_change_user_request_succ + handle_auth_switch_resp_succ
+        if (trans_info_.resp_result_.is_auth_switch_req()) {
+          if (current_.send_action_ == ObMysqlTransact::SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN) {
+            set_change_user_auth_switch_resp_phase();
+          }
+        } else if (trans_info_.resp_result_.is_auth_more_data_req()) {
+          if (current_.send_action_ == ObMysqlTransact::SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN) {
+            set_login_auth_more_data_resp_phase();
+          } else {
+            set_reset_session_auth_more_data_resp_phase();
+          }
+        } else {
+          set_common_req_phase();
+        }
+      // 客户端新建 TCP 连接, 不做任何处理等待客户端发送 handshake response
+      } else {}
+    }
+
+    inline void csha2_update_auth_request_phase_after_regular_cmd()
+    {
+      if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_CHANGE_USER
+                 && trans_info_.resp_result_.is_auth_switch_req()) {
+        // change user触发auth switch的场景
+        set_change_user_auth_switch_resp_phase();
+      } else if (trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_CHANGE_USER
+                 && trans_info_.resp_result_.is_auth_more_data_req()) {
+        // change user触发auth more data或强制auth more data的场景
+        set_change_user_auth_more_data_phase();
+      } else if (is_change_user_auth_switch_resp_phase()
+                 && trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP
+                 && trans_info_.resp_result_.is_auth_more_data_req()) {
+        // change user触发auth switch触发auth more data或强制auth more data的场景
+        set_change_user_auth_switch_auth_more_data_phase();
+      } else if (is_login_auth_switch_resp_phase()
+                 && trans_info_.sql_cmd_ == obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP
+                 && trans_info_.resp_result_.is_auth_more_data_req()) {
+        // login触发auth switch触发auth more data或强制auth more data的场景
+        set_login_auth_more_data_resp_phase();
+      } else {
+        set_common_req_phase();
+      }
     }
 
     void reset_trans_internal_server_info()
@@ -864,13 +915,32 @@ enum ObServerRespErrorType
     inline void set_handshake_req_phase() { request_phase_ = REQ_PHASE_HANDSHAKE; }
     inline const bool is_login_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
     inline void set_login_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
+    inline const bool is_login_auth_more_data_resp_phase() const { return request_phase_ == REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP; }
+    inline void set_login_auth_more_data_resp_phase() { request_phase_ = REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP; }
     inline const bool is_change_user_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
     inline void set_change_user_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP; }
+    inline const bool is_change_user_auth_switch_auth_more_data_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA; }
+    inline void set_change_user_auth_switch_auth_more_data_phase() { request_phase_ = REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA; }
+    inline const bool is_change_user_auth_more_data_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA; }
+    inline void set_change_user_auth_more_data_phase() { request_phase_ = REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA; }
+    inline const bool is_change_user_auth_related_phase() const
+    {
+      return is_change_user_auth_switch_resp_phase()
+          || is_change_user_auth_more_data_phase()
+          || is_change_user_auth_switch_auth_more_data_phase();
+    }
     inline const bool is_reset_session_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP; }
     inline void set_reset_session_auth_switch_resp_phase() { request_phase_ = REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP; }
-    inline const bool is_auth_switch_resp_phase() const { return is_change_user_auth_switch_resp_phase()
+    inline const bool is_reset_session_auth_more_data_resp_phase() const { return request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP; }
+    inline void set_reset_session_auth_more_data_resp_phase() { request_phase_ = REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP; }
+    inline const bool is_auth_switch_resp_phase() const { return is_change_user_auth_switch_auth_more_data_phase()
+                                                                 || is_change_user_auth_switch_resp_phase()
                                                                  || is_login_auth_switch_resp_phase()
                                                                  || is_reset_session_auth_switch_resp_phase(); }
+    inline const bool is_auth_more_data_resp_phase() const { return is_change_user_auth_switch_auth_more_data_phase()
+                                                                    || is_change_user_auth_more_data_phase()
+                                                                    || is_login_auth_more_data_resp_phase()
+                                                                    || is_reset_session_auth_more_data_resp_phase(); }
     inline const bool is_common_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND; }
     inline void set_common_req_phase() { request_phase_ = REQ_PHASE_COMMAND; }
     inline const bool is_send_long_data_req_phase() const { return request_phase_ == REQ_PHASE_COMMAND_SEND_LONG_DATA; }
@@ -980,6 +1050,8 @@ enum ObServerRespErrorType
     bool api_mysql_sm_shutdown_;
     bool api_server_addr_set_;
     bool need_retry_;
+    // When true, SM should skip csha2_update_request_phase_after_response() once (after sending internal RSA public key, waiting for client encrypted pwd).
+    bool csha2_skip_phase_update_;
 
     ObSqlauditRecordQueue *sqlaudit_record_queue_;
     common::ObSimpleTrace<4096> trace_log_;
@@ -1008,6 +1080,7 @@ enum ObServerRespErrorType
   static void handle_target_db_not_allow(ObTransState &s);
   static void handle_not_exist_replica(ObTransState &s, const omt::ObTargetReplicaType &target_replica_type, const ObRoutePolicyEnum &policy);
   static void handle_explain_route(ObTransState &s);
+  static void handle_csha2_request(ObTransState &s);
   static void handle_request(ObTransState &s);
   static int build_normal_login_request(ObTransState &s, event::ObIOBufferReader *&reader,
                                         int64_t &request_len);
@@ -1093,6 +1166,7 @@ enum ObServerRespErrorType
                                         const common::ObString &database);
 
   static int handle_auth_switch_request(ObTransState &s);
+  static int save_change_user_req(ObTransState &s);
   static void handle_handshake_pkt(ObTransState &s);
   static int handle_oceanbase_handshake_pkt(ObTransState &s, uint32_t conn_id,
                                              ObAddr &client_addr);
@@ -1167,7 +1241,11 @@ enum ObServerRespErrorType
   static bool is_need_use_sql_table_cache(ObMysqlTransact::ObTransState &s);
   static bool handle_set_trans_internal_routing(ObMysqlTransact::ObTransState &s, bool server_transaction_routing_flag);
   static bool is_sql_able_to_route_participant_in_trans(obutils::ObSqlParseResult& base_sql_parse_result, obmysql::ObMySQLCmd  sql_cmd);
+  static bool is_trans_specified_or_temporary_table(ObTransState &s) {
+    return is_trans_specified(s) || is_temporary_table_route(s);
+  }
   static bool is_trans_specified(ObTransState &s);
+  static bool is_temporary_table_route(ObTransState &s);
   static bool has_dependent_func(ObTransState &s);
   static int refresh_service_name_role(ObTransState &s);
   static bool is_depend_last_tenant(ObTransState &s);
@@ -1249,6 +1327,7 @@ inline bool ObMysqlTransact::is_in_auth_process(ObTransState &s)
   // 2. send saved login
   // 3. send login
   return (SERVER_SEND_SAVED_LOGIN == s.current_.send_action_
+          || SERVER_SEND_SAVED_AUTH_SWITCH_RESP == s.current_.send_action_
           || SERVER_SEND_HANDSHAKE == s.current_.send_action_
           || SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN == s.current_.send_action_
           || SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN == s.current_.send_action_

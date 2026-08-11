@@ -23,6 +23,10 @@ obproxy/proxy/mysql/ob_mysql_sm.cpp\
 obproxy/proxy/mysql/ob_mysql_sm.h\
 obproxy/proxy/mysql/ob_mysql_sm_time_stat.cpp\
 obproxy/proxy/mysql/ob_mysql_sm_time_stat.h\
+obproxy/proxy/mysql/ob_mysql_csha2_trace.cpp\
+obproxy/proxy/mysql/ob_mysql_csha2_trace.h\
+obproxy/proxy/mysql/ob_mysql_csha2_handler.cpp\
+obproxy/proxy/mysql/ob_mysql_csha2_handler.h\
 obproxy/proxy/mysql/ob_mysql_transact.cpp\
 obproxy/proxy/mysql/ob_mysql_transact.h\
 obproxy/proxy/mysql/ob_mysql_tunnel.cpp\

@@ -2,6 +2,8 @@
 obutils_sources:=\
 obproxy/obutils/ob_proxy_config.h\
 obproxy/obutils/ob_proxy_config.cpp\
+obproxy/obutils/ob_proxy_csha2_rsa_keys.h\
+obproxy/obutils/ob_proxy_csha2_rsa_keys.cpp\
 obproxy/obutils/ob_proxy_reload_config.h\
 obproxy/obutils/ob_proxy_reload_config.cpp\
 obproxy/obutils/ob_proxy_sequence_entry.h\

@@ -177,6 +177,13 @@ int ObRpcReqCtx::update_cache_entry(ObTableEntry *dummy_entry, ObLDCLocation &du
 int ObRpcReqCtx::check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dummy_ldc, int64_t server_state_version,
                                     obutils::ObClusterResource *cluster_resource)
 {
+  const ObString new_idc_name(get_global_proxy_config().proxy_idc_name);
+  return check_update_ldc(dummy_entry, dummy_ldc, server_state_version, cluster_resource, new_idc_name);
+}
+
+int ObRpcReqCtx::check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dummy_ldc, int64_t server_state_version,
+                                    obutils::ObClusterResource *cluster_resource, const ObString &new_idc_name)
+{
   int ret = OB_SUCCESS;
   common::ModulePageAllocator *allocator = NULL;
   LOG_DEBUG("ObRpcReqCtx::check_update_ldc");
@@ -191,8 +198,6 @@ int ObRpcReqCtx::check_update_ldc(ObTableEntry *dummy_entry, ObLDCLocation &dumm
     PROXY_CS_LOG(WDIAG, "fail to get_thread_allocator", K(ret));
   } else {
     bool is_base_servers_added = cluster_resource->is_base_servers_added();
-    // TODO idc name
-    ObString new_idc_name(get_global_proxy_config().proxy_idc_name);
     //we need update ldc when the follow happened:
     //1. servers_state_version has changed
     //or

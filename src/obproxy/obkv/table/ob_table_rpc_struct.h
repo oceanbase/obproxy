@@ -340,9 +340,9 @@ public:
       partition_id_(common::OB_INVALID_ID),
       binlog_row_image_type_(ObBinlogRowImageType::FULL),
       hbase_op_type_(ObHBaseOperationType::INVALID),
-      is_need_hbase_op_type_(false),
       option_flag_(OB_TABLE_OPTION_DEFAULT),
-      is_need_option_flag_(false)
+      is_need_option_flag_(false),
+      is_need_hbase_op_type_(false)
   {}
 
   TO_STRING_KV(K_(credential),
@@ -352,9 +352,9 @@ public:
                K_(entity_type),
                K_(query_and_mutate),
                K_(hbase_op_type),
-               K_(is_need_hbase_op_type),
                K_(option_flag),
-               K_(is_need_option_flag));
+               K_(is_need_option_flag),
+               K_(is_need_hbase_op_type));
 
   OB_INLINE bool is_distribute_need_tablet_id() const { return option_flag_ & OB_TABLE_OPTION_DIS_NEED_TABLET_ID; }
 
@@ -381,9 +381,10 @@ public:
   OB_IGNORE_TABLE_QUERY_AND_MUTATE query_and_mutate_;
   ObBinlogRowImageType binlog_row_image_type_;
   ObHBaseOperationType hbase_op_type_;
-  bool is_need_hbase_op_type_;
   uint8_t option_flag_;
   bool is_need_option_flag_;
+  /// set when payload contains trailing \ref hbase_op_type_ after optional \ref option_flag_
+  bool is_need_hbase_op_type_;
 };
 
 class ObTableQuerySyncRequest : public ObTableQueryRequest

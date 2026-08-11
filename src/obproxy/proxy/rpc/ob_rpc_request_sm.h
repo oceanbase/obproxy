@@ -446,7 +446,7 @@ public:
   ObConsistencyLevel get_trans_consistency_level();
   ObRoutePolicyEnum get_route_policy(const bool need_use_dup_replica);
   void get_route_policy(ObProxyRoutePolicyEnum policy, ObRoutePolicyEnum& ret_policy) const;
-  ObString get_current_idc_name() const;
+  ObString get_current_idc_name();
   void get_region_name_and_server_info(ObIArray<obutils::ObServerStateSimpleInfo> &simple_servers_info, ObIArray<ObString> &region_names);
   void handle_congestion_entry_not_exist();
 
@@ -602,6 +602,8 @@ private:
   ObRpcReqCmdTimeStat cmd_time_stats_;
   ObRpcMilestones milestones_;
   ObMysqlConfigParams *mysql_config_params_;
+  common::ObString current_idc_name_;
+  char current_idc_name_buf_[OB_PROXY_MAX_IDC_NAME_LENGTH];
 
   obutils::ObClusterResource *cluster_resource_;
   common::ObString real_meta_cluster_name_;

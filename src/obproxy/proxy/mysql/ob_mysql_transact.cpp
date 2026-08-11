@@ -12,6 +12,8 @@
 
 #define USING_LOG_PREFIX PROXY_TXN
 #include "proxy/mysql/ob_mysql_transact.h"
+#include "proxy/mysql/ob_mysql_csha2_handler.h"
+#include "proxy/mysql/ob_mysql_csha2_trace.h"
 #include "packet/ob_mysql_packet_reader.h"
 #include "stat/ob_processor_stats.h"
 #include "stat/ob_congestion_stats.h"
@@ -22,7 +24,6 @@
 #include "obutils/ob_proxy_table_processor_utils.h"
 #include "utils/ob_proxy_utils.h"
 #include "obutils/ob_proxy_config.h"
-#include "utils/ob_proxy_utils.h"
 #include "proxy/mysqllib/ob_proxy_session_info_handler.h"
 #include "proxy/mysqllib/ob_mysql_request_builder.h"
 #include "proxy/mysqllib/ob_mysql_analyzer_utils.h"
@@ -51,6 +52,9 @@
 #include "proxy/mysqllib/ob_protocol_diagnosis.h"
 #include "omt/ob_white_list_table_processor.h"
 #include "rpc/obmysql/packet/ompk_auth_switch_req.h"
+#include "rpc/obmysql/packet/ompk_ok.h"
+#include "obutils/ob_proxy_config_processor.h"
+#include "rpc/obmysql/ob_mysql_packet.h"
 
 using namespace oceanbase::share;
 using namespace oceanbase::common;
@@ -83,12 +87,15 @@ bool ObMysqlTransact::is_in_trans(ObTransState &s)
   // 1. handshake response (login packet) need pl lookup
   // 2. the first sql of one transaction
   // 3. the second sql of one transaction, if the first sql is 'begin' or 'start transaction'
+  // 4. auth more data resp phase: client sending AuthMoreData response (e.g. plaintext password after
+  //    CHANGE_USER/login auth switch); we use last server session, not coordinator.
 
   // s.current_.state_ may changed to CONNECTION_ALIVE on state_server_response_read,
   // here add last_request_in_trans to correct transaction state
 
   bool is_in_trans = false;
-  if (!s.is_auth_switch_resp_phase() && !s.is_handshake_req_phase() && !s.is_hold_start_trans() && !s.is_hold_xa_start()) {
+  if (!s.is_auth_switch_resp_phase() && !s.is_handshake_req_phase() && !s.is_auth_more_data_resp_phase()
+      && !s.is_hold_start_trans() && !s.is_hold_xa_start()) {
     if (ObMysqlTransact::CMD_COMPLETE == s.current_.state_) {
       is_in_trans = true;
     } else if (ObMysqlTransact::TRANSACTION_COMPLETE != s.current_.state_
@@ -195,10 +202,15 @@ void ObMysqlTransact::update_sql_cmd(ObTransState &s)
     case SERVER_SEND_SAVED_LOGIN:
       s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_LOGIN;
       break;
+    case SERVER_SEND_AUTH_MORE_DATA:
+    case SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY:
+      // Same COM_AUTH_MORE_DATA_RESP wire command: encrypted pwd or 0x02 request server RSA key.
+      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP;
+      break;
 
-    // case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
-    //   s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP;
-    //   break;
+    case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+      s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP;
+      break;
 
     case SERVER_SEND_USE_DATABASE:
       s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_INIT_DB;
@@ -228,6 +240,7 @@ void ObMysqlTransact::update_sql_cmd(ObTransState &s)
 
     case SERVER_SEND_REQUEST:
       if (OB_UNLIKELY(obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP == s.trans_info_.sql_cmd_ ||
+                      obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == s.trans_info_.sql_cmd_ ||
                       obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT == s.trans_info_.sql_cmd_)) {
         /* not update */
       } else if (OB_UNLIKELY(s.is_handshake_req_phase())) {
@@ -1284,7 +1297,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
                     s.server_info_.addr_,
                     in_trans,
                     has_dependent_func(s),
-                    is_trans_specified(s),
+                    is_trans_specified_or_temporary_table(s),
                     policy);
   } else {
     s.route_type_ = ObRouteInfoType::INVALID;
@@ -1445,7 +1458,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
                       s.server_info_.addr_,
                       in_trans,
                       has_dependent_func(s),
-                      is_trans_specified(s));
+                      is_trans_specified_or_temporary_table(s));
       if (OB_SUCC(ret)) {
         // if target db server set, then make sure target db server is the choosen server
         if (((s.is_use_comment_target_server() && !client_request.get_parse_result().get_target_db_server()->contains(s.server_info_.addr_)) ||
@@ -1467,7 +1480,7 @@ void ObMysqlTransact::handle_oceanbase_request(ObTransState &s)
                       s.server_info_.addr_,
                       in_trans,
                       has_dependent_func(s),
-                      is_trans_specified(s));
+                      is_trans_specified_or_temporary_table(s));
     }
   } // end of !s.need_pl_lookup
   LOG_DEBUG("handle oceanbase request, is addr valid:", K_(s.server_info_.addr));
@@ -1596,10 +1609,53 @@ int ObMysqlTransact::return_second_last_server_session(ObMysqlClientSession *cli
   return ret;
 }
 
+void ObMysqlTransact::handle_csha2_request(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+  ObMysqlCsha2RequestOutcome csha2_outcome = ObMysqlCsha2RequestOutcome::INVALID;
+  if (OB_FAIL(ObMysqlCsha2Handler::process_client_csha2_auth_more_resp(s, csha2_outcome))) {
+    PROXY_CSHA2_LOG(WDIAG, "fail to process client csha2 auth more resp", K(ret));
+    ObMysqlCsha2Handler::reply_err_to_client_and_break(s, ret);
+    TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+  } else {
+    // 处理状态机逻辑
+    switch (csha2_outcome) {
+      case ObMysqlCsha2RequestOutcome::REPLIED_PUBLIC_KEY:
+      case ObMysqlCsha2RequestOutcome::REPLIED_DEFERRED_OK: {
+        s.current_.state_ = CMD_COMPLETE;
+        TRANSACT_RETURN(SM_ACTION_INTERNAL_NOOP, NULL);
+        break;
+      }
+      case ObMysqlCsha2RequestOutcome::FORWARDED_TO_SERVER: {
+        if (OB_FAIL(ObMysqlCsha2Handler::apply_forward_auth_more_to_server_transact_state(s))) {
+          PROXY_CSHA2_LOG(WDIAG, "fail to apply csha2 forward transact state", K(ret));
+          ObMysqlCsha2Handler::reply_err_to_client_and_break(s, ret);
+          TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+        }
+        handle_oceanbase_request(s);
+        break;
+      }
+      case ObMysqlCsha2RequestOutcome::INVALID:
+      default: {
+        ret = OB_ERR_UNEXPECTED;
+        PROXY_CSHA2_LOG(WDIAG, "unexpected csha2 outcome after process_client_csha2_auth_more_resp success",
+                  K(csha2_outcome));
+        ObMysqlCsha2Handler::reply_err_to_client_and_break(s, ret);
+        TRANSACT_RETURN_WITH_MSG(SM_ACTION_SEND_ERROR_NOOP, NULL);
+        break;
+      }
+    }
+  }
+}
+
 void ObMysqlTransact::handle_request(ObTransState &s)
 {
   s.sm_->trans_stats_.client_requests_ += 1;
-  if (OB_UNLIKELY(MYSQL_PLUGIN_AS_INTERCEPT == s.sm_->api_.plugin_tunnel_type_)) {
+  // csha2 AuthMoreData 响应：阶段与 sql_cmd 在此判断；业务处理见 ObMysqlCsha2Handler::process_client_csha2_auth_more_resp。
+  if (obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == s.trans_info_.sql_cmd_
+      && s.is_auth_more_data_resp_phase()) {
+    handle_csha2_request(s);
+  } else if (OB_UNLIKELY(MYSQL_PLUGIN_AS_INTERCEPT == s.sm_->api_.plugin_tunnel_type_)) {
     setup_plugin_request_intercept(s);
   } else if (OB_UNLIKELY(s.trans_info_.client_request_.is_sharding_user() && is_sequence_request(s))) {
     LOG_DEBUG("is a sequence request");
@@ -1690,7 +1746,7 @@ inline bool ObMysqlTransact::need_use_coordinator_session(ObTransState &s) {
   ObSqlParseResult &parser_result = s.trans_info_.client_request_.get_parse_result();
   const bool is_dblink_name = parser_result.is_dblink_name();
   ObClientSessionInfo &session_info = s.sm_->get_client_session()->get_session_info();
-  if (ObMysqlTransact::is_trans_specified(s)) {
+  if (ObMysqlTransact::is_trans_specified_or_temporary_table(s)) {
     if (s.sm_->get_client_session() != NULL
         && s.sm_->get_client_session()->get_last_server_session() != NULL
         && ops_ip_addr_port_eq (s.sm_->get_client_session()->get_trans_coordinator_ss_addr(),
@@ -1764,11 +1820,13 @@ bool ObMysqlTransact::is_sql_able_to_route_participant_in_trans(obutils::ObSqlPa
 inline ObMysqlTransact::ObPLLookupState ObMysqlTransact::need_pl_lookup(ObTransState &s)
 {
   ObPLLookupState state = NEED_PL_LOOKUP;
-  bool trans_specified = is_trans_specified(s);
+  bool trans_specified = is_trans_specified_or_temporary_table(s);
   bool is_dep_func = has_dependent_func(s);
   bool in_trans = is_in_trans(s);
   bool is_reset_conn = s.trans_info_.sql_cmd_ == OB_MYSQL_COM_RESET_CONNECTION;
   if (OB_UNLIKELY(s.is_auth_switch_resp_phase())) {
+    state = USE_LAST_SERVER_SESSION;
+  } else if (OB_UNLIKELY(s.is_auth_more_data_resp_phase())) {
     state = USE_LAST_SERVER_SESSION;
   } else if (OB_UNLIKELY(s.is_file_content_req_phase())) {
     state = USE_LAST_SERVER_SESSION;
@@ -1828,6 +1886,12 @@ bool ObMysqlTransact::is_trans_specified(ObTransState &s)
 {
   return OB_UNLIKELY(NULL != s.sm_->client_session_
                      && s.sm_->client_session_->get_session_info().is_trans_specified());
+}
+
+bool ObMysqlTransact::is_temporary_table_route(ObTransState &s)
+{
+  return OB_UNLIKELY(NULL != s.sm_->client_session_
+                     && s.sm_->client_session_->get_session_info().is_temporary_table_route());
 }
 
 inline bool ObMysqlTransact::has_dependent_func(ObTransState &s)
@@ -1945,12 +2009,7 @@ int ObMysqlTransact::extract_partition_info(ObTransState &s, ObRouteInfoType *ty
           if (OB_SUCCESS != cs_info.get_database_name(database_name)) {
             database_name = OB_SYS_DATABASE_NAME;
           }
-          ObProxyParseString tmp_database_name;
-          tmp_database_name.str_ = database_name.ptr();
-          tmp_database_name.end_ptr_ = database_name.ptr() + database_name.length() - 1;
-          tmp_database_name.str_len_ = database_name.length();
-          tmp_database_name.quote_type_ = OBPROXY_QUOTE_T_INVALID;
-          if (OB_FAIL(parse_result.set_db_name(tmp_database_name))) {
+          if (OB_FAIL(parse_result.set_real_db_name(database_name))) {
             LOG_WDIAG("parse result set db name failed", K(ret));
           }
         } else {
@@ -2017,6 +2076,7 @@ int ObMysqlTransact::extract_partition_info(ObTransState &s, ObRouteInfoType *ty
           ObSqlTableCache &sql_table_cache = get_global_sql_table_cache();
           // get real table name from ObSqlTableCache
           ObSqlTableEntryKey key;
+          ObString real_db_name;
           key.cr_version_ = s.sm_->sm_cluster_resource_->version_;
           key.cr_id_ = s.sm_->sm_cluster_resource_->get_cluster_id();
           key.sql_id_ = sql_id;
@@ -2025,17 +2085,20 @@ int ObMysqlTransact::extract_partition_info(ObTransState &s, ObRouteInfoType *ty
           key.database_name_ = database_name;
           char table_name_buf[OB_MAX_TABLE_NAME_LENGTH + 1];
           table_name_buf[0] = '\0';
-          if (OB_FAIL(sql_table_cache.get_table_name(key, table_name_buf, OB_MAX_TABLE_NAME_LENGTH + 1))) {
+          char db_name_buf[OB_MAX_DATABASE_NAME_LENGTH + 1];
+          db_name_buf[0] = '\0';
+          if (OB_FAIL(sql_table_cache.get_table_and_db_name(key, table_name_buf, OB_MAX_TABLE_NAME_LENGTH + 1,
+                                        db_name_buf, OB_MAX_DATABASE_NAME_LENGTH + 1))) {
             if (OB_ENTRY_NOT_EXIST == ret && is_table_name_from_parser) {
               LOG_DEBUG("first sql got, will add sql table cache", K(key),
                         "sql", s.trans_info_.client_request_.get_print_sql());
               ObSqlTableEntry *entry = NULL;
-              if (OB_FAIL(ObSqlTableEntry::alloc_and_init_sql_table_entry(key, table_name, entry))) {
-                LOG_WDIAG("fail to alloc ObSqlTableEntry", K(key), K(table_name), K(ret));
+              if (OB_FAIL(ObSqlTableEntry::alloc_and_init_sql_table_entry(key, table_name, database_name, entry))) {
+                LOG_WDIAG("fail to alloc ObSqlTableEntry", K(key), K(table_name), K(database_name), K(ret));
               } else if (OB_FAIL(sql_table_cache.add_sql_table_entry(entry))) {
-                LOG_WDIAG("fail to add ObSqlTableEntry", KPC(entry), K(ret));
+                LOG_WDIAG("fail to add ObSqlTableEntry", KPC(entry), K(database_name), K(ret));
               } else {
-                LOG_INFO("succ to add sql table entry", K(key), KPC(entry), K(table_name));
+                LOG_INFO("succ to add sql table entry", K(key), KPC(entry), K(table_name), K(database_name));
               }
               if (NULL != entry) {
                 // entry->inc_ref will been called if succ to add
@@ -2048,9 +2111,16 @@ int ObMysqlTransact::extract_partition_info(ObTransState &s, ObRouteInfoType *ty
             }
           } else if (OB_FAIL(parse_result.set_real_table_name(table_name_buf, strlen(table_name_buf)))) {
             LOG_WDIAG("fail to set real table name", K(table_name_buf), K(ret));
+          } else if (OB_FALSE_IT(real_db_name.assign_ptr(db_name_buf, strlen(db_name_buf)))) {
+          } else if (!real_db_name.empty()
+                     && OB_FAIL(parse_result.set_real_db_name(real_db_name))) {
+            LOG_WDIAG("fail to set real table name", K(db_name_buf), K(ret));
           } else {
             table_name = parse_result.get_table_name();
-            LOG_DEBUG("succ to get real table name", K(table_name));
+            if (!real_db_name.empty()) {
+              database_name = parse_result.get_database_name();
+            }
+            LOG_DEBUG("succ to get real table name", K(table_name), K(database_name));
             *type = ObRouteInfoType::USE_GLOBAL_INDEX;
             if (OB_NOT_NULL(s.sm_->route_diagnosis_) && s.sm_->route_diagnosis_->is_diagnostic(SQL_PARSE)) {
               ObDiagnosisSqlParse *sql_parse = (ObDiagnosisSqlParse *) s.sm_->route_diagnosis_->get_last_pushed_diagnosis_point(SQL_PARSE);
@@ -3673,7 +3743,7 @@ bool ObMysqlTransact::handle_set_trans_internal_routing(ObMysqlTransact::ObTrans
   // if session in a transaction, return the config of enable_internal_transaction_routing in server
   // else return the config enable_internal_transaction_routing
   bool internal_routing_flag = false;
-  if (is_trans_specified(s)) {
+  if (is_trans_specified_or_temporary_table(s)) {
     // trans_spcified, disable trans internal routing
     internal_routing_flag = false;
   } else if (!is_in_trans(s)) {
@@ -3828,9 +3898,17 @@ int ObMysqlTransact::build_server_request(ObTransState &s, ObIOBufferReader *&re
         }
         break;
 
-      //case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
-      //  build_func = ObMysqlRequestBuilder::build_saved_auth_switch_resp;
-      //  break;
+      case SERVER_SEND_AUTH_MORE_DATA:
+        build_func = ObMysqlRequestBuilder::build_auth_more_data_packet;
+        break;
+
+      case SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY:
+        build_func = ObMysqlRequestBuilder::build_auth_more_data_request_public_key_for_server;
+        break;
+
+      case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+        build_func = ObMysqlRequestBuilder::build_saved_auth_switch_resp;
+        break;
 
       case SERVER_SEND_ALL_SESSION_VARS:
         build_func = ObMysqlRequestBuilder::build_all_session_vars_sync_packet;
@@ -4641,28 +4719,65 @@ inline void ObMysqlTransact::handle_user_request_succ(ObTransState &s, bool &is_
     }
   }
 
+  // auth cases:
+  // A. login -> auth switch -> ok(handle as)(native)
+  // B. login -> auth switch -> fast auth succ(handle as) -> need full auth
+  // C. login -> auth switch -> auth more data -> ok(handle as)
+  // D. change user -> ok(handle c)(native)
+  // E. change user -> fast auth succ(handle c) -> need full auth
+  // F. change user -> auth more data -> ok(handle c)
+  // G. change user -> auth switch -> ok(handle as+c)(native)
+  // H. change user -> auth switch -> fast auth succ(handle as+c) -> need full auth
+  // I. change user -> auth switch -> auth more data -> ok(handle as+c)
+  // 当前server设计csha2必须auth swicth，故case E/F实际不会出现
   if (OB_SUCC(ret)) {
     if (obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP == s.trans_info_.sql_cmd_) {
-      if (s.is_change_user_auth_switch_resp_phase()) {
-        // auth switch triggered by change user request
-        // handle change user request after auth switch finished
+      if (s.is_change_user_auth_switch_resp_phase()
+          && (s.trans_info_.resp_result_.is_fast_auth_succ()
+              || client_info.get_csha2_auth_ctx().pending_auth_switch_plugin_
+                  == proxy::PROXY_AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD)) {
+        // case G/H
         if (OB_FAIL(handle_change_user_request_succ(s))) {
           LOG_WDIAG("fail to handle change user request", K(ret));
+        } else if (OB_FAIL(handle_auth_switch_resp_succ(s))) {
+          LOG_WDIAG("fail to handle auth switch resp (change user)", K(ret));
         }
       } else if (s.is_login_auth_switch_resp_phase()) {
+        // case A/B
         if (OB_FAIL(handle_auth_switch_resp_succ(s))) {
           LOG_WDIAG("fail to handle auth switch resp request", K(ret));
         }
       }
     } else if (obmysql::OB_MYSQL_COM_CHANGE_USER == s.trans_info_.sql_cmd_) {
-      // change user request may triggers auth switch
-      if (s.trans_info_.resp_result_.is_auth_switch_req()) {
-        if (OB_FAIL(handle_auth_switch_request(s))) {
-          LOG_WDIAG("fail to handle auth switch request of change user", K(ret));
-        }
-      } else {
-        if (OB_FAIL(handle_change_user_request_succ(s))) {
+      if (!s.trans_info_.resp_result_.is_auth_switch_req()) {
+        if (s.trans_info_.resp_result_.is_auth_more_data_req()) {
+          // case F，先保存change user req，防止后面handle succ的时候client req被auth more data覆盖
+          // case G/H/I在save_change_user_req_for_auth_switch中处理
+          if (OB_FAIL(save_change_user_req(s))) {
+            LOG_WDIAG("fail to save change user req for auth more data path", K(ret));
+          }
+        } else if (OB_FAIL(handle_change_user_request_succ(s))) {
+          // case D/E
           LOG_WDIAG("fail to handle change user request", K(ret));
+        }
+      }
+    } else if (obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == s.trans_info_.sql_cmd_) {
+      if (s.is_change_user_auth_switch_auth_more_data_phase()) {
+        // case I
+        if (OB_FAIL(handle_change_user_request_succ(s))) {
+          LOG_WDIAG("fail to handle change user request (change_user_auth_switch_auth_more_data_phase)", K(ret));
+        } else if (OB_FAIL(handle_auth_switch_resp_succ(s))) {
+          LOG_WDIAG("fail to handle auth switch resp (change_user_auth_switch_auth_more_data_phase)", K(ret));
+        }
+      } else if (s.is_change_user_auth_more_data_phase()) {
+        // case F
+        if (OB_FAIL(handle_change_user_request_succ(s))) {
+          LOG_WDIAG("fail to handle change user request (change_user_auth_more_data_phase)", K(ret));
+        }
+      } else if (s.is_login_auth_more_data_resp_phase()) {
+        // case C
+        if (OB_FAIL(handle_auth_switch_resp_succ(s))) {
+          LOG_WDIAG("fail to handle auth switch resp (login_auth_more_data_resp_phase)", K(ret));
         }
       }
     } else if (obmysql::OB_MYSQL_COM_RESET_CONNECTION == s.trans_info_.sql_cmd_) {
@@ -4693,29 +4808,49 @@ int ObMysqlTransact::handle_auth_switch_resp_succ(ObTransState &s)
 {
   int ret = OB_SUCCESS;
   ObClientSessionInfo& client_info = get_client_session_info(s);
+  ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
   OMPKHandshakeResponse &handshake_resp = client_info.get_login_req().get_hsr_result().response_;
-  ObString auth_switch_data(client_info.auth_switch_resp_.len() - MYSQL_NET_HEADER_LENGTH,
-                            client_info.auth_switch_resp_.ptr() + MYSQL_NET_HEADER_LENGTH);
+  ObString auth_switch_data(csha2_ctx.auth_switch_resp_.len() - MYSQL_NET_HEADER_LENGTH,
+                            csha2_ctx.auth_switch_resp_.ptr() + MYSQL_NET_HEADER_LENGTH);
+  // 更新token
   handshake_resp.set_auth_response(auth_switch_data);
-  handshake_resp.set_auth_plugin_name(OMPKHandshake::AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD);
+  // 更新认证插件名
+  // Update login_req_ plugin to the one requested by server in AuthSwitchRequest.
+  // This is critical for AuthSwitch(native<->caching_sha2_password) flows.
+  if (csha2_ctx.pending_auth_switch_plugin_ == proxy::PROXY_AUTH_PLUGIN_CACHING_SHA2_PASSWORD) {
+    handshake_resp.set_auth_plugin_name(OMPKHandshake::AUTH_PLUGIN_CACHING_SHA2_PASSWORD);
+  } else if (csha2_ctx.pending_auth_switch_plugin_ == proxy::PROXY_AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD) {
+    handshake_resp.set_auth_plugin_name(OMPKHandshake::AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD);
+  } else {
+    // keep original plugin name
+  }
+  PROXY_CSHA2_LOG(DEBUG, "handle_auth_switch_resp_succ() handle client AuthSwitchResponse success (update cached login)",
+           "cs_id", s.sm_->get_client_session()->get_cs_id(),
+           "new_plugin", handshake_resp.get_auth_plugin_name(),
+           "auth_resp_len", handshake_resp.get_auth_response().length());
+  csha2_ctx.pending_auth_switch_plugin_ = proxy::PROXY_AUTH_PLUGIN_UNKNOWN;
 
   return ret;
 }
 
 int ObMysqlTransact::handle_change_user_request_succ(ObTransState &s)
 {
+  PROXY_CSHA2_LOG(DEBUG, "handle_change_user_request_succ()",
+           "cs_id", s.sm_->get_client_session()->get_cs_id());
   int ret = OB_SUCCESS;
   ObClientSessionInfo& client_info = get_client_session_info(s);
+  ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
   ObProxyMysqlRequest& client_request = s.trans_info_.client_request_;
   ObString change_user;
 
-  /*  如果 change user request 触发了 auth switch
-      obproxy 会在 change user request 之后收到 auth switch resp request
+  /*  如果 change user request 触发了 auth switch 或 后续的 auth more data
+      obproxy 会在 change user request 之后收到 auth switch resp / auth more data resp
       此时 client_request.get_req_pkt() 不是 change user 请求
       所以需要将 change user request 内容提前保存在 client info
   */
-  if (s.is_change_user_auth_switch_resp_phase()) {
-    change_user.assign_ptr(client_info.change_user_req_.ptr(), client_info.change_user_req_.len());
+  if (s.is_change_user_auth_switch_resp_phase() || s.is_change_user_auth_switch_auth_more_data_phase()
+      || s.is_change_user_auth_more_data_phase()) {
+    change_user.assign_ptr(csha2_ctx.change_user_req_.ptr(), csha2_ctx.change_user_req_.len());
   } else {
     change_user = client_request.get_req_pkt();
   }
@@ -4736,9 +4871,10 @@ int ObMysqlTransact::handle_change_user_request_succ(ObTransState &s)
       if (OB_FAIL(result.decode())) {
         LOG_WDIAG("fail to decode change user packet", K(ret));
       } else {
-        // 1. 保存 username 和 auth_response
+        // 1. 保存 username、auth_response 及 auth_plugin_name（若客户端在 change user 中携带）
+        //    使 saved login 与当前用户实际使用的认证方式一致，避免切到新 server 时因插件不一致触发 AuthSwitch
         if (OB_FAIL(ObProxySessionInfoHandler::rewrite_change_user_login_req(
-          client_info, result.get_username(), result.get_auth_response()))) {
+          client_info, result.get_username(), result.get_auth_response(), result.get_auth_plugin_name()))) {
           LOG_WDIAG("rewrite change user login req failed", K(ret));
         } else {
           /*
@@ -4752,13 +4888,21 @@ int ObMysqlTransact::handle_change_user_request_succ(ObTransState &s)
           if (OB_SUCC(ret)) {
             const ObString full_username = client_info.get_full_username();
             ObMysqlServerSession* server_session = s.sm_->get_server_session();
-            if (NULL != server_session && full_username.length() < OB_PROXY_FULL_USER_NAME_MAX_LEN) {
-              MEMCPY(server_session->full_name_buf_, full_username.ptr(), full_username.length());
-              server_session->auth_user_.assign_ptr(server_session->full_name_buf_, full_username.length());
-              LOG_DEBUG("handle normal change user request succ", K(server_session->auth_user_));
-            } else {
+            if (OB_ISNULL(server_session)) {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("server session is null", K(ret));
+            } else if (full_username.length() >= OB_PROXY_FULL_USER_NAME_MAX_LEN) {
               ret = OB_ERR_UNEXPECTED;
               LOG_WDIAG("username length is error", K(full_username.length()), K(ret));
+            } else {
+              MEMCPY(server_session->full_name_buf_, full_username.ptr(), full_username.length());
+              server_session->auth_user_.assign_ptr(server_session->full_name_buf_, full_username.length());
+              PROXY_CSHA2_LOG(DEBUG, "change_user success, login_req updated for new user",
+                      "full_username", full_username,
+                      "server_ip", server_session->server_ip_,
+                      "change_user_server_scramble_len", server_session->get_scramble_string().length(),
+                      "saved_login_plugin", client_info.get_login_req().get_hsr_result().response_.get_auth_plugin_name());
+              LOG_DEBUG("handle normal change user request succ", K(server_session->auth_user_));
             }
           }
 
@@ -4971,10 +5115,13 @@ inline int ObMysqlTransact::handle_oceanbase_saved_login_succ(ObTransState &s)
     const ObMySQLCapabilityFlags cap = server_info.get_compatible_capability_flags();
     bool need_save = false;
 
+    int64_t ok_offset = s.trans_info_.resp_result_.get_deferred_ok_offset();
     if (OB_ISNULL(buf_reader)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("reader is null, which is unexpected", K(ret));
-    } else if (OB_FAIL(pkt_reader.get_ok_packet(*buf_reader, 0, cap, ok_packet))) {
+    }
+    if (OB_FAIL(ret)) {
+    } else if (OB_FAIL(pkt_reader.get_ok_packet(*buf_reader, ok_offset, cap, ok_packet))) {
       LOG_WDIAG("fail to get ok packet from server buffer reader", K(ret));
     } else {
       const ObIArray<ObStringKV> &sys_var = ok_packet.get_system_vars();
@@ -5158,6 +5305,16 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
       break;
 
     case SERVER_SEND_SAVED_LOGIN:
+    case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+    case SERVER_SEND_AUTH_MORE_DATA: {
+      // SERVER_SEND_AUTH_MORE_DATA: saved-login re-auth, reset-session internal leg, or
+      // initial login / change-user caching_sha2 RSA+auth-more-data. Retriable errors stay below;
+      // generic errors on user-visible legs forward ERR to client (do not SAVED_LOGIN_COMMON_ERROR retry).
+      const bool csha2_auth_more_data_user_leg =
+          (SERVER_SEND_AUTH_MORE_DATA == s.current_.send_action_)
+          && (s.is_login_auth_more_data_resp_phase()
+              || s.is_change_user_auth_more_data_phase()
+              || s.is_change_user_auth_switch_auth_more_data_phase());
       if (resp.is_tenant_not_in_server_error()) {
         s.current_.error_type_ = LOGIN_TENANT_NOT_IN_SERVER_ERROR;
       } else if (resp.is_connect_error()) {
@@ -5214,10 +5371,26 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
         "server_sessid", s.sm_->get_server_session()->get_server_sessid(),
         "cluster_name", s.sm_->get_client_session()->get_session_info().get_priv_info().cluster_name_,
         K(resp));
+      } else if (csha2_auth_more_data_user_leg) {
+        is_user_request = true;
+        if (s.is_login_auth_more_data_resp_phase()) {
+          char diagnosis_msg[MAX_MSG_BUF_LEN] = "\0";
+          int new_msg_len = 0;
+          ObProxyMonitorUtils::sql_escape(
+              resp.get_error_message().ptr(), resp.get_error_message().length(),
+              diagnosis_msg, MAX_MSG_BUF_LEN, new_msg_len);
+          COLLECT_LOGIN_DIAGNOSIS(
+              s.sm_->connection_diagnosis_trace_, OB_LOGIN_DISCONNECT_TRACE, "",
+              resp.get_error_pkt().get_err_code(), "%.*s", MAX_MSG_BUF_LEN, diagnosis_msg);
+        }
+        PROXY_CSHA2_LOG(DEBUG, "auth more data to server failed on user-visible leg, forward ERR to client",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                 "err_code", resp.get_error_pkt().get_err_code());
       } else {
         s.current_.error_type_ = SAVED_LOGIN_COMMON_ERROR;
       }
       break;
+    }
 
     // case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
     //   s.current_.error_type_ = SAVED_AUTH_SWITCH_ERROR;
@@ -5438,6 +5611,11 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
             database_name = OB_SYS_DATABASE_NAME;
           }
         }
+        ObString real_database_name;
+        if (OB_NOT_NULL(s.pll_info_.route_.table_entry_)
+            && !s.pll_info_.route_.table_entry_->get_level1_decoded_db_name().is_empty()) {
+          real_database_name = s.pll_info_.route_.table_entry_->get_level1_decoded_db_name();
+        }
         ObSqlTableEntryKey key;
         key.cr_version_ = s.sm_->sm_cluster_resource_->version_;
         key.cr_id_ = s.sm_->sm_cluster_resource_->get_cluster_id();
@@ -5445,11 +5623,12 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
         key.cluster_name_ = cluster_name;
         key.tenant_name_ = tenant_name;
         key.database_name_ = database_name;
-        if (OB_SUCCESS != get_global_sql_table_cache().update_table_name(key, ObString::make_string(s.reroute_info_.table_name_buf_))) {
+        if (OB_SUCCESS != get_global_sql_table_cache().update_table_and_db_name(key,
+                            ObString::make_string(s.reroute_info_.table_name_buf_), real_database_name)) {
           LOG_WDIAG("fail to update real table name", K(s.reroute_info_), K(key),
                     "sql", s.trans_info_.client_request_.get_print_sql());
         } else {
-          LOG_INFO("succ to update real table name", K(s.reroute_info_), K(key),
+          LOG_INFO("succ to update real table name", K(s.reroute_info_), K(key), K(real_database_name),
           "sql", s.trans_info_.client_request_.get_print_sql());
         }
       }
@@ -5475,7 +5654,7 @@ void ObMysqlTransact::handle_error_resp(ObTransState &s, bool &is_user_request)
     // and SERVER_SEND_SAVED_LOGIN, if get error, will retry then disconnect
     if (SERVER_SEND_HANDSHAKE == s.current_.send_action_
         || SERVER_SEND_SAVED_LOGIN == s.current_.send_action_
-        /*|| SERVER_SEND_SAVED_AUTH_SWITCH_RESP == s.current_.send_action_*/) {
+        || SERVER_SEND_SAVED_AUTH_SWITCH_RESP == s.current_.send_action_) {
       s.current_.state_ = INTERNAL_ERROR;
       is_user_request = false;
     }
@@ -5547,6 +5726,7 @@ inline int ObMysqlTransact::handle_auth_switch_request(ObTransState &s)
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("unexpected null server buffer reader", K(ret));
   } else {
+    // 拷贝auth switch req并解析
     int64_t server_buffer_len = server_buffer_reader->read_avail();
     char *auth_switch_req_buf = NULL;
     if (server_buffer_len == MYSQL_NET_META_LENGTH) {
@@ -5567,59 +5747,89 @@ inline int ObMysqlTransact::handle_auth_switch_request(ObTransState &s)
         LOG_WDIAG("fail to decode auth switch request", K(ret));
       }
 
-      // rewrite scramble field
-      const char *scramble = NULL;
-      int scramble_len = 0;
-      ObMysqlClientSession *client_session = NULL;
-      if (OB_ISNULL(client_session = s.sm_->client_session_)) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("unexpected null client session", K(ret));
-      } else if (client_session->get_scramble_string().empty()) {
-        scramble = OB_AUTH_DATA_AB;
-        scramble_len = strlen(scramble);
-      } else {
-        scramble = client_session->get_scramble_string().ptr();
-        scramble_len = client_session->get_scramble_string().length();
-      }
+      // 记录auth switch req中的认证插件名
       ObString auth_plugin_name = auth_switch_req.get_auth_plugin_name();
-      s.sm_->get_server_session()->set_authentication(auth_switch_req.get_auth_plugin_data());
-      // 1 bytes of flag + n bytes of plugin name + 1 bytes of '\0' + m bytes of scramble + 1 bytes of '\0'
-      int32_t rewrite_pkt_len = 1 + auth_plugin_name.length() + 1 + scramble_len + 1;
-      int64_t pos = 0;
-      if (OB_FAIL(ret)) {
-      } else if (OB_FAIL(ObMySQLUtil::store_int3(auth_switch_req_buf, 3, rewrite_pkt_len, pos))) {
-        LOG_WDIAG("fail to store_int3", K(ret), K(rewrite_pkt_len), K(pos));
+      PROXY_CSHA2_LOG(DEBUG, "recv server AuthSwitchRequest",
+               "cs_id", s.sm_->get_client_session()->get_cs_id(),
+               "ss_id", (OB_NOT_NULL(s.sm_->get_server_session()) ? s.sm_->get_server_session()->ss_id_ : 0),
+               "plugin", auth_plugin_name,
+               "auth_data_len", auth_switch_req.get_auth_plugin_data().length());
+      ObMysqlCsha2Trace::trace_cached_login("before_record_pending_auth_switch_plugin", s.sm_->get_client_session());
+      if (OB_NOT_NULL(s.sm_) && OB_NOT_NULL(s.sm_->client_session_)) {
+        ObClientSessionInfo &cs_info = s.sm_->client_session_->get_session_info();
+        ObClientSessionCsha2AuthContext &csha2_ctx = cs_info.get_csha2_auth_ctx();
+        ObMysqlCsha2Handler::record_pending_auth_switch_plugin(cs_info, auth_plugin_name);
+        PROXY_CSHA2_LOG(DEBUG, "recorded pending auth plugin from server AuthSwitchRequest",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                 "pending_auth_switch_plugin", csha2_ctx.pending_auth_switch_plugin_);
+      }
+
+      // 这里重不重写scramble都不影响，因为server已经通过login拿到proxy的scramble了，发过来的auth switch req里面就是proxy的scramble
+      // 但这里保持原先native流程代码不变，以免出现历史问题，csha2就不重写scramble了
+      if (OB_SUCC(ret) && auth_plugin_name == OMPKHandshake::AUTH_PLUGIN_CACHING_SHA2_PASSWORD) {
+        if (OB_NOT_NULL(s.sm_) && OB_NOT_NULL(s.sm_->get_server_session())) {
+          s.sm_->get_server_session()->set_authentication(auth_switch_req.get_auth_plugin_data());
+        }
+        LOG_DEBUG("[session] forward caching_sha2_password auth switch request as-is");
+        PROXY_CSHA2_LOG(DEBUG, "forward caching_sha2_password AuthSwitchRequest as-is (no scramble rewrite)",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id());
+        // 如果是change user触发的auth switch req，需要提前保存change user req，供后续handle_change_user_request_succ使用
+        if (OB_FAIL(ObMysqlCsha2Handler::save_change_user_req_for_auth_switch(
+                s, "forward_caching_sha2_auth_switch_as_is"))) {
+          LOG_WDIAG("fail to save change user request for caching sha2 auth switch", K(ret));
+        }
+        // do not consume or rewrite server buffer
       } else {
-        server_buffer_reader->consume_all();
-        // 4 bytes of header + 1 bytes of flag + n bytes of plugin name + 1 bytes of '\0'
-        int64_t part_len = 4 + 1 + auth_plugin_name.length() + 1;
-        int64_t written_len = 0;
-        if (OB_FAIL(server_buffer_reader->mbuf_->write(auth_switch_req_buf, part_len, written_len))) {
-          LOG_WDIAG("fail to write to server_buffer_reader", K(ret), K(part_len), K(written_len));
-        } else if (part_len != written_len) {
+        // rewrite scramble field
+        const char *scramble = NULL;
+        int scramble_len = 0;
+        ObMysqlClientSession *client_session = NULL;
+        if (OB_ISNULL(client_session = s.sm_->client_session_)) {
           ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("unexpected written len", K(part_len), K(written_len));
-        } else if (OB_FAIL(server_buffer_reader->mbuf_->write(scramble, scramble_len, written_len))) {
-          LOG_WDIAG("fail to write to server_buffer_reader", K(ret), K(scramble_len), K(written_len));
-        } else if (scramble_len != written_len) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("unexpected written len", K(scramble_len), K(written_len));
-        } else if (OB_FAIL(server_buffer_reader->mbuf_->write("\0", 1, written_len))) {
-          LOG_WDIAG("fail to write to server_buffer_reader with \0", K(ret), K(scramble_len), K(written_len));
-        } else if (1 != written_len) {
-          ret = OB_ERR_UNEXPECTED;
-          LOG_WDIAG("unexpected written len", K(written_len));
+          LOG_WDIAG("unexpected null client session", K(ret));
+        } else if (client_session->get_scramble_string().empty()) {
+          scramble = OB_AUTH_DATA_AB;
+          scramble_len = strlen(scramble);
         } else {
-          LOG_DEBUG("[会话] 成功重写 auth switch request to 客户端");
-          ObString req = s.trans_info_.client_request_.get_req_pkt();
-          ObClientSessionInfo &cs_info = client_session->get_session_info();
-          cs_info.change_user_req_.reset();
-          if (s.trans_info_.sql_cmd_ == OB_MYSQL_COM_CHANGE_USER
-              && OB_FAIL(cs_info.change_user_req_.init_and_write(req.ptr(), req.length()))) {
-            LOG_WDIAG("fail to init and write change user to client info", K(ret), KP(req.ptr()), K(req.length()));
+          scramble = client_session->get_scramble_string().ptr();
+          scramble_len = client_session->get_scramble_string().length();
+        }
+        s.sm_->get_server_session()->set_authentication(auth_switch_req.get_auth_plugin_data());
+        // 1 bytes of flag + n bytes of plugin name + 1 bytes of '\0' + m bytes of scramble + 1 bytes of '\0'
+        int32_t rewrite_pkt_len = 1 + auth_plugin_name.length() + 1 + scramble_len + 1;
+        int64_t pos = 0;
+        if (OB_FAIL(ret)) {
+        } else if (OB_FAIL(ObMySQLUtil::store_int3(auth_switch_req_buf, 3, rewrite_pkt_len, pos))) {
+          LOG_WDIAG("fail to store_int3", K(ret), K(rewrite_pkt_len), K(pos));
+        } else {
+          server_buffer_reader->consume_all();
+          // 4 bytes of header + 1 bytes of flag + n bytes of plugin name + 1 bytes of '\0'
+          int64_t part_len = 4 + 1 + auth_plugin_name.length() + 1;
+          int64_t written_len = 0;
+          if (OB_FAIL(server_buffer_reader->mbuf_->write(auth_switch_req_buf, part_len, written_len))) {
+            LOG_WDIAG("fail to write to server_buffer_reader", K(ret), K(part_len), K(written_len));
+          } else if (part_len != written_len) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("unexpected written len", K(part_len), K(written_len));
+          } else if (OB_FAIL(server_buffer_reader->mbuf_->write(scramble, scramble_len, written_len))) {
+            LOG_WDIAG("fail to write to server_buffer_reader", K(ret), K(scramble_len), K(written_len));
+          } else if (scramble_len != written_len) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("unexpected written len", K(scramble_len), K(written_len));
+          } else if (OB_FAIL(server_buffer_reader->mbuf_->write("\0", 1, written_len))) {
+            LOG_WDIAG("fail to write to server_buffer_reader with \0", K(ret), K(scramble_len), K(written_len));
+          } else if (1 != written_len) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("unexpected written len", K(written_len));
+          } else {
+            LOG_DEBUG("successfully rewrite auth switch request to client");
+            if (OB_FAIL(ObMysqlCsha2Handler::save_change_user_req_for_auth_switch(
+                    s, "rewrite_auth_switch_for_client"))) {
+              LOG_WDIAG("fail to save change user request after auth switch rewrite", K(ret));
+            }
           }
         }
-      }
+      } // end of rewrite branch
     }
 
     if (OB_NOT_NULL(auth_switch_req_buf)) {
@@ -5630,6 +5840,26 @@ inline int ObMysqlTransact::handle_auth_switch_request(ObTransState &s)
 
   return ret;
 }
+
+int ObMysqlTransact::save_change_user_req(ObTransState &s)
+{
+  int ret = OB_SUCCESS;
+  // 保存 change user 请求内容，供后续 auth more data 完成时 handle_change_user_request_succ 使用。
+  if (OB_NOT_NULL(s.sm_) && OB_NOT_NULL(s.sm_->client_session_)) {
+    ObString req = s.trans_info_.client_request_.get_req_pkt();
+    if (!req.empty()) {
+      ObClientSessionInfo &cs_info = s.sm_->client_session_->get_session_info();
+      if (OB_FAIL(cs_info.get_csha2_auth_ctx().save_change_user_req(req))) {
+        LOG_WDIAG("fail to save change user request", K(ret), KP(req.ptr()), K(req.length()));
+      } else {
+        PROXY_CSHA2_LOG(DEBUG, "saved change_user_req_ for auth more data path",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id(), "len", req.length());
+      }
+    }
+  }
+  return ret;
+}
+
 
 inline void ObMysqlTransact::handle_ok_resp(ObTransState &s, bool &is_user_request)
 {
@@ -5646,18 +5876,90 @@ inline void ObMysqlTransact::handle_ok_resp(ObTransState &s, bool &is_user_reque
         // 首次登录 handshake response's response ok 包会在
         // ObProxySessionInfoHandler::rebuild_ok_packet 中处理 observer 返回的系统变量
         // 而不是在次处理
-        is_user_request = true;
+        //
+        // For caching_sha2_password, proxy may force client full auth (TLS plaintext password) even when
+        // server fast-auth succeeds. In that case we:
+        // - consume server OK (do NOT forward)
+        // - defer OK packet until we get client's AuthMoreData response
+        // - send AuthMoreData(full auth required) to client internally
+        if (ObMysqlCsha2Handler::is_fast_auth_succ_with_ok(s)
+            && ObMysqlCsha2Handler::should_force_full_auth_on_login_resp(s, client_info)) {
+          ret = ObMysqlCsha2Handler::begin_forced_full_auth(s, client_info, "login_response");
+          if (OB_SUCC(ret)) {
+            is_user_request = false;
+          }
+        } else {
+          is_user_request = true;
+        }
         break;
       case SERVER_SEND_REQUEST:
-        handle_user_request_succ(s, is_user_request);
+      {
+        // After sending AuthSwitchResponse or CHANGE_USER, server may reply with same patterns:
+        // AuthMoreData(fast_auth_success)+OK, AuthMoreData(full_auth_required 0x01 0x04).
+        // Reuse one block: parse MySQL payload (with mysql_offset for OB20/compressed), set
+        // is_auth_more_data_req for 0x01 0x04, or defer OK and force full auth for 0x01 0x03.
+        bool is_change_user_resp = false;
+        if (ObMysqlCsha2Handler::is_fast_auth_succ_with_ok(s)
+            && ObMysqlCsha2Handler::should_force_full_auth_on_request_resp(s, client_info, is_change_user_resp)) {
+          const char *trace_desc = is_change_user_resp ? "change_user_response" : "auth_switch_response";
+          if (OB_FAIL(ObMysqlCsha2Handler::begin_forced_full_auth(s, client_info, trace_desc))) {
+            LOG_WDIAG("fail to begin forced full auth", K(ret), K(trace_desc));
+          } else {
+            // defer 成功后，这个 server OK 已经被 proxy 接管，当前响应不能直接透传给客户端。
+            is_user_request = false;
+          }
+        }
+
+        if (OB_SUCC(ret)) {
+          // still run normal success handlers (including handle_auth_switch_resp_succ) for side effects
+          handle_user_request_succ(s, is_user_request);
+        }
         break;
+      }
 
       case SERVER_SEND_SAVED_LOGIN:
-        // sync saved login is not finished if triggered auth switch
         // 切换路由时登录的 observer 返回的 handshake response's response ok 包在此处理
         // 只关注其中返回的 ob_capability_flag/ob_proxy_global_variables_version
-        handle_saved_login_succ(s);
+        // Observer 对 caching_sha2 在 saved login 后再次下发 AuthSwitchRequest；
+        // 由 handle_on_forward_server_response 使用缓存的 AuthSwitchResponse 重放。
+        // is_user_request = false
+        if (s.trans_info_.resp_result_.is_auth_switch_req()) {
+          // no-op: schedule replay in handle_on_forward_server_response
+        } else if (s.trans_info_.resp_result_.is_auth_more_data_req()) {
+          // no-op: SSL vs 0x02 chosen in handle_on_forward_server_response
+        } else {
+          handle_saved_login_succ(s);
+        }
         break;
+
+      case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+        // 重放 AuthSwitchResponse 之后，协议上只预期：OK（含 fast auth succ）、或 AuthMoreData（需 full auth）。
+        // 异常 AuthSwitch / 本状态下不应出现的 PEM：不在此调 handle_saved_login_succ，由 handle_on_forward 处理。
+        // is_user_request = false
+        if (s.trans_info_.resp_result_.is_auth_switch_req()
+            || s.trans_info_.resp_result_.is_auth_more_data_req()
+            || s.trans_info_.resp_result_.is_rsa_public_key_resp()) {
+          // no-op
+        } else {
+          handle_saved_login_succ(s);
+        }
+        break;
+
+      case SERVER_SEND_AUTH_MORE_DATA: {
+        // First-login forward: we will forward this OK to client in handle_on_forward_server_response;
+        // do not consume so that the tunnel has data to forward. Saved-login: consume and continue sync.
+        // Never forward server RSA PEM (0x01 + text): same sql_cmd as encrypted-pwd round; see handle_on_forward_server_response.
+        if (s.is_auth_more_data_resp_phase()
+            && obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == s.trans_info_.sql_cmd_
+            && !s.trans_info_.resp_result_.is_rsa_public_key_resp()) {
+          // will set is_user_request = true, so do not consume, tunnel will forward OK to client
+          handle_user_request_succ(s, is_user_request);
+        } else {
+          // server accepted auth more data response, saved-login can be treated as finished now
+          handle_saved_login_succ(s);
+        }
+        break;
+      }
 
       case SERVER_SEND_ALL_SESSION_VARS:
       case SERVER_SEND_SESSION_VARS:
@@ -5796,6 +6098,13 @@ inline void ObMysqlTransact::handle_handshake_pkt(ObTransState &s)
       server_session->set_server_sessid(conn_id);
       ObMySQLCapabilityFlags capability(result.get_server_capability());
       server_session->get_session_info().save_compatible_capability_flags(capability);
+      PROXY_CSHA2_LOG(DEBUG, "recv server greeting(handshake)",
+               "cs_id", client_session->get_cs_id(),
+               "ss_id", server_session->ss_id_,
+               "server_sessid", conn_id,
+               "support_ssl", result.support_ssl(),
+               "server_capability", capability.capability_,
+               "scramble_len", result.get_scramble_string().length());
       ObAddr client_addr = client_session->get_real_client_addr(const_cast<net::ObNetVConnection *>(server_session->get_netvc()));
 
       //we need update proxy_sessid when first connect server
@@ -6029,6 +6338,11 @@ void ObMysqlTransact::handle_db_reset(ObTransState &s)
 inline void ObMysqlTransact::handle_first_response_packet(ObTransState &s) {
   ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
   bool is_user_request = false;
+
+  // 首包处理前先统一记录 csha2 认证阶段的服务端响应信息，
+  // 便于排查多轮认证（auth switch / auth more data / PEM 公钥返回）中的状态流。
+  ObMysqlCsha2Trace::trace_first_response_packet(s);
+
   // handle resp
   if (resp.is_error_resp()) {
     MYSQL_INCREMENT_TRANS_STAT(SERVER_ERROR_RESPONSES);
@@ -6042,12 +6356,39 @@ inline void ObMysqlTransact::handle_first_response_packet(ObTransState &s) {
   } else if (resp.is_handshake_pkt()) {
     MYSQL_INCREMENT_TRANS_STAT(SERVER_OTHER_RESPONSES);
     handle_handshake_pkt(s);
+  } else if (resp.is_auth_switch_req()) {
+    // AuthSwitchRequest is a multi-round auth flow. We must decode it early to:
+    // - record pending auth plugin (for updating cached login after AuthSwitchResponse)
+    // - apply scramble rewrite only for mysql_native_password (proxy scramble + __proxy_scramble support)
+    int tmp_ret = handle_auth_switch_request(s);
+    if (OB_SUCCESS != tmp_ret) {
+      // best effort: still forward original packet if decode/rewrite fails
+      PROXY_CSHA2_LOG(WDIAG, "fail to handle server AuthSwitchRequest", K(tmp_ret),
+                "send_action", get_send_action_name(s.current_.send_action_),
+                "sql_cmd", s.trans_info_.sql_cmd_);
+    }
+    // AuthSwitchRequest 不是 OK，但它后续“是否转发给客户端、是否继续等待下一轮认证”
+    // 仍沿用 handle_ok_resp 这套认证中间响应状态机。
+    handle_ok_resp(s, is_user_request);
+  } else if ((SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY == s.current_.send_action_ // server对0x02的返回
+              || SERVER_SEND_AUTH_MORE_DATA == s.current_.send_action_)
+             && resp.is_rsa_public_key_resp()) {
+    // 0x01+PEM from server: must not run handle_ok_resp (would tunnel PEM to client).
+    // - REQUEST_PUBLIC_KEY: normal case after we sent 0x02 to server.
+    // - AUTH_MORE_DATA: same wire command (COM_AUTH_MORE_DATA_RESP) as above; include so a PEM
+    //   still matches this branch if send_action stayed AUTH_MORE_DATA (e.g. saved-login re-auth
+    //   or any path where server sends PEM in the same auth-more-data round without our state
+    //   having been switched to REQUEST_PUBLIC_KEY yet).
+    MYSQL_INCREMENT_TRANS_STAT(SERVER_OTHER_RESPONSES);
   } else {
     MYSQL_INCREMENT_TRANS_STAT(SERVER_OTHER_RESPONSES);
     handle_ok_resp(s, is_user_request);
   }
 
   if (s.current_.send_action_ != SERVER_SEND_SAVED_LOGIN
+      && s.current_.send_action_ != SERVER_SEND_SAVED_AUTH_SWITCH_RESP
+      && s.current_.send_action_ != SERVER_SEND_AUTH_MORE_DATA
+      && s.current_.send_action_ != SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY
       && s.current_.send_action_ != SERVER_SEND_HANDSHAKE
       && s.current_.send_action_ != SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN
       && !is_user_request) {
@@ -6076,12 +6417,12 @@ inline void ObMysqlTransact::handle_first_response_packet(ObTransState &s) {
   }
 }
 
-inline ObServerSessionInfo &ObMysqlTransact::get_server_session_info(ObTransState &s)
+ObServerSessionInfo &ObMysqlTransact::get_server_session_info(ObTransState &s)
 {
   return s.sm_->get_server_session()->get_session_info();
 }
 
-inline ObClientSessionInfo &ObMysqlTransact::get_client_session_info(ObTransState &s)
+ObClientSessionInfo &ObMysqlTransact::get_client_session_info(ObTransState &s)
 {
   return s.sm_->get_client_session()->get_session_info();
 }
@@ -7134,10 +7475,18 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
             && !s.sm_->client_session_->is_proxy_mysql_client()) {
           s.current_.send_action_ = SERVER_SEND_SSL_REQUEST;
           s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          PROXY_CSHA2_LOG(DEBUG, "handshake decision: send SSLRequest to server",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                   "server_support_ssl", server_support_ssl,
+                   "proxy_enable_server_ssl", is_server_ssl_supported);
           LOG_DEBUG("next senc action", K(s.current_.send_action_));
         } else if (s.is_handshake_req_phase()) {
           s.current_.send_action_ = SERVER_SEND_LOGIN;
           s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          PROXY_CSHA2_LOG(DEBUG, "handshake decision: send Login to server",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                   "server_support_ssl", server_support_ssl,
+                   "proxy_enable_server_ssl", is_server_ssl_supported);
         } else {
           if (OB_ISNULL(s.sm_->client_session_)) {
             s.current_.state_ = INTERNAL_ERROR;
@@ -7149,6 +7498,10 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
           } else {
             s.current_.send_action_ = SERVER_SEND_SAVED_LOGIN;
             s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+            PROXY_CSHA2_LOG(DEBUG, "handshake decision: send SavedLogin to server",
+                     "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                     "server_support_ssl", server_support_ssl,
+                     "proxy_enable_server_ssl", is_server_ssl_supported);
           }
         }
       }
@@ -7164,20 +7517,140 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
       }
       break;
 
-    //case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
-    case SERVER_SEND_SAVED_LOGIN: {
+    case SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY: {
       ObClientSessionInfo &client_info = get_client_session_info(s);
-      ObServerSessionInfo &server_info = get_server_session_info(s);
       ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
-      /*(if (s.current_.send_action_ == SERVER_SEND_SAVED_LOGIN && resp.is_auth_switch_req()) {
-        s.current_.send_action_ = SERVER_SEND_SAVED_AUTH_SWITCH_RESP;
-        s.next_action_ = SM_ACTION_API_SEND_REQUEST;
-        break;
-      } else */
       if (resp.is_error_resp()) {
         s.next_action_ = SM_ACTION_SERVER_READ;
         if (client_info.is_oceanbase_server()) {
           s.sm_->api_.do_response_transform_open();
+        }
+      } else if (resp.is_rsa_public_key_resp()) {
+        ObMysqlCsha2Handler::handle_server_rsa_public_key_response(s);
+      } else {
+        LOG_WDIAG("unexpected server response to auth more data request public key", "is_rsa_public_key_resp",
+                  resp.is_rsa_public_key_resp());
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (client_info.is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
+      }
+      break;
+    }
+
+    case SERVER_SEND_SAVED_AUTH_SWITCH_RESP: {
+      ObClientSessionInfo &client_info = get_client_session_info(s);
+      ObServerSessionInfo &server_info = get_server_session_info(s);
+      ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
+      ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
+      // PEM 只会在 SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY（或少数 AUTH_MORE_DATA）上出现，
+      // 不会在「刚发完重放的 AuthSwitchResponse」这一拍出现。
+      if (resp.is_error_resp()) {
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (client_info.is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
+      } else if (resp.is_auth_switch_req()) {
+        s.current_.state_ = INTERNAL_ERROR;
+        handle_server_connection_break(s);
+        PROXY_CSHA2_LOG(WDIAG, "unexpected AuthSwitchRequest after saved-login AuthSwitchResponse replay",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id());
+      } else if (resp.is_auth_more_data_req()) {
+        // saved login触发auth switch触发auth more data
+        ObMysqlServerSession *ss_for_csha2 = s.sm_->get_server_session();
+        if (OB_ISNULL(ss_for_csha2)) {
+          s.current_.state_ = INTERNAL_ERROR;
+          handle_server_connection_break(s);
+          PROXY_CSHA2_LOG(WDIAG, "saved-login auth switch replay: auth more data but server session is null",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id());
+        } else if (ObMysqlCsha2Handler::is_server_ssl(ss_for_csha2)) {
+          // ssl
+          csha2_ctx.auth_more_data_resp_rsa_wire_.reset();
+          s.current_.send_action_ = SERVER_SEND_AUTH_MORE_DATA;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          PROXY_CSHA2_LOG(DEBUG, "after saved auth switch replay: server SSL, send auth more data",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id());
+        } else {
+          // rsa
+          s.current_.send_action_ = SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          PROXY_CSHA2_LOG(DEBUG, "after saved auth switch replay: request server public key (0x02) first",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id());
+        }
+      } else if (resp.is_rsa_public_key_resp()) {
+        s.current_.state_ = INTERNAL_ERROR;
+        handle_server_connection_break(s);
+        PROXY_CSHA2_LOG(WDIAG, "unexpected server RSA PEM in SERVER_SEND_SAVED_AUTH_SWITCH_RESP",
+                 "cs_id", s.sm_->get_client_session()->get_cs_id());
+      } else {
+        // saved login触发auth switch触发fast auth succ + ok
+        // 继续 saved-login 同步（vars/db/user request）
+        csha2_ctx.auth_more_data_resp_rsa_wire_.reset();
+        const bool is_proxy_mysql_client = s.sm_->client_session_->is_proxy_mysql_client();
+        if (client_info.need_reset_all_session_vars() && !is_proxy_mysql_client) {
+          s.current_.send_action_ = SERVER_SEND_ALL_SESSION_VARS;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+        } else if (client_info.need_reset_database(server_info)) {
+          s.current_.send_action_ = SERVER_SEND_USE_DATABASE;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+        } else {
+          s.current_.send_action_ = SERVER_SEND_REQUEST;
+          s.trans_info_.sql_cmd_ = s.trans_info_.client_request_.get_packet_meta().cmd_;
+          if (ObMysqlTransact::need_use_tunnel(s)) {
+            s.next_action_ = SM_ACTION_OBSERVER_OPEN;
+            s.set_send_request_direct(true);
+          } else {
+            s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          }
+        }
+      }
+      break;
+    }
+
+    case SERVER_SEND_SAVED_LOGIN: {
+      ObClientSessionInfo &client_info = get_client_session_info(s);
+      ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
+      ObServerSessionInfo &server_info = get_server_session_info(s);
+      ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
+      if (resp.is_error_resp()) {
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (client_info.is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
+        break;
+      } else if (resp.is_auth_switch_req()) {
+        s.trans_info_.sql_cmd_ = obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP;
+        s.current_.send_action_ = SERVER_SEND_SAVED_AUTH_SWITCH_RESP;
+        s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+        PROXY_CSHA2_LOG(DEBUG, "saved login: replay cached AuthSwitchResponse to server",
+                  "cs_id", s.sm_->get_client_session()->get_cs_id(),
+                  "cached_len", csha2_ctx.auth_switch_resp_.len());
+        break;
+      } else if (resp.is_auth_more_data_req()) {
+        // caching_sha2_password full auth during saved login:
+        // - ODP<->server SSL: send saved plaintext from auth_more_data_resp_for_server_ (build_auth_more_data_packet).
+        // - ODP<->server non-SSL: encrypt saved plaintext into auth_more_data_resp_rsa_wire_ (always 0x02 first).
+        ObMysqlServerSession *ss_for_csha2 = s.sm_->get_server_session();
+        if (OB_ISNULL(ss_for_csha2)) {
+          s.current_.state_ = INTERNAL_ERROR;
+          handle_server_connection_break(s);
+          PROXY_CSHA2_LOG(WDIAG, "saved login auth more data: server session is null",
+                   "cs_id", s.sm_->get_client_session()->get_cs_id());
+        } else {
+          if (ObMysqlCsha2Handler::is_server_ssl(ss_for_csha2)) {
+            // SSL
+            csha2_ctx.auth_more_data_resp_rsa_wire_.reset();
+            s.current_.send_action_ = SERVER_SEND_AUTH_MORE_DATA;
+            s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+            PROXY_CSHA2_LOG(DEBUG, "saved login auth more data: server SSL, send plaintext to server",
+                     "cs_id", s.sm_->get_client_session()->get_cs_id());
+          } else {
+            // RSA: plaintext in auth_more_data_resp_for_server_; always 0x02 then PEM then encrypt (same as client-forward path).
+            s.current_.send_action_ = SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY;
+            s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+            PROXY_CSHA2_LOG(DEBUG, "saved login auth more data: request server public key (0x02) first",
+                     "cs_id", s.sm_->get_client_session()->get_cs_id());
+          }
         }
         break;
       } else if (client_info.is_oceanbase_server()) {
@@ -7330,14 +7803,97 @@ void ObMysqlTransact::handle_on_forward_server_response(ObTransState &s)
       }
       break;
     }
+
+    case SERVER_SEND_AUTH_MORE_DATA: {
+      // Two scenarios:
+      // (1) First-login forward: client sent auth more data resp (encrypted pwd), we decrypted and sent plaintext
+      //     to server; server returned OK (login success). We must forward this OK to the client.
+      // (2) Saved-login re-auth: internal step, no tunnel; after OK continue sync (vars/db/request).
+      // (3) Same sql_cmd as (1) but server returned 0x01+PEM (ODP requested key with 0x02): never forward PEM to client.
+      ObClientSessionInfo &client_info = get_client_session_info(s);
+      ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
+      ObServerSessionInfo &server_info = get_server_session_info(s);
+      ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
+
+      if (resp.is_rsa_public_key_resp()) {
+        ObMysqlCsha2Handler::handle_server_rsa_public_key_response(s);
+      } else if (resp.is_error_resp()) {
+        // treat as internal error; let error handler decide retry/disconnect
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (client_info.is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
+      } else if (s.is_auth_more_data_resp_phase()
+                 && obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP == s.trans_info_.sql_cmd_) {
+        // First-login forward path: client sent encrypted password (or 0x02), we sent plaintext to server,
+        // server returned OK. Forward this OK to the client (tunnel).
+        csha2_ctx.auth_more_data_resp_rsa_wire_.reset();
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (client_info.is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
+        PROXY_CSHA2_LOG(DEBUG, "forward server OK to client after auth more data (first-login)",
+                  "cs_id", s.sm_->get_client_session()->get_cs_id());
+      } else {
+        // saved-login is now authenticated; continue normal sync steps (vars/db/request)
+        csha2_ctx.auth_more_data_resp_rsa_wire_.reset();
+        bool is_proxy_mysql_client = s.sm_->client_session_->is_proxy_mysql_client();
+        if (client_info.need_reset_all_session_vars() && !is_proxy_mysql_client) {
+          s.current_.send_action_ = SERVER_SEND_ALL_SESSION_VARS;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+        } else if (client_info.need_reset_database(server_info)) {
+          s.current_.send_action_ = SERVER_SEND_USE_DATABASE;
+          s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+        } else {
+          s.current_.send_action_ = SERVER_SEND_REQUEST;
+          s.trans_info_.sql_cmd_ = s.trans_info_.client_request_.get_packet_meta().cmd_;
+          if (ObMysqlTransact::need_use_tunnel(s)) {
+            s.next_action_ = SM_ACTION_OBSERVER_OPEN;
+            s.set_send_request_direct(true);
+          } else {
+            s.next_action_ = SM_ACTION_API_SEND_REQUEST;
+          }
+        }
+      }
+      break;
+    }
+
     case SERVER_SEND_LOGIN: {
-      s.next_action_ = SM_ACTION_SERVER_READ;
-      if (get_client_session_info(s).is_oceanbase_server()) {
-        s.sm_->api_.do_response_transform_open();
+      ObClientSessionInfo &client_info = get_client_session_info(s);
+      ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
+      if (csha2_ctx.need_force_auth_more_data_) {
+        // login 阶段如果需要强制 full auth，统一由 csha2 handler 负责组内部包并推进状态。
+        int ret = ObMysqlCsha2Handler::send_internal_full_auth_required_after_login(s, client_info);
+        if (OB_FAIL(ret)) {
+          s.current_.state_ = INTERNAL_ERROR;
+          handle_server_connection_break(s);
+        }
+      } else {
+        s.next_action_ = SM_ACTION_SERVER_READ;
+        if (get_client_session_info(s).is_oceanbase_server()) {
+          s.sm_->api_.do_response_transform_open();
+        }
       }
       break;
     }
     case SERVER_SEND_REQUEST: {
+      // 收到server的auth switch response ok包后，强制auth more data
+      // Forced full auth after login AuthSwitchResponse(native<->caching_sha2_password):
+      // If we deferred server OK in handle_ok_resp(), we should send AuthMoreData(0x01 0x04) to client internally
+      // (no server->client tunnel).
+      ObClientSessionInfo &client_info = get_client_session_info(s);
+      ObClientSessionCsha2AuthContext &csha2_ctx = client_info.get_csha2_auth_ctx();
+      if (csha2_ctx.need_force_auth_more_data_ && !csha2_ctx.deferred_login_ok_resp_.empty()) {
+        // 请求阶段（如 AuthSwitchResponse / ChangeUser 之后）触发的强制 full auth，
+        // 同样交给 csha2 handler 统一发内部包，避免这里重复拼包和重复日志。
+        int ret = ObMysqlCsha2Handler::send_internal_full_auth_required_after_request(s, client_info);
+        if (OB_FAIL(ret)) {
+          s.current_.state_ = INTERNAL_ERROR;
+          handle_server_connection_break(s);
+        }
+        break;
+      }
+
       ObRespAnalyzeResult &resp = s.trans_info_.resp_result_;
       obmysql::ObMySQLCmd cmd = s.trans_info_.client_request_.get_packet_meta().cmd_;
       ObProxyMysqlRequest &client_request = s.trans_info_.client_request_;
@@ -7532,7 +8088,7 @@ bool ObMysqlTransact::is_depend_last_tenant(ObTransState &s)
   // 判断强路由，不能切换主备租户
   //  临时表、事务内、load data、ps/pl的cursor
   obmysql::ObMySQLCmd cmd = s.trans_info_.sql_cmd_;
-  bret = is_trans_specified(s)
+  bret = is_trans_specified_or_temporary_table(s)
         || is_in_trans(s)
         || has_dependent_func(s)
         || s.is_auth_switch_resp_phase()
@@ -7596,7 +8152,9 @@ inline void ObMysqlTransact::update_sync_session_stat(ObTransState &s)
       + s.sm_->cmd_time_stats_.ok_packet_trim_time_;
   switch (s.current_.send_action_) {
     case SERVER_SEND_SAVED_LOGIN:
-    //case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+    case SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+    case SERVER_SEND_AUTH_MORE_DATA:
+    case SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY:
       s.sm_->cmd_time_stats_.server_send_saved_login_time_ += cost;
       s.sm_->cmd_time_stats_.server_sync_session_variable_time_ += cost;
       MYSQL_SUM_TIME_STAT(TOTAL_SEND_SAVED_LOGIN_TIME, cost);
@@ -8751,6 +9309,10 @@ const char *ObMysqlTransact::get_server_resp_error_name(ObMysqlTransact::ObServe
       ret = "SAVED_LOGIN_COMMON_ERROR";
       break;
 
+    case ObMysqlTransact::SAVED_AUTH_SWITCH_ERROR:
+      ret = "SAVED_AUTH_SWITCH_ERROR";
+      break;
+
     case ObMysqlTransact::RESET_SESSION_VARS_COMMON_ERROR:
       ret = "RESET_SESSION_VARS_COMMON_ERROR";
       break;
@@ -8945,6 +9507,18 @@ const char *ObMysqlTransact::get_send_action_name(
 
     case ObMysqlTransact::SERVER_SEND_SAVED_LOGIN:
       ret = "SERVER_SEND_SAVED_LOGIN";
+      break;
+
+    case ObMysqlTransact::SERVER_SEND_SAVED_AUTH_SWITCH_RESP:
+      ret = "SERVER_SEND_SAVED_AUTH_SWITCH_RESP";
+      break;
+
+    case ObMysqlTransact::SERVER_SEND_AUTH_MORE_DATA:
+      ret = "SERVER_SEND_AUTH_MORE_DATA";
+      break;
+
+    case ObMysqlTransact::SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY:
+      ret = "SERVER_SEND_AUTH_MORE_DATA_REQUEST_PUBLIC_KEY";
       break;
 
     case ObMysqlTransact::SERVER_SEND_ALL_SESSION_VARS:

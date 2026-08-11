@@ -2745,7 +2745,7 @@ int Trie::init_sys_var_trie() {
     LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_USER_PRIVILEGE);
   } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_SET_TRX_EXECUTED, OBPROXY_VAR_SET_TRX_EXECUTED))) {
     LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_SET_TRX_EXECUTED);
-  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED, OBPROXY_VAR_SET_TRX_EXECUTED))) {
+  } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED, OBPROXY_VAR_TEMPORARY_TABLE_ROUTE))) {
     LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED);
   } else if (OB_FAIL(ObSessionFieldMgr::sys_var_trie_.insert(sql::OB_SV_PROXY_PARTITION_HIT, OBPROXY_VAR_PARTITION_HIT))) {
     LOG_WDIAG("fail to insert", K(ret), "sys_var", sql::OB_SV_PROXY_PARTITION_HIT);
@@ -2891,6 +2891,8 @@ int ObDefaultSysVarSet::load_default_system_variable()
     LOG_WDIAG("fail to load default sysvar interactive_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_QUERY_TIMEOUT), 10000000, both_scope, print_info_log))) {
     LOG_WDIAG("fail to load default sysvar ob_query_timeout", K(ret));
+  } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_MAX_EXECUTION_TIME), 0, both_scope, print_info_log))) {
+    LOG_WDIAG("fail to load default sysvar max_execution_time", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_TRX_TIMEOUT), 100000000, both_scope, print_info_log))) {
     LOG_WDIAG("fail to load default sysvar ob_trx_timeout", K(ret));
   } else if (OB_FAIL(load_sysvar_int(ObString::make_string(OB_SV_NET_READ_TIMEOUT), 30, both_scope, print_info_log))) {

@@ -90,7 +90,7 @@ public:
 
   int run_todo_list(const int64_t buck_id);
 
-  void set_cache_expire_time(const int64_t relative_time_s);
+  void set_cache_expire_time(const int64_t relative_time_ms);
   int64_t get_cache_expire_time_us() const { return expire_time_us_; }
   bool is_routine_entry_expired(const ObRoutineEntry &entry);
   TO_STRING_KV(K_(is_inited), K_(expire_time_us));
@@ -108,10 +108,10 @@ private:
   DISALLOW_COPY_AND_ASSIGN(ObRoutineCache);
 };
 
-inline void ObRoutineCache::set_cache_expire_time(const int64_t relative_time_s)
+inline void ObRoutineCache::set_cache_expire_time(const int64_t relative_time_ms)
 {
   expire_time_us_ = common::ObTimeUtility::current_time();
-  expire_time_us_ += common::sec_to_usec(relative_time_s);
+  expire_time_us_ += common::msec_to_usec(relative_time_ms);
 }
 
 inline bool ObRoutineCache::is_routine_entry_expired(const ObRoutineEntry &entry)

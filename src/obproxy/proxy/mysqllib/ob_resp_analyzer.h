@@ -86,7 +86,8 @@ public:
            bool is_binlog_req);
   // analyze one packet first then decide to analyze the rest of packets or not
   int analyze_response(event::ObIOBufferReader &reader, const bool need_receive_completed,
-                       ObAnalyzeHeaderResult &result, ObRespAnalyzeResult &resp_result);
+                       ObAnalyzeHeaderResult &result, ObRespAnalyzeResult &resp_result,
+                       const bool skip_without_complete_pkt = false);
   // directly analyze all pkts
   int analyze_response(event::ObIOBufferReader &reader, ObRespAnalyzeResult &resp_result);
   int analyze_one_packet(event::ObIOBufferReader &reader, ObAnalyzeHeaderResult &result);

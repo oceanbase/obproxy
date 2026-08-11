@@ -372,6 +372,7 @@ enum ObProxySysVarType
   OBPROXY_VAR_GLOBAL_VARIABLES_VERSION = 0,
   OBPROXY_VAR_USER_PRIVILEGE,
   OBPROXY_VAR_SET_TRX_EXECUTED,
+  OBPROXY_VAR_TEMPORARY_TABLE_ROUTE,
   OBPROXY_VAR_PARTITION_HIT,
   OBPROXY_VAR_LAST_INSERT_ID,
   OBPROXY_VAR_CAPABILITY_FLAG,
@@ -572,8 +573,8 @@ public:
   static bool is_hot_modified_variable(const common::ObString &var_name);
   static bool is_last_insert_id_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_LAST_INSERT_ID; }
   static bool is_user_privilege_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_USER_PRIVILEGE; }
-  static bool is_set_trx_executed_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_SET_TRX_EXECUTED
-                                                                                   || var_name == sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED; }
+  static bool is_set_trx_executed_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_SET_TRX_EXECUTED; }
+  static bool is_temporary_route_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_SESSION_TEMPORARY_TABLE_USED; }
   static bool is_partition_hit_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_PARTITION_HIT; }
   static bool is_global_version_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_PROXY_GLOBAL_VARIABLES_VERSION; }
   static bool is_capability_flag_variable(const common::ObString &var_name) { return var_name == sql::OB_SV_CAPABILITY_FLAG; }

@@ -230,7 +230,7 @@ private:
 class ObRpcRequestConfigInfo
 {
 public:
-  ObRpcRequestConfigInfo () : config_version_(0), proxy_route_policy_(),
+  ObRpcRequestConfigInfo () : config_version_(0), rpc_proxy_route_policy_(),
     enable_cloud_full_username_(false),
     rpc_support_key_partition_shard_request_(false),
     rpc_enable_force_srv_black_list_(false),
@@ -248,15 +248,15 @@ public:
 
   void deep_copy(const ObRpcRequestConfigInfo &config_info) {
     MEMCPY(this, &config_info, sizeof(ObRpcRequestConfigInfo));
-    if (OB_UNLIKELY(config_info.proxy_route_policy_.is_use_dynamic_buf())) {
-      MEMSET(&proxy_route_policy_, 0, sizeof(ObConfigVarStr));
-      proxy_route_policy_.deep_copy(config_info.proxy_route_policy_);
+    if (OB_UNLIKELY(config_info.rpc_proxy_route_policy_.is_use_dynamic_buf())) {
+      MEMSET(&rpc_proxy_route_policy_, 0, sizeof(ObConfigVarStr));
+      rpc_proxy_route_policy_.deep_copy(config_info.rpc_proxy_route_policy_);
     }
   }
 
   bool is_init() const { return 0 != config_version_; }
 
-  TO_STRING_KV(K_(config_version), K_(proxy_route_policy), K_(enable_cloud_full_username), K_(rpc_support_key_partition_shard_request),
+  TO_STRING_KV(K_(config_version), K_(rpc_proxy_route_policy), K_(enable_cloud_full_username), K_(rpc_support_key_partition_shard_request),
                K_(rpc_enable_force_srv_black_list), K_(rpc_enable_direct_expire_route_entry),
                K_(rpc_enable_reroute), K_(rpc_enable_congestion), K_(rpc_enable_global_index), K_(rpc_enable_retry_request_info_log),
                K_(rpc_request_max_retries), K_(rpc_request_timeout), K_(rpc_request_timeout_delta), K_(rpc_request_retry_waiting_time),
@@ -265,7 +265,7 @@ public:
 public:
   uint64_t config_version_;
   //for common config
-  ObConfigVarStr proxy_route_policy_;
+  ObConfigVarStr rpc_proxy_route_policy_;
   // ObConfigVarStr proxy_idc_name_; //not used now
   bool enable_cloud_full_username_;
 

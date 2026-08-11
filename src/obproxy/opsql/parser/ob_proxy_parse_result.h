@@ -472,6 +472,7 @@ typedef struct _ObProxyParseResult
   ObProxyBasicStmtSubType sub_stmt_type_; //for sharding
   int64_t stmt_count_;
   int64_t query_timeout_;
+  int64_t max_execution_time_;
   char *accept_pos_; // parse accpet pos, use for the next parse
 
   // use to store internal select

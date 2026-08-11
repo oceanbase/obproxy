@@ -481,6 +481,7 @@ private:
   void handle_obproxy_internal_error();
   void handle_obproxy_error_transfer();
   void handle_disconnect_directly();
+  int discard_server_session_after_failed_change_user(bool &is_discarded);
 
 private:
   static const int64_t HISTORY_SIZE = 32;
@@ -640,25 +641,45 @@ inline void ObMysqlSM::set_internal_cmd_timeout(const ObHRTime timeout)
 inline int64_t ObMysqlSM::get_query_timeout()
 {
   int64_t timeout = 0;
+
+  const ObProxyMysqlRequest& client_request = trans_state_.trans_info_.client_request_;
+  const ObSqlParseResult& parse_result = client_request.get_parse_result();
   if (OB_NOT_NULL(multi_level_config_)) {
     timeout = HRTIME_NSECONDS(multi_level_config_->observer_query_timeout_delta_);
   }
+
   if (OB_LIKELY(NULL != client_session_)) {
-    int64_t hint_query_timeout = trans_state_.trans_info_.client_request_.get_parse_result().get_hint_query_timeout();
-    // if the request contains query_timeout in hint, we use it
-    if (hint_query_timeout > 0) {
-      // the query timeout in hint is in microseconds(us), so convert it into nanoseconds
-      timeout += HRTIME_USECONDS(hint_query_timeout);
-    } else {
-      dbconfig::ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
-      if (OB_NOT_NULL(shard_prop)) {
-        timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
+    int64_t hint_query_timeout = HRTIME_USECONDS(parse_result.get_hint_query_timeout());
+    int64_t hint_max_execution_time = HRTIME_MSECONDS(parse_result.get_hint_max_execution_time());
+    int64_t query_timeout = (0 != hint_query_timeout) ? hint_query_timeout :
+                            client_session_->get_session_info().get_query_timeout();
+    int64_t max_execution_time = (0 != hint_max_execution_time) ? hint_max_execution_time :
+                                  client_session_->get_session_info().get_max_execution_time();
+    bool is_read_only_select_req = parse_result.is_select_stmt()
+                                   && !parse_result.has_for_update()
+                                   && !parse_result.is_multi_stmt()
+                                   && !client_request.is_large_request();
+    dbconfig::ObShardProp *shard_prop = client_session_->get_session_info().get_shard_prop();
+    if (OB_NOT_NULL(shard_prop)) {
+      // for the compatibility with old code, may be useful in some test case
+      if (hint_query_timeout > 0) {
+        timeout += hint_query_timeout;
       } else {
-        // we do parse in trans now, so we can use query_timeout in anycase
-        timeout += client_session_->get_session_info().get_query_timeout();
+        timeout = HRTIME_MSECONDS(shard_prop->get_socket_timeout());
+      }
+    } else {
+      // we do parse in trans now, so we can use query_timeout in anycase
+      if (is_read_only_select_req
+          && max_execution_time > 0) {
+        timeout += max_execution_time;
+      } else {
+        timeout += std::max(query_timeout, max_execution_time);
       }
     }
+
+    PROXY_LOG(DEBUG, "get query timeout value", K(timeout), K(query_timeout), K(max_execution_time));
   } else {}
+
   return timeout;
 }
 

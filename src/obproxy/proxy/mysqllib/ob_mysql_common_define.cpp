@@ -88,6 +88,7 @@ bool is_supported_mysql_cmd(const obmysql::ObMySQLCmd mysql_cmd)
     case obmysql::OB_MYSQL_COM_SET_OPTION:
     case obmysql::OB_MYSQL_COM_LOAD_DATA_TRANSFER_CONTENT:
     case obmysql::OB_MYSQL_COM_AUTH_SWITCH_RESP:
+    case obmysql::OB_MYSQL_COM_AUTH_MORE_DATA_RESP:
       ret = true;
       break;
     // Replication Protocol

@@ -72,7 +72,7 @@ public:
   int remove_rpc_req_ctx(const obkv::ObTableApiCredential &key);
   int run_todo_list(const int64_t buck_id);
 
-  void set_cache_expire_time(const int64_t relative_time_s);
+  void set_cache_expire_time(const int64_t relative_time_ms);
   int64_t get_cache_expire_time_us() const { return expire_time_us_; }
   bool is_rpc_req_ctx_expired(const ObRpcReqCtx &ctx);
   bool is_rpc_req_ctx_expired_in_time_mode(const ObRpcReqCtx &ctx);

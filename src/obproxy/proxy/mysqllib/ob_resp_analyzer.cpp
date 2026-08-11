@@ -245,6 +245,10 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
         } else {
           // do nothing
         }
+        // If previous pkt was 0x01 0x03 (fast auth succ), this OK is the deferred one for csha2.
+        if (OB_NOT_NULL(resp_result) && resp_result->is_fast_auth_succ()) {
+          resp_result->set_deferred_ok_pkt_len(pkt_len + MYSQL_NET_HEADER_LENGTH);
+        }
 
         if (cur_stmt_has_more_result_) {
           // has more stmt, reset pkt_cnt and record flag
@@ -319,13 +323,70 @@ int ObRespAnalyzer::handle_analyze_mysql_end(const char *pkt_end, ObRespAnalyzeR
         break;
       }
 
+      case AUTH_MORE_DATA_ENDING_TYPE : {
+        // Payload type 0x01 (MYSQL_AUTH_EXTRA_DATA_PACKET_TYPE) is consumed as mysql pkt_type in
+        // ObMysqlPktAnalyzer::stream_analyze_type(); reserve_pkt_body_buf_ holds the rest of the payload:
+        // - 0x03 => fast_auth_success
+        // - 0x04 => full_auth_required
+        // - PEM text (starts with '-') => RSA public key for preceding client 0x02 request
+        if (OB_MYSQL_COM_CHANGE_USER != req_cmd_
+          && OB_MYSQL_COM_LOGIN != req_cmd_
+          && OB_MYSQL_COM_AUTH_SWITCH_RESP != req_cmd_
+          && OB_MYSQL_COM_AUTH_MORE_DATA_RESP != req_cmd_) {
+          ret = OB_ERR_UNEXPECTED;
+          LOG_WDIAG("unexpected req_cmd_ in AUTH_MORE_DATA_ENDING_TYPE", K(req_cmd_), K(ret));
+        } else {
+          const int64_t body_len = reserve_pkt_body_buf_.len();
+          const char *body_ptr = reserve_pkt_body_buf_.ptr();
+          if (OB_UNLIKELY(body_len < 1)) {
+            ret = OB_ERR_UNEXPECTED;
+            LOG_WDIAG("unexpected body_len in AUTH_MORE_DATA_ENDING_TYPE", K(body_len), K(ret));
+          } else {
+            if (static_cast<uint8_t>(body_ptr[0]) == MYSQL_FAST_AUTH_SUCCESS_TYPE) {
+              // 0x01 0x03 (fast auth success): record for transact to defer OK and force full auth.
+              PROXY_CSHA2_LOG(DEBUG, "handle_analyze_mysql_end() fast_auth_success received, expect following OK");
+              if (resp_result != NULL) {
+                resp_result->set_is_fast_auth_succ(true);
+                resp_result->set_deferred_ok_offset(MYSQL_NET_HEADER_LENGTH + pkt_len);
+              }
+            } else if (static_cast<uint8_t>(body_ptr[0]) == MYSQL_FULL_AUTH_REQUIRED_TYPE) {
+              // 0x01 0x04 (full auth required): client sends password.
+              PROXY_CSHA2_LOG(DEBUG, "handle_analyze_mysql_end() auth more data received");
+              if (resp_result != NULL) {
+                // transact使用的标志位
+                resp_result->set_is_auth_more_data_req(true);
+              }
+              // 此次server回包已结束
+              mysql_resp_result_.inc_pkt_cnt(AUTH_MORE_DATA_ENDING_TYPE);
+            } else if (OB_MYSQL_COM_AUTH_MORE_DATA_RESP == req_cmd_) {
+              // Server payload is [0x01][pem]; 0x01 is pkt_type (not in reserve). PEM starts at body_ptr[0].
+              PROXY_CSHA2_LOG(DEBUG, "handle_analyze_mysql_end() rsa public key response received from server");
+              if (resp_result != NULL && body_len > 0) {
+                const char *pem_ptr = body_ptr;
+                const int32_t pem_len = static_cast<int32_t>(body_len);
+                ObString public_key(pem_len, const_cast<char *>(pem_ptr));
+                if (OB_FAIL(resp_result->set_rsa_public_key(public_key))) {
+                  LOG_WDIAG("failed to save rsa public key from auth more data response",
+                            K(ret), K(body_len));
+                } else {
+                  resp_result->set_is_rsa_public_key_resp(true);
+                }
+              }
+              if (OB_SUCC(ret)) {
+                mysql_resp_result_.inc_pkt_cnt(AUTH_MORE_DATA_ENDING_TYPE);
+              }
+            } else {
+              ret = OB_ERR_UNEXPECTED;
+              LOG_WDIAG("unexpected auth more data subtype", K_(req_cmd), K(body_len), K(ret));
+            }
+          }
+        }
+        break;
+      }
+
       case ERROR_PACKET_ENDING_TYPE : {
         if (OB_FAIL(analyze_error_pkt(resp_result))) {
           LOG_WDIAG("fail to analyze_error_pkt", K(ret));
-        } else if (OB_LIKELY(is_ob_mode)) {
-          // resultset protocol, after read the error packet, hold it until the extra ok
-          // packet is read completed.
-          reserved_len_ = pkt_len + MYSQL_NET_HEADER_LENGTH;
         }
         // inc the error packet count
         if (OB_SUCC(ret)) {
@@ -520,7 +581,12 @@ int ObRespAnalyzer::handle_analyze_mysql_pkt_type(const char *buf)
       }
     }
 
-    if (need_copy_ok_pkt() || (params_.is_binlog_req_ && EOF_PACKET_ENDING_TYPE == ending_type_)) {
+    // For AuthMoreData during auth flow, we need to reserve its payload bytes to distinguish:
+    // - caching_sha2_password fast_auth_success (followed by an OK packet, no client response needed)
+    // - full auth negotiation (server expects client to continue auth)
+    if (need_copy_ok_pkt()
+        || (AUTH_MORE_DATA_ENDING_TYPE == ending_type_)
+        || (params_.is_binlog_req_ && EOF_PACKET_ENDING_TYPE == ending_type_)) {
       // if ok packet, just copy OK_PACKET_MAX_COPY_LEN(default is 20) len to improve efficiency
       int64_t mem_len = (OK_PACKET_ENDING_TYPE == ending_type_ ? OK_PKT_MAX_LEN : mysql_analyzer_.get_pkt_len());
       if (OB_FAIL(reserve_pkt_body_buf_.init(mem_len))) {
@@ -1436,7 +1502,8 @@ int ObRespAnalyzer::analyze_response_with_length(event::ObIOBufferReader &reader
 
 int ObRespAnalyzer::analyze_response(
     event::ObIOBufferReader &reader, const bool need_receive_completed,
-    ObAnalyzeHeaderResult &result, ObRespAnalyzeResult &resp_result)
+    ObAnalyzeHeaderResult &result, ObRespAnalyzeResult &resp_result,
+    const bool skip_without_complete_pkt)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!is_inited_)) {
@@ -1444,6 +1511,11 @@ int ObRespAnalyzer::analyze_response(
     LOG_WDIAG("not inited", K(is_inited_), K(ret));
   } else if (OB_FAIL(analyze_one_packet_header(reader, result, resp_result))) {
     LOG_WDIAG("fail to analyze_one_packet_header", K_(analyze_mode), K(result), K(ret));
+  } else if (skip_without_complete_pkt
+             && ANALYZE_DONE != result.status_) {
+    // 仅会话同步类 SERVER_SEND_* 内部包，在包未收齐时跳过analyze all，提升性能
+    LOG_DEBUG("skip analyze all packets before first packet received completed",
+              K(need_receive_completed), K(result), "read_avail", reader.read_avail());
   } else if (need_analyze_all_packets(need_receive_completed, resp_result)) {
     if (OB_FAIL(analyze_all_packets(reader, result, resp_result))) {
       LOG_WDIAG("fail to analyze_all_packets", K(result), K(resp_result), K(ret));
@@ -1593,6 +1665,12 @@ int ObRespAnalyzer::analyze_error_pkt(ObRespAnalyzeResult *resp_result)
       err_pkt.set_content(ptr, static_cast<uint32_t>(len));
       if (OB_FAIL(err_pkt.decode())) {
         LOG_WDIAG("fail to decode error packet", K(ret));
+      } else {
+        PROXY_CSHA2_LOG(DEBUG, "server error packet decoded",
+                 "err_code", err_pkt.get_err_code(),
+                 "sql_state", err_pkt.get_sql_state(),
+                 "err_msg", err_pkt.get_message(),
+                 K_(req_cmd), K_(protocol_mode));
       }
     }
   }
@@ -1702,6 +1780,18 @@ int ObRespAnalyzer::update_ending_type()
   int64_t prepare_ok_pkt_cnt = mysql_resp_result_.get_pkt_cnt(PREPARE_OK_PACKET_ENDING_TYPE);
   ending_type_ = MAX_PACKET_ENDING_TYPE;
   switch (mysql_analyzer_.get_pkt_type()) {
+    case MYSQL_AUTH_EXTRA_DATA_PACKET_TYPE:
+      // 在这些 cmd 下 server 可能返回 0x01 开头：0x03/0x04（fast/full auth）或 0x01+PEM（对 AuthMoreDataResponse 0x02 的公钥应答）
+      // Auth-phase extra data packet (0x01) during login/change_user; sub-type 0x04 = full auth required.
+      // COM_AUTH_MORE_DATA_RESP: e.g. ODP sent 0x02 to request RSA public key; treat as ending so we parse PEM in handle_analyze_mysql_end().
+      if (OB_MYSQL_COM_CHANGE_USER == req_cmd_
+          || OB_MYSQL_COM_LOGIN == req_cmd_
+          || OB_MYSQL_COM_AUTH_SWITCH_RESP == req_cmd_
+          || OB_MYSQL_COM_AUTH_MORE_DATA_RESP == req_cmd_) {
+        ending_type_ = AUTH_MORE_DATA_ENDING_TYPE;
+      }
+      break;
+
     case MYSQL_ERR_PACKET_TYPE:
       ending_type_ = ERROR_PACKET_ENDING_TYPE;
       break;

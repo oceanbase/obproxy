@@ -1449,13 +1449,13 @@ int ObRpcClientNetHandler::refresh_tenant_info_from_multi_level_config()
   int ret = OB_SUCCESS;
   omt::ObProxyMultiLevelConfig *multi_level_config = NULL;
   uint64_t global_version = get_global_proxy_config_table_processor().get_config_version();
-  obutils::ObVipAddr &addr = ct_info_.vip_tenant_.vip_addr_;
+  obutils::ObVipAddr &vip_addr = ct_info_.vip_tenant_.vip_addr_;
   ObString cluster_name = ct_info_.vip_tenant_.cluster_name_;
   ObString tenant_name = ct_info_.vip_tenant_.tenant_name_;
   ObString service_name;
 
   if (OB_FAIL(get_global_proxy_config_table_processor().get_proxy_multi_config(
-      addr, cluster_name, tenant_name, global_version, multi_level_config, service_name))) {
+      vip_addr, cluster_name, tenant_name, global_version, multi_level_config, service_name))) {
     PROXY_CS_LOG(WDIAG, "fail to get proxy multi-level config", K(ret));
   } else if (OB_NOT_NULL(multi_level_config)) {
     ObString new_tenant_name = multi_level_config->proxy_tenant_name_;
@@ -1473,7 +1473,7 @@ int ObRpcClientNetHandler::refresh_tenant_info_from_multi_level_config()
     } else {
       if (!new_tenant_name.empty() && !new_cluster_name.empty()) {
         ct_info_.lookup_success_ = true;
-        session_info_.set_vip_addr_name(addr);
+        session_info_.set_vip_addr_name(vip_addr);
       }
       PROXY_CS_LOG(DEBUG, "refresh tenant info from multi-level config",
                    K(new_tenant_name), K(new_cluster_name));

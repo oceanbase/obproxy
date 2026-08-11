@@ -520,6 +520,7 @@ struct ObSqlParseResult
       batch_insert_values_count_(0),
       text_ps_buf_(NULL), text_ps_buf_len_(0),
       hint_query_timeout_(0),
+      hint_max_execution_time_(0),
       parsed_length_(0),
       ob_parser_result_(NULL),
       proxy_stmt_(NULL),
@@ -749,6 +750,7 @@ struct ObSqlParseResult
   bool is_not_supported() const;
 
   int64_t get_hint_query_timeout() const { return hint_query_timeout_; }
+  int64_t get_hint_max_execution_time() const { return hint_max_execution_time_; }
   common::ObConsistencyLevel get_hint_consistency_level() const { return hint_consistency_level_; }
   int64_t get_parsed_length() const { return parsed_length_; }
   const common::ObString get_table_name() const { return table_name_; }
@@ -812,6 +814,11 @@ struct ObSqlParseResult
                         bool &is_dblink_name, const bool use_lower_case_name = false,
                         const bool save_origin_db_table_name = false);
   int set_real_table_name(const char *table_name, int64_t len);
+
+  int set_real_db_name(const char *db_name, int64_t len);
+  inline int set_real_db_name(const common::ObString& db_name) {
+    return set_real_db_name(db_name.ptr(), db_name.length());
+  }
   int set_col_name(const ObProxyParseString &col_name);
   int set_call_prarms(const ObProxyCallParseInfo &call_parse_info);
   int set_part_name(const ObProxyParseString &part_name);
@@ -875,6 +882,7 @@ struct ObSqlParseResult
       xa_stmt_ = other.xa_stmt_;
       stmt_type_ = other.stmt_type_;
       hint_query_timeout_ = other.hint_query_timeout_;
+      hint_max_execution_time_ = other.hint_max_execution_time_;
       parsed_length_ = other.parsed_length_;
       cmd_sub_type_ = other.cmd_sub_type_;
       cmd_err_type_ = other.cmd_err_type_;
@@ -961,6 +969,7 @@ struct ObSqlParseResult
     is_table_lock_related_ = other.is_table_lock_related_;
     has_hint_route_info_ = other.has_hint_route_info_;
     hint_query_timeout_ = other.hint_query_timeout_;
+    hint_max_execution_time_ = other.hint_max_execution_time_;
     parsed_length_ = other.parsed_length_;
     cmd_sub_type_ = other.cmd_sub_type_;
     cmd_err_type_ = other.cmd_err_type_;
@@ -1047,6 +1056,7 @@ private:
   char* text_ps_buf_;
   int32_t text_ps_buf_len_;
   int64_t hint_query_timeout_;
+  int64_t hint_max_execution_time_;
   int64_t parsed_length_; // next parser can starts with (orig_sql + parsed_length_)
   common::ObString trace_id_;
   common::ObString rpc_id_;
@@ -1290,6 +1300,7 @@ inline void ObSqlParseResult::reset(bool is_reset_origin_db_table /* true */)
   has_trace_log_hint_ = false;
   xa_stmt_ = {};
   hint_query_timeout_ = 0;
+  hint_max_execution_time_ = 0;
   has_connection_id_ = false;
   has_sys_context_ = false;
   is_binlog_related_ = false;

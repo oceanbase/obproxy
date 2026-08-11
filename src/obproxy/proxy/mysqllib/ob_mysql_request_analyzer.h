@@ -49,8 +49,12 @@ enum ObRequestPhase
 {
   REQ_PHASE_HANDSHAKE = 0,
   REQ_PHASE_LOGIN_AUTH_SWITCH_RESP,         // 由 client 发送 handshake response 请求触发的 auth switch
+  REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP,      // 由 client 发送 auth more data response（caching_sha2_password full auth）
   REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP,   // 由 client 发送 com_change_user 请求触发的 auth switch
+  REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA, // 场景: change user -> auth switch -> auth more data
+  REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA,             // 场景: change user -> auth more data（无 auth switch）
   REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP, // 由 SERVER_SEND_RESET_SESSION_AS_FIRST_LOGIN (com_change_user) 触发的 auth switch
+  REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP, // 由 reset session 流程触发的 auth more data response
   REQ_PHASE_FILE_CONTENT,                   // 由 load data local infile 触发的文件内容传输命令
   REQ_PHASE_COMMAND,
   REQ_PHASE_COMMAND_SEND_LONG_DATA,         // 标记 client 正在发送 com_send_long_data 请求, 该请求无 Response
@@ -65,11 +69,23 @@ inline common::ObString get_request_phase_string(const ObRequestPhase phase)
     case REQ_PHASE_LOGIN_AUTH_SWITCH_RESP:
       str = "REQ_PHASE_LOGIN_AUTH_SWITCH_RESP";
       break;
+    case REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP:
+      str = "REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP";
+      break;
     case REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP:
       str = "REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP";
       break;
+    case REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA:
+      str = "REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA";
+      break;
+    case REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA:
+      str = "REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA";
+      break;
     case REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP:
       str = "REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP";
+      break;
+    case REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP:
+      str = "REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP";
       break;
     case REQ_PHASE_FILE_CONTENT:
       str = "REQ_PHASE_FILE_CONTENT";
@@ -96,6 +112,10 @@ struct ObRequestAnalyzeCtx
   inline const bool is_auth_switch_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_RESP
                                                                || request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_SWITCH_RESP
                                                                || request_phase_ == REQ_PHASE_LOGIN_AUTH_SWITCH_RESP; }
+  inline const bool is_auth_more_data_resp_phase() const { return request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_SWITCH_AUTH_MORE_DATA
+                                                                  || request_phase_ == REQ_PHASE_CHANGE_USER_AUTH_MORE_DATA
+                                                                  || request_phase_ == REQ_PHASE_RESET_SESSION_AUTH_MORE_DATA_RESP
+                                                                  || request_phase_ == REQ_PHASE_LOGIN_AUTH_MORE_DATA_RESP; }
   inline const bool is_file_content_req_phase() const {  return request_phase_ == REQ_PHASE_FILE_CONTENT; }
   static int init_auth_request_analyze_ctx(ObRequestAnalyzeCtx &ctx,
                                            event::ObIOBufferReader *buffer_reader,

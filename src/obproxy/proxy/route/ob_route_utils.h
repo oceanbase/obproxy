@@ -40,6 +40,17 @@ class ObRoutineEntry;
 class ObPartitionEntry;
 class ObTableGroupEntry;
 class ObTabletLsEntry;
+
+enum ObComplexTableType
+{
+  CT_DEFAULT = 0,
+  CT_SYNONYM,     //base_table --> synonym
+  CT_VIEW,        //base_table --> view
+  CT_SYNONYM_VIEW,//base_table --> synonym --> view
+  CT_VIEW_SYNONYM,//base_table --> view --> synonym
+  MAX_CT_TYPE
+};
+
 class ObRouteUtils
 {
 public:

@@ -1456,7 +1456,6 @@ int ObBandwidthThrottle::limit(const int64_t bytes, int64_t &sleep_time)
   return ret;
 }
 
-
 //ref: https://www.cnblogs.com/westfly/p/5139645.html
 struct tm *ob_localtime(const time_t *unix_sec, struct tm *result)
 {
@@ -1466,11 +1465,10 @@ struct tm *ob_localtime(const time_t *unix_sec, struct tm *result)
   static const int DAYS_FROM_YEAR = 153;
   static const int MAGIC_UNKONWN_FIRST = 146097;
   static const int MAGIC_UNKONWN_SEC = 1461;
-  // use __timezone from glibc/time/tzset.c, default value is -480 for china
-  const int32_t timezone = static_cast<int32_t>(__daylight ? __timezone - 3600 : __timezone);
-  const int32_t tz_minutes = static_cast<int32_t>(timezone / 60);
+  //use __timezone from glibc/time/tzset.c, default value is -480 for china
+  const int32_t tz_minutes = static_cast<int32_t>(__timezone / 60);
 
-//only support time > 1970/1/1 8:0:0
+  //only support time > 1970/1/1 8:0:0
   if (OB_LIKELY(NULL != result) && OB_LIKELY(NULL != unix_sec) && OB_LIKELY(*unix_sec > 0)) {
     result->tm_sec  = static_cast<int>((*unix_sec) % MINUTES_IN_HOUR);
     int tmp_i       = static_cast<int>((*unix_sec) / MINUTES_IN_HOUR) - tz_minutes;

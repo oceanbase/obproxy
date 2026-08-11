@@ -108,8 +108,8 @@ public:
   };
   
   ObSqlTableEntry()
-    : common::ObSharedRefCount(), state_(BORN), is_table_from_reroute_(false), table_name_(), key_(),
-      buf_len_(0), buf_start_(NULL), create_time_us_(0),
+    : common::ObSharedRefCount(), state_(BORN), is_table_from_reroute_(false), table_name_(),
+      real_database_name_(), key_(), buf_len_(0), buf_start_(NULL), create_time_us_(0),
       last_access_time_us_(0), last_update_time_us_(0) {}
 
   virtual ~ObSqlTableEntry() {}
@@ -122,6 +122,7 @@ public:
   bool is_deleted_state() const { return DELETED == state_; }
   static int alloc_and_init_sql_table_entry(const ObSqlTableEntryKey &key,
                                             const common::ObString &table_name,
+                                            const common::ObString &real_database_name,
                                             ObSqlTableEntry *&entry);
 
   int init(char *buf_start, const int64_t buf_len);
@@ -129,6 +130,7 @@ public:
   bool is_table_from_reroute() const { return is_table_from_reroute_; }
   void set_table_from_reroute() { is_table_from_reroute_ = true; }
   const common::ObString &get_table_name() const { return table_name_; }
+  const common::ObString &get_real_database_name() const { return real_database_name_; }
   const ObSqlTableEntryKey &get_key() const { return key_; }
   bool is_valid() const;
 
@@ -141,7 +143,7 @@ public:
   int64_t get_last_update_time_us() const { return last_update_time_us_; }
 
   TO_STRING_KV(KP(this), K_(state), K_(is_table_from_reroute), K_(key), K_(table_name),
-               K_(create_time_us), K_(last_access_time_us),
+               K_(real_database_name), K_(create_time_us), K_(last_access_time_us),
                K_(last_update_time_us),
                KP_(buf_start), K_(buf_len));
 
@@ -149,12 +151,18 @@ public:
   LINK(ObSqlTableEntry, link_);
 
 private:
-  void copy_key_and_name(const ObSqlTableEntryKey &key, const common::ObString &table_name);
+  void copy_key_and_name(const ObSqlTableEntryKey &key,
+                         const common::ObString &table_name,
+                         const common::ObString &real_database_name);
 
 private:
   ObSqlTableEntryState state_;
   bool is_table_from_reroute_;
   common::ObString table_name_;
+  // it means the database of "table_name_"
+  // and it is possible different from the `database_name_` in key_
+  common::ObString real_database_name_;
+
   ObSqlTableEntryKey key_;
   int64_t buf_len_;
   char *buf_start_;

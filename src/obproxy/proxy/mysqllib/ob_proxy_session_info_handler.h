@@ -147,7 +147,8 @@ public:
   
   static int rewrite_change_user_login_req(ObClientSessionInfo &client_info,
                                            const common::ObString& username,
-                                           const common::ObString& auth_response);
+                                           const common::ObString& auth_response,
+                                           const common::ObString& auth_plugin_name = common::ObString::make_empty_string());
 
   static void assign_database_version(ObClientSessionInfo &client_info,
                                       ObServerSessionInfo &server_info);
@@ -190,6 +191,10 @@ private:
                                          const bool is_auth_request,
                                          bool &need_save);
 
+  static int handle_temporary_table_route_var(ObClientSessionInfo &client_info,
+                                              const common::ObString &value,
+                                              const bool is_auth_request,
+                                              bool &need_save);
   static int handle_partition_hit_var(const common::ObString &value,
                                       const bool is_auth_request,
                                       ObRespAnalyzeResult &resp_result,

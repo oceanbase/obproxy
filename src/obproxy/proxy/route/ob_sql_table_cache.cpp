@@ -72,13 +72,17 @@ void ObSqlTableCache::get_sql_table_entry_from_thread_cache(const ObSqlTableEntr
   }
 }
 
-int ObSqlTableCache::get_table_name(const ObSqlTableEntryKey &key, char *buf, const int64_t len)
+int ObSqlTableCache::get_table_and_db_name(const ObSqlTableEntryKey &key, char *tb_name_buf,
+                                           const int64_t tb_name_buf_len,
+                                           char* db_name_buf, const int64_t db_name_buf_len)
 {
   int ret = OB_SUCCESS;
-  if (OB_ISNULL(buf) || OB_UNLIKELY(len <= 0)
+  if (OB_ISNULL(tb_name_buf) || OB_UNLIKELY(tb_name_buf_len <= 0)
+      || OB_ISNULL(db_name_buf) || OB_UNLIKELY(db_name_buf_len <= 0)
       || OB_UNLIKELY(!key.is_valid())) {
     ret = OB_INVALID_ARGUMENT;
-    LOG_WDIAG("invalid argument", K(buf), K(len), K(key), K(ret));
+    LOG_WDIAG("invalid argument", K(tb_name_buf), K(tb_name_buf_len), K(db_name_buf),
+              K(db_name_buf_len), K(key), K(ret));
   } else {
     ObSqlTableEntry *entry;
     get_sql_table_entry_from_thread_cache(key, entry);
@@ -107,19 +111,25 @@ int ObSqlTableCache::get_table_name(const ObSqlTableEntryKey &key, char *buf, co
       // no need read lock
       entry->renew_last_access_time_us();
       const ObString &table_name = entry->get_table_name();
-      if (OB_UNLIKELY(len <= table_name.length())) {
+      const ObString &real_database_name = entry->get_real_database_name();
+      if (OB_UNLIKELY(tb_name_buf_len <= table_name.length()
+                      || db_name_buf_len <= real_database_name.length())) {
         ret = OB_SIZE_OVERFLOW;
-        LOG_WDIAG("buf len is not enough for table name", K(table_name), K(len), K(ret));
+        LOG_WDIAG("buf len is not enough for table name", K(table_name), K(tb_name_buf_len),
+                  K(real_database_name), K(db_name_buf_len), K(ret));
       } else {
-        MEMCPY(buf, table_name.ptr(), table_name.length());
-        buf[table_name.length()] = '\0';
+        MEMCPY(tb_name_buf, table_name.ptr(), table_name.length());
+        tb_name_buf[table_name.length()] = '\0';
+
+        MEMCPY(db_name_buf, real_database_name.ptr(), real_database_name.length());
+        db_name_buf[real_database_name.length()] = '\0';
       }
     }
     if (NULL != entry) {
       entry->dec_ref();
       entry = NULL;
     }
-  } 
+  }
   return ret;
 }
 
@@ -148,9 +158,10 @@ int ObSqlTableCache::update_sql_table_entry(ObSqlTableEntry &entry)
   {
     DRWLock::RDLockGuard lock(rw_lock);
     if (NULL != (old_entry = lookup_entry(hash, key))) {
-      if (entry.get_table_name() == old_entry->get_table_name()
+      if ((entry.get_table_name() == old_entry->get_table_name()
+           && entry.get_real_database_name() == old_entry->get_real_database_name())
           || !entry.is_table_from_reroute()) {
-        LOG_DEBUG("the same table name or table name from parse result, no need update", K(key), KPC(old_entry), K(entry));
+        LOG_DEBUG("the same db.table name or table name from parse result, no need update", K(key), KPC(old_entry), K(entry));
         need_update_cache = false;
       } 
       old_entry = NULL;
@@ -160,7 +171,8 @@ int ObSqlTableCache::update_sql_table_entry(ObSqlTableEntry &entry)
     DRWLock::WRLockGuard lock(rw_lock);
     // double check
     if (NULL != (old_entry = lookup_entry(hash, key))) {
-      if (entry.get_table_name() == old_entry->get_table_name()
+      if ((entry.get_table_name() == old_entry->get_table_name()
+           && entry.get_real_database_name() == old_entry->get_real_database_name())
           || !entry.is_table_from_reroute()) {
         need_update_cache = false;
         LOG_DEBUG("the same table name or table name from parse result, no need update", K(key), KPC(old_entry), K(entry));
@@ -192,19 +204,21 @@ int ObSqlTableCache::update_sql_table_entry(ObSqlTableEntry &entry)
   return ret;
 }
 
-int ObSqlTableCache::update_table_name(const ObSqlTableEntryKey &key, const ObString &table_name)
+int ObSqlTableCache::update_table_and_db_name(const ObSqlTableEntryKey &key,
+                                              const ObString &table_name,
+                                              const ObString &real_database_name)
 {
   int ret = OB_SUCCESS;
   ObSqlTableEntry *entry = NULL;
-  if (OB_FAIL(ObSqlTableEntry::alloc_and_init_sql_table_entry(key, table_name, entry))) {
-    LOG_WDIAG("fail to alloc sql table entry", K(key), K(table_name), K(ret));
+  if (OB_FAIL(ObSqlTableEntry::alloc_and_init_sql_table_entry(key, table_name, real_database_name, entry))) {
+    LOG_WDIAG("fail to alloc sql table entry", K(key), K(table_name), K(real_database_name), K(ret));
   } else if (FALSE_IT(entry->set_table_from_reroute())) {
     // never come here
   } else if (OB_FAIL(update_sql_table_entry(*entry))) {
-    LOG_WDIAG("fail to update sql table entry", K(key), K(table_name), K(ret));
+    LOG_WDIAG("fail to update sql table entry", K(key), K(table_name), K(real_database_name), K(ret));
   }
   if (OB_SUCC(ret)) {
-    LOG_INFO("succ to update table name", K(key), K(table_name));
+    LOG_INFO("succ to update table name", K(key), K(table_name), K(real_database_name));
   }
   if (NULL != entry) {
     // alloc and add into cache both  add inc_ref

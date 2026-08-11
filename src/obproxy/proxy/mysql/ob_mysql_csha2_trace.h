@@ -1,0 +1,42 @@
+/**
+ * Copyright (c) 2021 OceanBase
+ * OceanBase Database Proxy(ODP) is licensed under Mulan PubL v2.
+ * You can use this software according to the terms and conditions of the Mulan PubL v2.
+ * You may obtain a copy of Mulan PubL v2 at:
+ *          http://license.coscl.org.cn/MulanPubL-2.0
+ * THIS SOFTWARE IS PROVIDED ON AN "AS IS" BASIS, WITHOUT WARRANTIES OF ANY KIND,
+ * EITHER EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO NON-INFRINGEMENT,
+ * MERCHANTABILITY OR FIT FOR A PARTICULAR PURPOSE.
+ * See the Mulan PubL v2 for more details.
+ */
+
+#ifndef OBPROXY_MYSQL_CSHA2_TRACE_H
+#define OBPROXY_MYSQL_CSHA2_TRACE_H
+
+#include "lib/utility/ob_macro_utils.h"
+#include "proxy/mysql/ob_mysql_transact.h"
+
+namespace oceanbase
+{
+namespace obproxy
+{
+namespace proxy
+{
+
+class ObMysqlCsha2Trace
+{
+public:
+  static void trace_cached_login(const char *stage, ObMysqlClientSession *cs);
+  static void trace_server_auth_switch_req(const char *stage, ObMysqlTransact::ObTransState &s);
+  static void trace_first_response_packet(ObMysqlTransact::ObTransState &s);
+
+private:
+  ObMysqlCsha2Trace();
+  DISALLOW_COPY_AND_ASSIGN(ObMysqlCsha2Trace);
+};
+
+} // end of namespace proxy
+} // end of namespace obproxy
+} // end of namespace oceanbase
+
+#endif // OBPROXY_MYSQL_CSHA2_TRACE_H

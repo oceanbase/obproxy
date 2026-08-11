@@ -89,7 +89,12 @@ int Ob20ExtraInfo::decode_feedback_proxy_info(const char * buf, const int64_t le
           LOG_DEBUG("get feedback proxy info", K(sub_type), K(value));
           switch (sub_type) {
             case IS_LOCK_SESSION : {
-              feedback_proxy_info_.is_lock_session_ = (0 == value.compare("1"));
+              feedback_proxy_info_.is_lock_session_ = (0 == value.compare("1")) ? 1 : 0;
+              break;
+            }
+            case IS_TEMPORARY_TABLE_SESSION : {
+              feedback_proxy_info_.is_temporary_table_session_ = (0 == value.compare("1")) ? 1 : 0;
+              break;
             }
             default :
               break; // maybe newer observer, ignore

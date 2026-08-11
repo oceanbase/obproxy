@@ -1428,6 +1428,9 @@ int ObLogger::init_async_log_thread(const int64_t stacksize)
       if (OB_FAIL(async_log_queue_->init(all_item_count))) {
         LOG_STDERR("init async_log_queue_ error. ret=%d\n", ret);
       } else {
+        // init timezone
+        ::tzset();
+
         //init
         struct timeval tv;
         (void)gettimeofday(&tv, NULL);

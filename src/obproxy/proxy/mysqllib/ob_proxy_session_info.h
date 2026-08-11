@@ -57,6 +57,18 @@ class ObDefaultSysVarSet;
 namespace proxy
 {
 const int64_t OB_AUTH_SWITCH_RESP_LEN = 20; // header - 4 bytes, auth data - 20 bytes
+// Inline buffer size for ObVariableLenBuffer; actual payload can be larger (init(read_avail) then allocs heap).
+// 64 covers typical small payloads: plaintext password, 0x02 public-key request; 256-byte RSA cipher uses heap.
+const int64_t OB_AUTH_MORE_DATA_RESP_LEN = 64; // for caching_sha2_password full auth, rsa key exchange, etc.
+// inline buffer size only; used to defer server OK during forced full auth
+const int64_t OB_DEFERRED_LOGIN_OK_LEN = 1024;
+
+enum ObProxyAuthPluginType : int8_t
+{
+  PROXY_AUTH_PLUGIN_UNKNOWN = 0,
+  PROXY_AUTH_PLUGIN_MYSQL_NATIVE_PASSWORD = 1,
+  PROXY_AUTH_PLUGIN_CACHING_SHA2_PASSWORD = 2,
+};
 
 enum ObClientSessionIDVersion : uint32_t {
   CLIENT_SESSION_ID_V1 = 1, // original client session id , depends on 8bit proxy_id, only sync with client
@@ -239,7 +251,8 @@ public:
   // the attached client session must be closed by obproxy when the server session close
   bool is_key_session() const { return is_sharding_txn_session_
                                        || is_lock_session_
-                                       || is_trans_coordinator_session_; }
+                                       || is_trans_coordinator_session_
+                                       || is_temporary_table_session_; }
 
   int64_t get_key_session_code() const {
     int ret = OB_ERR_UNEXPECTED;
@@ -249,12 +262,15 @@ public:
       ret = OB_LOCK_SESSION_CLOSED;
     } else if (is_trans_coordinator_session_) {
       ret = OB_PROXY_COORDINATOR_CLOSED;
+    } else if (is_temporary_table_session_) {
+      ret = OB_TEMPORARY_TABLE_SESSION_CLOSED;
     } else { /* nothing */}
     return ret;
   }
 
   bool is_sharding_txn_session() const { return is_sharding_txn_session_; }
   bool is_lock_session() const { return is_lock_session_; }
+  bool is_temporary_table_session() const { return is_temporary_table_session_; }
   bool is_trans_coordinator_session() const { return is_trans_coordinator_session_; }
   const obmysql::ObMySQLCapabilityFlags get_compatible_capability_flags() const {
     // for compatible, OBServer 1479 handshake return SESSION_TRACK = 0, but still return session state info in ok packet
@@ -292,6 +308,7 @@ public:
     // 重置标记位
     is_sharding_txn_session_ = false;
     is_lock_session_ = false;
+    is_temporary_table_session_ = false;
     is_trans_coordinator_session_ = false;
     is_binlog_session_ = false;
     // 重置 sharding conn
@@ -326,6 +343,7 @@ public:
   int update_sess_info_field_version(int16_t type, int64_t version);
   void set_is_sharding_txn_session(bool is_sharding_txn_session) { is_sharding_txn_session_ = is_sharding_txn_session; }
   void set_is_lock_session(bool is_lock_session) { is_lock_session_ = is_lock_session; }
+  void set_is_temporary_table_session(bool is_temporary_table_session) { is_temporary_table_session_ = is_temporary_table_session; }
   void set_is_trans_coordinator_session(bool is_trans_coordinator_session) { is_trans_coordinator_session_ = is_trans_coordinator_session; }
   void set_is_binlog_session(bool is_binlog_session) { is_binlog_session_ = is_binlog_session; }
   bool is_binlog_session() { return is_binlog_session_; }
@@ -418,8 +436,10 @@ private:
   // - is_sharding_txn_session_ == true
   // - is_lock_session_ == true
   // - is_trans_coordinator_session_ == true
+  // - is_temporary_table_session_ == true
   bool is_sharding_txn_session_;
   bool is_lock_session_;
+  bool is_temporary_table_session_;
   bool is_trans_coordinator_session_;
   bool is_binlog_session_;
   common::DBServerType server_type_;
@@ -518,6 +538,72 @@ inline ObCursorIdPair *ObServerSessionInfo::get_curosr_id_pair(uint32_t client_c
 }
 
 class ObSysVarSetProcessor;
+
+struct ObClientSessionCsha2AuthContext
+{
+public:
+  ObClientSessionCsha2AuthContext()
+      : need_force_auth_more_data_(false),
+        pending_auth_switch_plugin_(proxy::PROXY_AUTH_PLUGIN_UNKNOWN)
+  {
+  }
+
+  void reset()
+  {
+    auth_switch_resp_.reset();
+    auth_more_data_resp_raw_.reset();
+    auth_more_data_resp_for_server_.reset();
+    auth_more_data_resp_rsa_wire_.reset();
+    deferred_login_ok_resp_.reset();
+    change_user_req_.reset();
+    need_force_auth_more_data_ = false;
+    pending_auth_switch_plugin_ = proxy::PROXY_AUTH_PLUGIN_UNKNOWN;
+  }
+
+  int save_change_user_req(const common::ObString &req)
+  {
+    int ret = common::OB_SUCCESS;
+    change_user_req_.reset();
+    if (!req.empty() && OB_FAIL(change_user_req_.init_and_write(req.ptr(), req.length()))) {
+      PROXY_CSHA2_LOG(WDIAG, "fail to save csha2 change user request", K(ret), KP(req.ptr()), "req_len", req.length());
+    }
+    return ret;
+  }
+
+  bool has_deferred_login_ok() const
+  {
+    return !deferred_login_ok_resp_.empty()
+        && deferred_login_ok_resp_.len() >= MYSQL_NET_HEADER_LENGTH;
+  }
+
+  obutils::ObVariableLenBuffer<OB_AUTH_MORE_DATA_RESP_LEN> *get_auth_more_data_resp_to_server()
+  {
+    obutils::ObVariableLenBuffer<OB_AUTH_MORE_DATA_RESP_LEN> *selected_resp = &auth_more_data_resp_raw_;
+    if (auth_more_data_resp_rsa_wire_.len() > MYSQL_NET_HEADER_LENGTH) {
+      selected_resp = &auth_more_data_resp_rsa_wire_;
+    } else if (auth_more_data_resp_for_server_.len() > MYSQL_NET_HEADER_LENGTH) {
+      selected_resp = &auth_more_data_resp_for_server_;
+    }
+    return selected_resp;
+  }
+
+public:
+  obutils::ObVariableLenBuffer<OB_AUTH_SWITCH_RESP_LEN> auth_switch_resp_;
+  // raw：客户端auth more data resp原文包(可能是0x02 或 RSA密文 或 ssl明文密码).
+  obutils::ObVariableLenBuffer<OB_AUTH_MORE_DATA_RESP_LEN> auth_more_data_resp_raw_;
+  // for_server：给server auth准备的明文包(4字节头 + 密码明文)。
+  // 来源：SSL下从raw复制；RSA下解密密文得到密码后重新组包写入
+  obutils::ObVariableLenBuffer<OB_AUTH_MORE_DATA_RESP_LEN> auth_more_data_resp_for_server_;
+  // rsa_wire：仅rsa下，读取for_server里的密码后加密为密文包
+  obutils::ObVariableLenBuffer<OB_AUTH_MORE_DATA_RESP_LEN> auth_more_data_resp_rsa_wire_;
+  // deferred_login_ok_resp_：odp强制给客户端auth more data时保留的server ok包
+  obutils::ObVariableLenBuffer<OB_DEFERRED_LOGIN_OK_LEN> deferred_login_ok_resp_;
+  bool need_force_auth_more_data_;
+  // Pending auth plugin requested by server AuthSwitchRequest (valid until we process the
+  // server response to client's AuthSwitchResponse).
+  int8_t pending_auth_switch_plugin_;
+  obutils::ObVariableLenBuffer<MYSQL_NET_HEADER_LENGTH> change_user_req_;
+};
 
 class ObClientSessionInfo
 {
@@ -814,6 +900,11 @@ public:
   void set_trans_specified_flag() { is_trans_specified_ = true; }
   void clear_trans_specified_flag() { is_trans_specified_ = false; }
   bool is_trans_specified() const { return is_trans_specified_; }
+  void set_temporary_table_route_flag() { is_temporary_table_route_ = true; }
+  void clear_temporary_table_route_flag() { is_temporary_table_route_ = false; }
+  bool is_temporary_table_route() const { return is_temporary_table_route_
+                                                 && (0 == temporary_table_session_num_); }
+  bool is_trans_specified_or_temporary_table() {return is_trans_specified() || is_temporary_table_route(); }
   void set_user_identity(const ObProxyLoginUserType identity) { user_identity_ = identity; }
   ObProxyLoginUserType get_user_identity() const { return user_identity_; }
   bool enable_analyze_internal_cmd() const;
@@ -887,6 +978,7 @@ public:
   int64_t get_collation_connection() const { return cached_variables_.get_collation_connection(); }
   int64_t get_ncharacter_set_connection() const { return cached_variables_.get_ncharacter_set_connection(); }
   bool get_enable_transmission_checksum() const { return cached_variables_.get_enable_transmission_checksum(); }
+  int64_t get_max_execution_time() const { return cached_variables_.get_max_execution_time(); }
 
   ObConsistencyLevel get_consistency_level_prop() const {return consistency_level_prop_;}
   void set_consistency_level_prop(ObConsistencyLevel level) {consistency_level_prop_ = level;}
@@ -1164,13 +1256,16 @@ public:
   ObProxyObProto20Request ob20_request_;  // handle ob v2.0 protocol request info from client
   // [TODO] 以前连接池默认关闭的,这个变量也用不到,不太明确这个变量的意义,怕与新连接池逻辑混淆出问题,所以注释掉
   // bool is_session_pool_client_; // deprecated, used for ObMysqlClient
-  uint32_t lock_session_num_; // used for table lock/lock function route
-
+  int32_t lock_session_num_; // used for table lock/lock function route
+  int32_t temporary_table_session_num_; // used for indicating whether apply new route policy for temporary_table
 private:
   int load_all_cached_variable();
   bool is_inited_;
   // when exec set transaction xxx, it is true until the next transaction commit
   bool is_trans_specified_;
+  // the old route policy, must route to the observer with temporary table
+  // ignore the flag when temporary_table_session_num_ > 0
+  bool is_temporary_table_route_;
   // the default value is false, we will check it when we receive the ok packet of saved login
   bool is_global_vars_changed_;
   //when user set proxy_idc_name, set it true;
@@ -1207,8 +1302,8 @@ private:
   // login packet will be used to next time(include raw packet data and analyzed result)
   proxy::ObMysqlAuthRequest login_req_;
 public:
-  obutils::ObVariableLenBuffer<OB_AUTH_SWITCH_RESP_LEN> auth_switch_resp_;
-  obutils::ObVariableLenBuffer<MYSQL_NET_HEADER_LENGTH> change_user_req_;
+  ObClientSessionCsha2AuthContext &get_csha2_auth_ctx() { return csha2_auth_ctx_; }
+  const ObClientSessionCsha2AuthContext &get_csha2_auth_ctx() const { return csha2_auth_ctx_; }
 private:
   //proxy::ObRpcLoginRequest  rpc_login_req_;
 
@@ -1257,6 +1352,7 @@ private:
   int64_t table_id_;
   int64_t es_id_;
   bool is_allow_use_last_session_;
+  ObClientSessionCsha2AuthContext csha2_auth_ctx_;
 
   common::ObString client_host_;
   char client_host_buf_[common::MAX_IP_ADDR_LENGTH];

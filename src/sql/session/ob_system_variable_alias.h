@@ -68,6 +68,7 @@ namespace sql
   static const char* const OB_SV_LOG_LEVEL = "ob_log_level";
   static const char* const OB_SV_MAX_PARALLEL_DEGREE = "ob_max_parallel_degree";
   static const char* const OB_SV_QUERY_TIMEOUT = "ob_query_timeout";
+  static const char* const OB_SV_MAX_EXECUTION_TIME = "max_execution_time";
   static const char* const OB_SV_READ_CONSISTENCY = "ob_read_consistency";
   static const char* const OB_SV_ENABLE_TRANSFORMATION = "ob_enable_transformation";
   static const char* const OB_SV_TRX_TIMEOUT = "ob_trx_timeout";

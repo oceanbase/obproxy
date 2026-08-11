@@ -49,6 +49,15 @@ static const int64_t MYSQL_SHORT_PACKET_MAX_LENGTH = 2048; //for ok, eof
 //for hello pkt, the first pkt send by observer or mysql
 static const int64_t MYSQL_HELLO_PKT_MAX_LEN = 1024;
 static const int64_t MYSQL_OK_PACKET_TYPE = 0x00;
+// First-byte type for auth-phase extra data packets (caching_sha2_password / sha256_password etc.).
+// Sub-type in payload:
+//   0x02 = request server RSA public key
+//   0x03 = fast_auth_success
+//   0x04 = full_auth_required (server requests password)
+static const int64_t MYSQL_AUTH_EXTRA_DATA_PACKET_TYPE = 0x01;
+static const int64_t MYSQL_AUTH_REQUEST_PUBLIC_KEY_TYPE = 0x02;
+static const int64_t MYSQL_FAST_AUTH_SUCCESS_TYPE = 0x03;
+static const int64_t MYSQL_FULL_AUTH_REQUIRED_TYPE = 0x04;
 static const int64_t MYSQL_ERR_PACKET_TYPE = 0xFF;
 //the EOF packet may appear in places where a Protocol::LengthEncodedInteger
 //may appear. You must check whether the packet length is less than 9 to
@@ -87,6 +96,9 @@ enum ObMysqlRespEndingType
 {
   OK_PACKET_ENDING_TYPE = 0,
   EOF_PACKET_ENDING_TYPE,
+  // Used by server->client "Auth More Data" packet during login/change_user auth flow.
+  // (e.g. caching_sha2_password full authentication negotiation)
+  AUTH_MORE_DATA_ENDING_TYPE,
   ERROR_PACKET_ENDING_TYPE,
   HANDSHAKE_PACKET_ENDING_TYPE, // OB_MYSQL_COM_HANDSHAKE packet
   STRING_EOF_ENDING_TYPE,       // OB_MYSQL_COM_STATISTICS response
