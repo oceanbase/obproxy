@@ -188,7 +188,7 @@ ObMysqlSM::ObMysqlSM()
       retry_acquire_server_session_count_(0), start_acquire_server_session_time_(0),
       skip_plugin_(false), add_detect_server_cnt_(false), proxy_protocol_v2_(),
       server_protocol_(ObProxyProtocol::PROTOCOL_MYSQL), need_update_config_(false),
-      need_depend_last_tenant_(false), single_leader_(NULL), enable_full_link_trace_(false),
+      need_depend_last_tenant_(false), single_leader_(NULL), enable_full_link_trace_(false), handling_internal_request_(false),
       kill_after_cmd_done_err_code_(0),
       multi_level_config_(NULL), target_db_server_(NULL), route_diagnosis_(NULL), protocol_diagnosis_(NULL),
       connection_diagnosis_trace_(NULL), service_name_instance_(NULL)
@@ -8065,9 +8065,13 @@ inline int ObMysqlSM::do_internal_observer_open()
       } else if (OB_UNLIKELY(client_info.is_server_support_session_var_sync() &&
                              client_info.need_reset_user_session_vars(server_info))) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_SESSION_USER_VARS;
-      } else if (OB_UNLIKELY(trans_state_.is_hold_start_trans())) {
+      } else if (OB_UNLIKELY(trans_state_.is_hold_start_trans()
+                             && OB_MYSQL_COM_STMT_CLOSE != cmd
+                             && OB_MYSQL_COM_STMT_RESET != cmd)) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_START_TRANS;
-      } else if (OB_UNLIKELY(trans_state_.is_hold_xa_start())) {
+      } else if (OB_UNLIKELY(trans_state_.is_hold_xa_start()
+                             && OB_MYSQL_COM_STMT_CLOSE != cmd
+                             && OB_MYSQL_COM_STMT_RESET != cmd)) {
         trans_state_.current_.send_action_ = ObMysqlTransact::SERVER_SEND_XA_START;
         LOG_DEBUG("[ObMysqlSM::do_internal_observer_open] set send action SERVER_SEND_XA_START to sync xa start");
       } else if (OB_UNLIKELY(((OB_MYSQL_COM_STMT_EXECUTE == cmd)
@@ -8523,6 +8527,7 @@ void ObMysqlSM::do_internal_request()
   MYSQL_INCREMENT_TRANS_STAT(CLIENT_INTERNAL_REQUESTS);
   ObMIOBuffer *buf = NULL;
   bool send_response_direct = true;
+  handling_internal_request_ = true;
 
   int64_t total_len = client_buffer_reader_->read_avail();
   if (OB_UNLIKELY(OB_MYSQL_COM_STMT_CLOSE == trans_state_.trans_info_.sql_cmd_)

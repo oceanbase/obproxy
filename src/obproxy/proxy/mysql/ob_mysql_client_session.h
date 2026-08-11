@@ -210,7 +210,7 @@ public:
   const ObMysqlSessionManagerSharding &get_session_manager_sharding() const { return session_manager_sharding_; }
   ObMysqlSessionManager &get_session_manager() { return session_manager_; }
   const ObMysqlSessionManager &get_session_manager() const { return session_manager_; }
-  int release_server_session(ObMysqlServerSession *session);
+  int release_server_session(ObMysqlServerSession *session, bool force_close = false);
   const char *get_read_state_str() const;
   const common::ObString &get_vip_tenant_name() { return ct_info_.vip_tenant_.tenant_name_; }
   const common::ObString &get_vip_cluster_name() { return ct_info_.vip_tenant_.cluster_name_; }
@@ -658,6 +658,8 @@ private:
   uint32_t cursor_id_;
   ObClientSessionIDVersion cs_id_version_;
   int64_t connected_time_;
+
+  ObClientSessionIDList *cs_id_list_;
 private:
   int acquire_client_session_id_v1();
   int acquire_client_session_id_v2();
@@ -782,14 +784,18 @@ class ObClientSessionIDList
 {
 
 public:
-  ObClientSessionIDList() { using_cs_id_set_.create(HASH_BUCKET_SIZE, ObModIds::OB_PROXY_CLIENT_SESSION_ID, ObModIds::OB_PROXY_CLIENT_SESSION_ID); }
-  virtual ~ObClientSessionIDList() { using_cs_id_set_.destroy(); }
+  ObClientSessionIDList() : proxy_client_cnt_(0), user_client_cnt_(0) { using_cs_id_set_.create(HASH_BUCKET_SIZE, ObModIds::OB_PROXY_CLIENT_SESSION_ID, ObModIds::OB_PROXY_CLIENT_SESSION_ID); }
+  virtual ~ObClientSessionIDList() { using_cs_id_set_.destroy(); proxy_client_cnt_ = 0; user_client_cnt_ = 0; }
 public:
   static const int64_t HASH_BUCKET_SIZE = 64;
   int record_cs_id(const uint32_t cs_id);
   int is_cs_id_exist(const uint32_t cs_id, bool &is_exist);
   int erase_cs_id(const uint32_t cs_id);
   int64_t size() const { return using_cs_id_set_.size(); }
+
+  int64_t proxy_client_cnt_;
+  int64_t user_client_cnt_;
+
 private:
   hash::ObHashSet<uint32_t, hash::NoPthreadDefendMode> using_cs_id_set_;
   common::DRWLock lock_;

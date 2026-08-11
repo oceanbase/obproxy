@@ -371,7 +371,7 @@ int ObMysqlSessionManager::acquire_server_session_global(
   return ret;
 }
 
-int ObMysqlSessionManager::release_server_session(ObMysqlServerSession *session, bool force_close)
+int ObMysqlSessionManager::release_server_session(ObMysqlServerSession *session, bool force_close /*false*/)
 {
   int ret = OB_SUCCESS;
   if (OB_ISNULL(session)) {

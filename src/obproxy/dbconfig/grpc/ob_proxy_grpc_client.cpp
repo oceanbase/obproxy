@@ -129,14 +129,17 @@ bool ObGrpcClient::sync_write(DiscoveryRequest &request)
     LOG_WDIAG("fail to check grpc state", K(ret));
   } else if (OB_FAIL(fill_request_node(request))) {
     LOG_WDIAG("fail to fill request node info", K(ret));
+  } else if (!is_inited_) {
+    ret = OB_NOT_INIT;
+    LOG_EDIAG("grpc client is not inited", K(ret));
   } else {
     status = stream_->Write(request);
-  }
-  if (!status) {
-    LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
-    finish_rpc();
-    if (OB_FAIL(init_stream())) {
-      LOG_WDIAG("fail to init stream", K(ret));
+    if (!status) {
+      LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
+      finish_rpc();
+      if (OB_FAIL(init_stream())) {
+        LOG_WDIAG("fail to init stream", K(ret));
+      }
     }
   }
   return status;
@@ -325,12 +328,17 @@ bool ObGrpcClient::sync_read(DiscoveryResponse &response)
 {
   bool status = false;
   int ret = OB_SUCCESS;
-  status = stream_->Read(&response);
-  if (!status) {
-    LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
-    finish_rpc();
-    if (OB_FAIL(init_stream())) {
-      LOG_WDIAG("fail to init stream", K(ret));
+  if (!is_inited_) {
+    ret = OB_NOT_INIT;
+    LOG_EDIAG("the grpc client stream is not inited", K(ret));
+  } else {
+    status = stream_->Read(&response);
+    if (!status) {
+      LOG_INFO("the stream has been closed, will rebuild the grpc client stream");
+      finish_rpc();
+      if (OB_FAIL(init_stream())) {
+        LOG_WDIAG("fail to init stream", K(ret));
+      }
     }
   }
   return status;

@@ -730,6 +730,7 @@ enum ObServerRespErrorType
       set_use_comment_target_server(false);
       set_trans_internal_routing(false);
       set_execute_on_prepare_execute(false);
+      set_handling_ps_close_reset(false);
       reroute_info_.reset();
       mysql_errmsg_ = NULL;
       inner_errcode_ = 0;
@@ -902,6 +903,8 @@ enum ObServerRespErrorType
     inline void set_trans_internal_routing(bool val) { request_states_.REQ_STATE_TRANS_INERNAL_ROUTING = val; }
     inline bool is_execute_on_prepare_execute() { return request_states_.REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE; }
     inline void set_execute_on_prepare_execute(bool val) { request_states_.REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE = val; }
+    inline bool is_handling_ps_close_reset() { return request_states_.REQ_STATE_HANDLING_PS_CLOSE_RESET; }
+    inline void set_handling_ps_close_reset(bool val) { request_states_.REQ_STATE_HANDLING_PS_CLOSE_RESET = val; }
     event::ObFixedArenaAllocator<1024> arena_;
 
     ObMysqlTransactMagic magic_;
@@ -934,6 +937,7 @@ enum ObServerRespErrorType
       uint32_t REQ_STATE_DUP_WRITE_IN_TRANS:                1;
       uint32_t REQ_STATE_TRANS_INERNAL_ROUTING:             1; // means current request is/isn`t free routing in trans
       uint32_t REQ_STATE_EXECUTE_ON_PREPARE_EXECUTE:        1; // indicate whether send_long_data/send_piece_data/execute_stmt is executed on prepare_execute_stmt
+      uint32_t REQ_STATE_HANDLING_PS_CLOSE_RESET:           1;
       uint32_t :                                            0;
     } request_states_;
     ObSourceType source_;

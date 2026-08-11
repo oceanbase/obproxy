@@ -150,13 +150,13 @@ int ObMysqlServerSessionList::main_handler(int event, void *data)
           remove_from_list_and_pool(ss);
           // Drop connection on this end.
           //mark has lock to prevent double lock in remove
-           OBPROXY_POOL_LOG(TRACE, "close_session", "server_event", ObMysqlDebugNames::get_event_name(event),
-                                   "server_sessid", ss->server_sessid_, "ss_id", ss->ss_id_,
-                                   "server_addr", ss->server_ip_, "session_state", ss->get_state_str(), "local_addr", ss->local_ip_,
-                                   "dbkey", ss->schema_key_.dbkey_.config_string_, "cur_request_id", ss->get_server_request_id(),
-                                   "cur_compressed_seq", ss->get_cur_compressed_seq(), "ob_capability", ss->get_session_info().get_server_ob_capability(),
-                                   "server_buffer_read", ss->get_reader(),
-                                   "server_vc", ss->get_netvc());
+          OBPROXY_POOL_LOG(TRACE, "close_session", "server_event", ObMysqlDebugNames::get_event_name(event),
+                                  "server_sessid", ss->server_sessid_, "ss_id", ss->ss_id_,
+                                  "server_addr", ss->server_ip_, "session_state", ss->get_state_str(), "local_addr", ss->local_ip_,
+                                  "dbkey", ss->schema_key_.dbkey_.config_string_, "cur_request_id", ss->get_server_request_id(),
+                                  "cur_compressed_seq", ss->get_cur_compressed_seq(), "ob_capability", ss->get_session_info().get_server_ob_capability(),
+                                  "server_buffer_read", ss->get_reader(),
+                                  "server_vc", ss->get_netvc());
           ss->has_global_session_lock_ = true;
           close_and_destroy_session(ss);
         }
@@ -535,6 +535,8 @@ int ObMysqlServerSessionListPool::do_kill_session()
 int  ObMysqlServerSessionListPool::do_kill_session_by_ssid(int64_t ss_id)
 {
   int ret = OB_SUCCESS;
+  UNUSED(ss_id);
+
   LOG_DEBUG("do_kill_session_by_ssid", K(schema_key_), K(ss_id));
   bool found = false;
   DRWLock::WRLockGuard guard(rwlock_);
@@ -559,7 +561,7 @@ int  ObMysqlServerSessionListPool::do_kill_session_by_ssid(int64_t ss_id)
   if (found == false) {
     ret = OB_ERR_UNEXPECTED;
   }
-  UNUSED(ss_id);
+
   return ret;
 }
 
@@ -641,8 +643,6 @@ int32_t ObMysqlServerSessionListPool::get_fail_count(const ObCommonAddr& addr)
   }
   return fail_count;
 }
-
-
 
 ObMysqlGlobalSessionManager::~ObMysqlGlobalSessionManager()
 {
@@ -765,6 +765,7 @@ int ObMysqlGlobalSessionManager::acquire_server_session(
   }
   return ret;
 }
+
 // 将 server session 放回会话连接池
 int ObMysqlGlobalSessionManager::release_server_session(ObMysqlServerSession &to_release)
 {
@@ -783,7 +784,7 @@ int ObMysqlGlobalSessionManager::release_server_session(ObMysqlServerSession &to
     server_session_list_pool->dec_ref();
   }
   if (OB_FAIL(ret)) {
-    LOG_DEBUG("[ObMysqlGlobalSessionManager::release_session] fail to release session to global pool", K(ret), K(to_release));
+    LOG_WDIAG("[ObMysqlGlobalSessionManager::release_session] fail to release session to global pool", K(ret), K(to_release));
     ret = OB_SUCCESS;
   }
   return ret;

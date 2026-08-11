@@ -431,6 +431,11 @@ void ObLDCLocation::reset_item_status()
       item_array_[i].is_used_ = false;
     }
   }
+  if (!is_primary_zone_empty()) {
+    for (int64_t i = 0; i < primary_zone_item_count_; ++i) {
+      primary_zone_item_array_[i].is_used_ = false;
+    }
+  }
   if (!is_weight_zone_empty()) {
     for (int64_t i = 0; i < all_weight_zone_item_count_; ++i) {
       if (OB_NOT_NULL(all_weight_zone_array_->at(i))) {

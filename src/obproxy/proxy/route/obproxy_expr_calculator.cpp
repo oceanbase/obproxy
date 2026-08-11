@@ -859,7 +859,8 @@ int ObRpcExprCalcTool::do_eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                             const ObString &src_name,
                                             int &src_key_idx,
                                             const common::ObIArray<common::ObString> &rowkey_columns_name,
-                                            common::ObIArray<int64_t> &rowkey_index)
+                                            common::ObIArray<int64_t> &rowkey_index,
+                                            int64_t &idx_in_rowid)
 {
   int ret = OB_SUCCESS;
   ObProxyPartKeyInfo &part_info = proxy_part_info.get_part_key_info();
@@ -875,7 +876,6 @@ int ObRpcExprCalcTool::do_eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
       }
     }
   } else if (src_key_idx < 0){
-    int64_t idx_in_rowid = 0;
     // 依赖observer返回的idx_in_rowid
     for (int j = 0; OB_SUCC(ret) && j < part_info.key_num_; ++j) {
       if (part_info.part_keys_[j].level_ == level) {
@@ -910,7 +910,8 @@ int ObRpcExprCalcTool::eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                          ObProxyPartKeyLevel level,
                                          const common::ObIArray<common::ObString> &rowkey_columns_name,
                                          common::ObIArray<int64_t> &rowkey_index,
-                                         common::ObIArray<int64_t> &part_info_index)
+                                         common::ObIArray<int64_t> &part_info_index,
+                                         int64_t &idx_in_rowid)
 {
   int ret = OB_SUCCESS;
   // The table client sends rowkey columns in the Table Query request
@@ -965,7 +966,7 @@ int ObRpcExprCalcTool::eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
         LOG_DEBUG("calc generated key rowkey index", K(rowkey_index), K(part_info_index));
       }
 
-      if (OB_FAIL(do_eval_rowkey_index(proxy_part_info, level, part_col_replace, src_key_idx, rowkey_columns_name, rowkey_index))) {
+      if (OB_FAIL(do_eval_rowkey_index(proxy_part_info, level, part_col_replace, src_key_idx, rowkey_columns_name, rowkey_index, idx_in_rowid))) {
         LOG_WDIAG("can not find rowkey_index", K(part_col_replace), K(rowkey_index));
       }
     }
@@ -1001,10 +1002,12 @@ int ObRpcExprCalcTool::calculate_partition_id_with_rowkey(common::ObArenaAllocat
   ObSEArray<int64_t, 1> part_info_index; // empty array
   obkv::ObTableEntityType entity_type = obkv::ObTableEntityType::ET_DYNAMIC;
   LOG_DEBUG("redis to calculate_partition_id_with_rowkey ", K(rowkey), K(rowkey_value));
+  /* this function only be used for redis request, so idx_in_rowid is not used */
   if (part_info.has_first_part()) {
+    int64_t idx_in_rowid = 0; //
     ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].start_key_;
     if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, column_names,
-                                                      rowkey_index, part_info_index))) {
+                                                      rowkey_index, part_info_index, idx_in_rowid))) {
       LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
     } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index, part_info_index, eval_rowkey, entity_type))) {
       LOG_WDIAG("fail to call eval rowkey for first part", K(rowkey), K(ret));
@@ -1016,9 +1019,10 @@ int ObRpcExprCalcTool::calculate_partition_id_with_rowkey(common::ObArenaAllocat
     }
   }
   if (OB_SUCC(ret) && part_info.has_sub_part()) {
+    int64_t idx_in_rowid = 0;
     ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_TWO - 1].start_key_;
     if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, column_names,
-                                                      rowkey_index, part_info_index))) {
+                                                      rowkey_index, part_info_index, idx_in_rowid))) {
       LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
     } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index, part_info_index, eval_rowkey, entity_type))) {
       LOG_WDIAG("fail to call eval rowkey for first part", K(rowkey), K(ret));

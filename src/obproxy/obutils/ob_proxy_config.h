@@ -161,6 +161,7 @@ public:
   mutable obsys::CRWLock rwlock_;
   // xa transaction
   DEF_BOOL(enable_xa_route, "true", "whether to enable hold XA_START and route to the partition that the next dml will visit",CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_hold_begin, "true", "whether to enable hold begin/start transaction and route to the partition that the next dml will visit",CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   // refresh local config
   DEF_BOOL(refresh_json_config, "false", "force update json info if refresh_json_config is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(refresh_rslist, "false", "when refresh config server, update all rslist if refresh_rslist is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_MEMORY, CFG_MULTI_LEVEL_GLOBAL);

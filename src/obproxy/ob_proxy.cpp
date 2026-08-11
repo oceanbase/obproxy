@@ -940,6 +940,7 @@ int ObProxy::init_config()
 {
   int ret = OB_SUCCESS;
   bool load_local_config_succ = false;
+  bool is_sqlite3_file_exists = get_global_config_processor().is_sqlite3_file_exist();
 
   if (get_global_config_processor().open_sqlite3()) {
     LOG_WDIAG("fail to open sqlite3", K(ret));
@@ -949,9 +950,9 @@ int ObProxy::init_config()
     LOG_WDIAG("fail to init local config", K(ret));
   } else if (OB_FAIL(config_->init_need_reboot_config())) {
     LOG_WDIAG("fail to init need reboot config", K(ret));
-  } else if (OB_FAIL(init_conn_pool(load_local_config_succ))) {
+  } else if (OB_FAIL(init_conn_pool(load_local_config_succ && is_sqlite3_file_exists))) {
     LOG_WDIAG("fail to init connection pool", K(ret));
-  } else if (OB_FAIL(init_remote_config(load_local_config_succ))) {
+  } else if (OB_FAIL(init_remote_config(load_local_config_succ && is_sqlite3_file_exists))) {
     LOG_WDIAG("fail to init remote config", K(ret));
   } else if (OB_FAIL(dump_config())) {
     LOG_WDIAG("fail to dump config", K(ret));

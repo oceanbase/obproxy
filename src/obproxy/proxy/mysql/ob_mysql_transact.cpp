@@ -105,49 +105,56 @@ void ObMysqlTransact::record_trans_state(ObTransState &s, bool is_in_trans)
   ObMysqlClientSession *client_session = s.sm_->get_client_session();
   bool last_request_in_trans = client_session->is_last_request_in_trans();
 
-  // binlog不影响事务状态的记录
-  if (!ObMysqlTransact::is_binlog_request(s)) {
-    if (client_session->is_proxy_enable_trans_internal_routing()) {
-      // set distributed transaction route flag
-      bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
-      bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
+  if (OB_UNLIKELY(s.sm_->handling_internal_request_)) {
+    LOG_DEBUG("inernal request, ignore trans state");
+    s.sm_->handling_internal_request_ = false;
+  } else if (OB_UNLIKELY(ObMysqlTransact::is_binlog_request(s))) {
+    // binlog不影响事务状态的记录
+    LOG_DEBUG("binlog request, ignore trans state");
+  } else if (OB_UNLIKELY(!client_session->is_proxy_enable_trans_internal_routing())) {
+    client_session->set_last_request_in_trans(is_in_trans);
+    LOG_DEBUG("not support trans internal routing");
+  } else {
+    // true == client_session->is_proxy_enable_trans_internal_routing()
+    // set distributed transaction route flag
+    bool server_trans_internal_routing = s.trans_info_.resp_result_.is_server_trans_internal_routing();
+    bool is_trans_internal_routing = ObMysqlTransact::handle_set_trans_internal_routing(s, server_trans_internal_routing);
 
-      if (!last_request_in_trans && is_in_trans) {
-        client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
-        if (OB_NOT_NULL(client_session->get_last_server_session())) {
-          client_session->get_last_server_session()->get_session_info().set_is_trans_coordinator_session(true);
-        }
-        LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
-        // 开启过分布式事务路由就不允许使用会话连接池
-        client_session->disable_conn_pool();
-        SESSION_POOL_LOG(TRACE, "disable server session pool because internal routing transaction started",
-                                "cs_id", client_session->get_cs_id(),
-                                "coordinator", s.server_info_.addr_);
-        // to improve perfermence only log in debug level
-        s.trace_log_.set_need_print(is_trans_internal_routing);
-        s.trace_log_.log_it("[trans_start]",
-                            "proxy_sessid", static_cast<int64_t>(client_session->get_proxy_sessid()),
-                            "coordinator", s.server_info_.addr_,
-                            "sql_cmd", static_cast<int64_t>(s.trans_info_.sql_cmd_),
-                            "stmt_type", static_cast<int64_t>(s.trans_info_.client_request_.get_parse_result().get_stmt_type()));
-      } else if (last_request_in_trans && !is_in_trans) {
-        // close txn, refresh enable_transaction_internal_routing_
-        LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
-        client_session->get_trans_coordinator_ss_addr().reset();
-        if (OB_NOT_NULL(client_session->get_last_server_session())) {
-          client_session->get_last_server_session()->get_session_info().set_is_trans_coordinator_session(false);
-        }
+    if (!last_request_in_trans && is_in_trans) {
+      client_session->set_trans_coordinator_ss_addr(s.server_info_.addr_.sa_);
+      if (OB_NOT_NULL(client_session->get_last_server_session())) {
+        client_session->get_last_server_session()->get_session_info().set_is_trans_coordinator_session(true);
       }
-
-      client_session->set_trans_internal_routing(is_trans_internal_routing);
-      LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing,
-                  "in trans internal routing", client_session->is_in_trans_internal_routing(),
-                  "is_in_trans", is_in_trans,
-                  "last_request_in_trans", last_request_in_trans);
+      LOG_DEBUG("start internal routing transaction", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
+      // 开启过分布式事务路由就不允许使用会话连接池
+      client_session->disable_conn_pool();
+      SESSION_POOL_LOG(TRACE, "disable server session pool because internal routing transaction started",
+                              "cs_id", client_session->get_cs_id(),
+                              "coordinator", s.server_info_.addr_);
+      // to improve perfermence only log in debug level
+      s.trace_log_.set_need_print(is_trans_internal_routing);
+      s.trace_log_.log_it("[trans_start]",
+                          "proxy_sessid", static_cast<int64_t>(client_session->get_proxy_sessid()),
+                          "coordinator", s.server_info_.addr_,
+                          "sql_cmd", static_cast<int64_t>(s.trans_info_.sql_cmd_),
+                          "stmt_type", static_cast<int64_t>(s.trans_info_.client_request_.get_parse_result().get_stmt_type()));
+    } else if (last_request_in_trans && !is_in_trans) {
+      // close txn, refresh enable_transaction_internal_routing_
+      LOG_DEBUG("internal routing transaction close", "coordinator addr", client_session->get_trans_coordinator_ss_addr());
+      client_session->get_trans_coordinator_ss_addr().reset();
+      if (OB_NOT_NULL(client_session->get_last_server_session())) {
+        client_session->get_last_server_session()->get_session_info().set_is_trans_coordinator_session(false);
+      }
     }
+
+    client_session->set_trans_internal_routing(is_trans_internal_routing);
+    LOG_DEBUG("set transaction internal routing flag", "internal routing state", is_trans_internal_routing,
+                "in trans internal routing", client_session->is_in_trans_internal_routing(),
+                "is_in_trans", is_in_trans,
+                "last_request_in_trans", last_request_in_trans);
+
     client_session->set_last_request_in_trans(is_in_trans);
   }
-
 }
 
 void ObMysqlTransact::handle_error_jump(ObTransState &s)
@@ -804,8 +811,12 @@ void ObMysqlTransact::handle_ps_close_reset(ObTransState &s)
     }
   } else {
     /* 第一次进来, 记录下之前的事务状态 */
-    client_session->set_in_trans_for_close_request(is_in_trans(s));
-
+    bool is_last_sql_in_trans = is_in_trans(s);
+    if (s.is_hold_start_trans() || s.is_hold_xa_start()) {
+      is_last_sql_in_trans = true;
+    }
+    client_session->set_in_trans_for_close_request(is_last_sql_in_trans);
+    s.set_handling_ps_close_reset(true);
     remove_addrs.reuse();
     tenant_name_array.reuse();
     cluster_name_array.reuse();
@@ -946,10 +957,12 @@ void ObMysqlTransact::handle_ps_close_reset(ObTransState &s)
       if (OB_SUCC(ret)) {
         if (!client_session->is_in_trans_for_close_request()) {
           s.sm_->trans_state_.current_.state_ = ObMysqlTransact::TRANSACTION_COMPLETE;
+          LOG_DEBUG("set not in trans for ps_close_reset");
         } else {
           s.sm_->trans_state_.current_.state_ = ObMysqlTransact::CMD_COMPLETE;
+          LOG_DEBUG("set in trans for ps_close_reset");
         }
-
+        s.set_handling_ps_close_reset(false);
         /* 如果后端没执行过或者全部 close 了, 转内部请求, 把 client session 上的相关缓存清掉 */
         TRANSACT_RETURN(SM_ACTION_INTERNAL_REQUEST, handle_internal_request);
       } else {
@@ -1836,6 +1849,7 @@ inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
   int64_t cached_request_packet_len = s.trans_info_.client_request_.get_req_pkt().length();
   bool is_need_reroute = false;
   bool is_weak_read = (WEAK == s.sm_->trans_state_.get_trans_consistency_level(s.sm_->get_client_session()->get_session_info()));
+  bool is_in_trans = ObMysqlTransact::is_in_trans(s);
   ObProxyMultiLevelConfig *mc = s.sm_->multi_level_config_;
   // if enable_reroute, strong read req allowed to reroute
   // if enable_weak_reroute, weak read allowed to reroute
@@ -1843,9 +1857,8 @@ inline bool ObMysqlTransact::is_need_reroute(ObMysqlTransact::ObTransState &s)
                       || (is_weak_read && OB_NOT_NULL(mc) && mc->enable_weak_reroute_))
                     && (OB_ISNULL(mc) || mc->proxy_primary_zone_name_.is_empty())
                     && !s.is_rerouted() && s.is_need_pl_lookup()
-                    && (s.is_trans_first_req()
-                        || (ObMysqlTransact::is_in_trans(s)
-                            && s.sm_->client_session_->is_trans_internal_routing()))
+                    && ((!is_in_trans && s.is_trans_first_req())
+                         || (is_in_trans && s.sm_->client_session_->is_trans_internal_routing()))
                     && !is_large_request(s)
                     && total_request_packet_len == cached_request_packet_len
                     && !s.is_use_comment_target_server()
@@ -6039,10 +6052,13 @@ inline void ObMysqlTransact::handle_first_response_packet(ObTransState &s) {
       && s.current_.send_action_ != SERVER_SEND_RESET_SESSION_AS_SAVED_LOGIN
       && !is_user_request) {
     ObMySQLCmd cmd = s.trans_info_.client_request_.get_packet_meta().cmd_;
-    if (obmysql::OB_MYSQL_COM_STMT_CLOSE != cmd
-        && obmysql::OB_MYSQL_COM_STMT_RESET != cmd) {
+    if (OB_UNLIKELY(s.current_.send_action_ != SERVER_SEND_START_TRANS
+                    && s.current_.send_action_ != SERVER_SEND_XA_START
+                    && s.is_handling_ps_close_reset())) {
       // 对session变量同步下，不记录ps close/reset的事务状态
       //  因为observer可能返回的不正确，导致事务状态不正确，导致后续处理错误记录协调者
+      LOG_DEBUG("skip record trans state for stmt_close and stmt_reset", K_(s.current_.send_action), K(cmd));
+    } else {
       // internal response, get trnasaction state from resp immediately
       bool is_resp_in_trans = (!resp.is_trans_completed());
       record_trans_state(s, is_resp_in_trans);
@@ -9011,6 +9027,7 @@ bool ObMysqlTransact::is_internal_request(ObTransState &s)
           || (s.is_trans_first_req()
               && !s.is_hold_xa_start()
               && s.trans_info_.client_request_.get_parse_result().is_single_start_trans()
+              && get_global_proxy_config().enable_hold_begin
               && !s.trans_info_.client_request_.is_large_request())
           || (s.is_trans_first_req()
               && !s.is_hold_start_trans()

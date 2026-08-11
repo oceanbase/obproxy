@@ -898,6 +898,28 @@ int ObConfigProcessor::open_sqlite3()
   return ret;
 }
 
+bool ObConfigProcessor::is_sqlite3_file_exist()
+{
+  bool is_exist = false;
+  const char *dir = NULL;
+  int ret = OB_SUCCESS;
+  if (OB_ISNULL(dir = get_global_layout().get_etc_dir())) {
+    LOG_WDIAG("get etc dir failed");
+  } else {
+    char *path = NULL;
+    ObFixedArenaAllocator<ObLayout::MAX_PATH_LENGTH> allocator;
+    if (OB_FAIL(ObLayout::merge_file_path(dir, sqlite3_db_name, allocator, path))) {
+      LOG_WDIAG("fail to merge file path", K(sqlite3_db_name));
+    } else if (OB_ISNULL(path)) {
+      LOG_WDIAG("path is null");
+    } else {
+      is_exist = (0 == access(path, F_OK));
+      LOG_INFO("check sqlite3 file exist", "path", path, "exist", is_exist);
+    }
+  }
+  return is_exist;
+}
+
 } // end of obutils
 } // end of obproxy
 } // end of oceanbase

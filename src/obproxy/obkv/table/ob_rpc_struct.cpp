@@ -473,12 +473,13 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
     ObSEArray<int64_t, 1> partition_ids;
     ObSEArray<int64_t, 1> rowkey_index; // empty array
     ObSEArray<int64_t, 1> part_info_index; // empty array
+    int64_t idx_in_rowid = 0; // only be used by heap table if rowkey_column_names is null
     if (part_info.has_first_part()) {
       ObRowkey &eval_rowkey = resolve_result.ranges_[PARTITION_LEVEL_ONE - 1].start_key_;
       if (rowkey.is_min_row()) {
         eval_rowkey.set_min_row();
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, column_names, rowkey_index,
-                                                       part_info_index))) {
+                                                       part_info_index, idx_in_rowid))) {
         LOG_WDIAG("fail to call eval rowkey index for first part", K(part_info), K(ret));
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index,
                                                                part_info_index, eval_rowkey, get_entity_type()))) {
@@ -496,7 +497,7 @@ int ObRpcRequest::calc_partition_id_by_sub_rowkey(ObArenaAllocator &allocator,
       if (rowkey.is_min_row()) {
         eval_rowkey.set_min_row();
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, column_names, rowkey_index,
-                                                       part_info_index))) {
+                                                       part_info_index, idx_in_rowid))) {
         LOG_WDIAG("fail to call eval rowkey index for sub part", K(part_info), K(ret));
       } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, rowkey, allocator, rowkey_index,
                                                                part_info_index, eval_rowkey, get_entity_type()))) {
@@ -546,6 +547,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
   } else {
     RANGE_VALUE &scan_ranges = get_sub_req_range_arr()->at(sub_req_index);
     ROWKEY_COLUMN &rowkey_columns = get_sub_req_columns_arr()->at(sub_req_index);
+    int64_t idx_in_rowid = 0; // only be used by heap table if rowkey_column_names is null
     for (int64_t i = 0; i < scan_ranges.count(); ++i) {
       const ObNewRange &range = scan_ranges.at(i);
       const ObRowkey &start_rowkey = range.start_key_;
@@ -586,7 +588,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
             LOG_WDIAG("rowkey_columns size is not equal to rowkey size", K(rowkey_columns_count), "rowkey size",
                       start_rowkey.get_obj_cnt(), K(ret));
           } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_ONE, rowkey_columns,
-                                                                  rowkey_index, part_info_index))) {
+                                                                  rowkey_index, part_info_index, idx_in_rowid))) {
             LOG_WDIAG("fail to call eval_rowkey_index", K(rowkey_columns), K(part_columns), K(rowkey_index), K(ret));
           } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, start_rowkey, allocator, rowkey_index,
                                                                    part_info_index, start_eval_rowkey, get_entity_type()))) {
@@ -610,7 +612,7 @@ int ObRpcRequest::calc_partition_id_by_sub_range(common::ObArenaAllocator &alloc
             LOG_WDIAG("rowkey_columns size is not equal to rowkey size", K(rowkey_columns_count), "rowkey size",
                       start_rowkey.get_obj_cnt(), K(ret));
           } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_index(part_info, PART_KEY_LEVEL_TWO, rowkey_columns,
-                                                                  rowkey_index, part_info_index))) {
+                                                                  rowkey_index, part_info_index, idx_in_rowid))) {
             LOG_WDIAG("fail to call eval_rowkey_index", K(rowkey_columns), K(part_columns), K(rowkey_index), K(ret));
           } else if (OB_FAIL(ObRpcExprCalcTool::eval_rowkey_values(part_info, start_rowkey, allocator, rowkey_index,
                                                                    part_info_index, start_eval_rowkey, get_entity_type()))) {

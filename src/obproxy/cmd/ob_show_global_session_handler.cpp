@@ -150,6 +150,8 @@ int ObShowGlobalSessionHandler::dump_session_info_body(const common::ObString& d
   } else {
     ObMysqlServerSessionListPool* session_list_pool = get_global_session_manager().get_server_session_list_pool(dbkey);
     if (OB_ISNULL(session_list_pool)) {
+      ret = OB_INVALID_ARGUMENT;
+      WDIAG_ICMD("invalid: session_list_pool is null", K(dbkey), K(ret));
     } else {
       DRWLock::RDLockGuard  guard(session_list_pool->rwlock_);
       ObMysqlServerSessionListPool::IPHashTable& session_pool = session_list_pool->server_session_list_pool_;

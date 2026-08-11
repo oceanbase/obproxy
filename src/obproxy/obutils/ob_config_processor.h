@@ -125,6 +125,7 @@ public:
   int close_sqlite3();
   int open_sqlite3();
   int check_and_create_table();
+  bool is_sqlite3_file_exist();
   bool init_need_commit_;
 
 private:

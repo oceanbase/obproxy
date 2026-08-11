@@ -13,6 +13,10 @@
 #define USING_LOG_PREFIX LIB
 #include "lib/oblog/ob_log.h"
 
+#ifndef MPRINT
+#define MPRINT(format, ...) fprintf(stderr, format "\n", ##__VA_ARGS__)
+#endif
+
 #include <string.h>
 #include <sys/uio.h>
 #include <dirent.h>
@@ -926,7 +930,11 @@ void ObLogger::rotate_log(const char *filename,
                  tm.tm_hour, tm.tm_min, tm.tm_sec);
       }
 
-      ret = rename(filename, old_log_file); //If failed, TODO
+      ret = rename(filename, old_log_file);
+      if (ret != 0) {
+        MPRINT("WARN: Failed to rename log file from %s to %s, errno=%d(%s). Log rotation may have failed.",
+               filename, old_log_file, errno, strerror(errno));
+      }
       int tmp_fd = open(filename, O_WRONLY | O_CREAT | O_APPEND, ObLogFileStruct::LOG_FILE_MODE);
       if (redirect_flag) {
         dup2(tmp_fd, STDERR_FILENO);
@@ -947,7 +955,11 @@ void ObLogger::rotate_log(const char *filename,
       }
 
       if (open_wf_flag && enable_wf_flag) {
-        ret = rename(wf_filename, old_wf_log_file); //If failed, TODO
+        ret = rename(wf_filename, old_wf_log_file);
+        if (ret != 0) {
+          MPRINT("WARN: Failed to rename wf log file from %s to %s, errno=%d(%s). Log rotation may have failed.",
+                 wf_filename, old_wf_log_file, errno, strerror(errno));
+        }
         tmp_fd = open(wf_filename, O_WRONLY | O_CREAT | O_APPEND, ObLogFileStruct::LOG_FILE_MODE);
         if (wf_fd > STDERR_FILENO) {
           dup2(tmp_fd, wf_fd);

@@ -528,6 +528,7 @@ private:
 public:
   ObSingleLeader *single_leader_;
   bool enable_full_link_trace_;
+  bool handling_internal_request_;
   int64_t kill_after_cmd_done_err_code_;
   // 多级别配置项：因为配置项最细粒度可以在VIP级别生效，所以需要每个SM可能都不同
   // 非配置相关的不要放在这里

@@ -4520,11 +4520,12 @@ int ObRpcRequestSM::state_rpc_analyze_response(int event, void *data)
       LOG_DEBUG("[RPC_REQUEST] analyze rpc_req response done", K(ret), KPC_(rpc_req), K_(rpc_trace_id));
 
       if (obkv_info.need_add_index_entry_into_cache_ && OB_NOT_NULL(obkv_info.index_entry_)) {
+        obkv_info.index_entry_->inc_ref();
         if (OB_FAIL(get_global_index_cache().add_index_entry(*obkv_info.index_entry_, false))) {
+          obkv_info.index_entry_->dec_ref();
           LOG_WDIAG("fail to add index entry, not retrun error", KPC_(obkv_info.index_entry), K(ret), K_(rpc_trace_id));
           ret = OB_SUCCESS;
         } else {
-          obkv_info.index_entry_->inc_ref();
           LOG_DEBUG("succ to add index entry into index cache", KPC_(obkv_info.index_entry), K_(rpc_trace_id));
         }
       }

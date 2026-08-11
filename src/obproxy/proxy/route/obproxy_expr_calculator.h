@@ -181,12 +181,14 @@ public:
                                   const ObString &src_name,
                                   int &src_key_idx,
                                   const common::ObIArray<common::ObString> &rowkey_columns_name,
-                                  common::ObIArray<int64_t> &rowkey_index);
+                                  common::ObIArray<int64_t> &rowkey_index,
+                                  int64_t &idx_in_rowid);
   static int eval_rowkey_index(ObProxyPartInfo &proxy_part_info,
                                ObProxyPartKeyLevel level,
                                const common::ObIArray<common::ObString> &rowkey_columns_name,
                                common::ObIArray<int64_t> &rowkey_index,
-                               common::ObIArray<int64_t> &part_info_index);
+                               common::ObIArray<int64_t> &part_info_index,
+                               int64_t &idx_in_rowid);
 
       // eval part key from rowkey, stored in eval_rowkey
   static int eval_rowkey_values(ObProxyPartInfo &proxy_part_info,

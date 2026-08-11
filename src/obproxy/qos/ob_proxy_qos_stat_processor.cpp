@@ -82,7 +82,9 @@ int ObProxyQosStatProcessor::store_stat_and_next(ObProxyQosStatNodeMiddle *paren
     }
   }
 
-  parent_node->dec_ref();
+  if (reinterpret_cast<ObProxyQosStatNode*>(parent_node) != child_node) {
+    parent_node->dec_ref();
+  }
 
   return ret;
 }
@@ -121,6 +123,11 @@ int ObProxyQosStatProcessor::store_stat(const ObString &cluster_name, const ObSt
 
   if (OB_SUCC(ret)) {
     LOG_DEBUG("succ to store stat", K(cluster_name), K(tenant_name), K(database_name), K(user_name), K(cost));
+  }
+
+  if (OB_NOT_NULL(node)) {
+    node->dec_ref();
+    node = NULL;
   }
 
   return ret;
