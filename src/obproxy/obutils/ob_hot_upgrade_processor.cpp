@@ -389,8 +389,7 @@ int ObHotUpgradeProcessor::init(ObMysqlProxy &mysql_proxy)
     LOG_WDIAG("it has already inited", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(info_.local_addr_))) {
     LOG_WDIAG("fail to get proxy local addr", K(info_.local_addr_), K(ret));
-  } else if (OB_UNLIKELY(!info_.local_addr_.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
-    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(info_.local_addr_.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     LOG_WDIAG("fail to covert ip to string", K(info_.local_addr_), K(ret));
   } else if (OB_ISNULL(mutex = new_proxy_mutex())) {
     ret = OB_ALLOCATE_MEMORY_FAILED;

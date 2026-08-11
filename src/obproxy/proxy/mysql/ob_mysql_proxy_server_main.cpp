@@ -261,12 +261,12 @@ int ObMysqlProxyServerMain::start_processor_threads(const ObMysqlConfigParams &c
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (get_global_proxy_config().enable_sharding
       && OB_FAIL(g_shard_scan_all_task_processor.start(shard_scan_threads > 0 ? shard_scan_threads
-                                                       : g_event_processor.thread_count_for_type_[ET_NET] / 2,
+                                                       : g_event_processor.thread_count_for_type_[ET_NET] + 1 / 2,
                                                        stack_size))) {
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (get_global_proxy_config().enable_obproxy_rpc_service
       && OB_FAIL(g_obkv_task_processor.start(obkv_task_threads > 0 ? obkv_task_threads
-                                                       : g_event_processor.thread_count_for_type_[ET_NET] / 2,
+                                                       : g_event_processor.thread_count_for_type_[ET_NET] + 1 / 2,
                                                        stack_size))) {
     LOG_EDIAG("fail to start grpc parent task processor", K(stack_size), K(ret));
   } else if (OB_FAIL(g_session_pool_event_processor.start(session_pool_threads, stack_size))) {

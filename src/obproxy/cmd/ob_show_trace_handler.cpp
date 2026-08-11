@@ -115,9 +115,11 @@ int ObShowTraceHandler::dump_trace(const ObMysqlClientSession &cs)
 int ObShowTraceHandler::dump_trace_item(const ObTraceRecord &item)
 {
   int ret = OB_SUCCESS;
-  char ip_buff[INET6_ADDRSTRLEN];
-  if (OB_UNLIKELY(!item.addr_.ip_to_string(ip_buff, sizeof(ip_buff)))) {
-    ip_buff[0] = '\0';
+  char ip_buff[INET6_ADDRSTRLEN] = {0};
+
+  if (OB_FAIL(item.addr_.ip_to_string(ip_buff, sizeof(ip_buff)))) {
+    LOG_WDIAG("fail to ip_to_string", "addr", item.addr_, K(ret));
+    ret = OB_SUCCESS;
   }
 
   ObNewRow row;

@@ -136,8 +136,9 @@ rightbracket  \)
 WHERE  { return WHERE; }
 AS     { return AS; }
 VALUES { return VALUES; }
-VALUE { return VALUES; }
+VALUE  { return VALUES; }
 SET    { return SET; }
+ORDER  { return END_WHERE; }
 FOR    { return END_WHERE; }
 LIMIT  { return END_WHERE; }
 GROUP  { return END_WHERE; }

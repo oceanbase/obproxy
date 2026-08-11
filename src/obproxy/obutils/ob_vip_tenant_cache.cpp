@@ -119,6 +119,66 @@ void ObVipAddr::set(const ObString vpc_info)
   }
 }
 
+int ObVipAddr::ip_to_string(char *buffer, const int64_t size) const
+{
+  int ret = OB_SUCCESS;
+  int64_t ret_len = 0;
+  if (OB_FAIL(ip_to_string(buffer, size, ret_len))) {
+    LOG_WDIAG("fail to ip_to_string", K(size), K(ret));
+  }
+
+  UNUSED(ret_len);
+  return ret;
+}
+
+int ObVipAddr::ip_to_string(char *buffer, const int64_t size, int64_t &ret_len) const
+{
+  int ret = OB_SUCCESS;
+  ret_len = 0;
+  if (OB_ISNULL(buffer) || OB_UNLIKELY(size <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid buffer or size", KP(buffer), K(size), K(ret));
+  } else {
+    switch (vip_addr_type_) {
+      case obutils::ObVipAddr::VTOA_VIP_ADDR:
+        if (OB_FAIL(addr_.ip_to_string(buffer, size, ret_len))) {
+          LOG_WDIAG("fail to addr ip_to_string", K_(addr), K(size), K(ret));
+        }
+        break;
+      case obutils::ObVipAddr::VPC_VIP_ADDR:
+        if (OB_LIKELY(vpc_info_.len() > 0)) {
+          const int64_t copy_len = std::min(size - 1, static_cast<int64_t>(vpc_info_.len()));
+          MEMCPY(buffer, vpc_info_.ptr(), copy_len);
+          buffer[copy_len] = '\0';
+          ret_len = copy_len;
+          if (OB_UNLIKELY(copy_len < vpc_info_.len())) {
+            LOG_WDIAG("vpc_info is truncated", K(copy_len), "vpc_info_len", vpc_info_.len(), K(size));
+          }
+        } else {
+          ret_len = snprintf(buffer, size, "%s", "empty VPC_VIP_ADDR");
+          LOG_WDIAG("empty vpc_info for VPC_VIP_ADDR", KPC(this), K(ret));
+        }
+        break;
+      case obutils::ObVipAddr::INVALID_VIP_ADDR:
+      default:
+        ret_len = snprintf(buffer, size, "%s", "INVALID_VIP_ADDR");
+        LOG_WDIAG("invalid vip_addr_type", K_(vip_addr_type), K(ret));
+        break;
+    }
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_UNLIKELY(ret_len < 0)) {
+      ret = OB_ERR_SYS;
+      LOG_WDIAG("fail to format ip", K(ret), K(ret_len));
+    } else if (OB_UNLIKELY(ret_len >= size)) {
+      ret_len = size - 1;
+    }
+  }
+
+  return ret;
+}
+
 int ObVipTenant::set_tenant_cluster(const ObString &tenant_name, const ObString &cluster_name)
 {
   int ret = OB_SUCCESS;

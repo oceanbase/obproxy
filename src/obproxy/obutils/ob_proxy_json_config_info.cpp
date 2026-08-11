@@ -2178,8 +2178,7 @@ int ObProxyJsonUtils::rslist_to_json(const LocationList &addr_list, const char *
         }
       }
       if (OB_FAIL(ret)) {
-      } else if (!addr_list.at(i).server_.ip_to_string(ip_buf, sizeof(ip_buf))) {
-        ret = OB_ERR_UNEXPECTED;
+      } else if (OB_FAIL(addr_list.at(i).server_.ip_to_string(ip_buf, sizeof(ip_buf)))) {
         LOG_WDIAG("convert ip to string failed", K(ret), "server", addr_list.at(i).server_);
       } else if (OB_FAIL(databuff_printf(buf, buf_len, pos,
           "{\"%s\":\"%s:%d\",\"%s\":\"%s\",\"%s\":%d}",

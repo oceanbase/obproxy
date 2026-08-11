@@ -520,33 +520,45 @@ int convert_escape_string(const common::ObString &input_str,
   return ret;
 }
 
-int debug_mem_content(const char* src, int64_t len)
+int debug_mem_content(const char *src, const int64_t len)
 {
   int ret = OB_SUCCESS;
-  char * buf = NULL;
-  int pos = 0;
-  int print_len = 8192;
-
-  if (OB_ISNULL(buf = static_cast<char *>(common::ob_malloc(print_len)))) {
+  static const int64_t MAX_DEBUG_MEM_CONTENT_LEN = 8192;
+  char *buf = NULL;
+  if (OB_ISNULL(src) || OB_UNLIKELY(len < 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid argument", KP(src), K(len), K(ret));
+  } else if (OB_ISNULL(buf = static_cast<char *>(common::ob_malloc(MAX_DEBUG_MEM_CONTENT_LEN)))) {
     ret = OB_ALLOCATE_MEMORY_FAILED;
-    LOG_WARN("fail to alloc mem", K(ret));
+    LOG_WDIAG("fail to alloc mem", K(MAX_DEBUG_MEM_CONTENT_LEN), K(ret));
   } else {
-    for (int64_t i = 0; i < len && pos < print_len; i++) {
-      int written_len = snprintf(buf + pos, static_cast<size_t>(print_len - pos), "0x%lX ",
-                                 static_cast<unsigned long>(src[i]));
-      if (OB_UNLIKELY(0 == written_len)) {
-        break;
+    int64_t pos = 0;
+    bool truncated = false;
+    for (int64_t i = 0; OB_SUCC(ret) && !truncated && i < len; i++) {
+      // 先以 unsigned char 重解释，避免 char 为有符号时高位字节被符号扩展为 0xFFFFFFFFFF..
+      const unsigned int byte_val = static_cast<unsigned char>(src[i]);
+      const int64_t remain = MAX_DEBUG_MEM_CONTENT_LEN - pos;
+      const int written = snprintf(buf + pos, static_cast<size_t>(remain), "%02X ", byte_val);
+      if (OB_UNLIKELY(written < 0)) {
+        ret = OB_ERR_SYS;
+        LOG_WDIAG("fail to format byte", K(ret), K(i), K(written));
+      } else if (OB_UNLIKELY(written >= remain)) {
+        truncated = true;
       } else {
-        pos += written_len;
+        pos += written;
       }
     }
-    LOG_DEBUG("mem content", KP(src), K(len), K(buf));
+    if (OB_SUCC(ret)) {
+      buf[pos] = '\0';
+      LOG_DEBUG("mem content", KP(src), K(len), K(pos), K(truncated), K(buf));
+    }
   }
 
   if (OB_NOT_NULL(buf)) {
-    ob_free(buf);
+    common::ob_free(buf);
   }
   return ret;
 }
+
 } // end of namespace obproxy
 } // end of namespace oceanbase

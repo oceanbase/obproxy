@@ -361,7 +361,7 @@ int ObNetAccept::fetch_tenant_cpu(ObVipTenant& vip_tenant, ObTenantCpu*& tenant_
   ObString key_name;
   char vip_name[MAX_IP_ADDR_LENGTH];
   common::ObFixedLengthString<OB_PROXY_MAX_TENANT_CLUSTER_NAME_LENGTH + MAX_IP_ADDR_LENGTH> key_string;
-  if (OB_UNLIKELY(!vip_tenant.vip_addr_.addr_.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
+  if (OB_FAIL(vip_tenant.vip_addr_.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
     ret = OB_ERR_UNEXPECTED;
     PROXY_NET_LOG(WDIAG, "fail to covert ip to string", K(vip_name), K(ret));
   } else if (OB_FAIL(build_tenant_cluster_vip_name(vip_tenant.tenant_name_, vip_tenant.cluster_name_, vip_name, key_string))) {

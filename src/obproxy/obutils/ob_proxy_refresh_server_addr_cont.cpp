@@ -272,8 +272,7 @@ int ObProxyRefreshServerAddrCont::find_servers_from_dummy_entry(proxy::ObTableEn
           } else if (ss.idc_name_.case_compare(current_idc_name_.config_string_) == 0 ||
             ss.zone_name_.prefix_case_match(current_idc_name_.config_string_)) {
             char ip_buf[128];
-            if (!ss.addr_.ip_to_string(ip_buf, 128)) {
-              ret = OB_ERR_UNEXPECTED;
+            if (OB_FAIL(ss.addr_.ip_to_string(ip_buf, 128))) {
               LOG_WDIAG("ip_to_string failed", K(ss));
             } else if (OB_FAIL(get_global_session_manager().add_server_addr_if_not_exist(*schema_key_,
                        ObString::make_string(ip_buf),

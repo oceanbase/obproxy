@@ -1223,6 +1223,9 @@ int ObRpcTableLSOperationRequest::init_as_sub_ls_operation_request(const ObRpcTa
   set_packet_meta(request.get_packet_meta());
   set_option_flag(request.get_option_flag());
   set_dictionary(request.get_all_rowkey_names(), request.get_all_properties_names());
+  if (request.ls_request_.is_need_hbase_op_type_) {
+    set_hbase_op_type(request.ls_request_.hbase_op_type_);
+  }
 
   if (OB_FAIL(init_tablet_ops(request, tablet_ids))) {
     LOG_WDIAG("fail to init tablet ops", K(ret));

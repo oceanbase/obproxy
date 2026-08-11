@@ -554,8 +554,7 @@ int ObPrometheusProcessor::init()
     LOG_WDIAG("init twice", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
     LOG_WDIAG("fail to get proxy local addr", K(local_addr), K(ret));
-  } else if (OB_UNLIKELY(!local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
-    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     LOG_WDIAG("fail to covert ip to string", K(local_addr), K(ret));
   } else if (OB_FAIL(init_prometheus(static_cast<int32_t>(get_global_proxy_config().prometheus_listen_port.get())))) {
     LOG_WDIAG("fail to init prometheus", "prometheus_listen_port", get_global_proxy_config().prometheus_listen_port.get(), K(ret));

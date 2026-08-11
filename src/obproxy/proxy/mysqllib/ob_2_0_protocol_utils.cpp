@@ -862,9 +862,8 @@ int ObProxyTraceUtils::build_client_ip(ObIArray<ObObJKV> &extra_info,
         LOG_WDIAG("fail to store client addr", K(ret));
     } else if (OB_FAIL(ObMySQLUtil::store_str_nzt(buf, buf_len, "=", pos))) {
       LOG_WDIAG("fail to store equals sign", K(ret));
-    } else if (OB_UNLIKELY(!client_ip.ip_to_string(buf + STRLEN(buf),
-                                                   static_cast<int32_t>(buf_len - pos)))) {
-      ret = OB_ERR_UNEXPECTED;
+    } else if (OB_FAIL(client_ip.ip_to_string(buf + STRLEN(buf),
+                                              static_cast<int32_t>(buf_len - pos)))) {
       LOG_WDIAG("fail to ip_to_string", K(client_ip), K(ret));
     } else {
       ObObJKV kv;

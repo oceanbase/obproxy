@@ -35,7 +35,7 @@ int ProxyProtocolV2::analyze_aws_ppv2(char *buf, uint16_t length)
       LOG_WDIAG("vpc info write failed", K(ret));
     }
   }
-  LOG_DEBUG("get aws ppv2 info", K(vpc_info_), K(length), K(ret));
+  LOG_INFO("get ppv2 info from aws", K_(vpc_info), K(length), K(ret));
   return ret;
 }
 
@@ -65,7 +65,7 @@ int ProxyProtocolV2::analyze_gcp_ppv2(char *buf, uint16_t length)
       }
     }
   }
-  LOG_DEBUG("get private service connect ID", K(vpc_info_), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(digit_num), K(ret));
+  LOG_INFO("get ppv2 info from gcp with private service connect ID", K_(vpc_info), K(length), K(pscConnectionId_big), K(pscConnectionId_little), K(digit_num), K(ret));
   return ret;
 }
 
@@ -73,33 +73,33 @@ int ProxyProtocolV2::analyze_azure_ppv2(char *buf, uint16_t length)
 {
   // 是 Azure 使用的，参考 https://learn.microsoft.com/zh-cn/azure/private-link/private-link-service-overview#getting-connection-information-using-tcp-proxy-v2
   int ret = OB_SUCCESS;
+
+  char digit_buf[MAX_NUM_LEN] = {0};
+  uint32_t little_linkid = 0;
+  int digit_num = 0;
   if (OB_UNLIKELY(NULL == buf || length <= 0)) {
     ret = OB_INVALID_ARGUMENT;
     LOG_WDIAG("invalid argument", K(buf), K(length), K(ret));
-  } else {
-    char digit_buf[MAX_NUM_LEN] = {0};
-    uint32_t little_linkid = 0;
-    int digit_num = 0;
-    if (OB_UNLIKELY(5 != length)) {
+  } else if (OB_UNLIKELY(5 != length)) {
       ret = OB_ERR_UNEXPECTED;
       LOG_WDIAG("unexpected Azure Private Link length, expected 5, but got", K(length), K(ret));
-    } else if (0x01 != buf[3]) {
-      ret = OB_ERR_UNEXPECTED;
-      LOG_WDIAG("unexpected Azure Private Link version, expected 0x01, but got", K(buf[3]), K(ret));
-    } else {
-      little_linkid = *(uint32_t*)(&buf[4]);  // 协议约定小端存储
-      if (OB_UNLIKELY(obproxy::net::is_big_endian())) {
-        little_linkid = __bswap_32(little_linkid);
-      }
-      if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%" PRIu32, little_linkid))) {
-        ret = OB_ERR_UNEXPECTED;
-        LOG_WDIAG("fail to snprintf little_linkid", K(digit_num), K(little_linkid), K(ret));
-      } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
-        LOG_WDIAG("vpc info write failed", K(ret));
-      }
+  } else if (0x01 != buf[3]) {
+    ret = OB_ERR_UNEXPECTED;
+    LOG_WDIAG("unexpected Azure Private Link version, expected 0x01, but got", K(buf[3]), K(ret));
+  } else {
+    little_linkid = *(uint32_t*)(&buf[4]);  // 协议约定小端存储
+    if (OB_UNLIKELY(obproxy::net::is_big_endian())) {
+      little_linkid = __bswap_32(little_linkid);
     }
-    LOG_DEBUG("get Azure Private LinkId information", K(vpc_info_), K(length), K(little_linkid), K(digit_num), K(ret));
+    if (0 >= (digit_num = snprintf(digit_buf, MAX_NUM_LEN, "%" PRIu32, little_linkid))) {
+      ret = OB_ERR_UNEXPECTED;
+      LOG_WDIAG("fail to snprintf little_linkid", K(digit_num), K(little_linkid), K(ret));
+    } else if (OB_FAIL(vpc_info_.init_and_write(digit_buf, digit_num))) {
+      LOG_WDIAG("vpc info write failed", K(ret));
+    }
   }
+  LOG_INFO("get ppv2 info frim Azure with Private LinkId information", K_(vpc_info), K(length), K(little_linkid), K(digit_num), K(ret));
+
   return ret;
 }
 
@@ -107,7 +107,8 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
 {
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(IS_DEBUG_ENABLED())) {
-    obproxy::debug_mem_content(buf, buf_len);
+    // debug_mem_content 仅用于打印 DEBUG 信息
+    (void)obproxy::debug_mem_content(buf, buf_len);
   }
 
   if (OB_UNLIKELY(NULL == buf || buf_len <= 0)) {
@@ -156,7 +157,7 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
 
       if (OB_FAIL(ret)) {
         // nothing
-      } if (is_check_alive_pkt_) {
+      } else if (is_check_alive_pkt_) {
         // nothing
       } else {
         end_pos++;
@@ -188,6 +189,7 @@ int ProxyProtocolV2::analyze_packet(char *buf, int64_t buf_len)
               break;
             }
             default: {
+              LOG_DEBUG("get ppv2 packet with unknown type", K(type), K(length));
               end_pos += 3 + length;
               break;
             }

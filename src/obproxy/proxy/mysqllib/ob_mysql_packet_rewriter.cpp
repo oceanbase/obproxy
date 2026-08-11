@@ -133,8 +133,7 @@ int ObHandshakeResponseParam::write_client_addr_buf(const common::ObAddr &addr)
   int ret = OB_SUCCESS;
   if (OB_UNLIKELY(!addr.is_valid())) {
     //do not write
-  } else if (OB_UNLIKELY(!addr.ip_to_string(client_ip_buf_, MAX_IP_ADDR_LENGTH))) {
-    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(addr.ip_to_string(client_ip_buf_, MAX_IP_ADDR_LENGTH))) {
     LOG_WDIAG("fail to ip_to_string", K(addr), K(ret));
   }
   return ret;

@@ -65,23 +65,6 @@ int ObExprParserChecker::do_obproxy_parser(const ObString &query_str, ObExprPars
   return ret;
 }
 
-int ObExprParserChecker::do_expr_resolver(ObExprResolverContext &ctx, ObExprResolverResult &result)
-{
-  int ret = OB_SUCCESS;
-
-  int64_t t0 = ObTimeUtility::current_time();
-  ObExprResolver resolver(allocator_);
-  if (OB_FAIL(resolver.resolve(ctx, result))) {
-    // do nothing
-  }
-
-  // record parse time
-  int64_t t1 = ObTimeUtility::current_time();
-  resolve_time_ += (t1 - t0);
-
-  return ret;
-}
-
 ObProxyParseString ObExprParserChecker::get_value(std::string &extra_str, const char* key_name,
                                                   std::size_t &pos)
 {
@@ -164,19 +147,6 @@ bool ObExprParserChecker::run_parse_string(const ObString query_str, std::string
     ObExprParseResultPrintWrapper wrapper(result);
     DUMP_RESULT("RESULT:\n%.*s\n", static_cast<int32_t>(wrapper.to_string(buf, MAX_STR_LEN)), buf);
 
-    if (need_resolve_) {
-      ObProxyPartInfo part_info;
-      ObExprResolverContext ctx;
-      ObExprResolverResult expr_result;
-      ctx.relation_info_ = &result.all_relation_info_;
-      ctx.part_info_ = &part_info;
-      if (OB_SUCCESS == do_expr_resolver(ctx, expr_result)) {
-        DUMP_RESULT("RANGES: %.*s\n",
-                     static_cast<int32_t>(expr_result.to_string(buf, MAX_STR_LEN)), buf);
-      } else {
-        DUMP_RESULT("RANGES: RESOLVE FAILED\n");
-      }
-    }
   } else {
     DUMP_RESULT("RESULT: PARSE FAILED\n");
   }

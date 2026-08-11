@@ -211,7 +211,7 @@ int ObRpcRedisClientNetHandler::new_connection(
             } else if (is_vip_lookup_success()) {
               session_info_.set_is_read_only_user(ct_info_.vip_tenant_.is_read_only());
               session_info_.set_is_request_follower_user(ct_info_.vip_tenant_.is_request_follower());
-              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_);
               ObString user_name;
               if (!get_global_white_list_table_processor().can_ip_pass(
                 ct_info_.vip_tenant_.cluster_name_, ct_info_.vip_tenant_.tenant_name_,

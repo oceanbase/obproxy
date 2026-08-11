@@ -29,7 +29,7 @@ int ObFuncExprResolver::resolve(const ObProxyParamNode *node, ObProxyExpr *&expr
   int ret = OB_SUCCESS;
 
   if (OB_FAIL(recursive_resolve_proxy_expr(node, expr))) {
-    LOG_WDIAG("resursive resolve proxy expr failed", K(ret));
+    LOG_DEBUG("resursive resolve proxy expr failed", K(ret)); // DEBUG for simplify meaningless and futile log
   }
 
   return ret;
@@ -113,7 +113,7 @@ int ObFuncExprResolver::recursive_resolve_proxy_expr(const ObProxyParamNode *nod
         ObFuncExprNode *func_expr_node = node->func_expr_node_;
         ObProxyFuncExpr *func_expr = NULL;
         if (OB_FAIL(create_func_expr_by_type(func_expr_node, func_expr))) {
-          LOG_WDIAG("create func expr by type failed", K(ret));
+          LOG_DEBUG("create func expr by type failed", K(ret)); // DEBUG for simplify meaningless and futile log
         } else if (OB_ISNULL(func_expr_node->child_)) {
           // do nothing 
         } else {
@@ -174,7 +174,7 @@ int ObFuncExprResolver::create_func_expr_by_type(const ObFuncExprNode *func_expr
   } else if (OB_FAIL(ObProxyExprFactory::get_type_by_name(func_name, type))) {
     LOG_WDIAG("fail to get func type by name", K(func_name), K(type), K(ret));
   } else if (OB_FAIL(ctx_.expr_factory_->create_func_expr(type, func_expr))) {
-    LOG_WDIAG("create func expr failed", K(ret));
+    LOG_DEBUG("create func expr failed", K(ret)); // DEBUG for simplify meaningless and futile log
   }
 
   return ret;

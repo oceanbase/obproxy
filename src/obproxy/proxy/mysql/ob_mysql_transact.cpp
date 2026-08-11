@@ -7688,8 +7688,20 @@ inline void ObMysqlTransact::handle_server_failed(ObTransState &s)
       if (resp.is_error_resp()) {
 
         switch (resp.get_error_pkt().get_err_code()) {
-          case -OB_SERVER_IS_INIT:
           case -OB_SERVER_IS_STOPPING:
+            if (OB_UNLIKELY(s.sm_->client_session_->get_session_info().is_oracle_mode()
+                && resp.get_error_message().case_compare(ob_str_user_error(OB_SERVER_IS_STOPPING)) != 0)) {
+              /* OB_SERVER_IS_STOPPING(8002) is same error code with OB_ERR_SEQUENCE_NOT_DEFINE in oracle mode */
+              LOG_DEBUG("In oracle mode and error message is not the same with OB_SERVER_IS_STOPPING, skip",
+                       "origin_name", s.pll_info_.te_name_,
+                       "sql_cmd", ObProxyParserUtils::get_sql_cmd_name(s.trans_info_.sql_cmd_),
+                       "sql", s.trans_info_.client_request_.get_print_sql(),
+                       "route info", s.pll_info_.route_,
+                       "error message", resp.get_error_message());
+              break;
+            }
+            // OB_SERVER_IS_STOPPING with correct msg need do as OB_SERVER_IS_INIT error code (do s.set_alive_failed() )
+          case -OB_SERVER_IS_INIT:
           case -OB_PACKET_CHECKSUM_ERROR:
           case -OB_ALLOCATE_MEMORY_FAILED:
             // congestion control
@@ -8003,8 +8015,7 @@ int ObMysqlTransact::build_error_packet(ObTransState &s, ObMysqlClientSession *c
 
           if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
             LOG_WDIAG("fail to get proxy local addr", K(local_addr), K(ret));
-          } else if (OB_UNLIKELY(!local_addr.ip_to_string(ip_buff, MAX_IP_ADDR_LENGTH))) {
-            ret = OB_ERR_UNEXPECTED;
+          } else if (OB_FAIL(local_addr.ip_to_string(ip_buff, MAX_IP_ADDR_LENGTH))) {
             LOG_WDIAG("fail to covert ip to string", K(local_addr), K(ret));
           } else if (OB_FAIL(databuff_printf(errmsg, BUF_LEN, pos, ob_str_user_error(errcode), strlen(ip_buff), ip_buff))) {
             LOG_WDIAG("fail to fill err_msg", K(ret));

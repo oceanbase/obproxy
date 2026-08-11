@@ -80,8 +80,8 @@ int ObServerConfig::read_config()
   char local_ip[OB_MAX_SERVER_ADDR_SIZE] = "";
   if (!server.set_ipv4_addr(ntohl(obsys::CNetUtil::getLocalAddr(devname)), 0)) {
     ret = OB_INVALID_ARGUMENT;
-  } else if (OB_UNLIKELY(true != server.ip_to_string(local_ip, sizeof(local_ip)))) {
-    ret = OB_CONVERT_ERROR;
+  } else if (OB_FAIL(server.ip_to_string(local_ip, sizeof(local_ip)))) {
+    OB_LOG(WDIAG, "fail to get ip_string", K(local_ip), K(ret));
   } else {
     key.set_varchar(ObString::make_string("svr_type"), print_server_role(get_server_type()));
     key.set_int(ObString::make_string("svr_port"), rpc_port);

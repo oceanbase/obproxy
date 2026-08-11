@@ -141,9 +141,10 @@ public:
   {
     return (is_error_resp() && -common::OB_SERVER_IS_INIT == error_.error_pkt_.get_err_code());
   }
-  inline bool is_server_stopping_error() const
+  inline bool is_server_stopping_error() const /* OB_SERVER_IS_STOPPING(8002) is same error code with OB_ERR_SEQUENCE_NOT_DEFINE in oracle mode */
   {
-    return (is_error_resp() && -common::OB_SERVER_IS_STOPPING == error_.error_pkt_.get_err_code());
+    return (is_error_resp() && -common::OB_SERVER_IS_STOPPING == error_.error_pkt_.get_err_code()
+              && get_error_message().case_compare(ob_str_user_error(OB_SERVER_IS_STOPPING)) == 0);
   }
   inline bool is_session_entry_exist() const
   {

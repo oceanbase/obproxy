@@ -245,6 +245,28 @@ public:
   ObBinlogRowImageType binlog_row_image_type_;
 };
 
+enum class ObHBaseOperationType : int
+{
+  INVALID = 0,
+  PUT = 1,
+  PUT_LIST = 2,
+  DELETE = 3,
+  DELETE_LIST = 4,
+  GET = 5,
+  GET_LIST = 6,
+  EXISTS = 7,
+  EXISTS_LIST = 8,
+  BATCH = 9,
+  BATCH_CALLBACK = 10,
+  SCAN = 11,
+  CHECK_AND_PUT = 12,
+  CHECK_AND_DELETE = 13,
+  CHECK_AND_MUTATE = 14,
+  APPEND = 15,
+  INCREMENT = 16,
+  INCREMENT_COLUMN_VALUE = 17,
+  MUTATE_ROW = 18
+};
 ////////////////////////////////////////////////////////////////
 // @see PCODE_DEF(OB_TABLE_API_EXECUTE_QUERY, 0x1104)
 class ObTableQueryRequest
@@ -317,6 +339,8 @@ public:
       :table_id_(common::OB_INVALID_ID),
       partition_id_(common::OB_INVALID_ID),
       binlog_row_image_type_(ObBinlogRowImageType::FULL),
+      hbase_op_type_(ObHBaseOperationType::INVALID),
+      is_need_hbase_op_type_(false),
       option_flag_(OB_TABLE_OPTION_DEFAULT),
       is_need_option_flag_(false)
   {}
@@ -327,6 +351,8 @@ public:
                K_(partition_id),
                K_(entity_type),
                K_(query_and_mutate),
+               K_(hbase_op_type),
+               K_(is_need_hbase_op_type),
                K_(option_flag),
                K_(is_need_option_flag));
 
@@ -354,6 +380,8 @@ public:
   ObTableEntityType entity_type_;  // for optimize purpose
   OB_IGNORE_TABLE_QUERY_AND_MUTATE query_and_mutate_;
   ObBinlogRowImageType binlog_row_image_type_;
+  ObHBaseOperationType hbase_op_type_;
+  bool is_need_hbase_op_type_;
   uint8_t option_flag_;
   bool is_need_option_flag_;
 };
@@ -364,7 +392,9 @@ class ObTableQuerySyncRequest : public ObTableQueryRequest
 public:
   ObTableQuerySyncRequest()
       :query_session_id_(0),
-       query_type_(ObQueryOperationType::QUERY_MAX)
+       query_type_(ObQueryOperationType::QUERY_MAX),
+       hbase_op_type_(ObHBaseOperationType::INVALID),
+       is_need_hbase_op_type_(false)
   {}
   virtual ~ObTableQuerySyncRequest(){}
 
@@ -384,11 +414,13 @@ public:
   // bool is_valid() const { return ObQueryOperationType::QUERY_START == query_type_ || ObQueryOperationType::QUERY_NEXT == query_type_; }
   bool is_valid() const { return (ObQueryOperationType::QUERY_START <= query_type_ && ObQueryOperationType::QUERY_MAX > query_type_); }
 
-  INHERIT_TO_STRING_KV("ObTableQueryRequest", ObTableQueryRequest, K_(query_session_id), K_(query_type));
+  INHERIT_TO_STRING_KV("ObTableQueryRequest", ObTableQueryRequest, K_(query_session_id), K_(query_type), K_(hbase_op_type), K_(is_need_hbase_op_type));
 
 public:
   uint64_t query_session_id_;
   ObQueryOperationType query_type_;
+  ObHBaseOperationType hbase_op_type_;
+  bool is_need_hbase_op_type_;
 };
 
 struct ObTableDirectLoadRequestHeader
@@ -460,7 +492,9 @@ public:
     : credential_(),
       entity_type_(),
       consistency_level_(),
-      ls_op_()
+      ls_op_(),
+      hbase_op_type_(ObHBaseOperationType::INVALID),
+      is_need_hbase_op_type_(false)
   {
   }
   ~ObTableLSOpRequest() {}
@@ -468,12 +502,16 @@ public:
   TO_STRING_KV(K_(credential),
                K_(entity_type),
                K_(consistency_level),
-               K_(ls_op));
+               K_(ls_op),
+               K_(hbase_op_type),
+               K_(is_need_hbase_op_type));
 public:
   ObString credential_;
   ObTableEntityType entity_type_;  // for optimize purpose
   ObTableConsistencyLevel consistency_level_;
   ObTableLSOp ls_op_;
+  ObHBaseOperationType hbase_op_type_;
+  bool is_need_hbase_op_type_;
 };
 
 struct ObObkvGetRouteOperationType

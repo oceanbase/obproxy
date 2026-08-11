@@ -83,7 +83,7 @@ int ObProxyExprFactory::create_func_expr(const ObProxyExprType type, ObProxyFunc
   int ret = common::OB_SUCCESS;
   if (OB_UNLIKELY(OB_PROXY_EXPR_TYPE_NONE >= type || OB_PROXY_EXPR_TYPE_MAX <= type)) {
     ret = common::OB_INVALID_ARGUMENT;
-    LOG_INFO("unsupported function type", K(type), K(ret));
+    LOG_DEBUG("unsupported function type", K(type), K(ret)); // DEBUG for simplify meaningless and futile log
   } else if (OB_ISNULL(TYPE_ALLOC[type])) {
     ret = OB_ERR_UNEXPECTED;
     LOG_WDIAG("unexpected type_alloc func_expr is NULL", K(type), K(ret));

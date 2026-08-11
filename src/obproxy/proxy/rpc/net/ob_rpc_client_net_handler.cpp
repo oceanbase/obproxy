@@ -17,6 +17,7 @@
 #include "dbconfig/ob_proxy_pb_utils.h"
 #include "proxy/mysql/ob_mysql_global_session_manager.h"
 #include "omt/ob_conn_table_processor.h"
+#include "omt/ob_proxy_config_table_processor.h"
 #include "omt/ob_white_list_table_processor.h"
 #include "proxy/rpc/net/ob_rpc_client_net_handler.h"
 #include "proxy/rpc/net/ob_rpc_obkv_client_net_handler.h"
@@ -246,7 +247,7 @@ int ObRpcClientNetHandler::new_connection(
             } else if (is_vip_lookup_success()) {
               session_info_.set_is_read_only_user(ct_info_.vip_tenant_.is_read_only());
               session_info_.set_is_request_follower_user(ct_info_.vip_tenant_.is_request_follower());
-              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+              session_info_.set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_);
               ObString user_name;
               if (!get_global_white_list_table_processor().can_ip_pass(
                 ct_info_.vip_tenant_.cluster_name_, ct_info_.vip_tenant_.tenant_name_,
@@ -309,7 +310,6 @@ int ObRpcClientNetHandler::fetch_tenant_by_vip()
     if (OB_FAIL(ct_info_.vip_tenant_.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
       PROXY_CS_LOG(WDIAG, "set tenant and cluster name failed", K_(cs_id), K(tenant_item), K(cluster_item), K(ret));
     } else {
-      session_info_.set_vip_addr_name(addr.addr_);
       ct_info_.lookup_success_ = true;
       PROXY_CS_LOG(DEBUG, "succ to get conn info", K_(cs_id), "vip_tenant", ct_info_.vip_tenant_);
     }
@@ -1254,7 +1254,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
                   if (ct_info_.lookup_success_) {
                     new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
                     new_session->get_ct_info().lookup_success_ = true;
-                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_);
                     new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
                   }
                 }
@@ -1280,7 +1280,7 @@ int ObRpcClientNetHandler::state_client_request_read(int event, void *data)
                   if (ct_info_.lookup_success_) {
                     new_session->get_ct_info().vip_tenant_.set_tenant_cluster(ct_info_.vip_tenant_.tenant_name_, ct_info_.vip_tenant_.cluster_name_);
                     new_session->get_ct_info().lookup_success_ = true;
-                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_.addr_);
+                    new_session->get_session_info().set_vip_addr_name(ct_info_.vip_tenant_.vip_addr_);
                     new_session->get_ct_info().vip_tenant_.vip_addr_ = ct_info_.vip_tenant_.vip_addr_;
                   }
                 }
@@ -1418,26 +1418,73 @@ int ObRpcClientNetHandler::handle_proxy_protocol_v2_request(ProxyProtocolV2 &v2,
   return ret;
 }
 
-int ObRpcClientNetHandler::fill_tenant_info_with_ppv2(ProxyProtocolV2 &v2)
+int ObRpcClientNetHandler::fill_tenant_info_with_ppv2(ProxyProtocolV2 &ppv2_info)
 {
   int ret = OB_SUCCESS;
   //ct_info_.reset();
   ObVipAddr &addr = ct_info_.vip_tenant_.vip_addr_;
 
-  struct sockaddr_storage ss = v2.src_addr_.get_sockaddr();
+  struct sockaddr_storage ss = ppv2_info.src_addr_.get_sockaddr();
   rpc_net_vc_->set_real_client_addr(ss);
-  if (v2.vpc_info_.empty()) {
+  if (ppv2_info.vpc_info_.empty()) {
     // connected by lb
-    addr.set(ops_ip_sa_cast(v2.dst_addr_.get_sockaddr()), 0);
+    addr.set(ops_ip_sa_cast(ppv2_info.dst_addr_.get_sockaddr()), 0);
   } else {
-    // connected by private link
-    ObString tmp_str(static_cast<int32_t>(v2.vpc_info_.len()), v2.vpc_info_.ptr());
+    // connected by private link, vid is -1
+    ObString tmp_str(static_cast<int32_t>(ppv2_info.vpc_info_.len()), ppv2_info.vpc_info_.ptr());
     addr.set(tmp_str);
+    addr.vid_ = -1;
   }
 
   if (OB_FAIL(fetch_tenant_by_vip())) {
-    PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(v2), K(ret));
+    PROXY_CS_LOG(WDIAG, "fail to fetch tenant by vip", K(ppv2_info), K(ret));
+  } else if (!ct_info_.lookup_success_ && OB_FAIL(refresh_tenant_info_from_multi_level_config())) {
+    PROXY_CS_LOG(WDIAG, "fail to refresh tenant info from multi level config", K(ret));
   }
+  return ret;
+}
+
+int ObRpcClientNetHandler::refresh_tenant_info_from_multi_level_config()
+{
+  int ret = OB_SUCCESS;
+  omt::ObProxyMultiLevelConfig *multi_level_config = NULL;
+  uint64_t global_version = get_global_proxy_config_table_processor().get_config_version();
+  obutils::ObVipAddr &addr = ct_info_.vip_tenant_.vip_addr_;
+  ObString cluster_name = ct_info_.vip_tenant_.cluster_name_;
+  ObString tenant_name = ct_info_.vip_tenant_.tenant_name_;
+  ObString service_name;
+
+  if (OB_FAIL(get_global_proxy_config_table_processor().get_proxy_multi_config(
+      addr, cluster_name, tenant_name, global_version, multi_level_config, service_name))) {
+    PROXY_CS_LOG(WDIAG, "fail to get proxy multi-level config", K(ret));
+  } else if (OB_NOT_NULL(multi_level_config)) {
+    ObString new_tenant_name = multi_level_config->proxy_tenant_name_;
+    ObString new_cluster_name = multi_level_config->rootservice_cluster_name_;
+
+    if (new_tenant_name.empty()) {
+      new_tenant_name = tenant_name;
+    }
+    if (new_cluster_name.empty()) {
+      new_cluster_name = cluster_name;
+    }
+
+    if (OB_FAIL(ct_info_.vip_tenant_.set_tenant_cluster(new_tenant_name, new_cluster_name))) {
+      PROXY_CS_LOG(WDIAG, "fail to update tenant cluster from config", K(ret));
+    } else {
+      if (!new_tenant_name.empty() && !new_cluster_name.empty()) {
+        ct_info_.lookup_success_ = true;
+        session_info_.set_vip_addr_name(addr);
+      }
+      PROXY_CS_LOG(DEBUG, "refresh tenant info from multi-level config",
+                   K(new_tenant_name), K(new_cluster_name));
+    }
+  }
+
+  if (OB_NOT_NULL(multi_level_config)) {
+    multi_level_config->dec_ref();
+    multi_level_config = NULL;
+  }
+
   return ret;
 }
 

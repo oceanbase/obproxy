@@ -85,8 +85,11 @@ public:
   void set_sockaddr(const struct sockaddr &sock_addr);
 
   int64_t to_string(char *buffer, const int64_t size) const;
-  bool ip_to_string(char *buffer, const int32_t size) const;
-  int ip_port_to_string(char *buffer, const int32_t size) const;
+  // 只返回错误码、不返回长度
+  int ip_to_string(char *buffer, const int64_t size) const;
+  // 额外通过 ret_len 回填实际写入长度；成功时保证 0 <= ret_len <= size-1（长度溢出会被静默截断至 size-1）。
+  int ip_to_string(char *buffer, const int64_t size, int64_t& ret_len) const;
+  int ip_port_to_string(char *buffer, const int64_t size) const;
   TO_YSON_KV(ID(ip), ip_.v4_,
              ID(port), port_);
 
@@ -122,6 +125,8 @@ public:
 
   void reset_ipv4_10(int ip = 10);
 
+private:
+  static constexpr const char* const INVALID_IP_ADDR = "IPINVALID";
 public:
   VER version_;
   union

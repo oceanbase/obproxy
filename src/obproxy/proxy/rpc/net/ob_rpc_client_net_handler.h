@@ -195,6 +195,7 @@ public:
   }
   int handle_proxy_protocol_v2_request(proxy_protocol_v2::ProxyProtocolV2 &v2, ObRpcReqReadStatus &status);
   int fill_tenant_info_with_ppv2( proxy_protocol_v2::ProxyProtocolV2 &v2);
+  int refresh_tenant_info_from_multi_level_config();
 
   enum ObInListStat
   {

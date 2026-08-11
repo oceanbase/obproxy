@@ -474,6 +474,10 @@ public:
   void set_dictionary(const ObSEArray<ObString, 4> &rowkey_names, const ObSEArray<ObString, 4> &properties_names) {
     ls_request_.ls_op_.set_dictionary(rowkey_names, properties_names);
   };
+  void set_hbase_op_type(ObHBaseOperationType hbase_op_type) {
+    ls_request_.is_need_hbase_op_type_ = true;
+    ls_request_.hbase_op_type_ = hbase_op_type;
+  }
   TABLET_ID_INDEX_MAP &get_tablet_id_index_map() {return tablet_id_index_map_;}
   const TABLET_ID_INDEX_MAP &get_tablet_id_index_map() const {return tablet_id_index_map_;}
   LS_TABLET_ID_MAP &get_ls_id_tablet_id_map() {return ls_id_tablet_id_map_;}

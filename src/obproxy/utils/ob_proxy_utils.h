@@ -95,12 +95,14 @@ int split_string_by_char(common::ObString &org_str,
                          common::ObIArray<common::ObString> &result_strs,
                          const char split_char = ';',
                          const bool contain_split_char = false);
-
 int convert_escape_string(const common::ObString &input_str,
                           common::ObString &output_str,
                           common::ObIAllocator& allocater);
 
-int debug_mem_content(const char* src, int64_t len);
+// 以十六进制文本形式将 [src, src+len) 的字节 dump 到 LOG_DEBUG，仅用于调试辅助。
+// 受单次日志容量限制，超出部分会被截断；返回错误码仅用于指示内部异常，调用方可按需忽略。
+int debug_mem_content(const char *src, const int64_t len);
+
 } // end of namespace obproxy
 } // end of namespace oceanbase
 

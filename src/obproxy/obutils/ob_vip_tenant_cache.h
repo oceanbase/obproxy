@@ -80,6 +80,10 @@ public:
   void set_ipv4(int32_t ip, const int32_t port, const int64_t vid);
   void set(const struct sockaddr &addr, const int64_t vid);
   void set(const common::ObString vpc_info);
+  // 只返回错误码、不返回长度
+  int ip_to_string(char *buffer, const int64_t size) const;
+  // 额外通过 ret_len 回填实际写入长度；成功时保证 0 <= ret_len <= size-1（长度溢出会被静默截断至 size-1）。
+  int ip_to_string(char *buffer, const int64_t size, int64_t& ret_len) const;
   TO_STRING_KV(K_(addr), K_(vid), K_(vpc_info), K_(vip_addr_type));
 
 public:

@@ -476,7 +476,7 @@ int ObMysqlClientSession::fetch_tenant_by_vip()
     if (OB_FAIL(ct_info_.vip_tenant_.set_tenant_cluster(tenant_item.str(), cluster_item.str()))) {
       PROXY_CS_LOG(WDIAG, "set tenant and cluster name failed", K(tenant_item), K(cluster_item), K(ret));
     } else {
-      session_info_.set_vip_addr_name(addr.addr_);
+      session_info_.set_vip_addr_name(addr);
       ct_info_.lookup_success_ = true;
       PROXY_CS_LOG(DEBUG, "succ to get conn info", "vip_tenant", ct_info_.vip_tenant_);
     }

@@ -532,7 +532,7 @@ int ObShowConfigHandler::dump_all_config_item(const omt::ObProxyConfigItem &item
 {
   int ret = OB_SUCCESS;
   char vip_buf[MAX_IP_ADDR_LENGTH]{};
-  item.vip_info_.vip_addr_.addr_.ip_to_string(vip_buf, MAX_IP_ADDR_LENGTH);
+  item.vip_info_.vip_addr_.ip_to_string(vip_buf, MAX_IP_ADDR_LENGTH);
 
   ObNewRow row;
   ObObj cells[OB_PC_MAX_COLUMN_ID];

@@ -244,35 +244,62 @@ int64_t ObAddr::to_string(char *buffer, const int64_t size) const
       } else {
         databuff_printf(buffer, size, pos, "\"%s\"", buf);
       }
+    } else {
+      databuff_printf(buffer, size, pos, "%s", INVALID_IP_ADDR);
     }
   }
+
   return pos;
 }
 
-bool ObAddr::ip_to_string(char *buffer, const int32_t size) const
+int ObAddr::ip_to_string(char *buffer, const int64_t size) const
 {
-  bool res = false;
-  if (NULL != buffer && size > 0) {
-    if (version_ == IPV4) {
-      snprintf(buffer, size, "%d.%d.%d.%d",
-               (ip_.v4_ >> 24) & 0XFF,
-               (ip_.v4_ >> 16) & 0xFF,
-               (ip_.v4_ >> 8) & 0xFF,
-               (ip_.v4_) & 0xFF);
-    } else if (version_ == IPV6) {
-      char buf[MAX_IP_ADDR_LENGTH];
-      struct in6_addr in6;
-      memset(buf, 0, sizeof(buf));
-      MEMCPY(in6.s6_addr, ip_.v6_, sizeof(ip_.v6_));
-      inet_ntop(AF_INET6, &in6, buf, MAX_IP_ADDR_LENGTH);
-      snprintf(buffer, size, "%s", buf);
-    }
-    res = true;
+  int ret = OB_SUCCESS;
+  int64_t ret_len = 0;
+  if (OB_FAIL(ip_to_string(buffer, size, ret_len))) {
+    LOG_WDIAG("fail to ip_to_string", K(size), K(ret));
   }
-  return res;
+
+  UNUSED(ret_len);
+  return ret;
 }
 
-int ObAddr::ip_port_to_string(char *buffer, const int32_t size) const
+int ObAddr::ip_to_string(char *buffer, const int64_t size, int64_t &ret_len) const
+{
+  int ret = OB_SUCCESS;
+  ret_len = 0;
+  if (OB_ISNULL(buffer) || OB_UNLIKELY(size <= 0)) {
+    ret = OB_INVALID_ARGUMENT;
+    LOG_WDIAG("invalid buffer or size", KP(buffer), K(size), K(ret));
+  } else if (version_ == IPV4) {
+    ret_len = snprintf(buffer, size, "%d.%d.%d.%d",
+              (ip_.v4_ >> 24) & 0XFF,
+              (ip_.v4_ >> 16) & 0xFF,
+              (ip_.v4_ >> 8) & 0xFF,
+              (ip_.v4_) & 0xFF);
+  } else if (version_ == IPV6) {
+    char buf[MAX_IP_ADDR_LENGTH];
+    struct in6_addr in6;
+    memset(buf, 0, sizeof(buf));
+    MEMCPY(in6.s6_addr, ip_.v6_, sizeof(ip_.v6_));
+    inet_ntop(AF_INET6, &in6, buf, MAX_IP_ADDR_LENGTH);
+    ret_len = snprintf(buffer, size, "%s", buf);
+  } else {
+    ret_len = snprintf(buffer, size, "%s", INVALID_IP_ADDR);
+  }
+
+  if (OB_SUCC(ret)) {
+    if (OB_UNLIKELY(ret_len < 0)) {
+      ret = OB_ERR_SYS;
+      LOG_WDIAG("fail to format ip", K(ret), K(ret_len));
+    } else if (OB_UNLIKELY(ret_len >= size)) {
+      ret_len = size - 1;
+    }
+  }
+  return ret;
+}
+
+int ObAddr::ip_port_to_string(char *buffer, const int64_t size) const
 {
   int ret = OB_SUCCESS;
   int ret_len = 0;
@@ -285,13 +312,15 @@ int ObAddr::ip_port_to_string(char *buffer, const int32_t size) const
     MEMCPY(in6.s6_addr, ip_.v6_, sizeof(ip_.v6_));
     inet_ntop(AF_INET6, &in6, buf, MAX_IP_ADDR_LENGTH);
     ret_len = snprintf(buffer, size, "[%s]:%d", buf, port_);
-  } else {
+  } else if (version_ == IPV4) {
     ret_len = snprintf(buffer, size, "%d.%d.%d.%d:%d",
                            (ip_.v4_ >> 24) & 0XFF,
                            (ip_.v4_ >> 16) & 0xFF,
                            (ip_.v4_ >> 8) & 0xFF,
                            (ip_.v4_) & 0xFF,
                            port_);
+  } else {
+    ret_len = snprintf(buffer, size, "%s", INVALID_IP_ADDR);
   }
 
   if (ret_len < 0) {

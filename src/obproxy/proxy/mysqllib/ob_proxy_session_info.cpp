@@ -20,6 +20,7 @@
 #include "proxy/mysqllib/ob_sys_var_set_processor.h"
 #include "obutils/ob_proxy_json_config_info.h"
 #include "obutils/ob_resource_pool_processor.h"
+#include "obutils/ob_vip_tenant_cache.h"
 #include "rpc/obmysql/ob_mysql_util.h"
 #include "proxy/mysqllib/ob_2_0_protocol_utils.h"
 #include "omt/ob_proxy_config_table_processor.h"
@@ -348,15 +349,21 @@ int ObClientSessionInfo::set_tenant_name(const ObString &tenant_name)
   return field_mgr_.set_tenant_name(tenant_name);
 }
 
-int ObClientSessionInfo::set_vip_addr_name(const common::ObAddr &vip_addr)
+int ObClientSessionInfo::set_vip_addr_name(const obutils::ObVipAddr &vip_addr)
 {
   int ret = OB_SUCCESS;
-  char vip_name[MAX_IP_ADDR_LENGTH];
-  if (OB_UNLIKELY(!vip_addr.ip_to_string(vip_name, static_cast<int32_t>(sizeof(vip_name))))) {
+  char vip_addr_name_str[MAX_IP_ADDR_LENGTH] = {0};
+  int64_t str_len = 0;
+  if (OB_FAIL(vip_addr.ip_to_string(vip_addr_name_str, MAX_IP_ADDR_LENGTH, str_len))) {
+    LOG_WDIAG("fail to ip_to_string", K(vip_addr), K(ret));
+  } else if (OB_UNLIKELY(str_len <= 0) || OB_UNLIKELY(str_len >= MAX_IP_ADDR_LENGTH)) {
     ret = OB_ERR_UNEXPECTED;
-    LOG_WDIAG("fail to covert ip to string", K(vip_name), K(ret));
+    LOG_WDIAG("unexpected str_len", K(vip_addr), K(str_len), K(ret));
   } else {
-    return field_mgr_.set_vip_addr_name(vip_name);
+    ObString vip_addr_name(static_cast<int32_t>(str_len), vip_addr_name_str);
+    if (OB_FAIL(field_mgr_.set_vip_addr_name(vip_addr_name))) {
+      LOG_WDIAG("fail to set vip_addr_name", K(vip_addr_name), K(ret));
+    }
   }
   return ret;
 }

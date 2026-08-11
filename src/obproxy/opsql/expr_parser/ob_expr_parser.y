@@ -466,13 +466,11 @@ opt_outer: OUTER
          | /* EMPTY */
 
 cond_expr: bool_pri
+         | '(' cond_expr ')'
          | cond_expr AND_OP cond_expr
-         | '(' cond_expr AND_OP cond_expr ')'
          | cond_expr OR_OP cond_expr
-         | '(' cond_expr OR_OP cond_expr ')'
 
 bool_pri: expr comp expr { add_relation(result, $1, $2, $3); }
-        | '(' expr comp expr ')' { add_relation(result, $2, $3, $4); }
         | expr IN '(' in_expr_list ')' { add_relation(result, $1, F_COMP_EQ, $4); }
         | expr NOT IN '(' in_expr_list ')' { $$ = NULL; }
         | expr BETWEEN expr AND_OP expr

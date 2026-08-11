@@ -101,8 +101,7 @@ int ObSessionStatTableSync::init(ObMysqlProxy &mysql_proxy, const char *cluster_
     LOG_WDIAG("invalid parameter", K(cluster_name), K(stats), K(stat_names), K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(addr))) {
     LOG_WDIAG("fail to get proxy local addr", K(addr), K(ret));
-  } else if (!addr.ip_to_string(ip_str, MAX_IP_ADDR_LENGTH)) {
-    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(addr.ip_to_string(ip_str, MAX_IP_ADDR_LENGTH))) {
     LOG_WDIAG("fail to covert ip to string", K(addr), K(ret));
   } else if (OB_FAIL(sql_.append_fmt(ObStatProcessor::INSERT_PROXY_STAT_SQL_HEAD,
                                     ObProxyTableInfo::PROXY_STAT_TABLE_NAME))) {
@@ -200,14 +199,12 @@ int ObStatProcessor::init(ObMysqlProxy &mysql_proxy)
     LOG_WDIAG("fail to init mutex", K(ret));
   } else if (OB_FAIL(ObProxyTableProcessorUtils::get_proxy_local_addr(local_addr))) {
     LOG_WDIAG("fail to get proxy local addr", K(local_addr), K(ret));
-  } else if (OB_UNLIKELY(!local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
-    ret = OB_ERR_UNEXPECTED;
+  } else if (OB_FAIL(local_addr.ip_to_string(proxy_ip_, static_cast<int32_t>(sizeof(proxy_ip_))))) {
     LOG_WDIAG("fail to covert ip to string", K(local_addr), K(ret));
   } else {
     proxy_port_ = local_addr.get_port();
     is_inited_ = true;
   }
-
   return ret;
 }
 

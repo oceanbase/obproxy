@@ -315,7 +315,7 @@ int64_t ObExprResolverV2::do_relation_obj_resolve(const ObExprParseResult& expr_
           // do union later
         } else if (OB_FAIL(resolve_token_list_const_obj(relation, part_info_,
                                     client_request_, client_info_, ps_id_entry, target_obj))) {
-          LOG_INFO("fail to resolve token list, ignore the ret", K(target_obj), K(ret));
+          LOG_DEBUG("fail to resolve token list, ignore the ret", K(target_obj), K(ret));  // DEBUG for simplify meaningless and futile log
           ret = OB_SUCCESS;
         } else if (OB_LIKELY(!has_rowid)){
           // nothing, ignore column name
@@ -1208,7 +1208,7 @@ int ObExprResolverV2::calc_token_func_obj(ObProxyTokenNode *token,
     ret = OB_ALLOCATE_MEMORY_FAILED;
     LOG_WDIAG("fail to convert func token to param node", K(ret));
   } else if (OB_FAIL(resolver.resolve(param_node, expr))) {
-    LOG_WDIAG("proxy expr resolve failed", K(ret));
+    LOG_DEBUG("proxy expr resolve failed", K(ret)); // DEBUG for simplify meaningless and futile log
   } else {
     ObSEArray<ObObj, 4> result_array;
     ObProxyExprCalcItem calc_item(const_cast<SqlFieldResult *>(sql_field_result));
@@ -1921,7 +1921,7 @@ int ObExprResolverV2::resolve_token_list_const_obj(ObProxyRelationExpr& relation
       }
     } else if (TOKEN_FUNC == token->type_) {
       if (OB_FAIL(calc_token_func_obj(token, &client_info, target_obj, NULL /* sql_field_result */, part_info.is_oracle_mode(), expr_type))) {
-        LOG_WDIAG("fail to calc token func obj", K(ret));
+        LOG_DEBUG("fail to calc token func obj", K(ret)); // DEBUG for simplify meaningless and futile log
       }
       if (OB_UNLIKELY(is_diagnostic)) {
         token_str.assign_ptr(token->str_value_.str_, token->str_value_.str_len_);
@@ -2034,7 +2034,7 @@ int ObExprResolverV2::parse_and_resolve_default_value(const ObProxyParseString& 
         if (OB_FAIL(parser.parse(default_value_expr, result))) {
           LOG_INFO("parse default value expr failed", K(ret));
         } else if (OB_FAIL(resolver.resolve(result.param_node_, expr))) {
-          LOG_INFO("proxy expr resolve failed", K(ret));
+          LOG_DEBUG("proxy expr resolve failed", K(ret)); // DEBUG for simplify meaningless and futile log
         } else if (OB_ISNULL(expr)) {
           ret = OB_ERR_UNEXPECTED;
           LOG_WDIAG("unexpected pointer", K(expr), K(ret));

@@ -17,6 +17,41 @@
 using namespace oceanbase::common;
 using namespace oceanbase::obproxy::obkv;
 
+
+template <typename RequestT>
+int encode_optional_hbase_op_type(char *buf, const int64_t buf_len, int64_t &pos, const RequestT &req)
+{
+  int ret = OB_SUCCESS;
+  if (OB_SUCC(ret) && req.is_need_hbase_op_type_) {
+    if (OB_FAIL(serialization::encode(buf, buf_len, pos, req.hbase_op_type_))) {
+      LOG_WDIAG("encode hbase_op_type fail", K(ret));
+    }
+  }
+  return ret;
+}
+
+template <typename RequestT>
+void add_serialize_len_optional_hbase_op_type(int64_t &len, const RequestT &req)
+{
+  if (req.is_need_hbase_op_type_) {
+    len += serialization::encoded_length(req.hbase_op_type_);
+  }
+}
+
+int decode_optional_hbase_op_type_tail(const char *buf, const int64_t data_len, int64_t &pos,
+    bool &is_need_hbase_op_type, ObHBaseOperationType &hbase_op_type)
+{
+  int ret = OB_SUCCESS;
+  is_need_hbase_op_type = false;
+  if (OB_SUCC(ret) && pos < data_len) {
+    is_need_hbase_op_type = true;
+    if (OB_FAIL(serialization::decode(buf, data_len, pos, hbase_op_type))) {
+      LOG_WDIAG("decode hbase_op_type fail", K(ret), K(data_len), K(pos));
+    }
+  }
+  return ret;
+}
+
 OB_SERIALIZE_MEMBER(ObTableLoginRequest,
                     auth_method_,
                     client_type_,
@@ -969,6 +1004,9 @@ int ObTableQueryAndMutateRequest::serialize_v4_(char *buf, const int64_t buf_len
   if (OB_SUCC(ret) && is_need_option_flag_) {
     LST_DO_CODE(OB_UNIS_ENCODE, option_flag_);
   }
+  if (OB_SUCC(ret)) {
+    ret = encode_optional_hbase_op_type(buf, buf_len, pos, *this);
+  }
   return ret;
 }
 /*
@@ -1037,6 +1075,7 @@ int64_t ObTableQueryAndMutateRequest::get_serialize_size_v4_(void) const
   if (is_need_option_flag_) {
     len += 1;  // option_flag_
   }
+  add_serialize_len_optional_hbase_op_type(len, *this);
   return len;
 }
 /*
@@ -1174,13 +1213,37 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableQueryAndMutateRequest)
     is_need_option_flag_ = true;
     OB_UNIS_DECODE(option_flag_);
   }
+  if (OB_SUCC(ret)) {
+    ret = decode_optional_hbase_op_type_tail(buf, data_len, pos, is_need_hbase_op_type_, hbase_op_type_);
+  }
   return ret;
 }
 
 /////////////////////////// ObTableQuerySyncRequest /////////////////////////////////////
-OB_UNIS_DEF_SERIALIZE((ObTableQuerySyncRequest, ObTableQueryRequest), query_session_id_, query_type_);
+OB_UNIS_SERIALIZE(ObTableQuerySyncRequest);
+int ObTableQuerySyncRequest::serialize_(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OK_;
+  if (OB_FAIL(ObTableQueryRequest::serialize(buf, buf_len, pos))) {
+    RPC_WARN("fail to call ObTableQueryRequest::serialize");
+  }
+  if (OB_SUCC(ret)) {
+    LST_DO_CODE(OB_UNIS_ENCODE, query_session_id_, query_type_);
+  }
+  if (OB_SUCC(ret)) {
+    ret = encode_optional_hbase_op_type(buf, buf_len, pos, *this);
+  }
+  return ret;
+}
 
-OB_UNIS_DEF_SERIALIZE_SIZE((ObTableQuerySyncRequest, ObTableQueryRequest), query_session_id_, query_type_);
+OB_UNIS_SERIALIZE_SIZE(ObTableQuerySyncRequest);
+int64_t ObTableQuerySyncRequest::get_serialize_size_(void) const
+{
+  int64_t len = ObTableQueryRequest::get_serialize_size();
+  LST_DO_CODE(OB_UNIS_ADD_LEN, query_session_id_, query_type_);
+  add_serialize_len_optional_hbase_op_type(len, *this);
+  return len;
+}
 
 int ObTableQuerySyncRequest::serialize_v4(char *buf, const int64_t buf_len, int64_t &pos) const
 {
@@ -1205,6 +1268,9 @@ int ObTableQuerySyncRequest::serialize_v4_(char *buf, const int64_t buf_len, int
               query_session_id_,
               query_type_
               );
+  if (OB_SUCC(ret)) {
+    ret = encode_optional_hbase_op_type(buf, buf_len, pos, *this);
+  }
   return ret;
 }
 /*
@@ -1252,6 +1318,7 @@ int64_t ObTableQuerySyncRequest::get_serialize_size_v4_(void) const
               query_session_id_,
               query_type_
               );
+  add_serialize_len_optional_hbase_op_type(len, *this);
   return len;
 }
 /*int ObTableQuerySyncRequest::deserialize_get_position(const char *buf, int64_t data_len, int64_t &pos, REWRITE_INFO_ARG)
@@ -1361,6 +1428,9 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableQuerySyncRequest)
     RPC_WARN("fail to call ObTableQueryRequest::deserialize_get_position_v4");
   }
   LST_DO_CODE(OB_UNIS_DECODE, query_session_id_, query_type_);
+  if (OB_SUCC(ret)) {
+    ret = decode_optional_hbase_op_type_tail(buf, data_len, pos, is_need_hbase_op_type_, hbase_op_type_);
+  }
   return ret;
 }
 
@@ -1437,9 +1507,28 @@ OB_DEF_DESERIALIZE(ObTableDirectLoadResult)
   return ret;
 }
 
-OB_UNIS_DEF_SERIALIZE(ObTableLSOpRequest, credential_, entity_type_, consistency_level_, ls_op_);
+OB_UNIS_SERIALIZE(ObTableLSOpRequest);
+int ObTableLSOpRequest::serialize_(char *buf, const int64_t buf_len, int64_t &pos) const
+{
+  int ret = OK_;
+  UNF_UNUSED_SER;
+  BASE_SER(ObTableLSOpRequest);
+  LST_DO_CODE(OB_UNIS_ENCODE, credential_, entity_type_, consistency_level_, ls_op_);
+  if (OB_SUCC(ret)) {
+    ret = encode_optional_hbase_op_type(buf, buf_len, pos, *this);
+  }
+  return ret;
+}
 
-OB_UNIS_DEF_SERIALIZE_SIZE(ObTableLSOpRequest, credential_, entity_type_, consistency_level_, ls_op_);
+OB_UNIS_SERIALIZE_SIZE(ObTableLSOpRequest);
+int64_t ObTableLSOpRequest::get_serialize_size_(void) const
+{
+  int64_t len = 0;
+  BASE_ADD_LEN(ObTableLSOpRequest);
+  LST_DO_CODE(OB_UNIS_ADD_LEN, credential_, entity_type_, consistency_level_, ls_op_);
+  add_serialize_len_optional_hbase_op_type(len, *this);
+  return len;
+}
 
 ODP_DEF_DESERIALIZE_HEADER(ObTableLSOpRequest)
 {
@@ -1470,6 +1559,9 @@ ODP_DEF_DESERIALIZE_PAYLOAD(ObTableLSOpRequest)
   LST_DO_CODE(OB_UNIS_DECODE, credential_, entity_type_, consistency_level_);
   if (OB_FAIL(ls_op_.deserialize(buf, data_len, pos, rpc_request))) {
     LOG_WDIAG("fail to deserialize ls operation", K(ret));
+  }
+  if (OB_SUCC(ret)) {
+    ret = decode_optional_hbase_op_type_tail(buf, data_len, pos, is_need_hbase_op_type_, hbase_op_type_);
   }
   return ret;
 }

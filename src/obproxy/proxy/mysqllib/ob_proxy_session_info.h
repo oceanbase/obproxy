@@ -47,6 +47,7 @@ namespace obproxy
 namespace obutils
 {
 class ObProxyConfigString;
+struct ObVipAddr;
 }
 namespace omt
 {
@@ -677,7 +678,7 @@ public:
   //set and get methord
   int set_cluster_name(const common::ObString &cluster_name);
   int set_tenant_name(const common::ObString &tenant_name);
-  int set_vip_addr_name(const common::ObAddr &vip_addr);
+  int set_vip_addr_name(const obutils::ObVipAddr &vip_addr);
   int set_database_name(const common::ObString &database_name, const bool inc_db_version = true);
   int set_user_name(const common::ObString &user_name);
   int set_service_name(const common::ObString &service_name);
@@ -1322,7 +1323,8 @@ inline int ObClientSessionInfo::set_origin_username(const common::ObString &user
 
 inline void ObClientSessionInfo::set_client_host(const common::ObAddr &host)
 {
-  if (host.ip_to_string(client_host_buf_, common::MAX_IP_ADDR_LENGTH)) {
+  int ret = OB_SUCCESS;
+  if (OB_SUCC(host.ip_to_string(client_host_buf_, common::MAX_IP_ADDR_LENGTH))) {
     client_host_.assign(client_host_buf_, static_cast<int32_t>(strlen(client_host_buf_)));
   }
 }

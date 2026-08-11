@@ -166,8 +166,7 @@ int ObShowVipHandler::dump_item(const ObVipTenant &vip_tenant)
   const char *empty_str = "";
   char addr_str[MAX_IP_PORT_LENGTH];
   addr_str[0] = '\0';
-  if (!vip_tenant.vip_addr_.addr_.ip_to_string(addr_str, MAX_IP_ADDR_LENGTH)) {
-    ret = OB_ERR_UNEXPECTED;
+  if (OB_FAIL(vip_tenant.vip_addr_.ip_to_string(addr_str, MAX_IP_ADDR_LENGTH))) {
     WDIAG_ICMD("fail to covert to addr to string", K(addr_str), K(ret));
   } else {
     ObNewRow row;
