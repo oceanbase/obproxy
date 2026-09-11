@@ -5241,6 +5241,7 @@ inline int ObMysqlTransact::handle_oceanbase_handshake_pkt(ObTransState &s, uint
       param.use_ob_protocol_v2_compress_ = (s.sm_->compression_algorithm_.level_ != 0 && use_ob_protocol_v2);
       param.use_ssl_ = use_ssl;
       param.enable_client_ip_checkout_ = enable_client_ip_checkout;
+      param.enable_client_ip_attr_trust_ = s.mysql_config_params_->enable_client_ip_attr_trust_;
       param.cs_id_version_ = client_session->get_cs_id_version();
       param.enable_full_link_trace_ = s.sm_->enable_full_link_trace_;
       if (is_binlog_request(s) && OB_NOT_NULL(s.sm_->multi_level_config_)) {

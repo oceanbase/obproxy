@@ -34,7 +34,7 @@ int64_t ObHandshakeResponseParam::to_string(char *buf, const int64_t buf_len) co
   J_OBJ_START();
   J_KV(K_(is_saved_login), K_(cluster_name), K_(proxy_scramble),
        K_(conn_id_buf), K_(proxy_conn_id_buf), K_(global_vars_version_buf),
-       K_(cap_buf), K_(proxy_version_buf), K_(client_ip_buf),
+       K_(cap_buf), K_(proxy_version_buf), K_(client_ip_buf), K_(enable_client_ip_attr_trust),
        K_(proxy_idc_name), K_(proxy_service_name), K_(proxy_failover_mode));
   J_OBJ_END();
   return pos;
@@ -268,8 +268,32 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
     tg_hsr.set_database(ObString::make_empty_string());
   }
 
-  // find client_ip
+  // Decide whether the __client_ip connect attribute reported by the client can be trusted.
+  // param.client_ip_buf_ already holds the peer address detected by proxy (write_client_addr_buf).
+  // The self-reported value is only needed when the peer address is not the real client, i.e.
+  // when the client is an upstream obproxy (__mysql_client_type=__ob_proxy) or the deployment
+  // sits behind a NAT load balancer. Drivers such as OceanBase Connector/J report their local
+  // socket address in __client_ip; inside a container that is the container address, which then
+  // fails ob_tcp_invited_nodes / user host checks on observer. With enable_client_ip_attr_trust
+  // disabled, only an upstream obproxy may override the detected address.
+  bool trust_client_ip_attr = false;
   if (RUN_MODE_PROXY == g_run_mode && param.enable_client_ip_checkout_) {
+    if (param.enable_client_ip_attr_trust_) {
+      trust_client_ip_attr = true;
+    } else {
+      ObStringKV string_kv;
+      for (int64_t i = 0; OB_SUCC(ret) && !trust_client_ip_attr && i < tg_hsr.get_connect_attrs().count(); ++i) {
+        string_kv = tg_hsr.get_connect_attrs().at(i);
+        if (0 == string_kv.key_.case_compare(OB_MYSQL_CLIENT_MODE)
+            && 0 == string_kv.value_.compare(OB_MYSQL_CLIENT_OBPROXY_MODE)) {
+          trust_client_ip_attr = true;
+        }
+      }
+    }
+  }
+
+  // find client_ip
+  if (trust_client_ip_attr) {
     ObStringKV string_kv;
     for (int64_t i = 0; OB_SUCC(ret) && i <  tg_hsr.get_connect_attrs().count(); ++i) {
       string_kv = tg_hsr.get_connect_attrs().at(i);
@@ -296,11 +320,15 @@ int ObMysqlPacketRewriter::rewrite_handshake_response_packet(
       if (OB_FAIL(tg_hsr.get_connect_attrs().push_back(kv))) {
         LOG_WDIAG("fail push back transparent transmit connect attrs", K(kv), K(ret));
       } else { /* succ */ }
-    } else if (!find_client_ip 
-                && param.enable_client_ip_checkout_
+    } else if (!find_client_ip
                 && 0 == kv.key_.case_compare(OB_MYSQL_CLIENT_IP)
-                && !kv.value_.empty()){ 
-      snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", kv.value_.length(), kv.value_.ptr());
+                && !kv.value_.empty()) {
+      if (trust_client_ip_attr) {
+        snprintf(param.client_ip_buf_, MAX_IP_ADDR_LENGTH, "%.*s", kv.value_.length(), kv.value_.ptr());
+      } else {
+        LOG_DEBUG("ignore client reported __client_ip, use detected peer address instead",
+                  "reported_client_ip", kv.value_, "detected_client_ip", param.client_ip_buf_);
+      }
       find_client_ip = true;
     } else { /* do nothing */ }
   }
