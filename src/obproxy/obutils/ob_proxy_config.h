@@ -213,6 +213,7 @@ public:
   DEF_BOOL(enable_cluster_checkout, "true", "if enable cluster checkout, proxy will send cluster name when login and server will check it", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_proxy_scramble, "false", "if enable proxy scramble, proxy will send client its variable scramble num, not support old observer", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_SYS, CFG_MULTI_LEVEL_GLOBAL);
   DEF_BOOL(enable_client_ip_checkout, "true", "if enabled, proxy send client ip when login", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
+  DEF_BOOL(enable_client_ip_attr_trust, "true", "if enabled, proxy trusts the __client_ip connect attribute reported by the client itself and forwards it to observer; if disabled, proxy forwards the peer address it detected, and only accepts __client_ip from an upstream obproxy (__mysql_client_type=__ob_proxy). Only effective when enable_client_ip_checkout is true", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
 
   //connection related
   DEF_INT(connect_observer_max_retries, "3", "[2,5]", "max retries to do connect", CFG_NO_NEED_REBOOT, CFG_SECTION_OBPROXY, CFG_VISIBLE_LEVEL_USER, CFG_MULTI_LEVEL_GLOBAL);
